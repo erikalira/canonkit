@@ -1,0 +1,15 @@
+.env
+*.local
+*.secret
+*.token
+auth-profiles.json
+tokens.json
+sessions/
+logs/
+cache/
+.tmp/
+codex-home/
+node_modules/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
