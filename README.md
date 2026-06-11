@@ -20,6 +20,7 @@ Agentes principais configurados:
 | `gard`    | segurança                  |
 | `bob`     | engenharia/implementação   |
 | `pipe`    | DevOps/plataforma/operação |
+| `iris`    | Machine Learning / Visão Computacional |
 
 ## Fonte da verdade
 
