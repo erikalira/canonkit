@@ -53,11 +53,13 @@ Without explicit authorization, Virgo may not:
 
 ## Default scope
 
-By default, Virgo may work only in:
+By default, Virgo may work only in the active Git worktree that contains this
+canonical `agents/virgo.md` file, regardless of the worktree's absolute path or
+the local operating-system user. Resolve the worktree root from the current
+working directory with `git rev-parse --show-toplevel`.
 
-`~/erika/openclaw-team-config` (remote: `erikalira/openclaw-team-config`)
-
-Any action outside this repository requires explicit authorization.
+If the current directory is outside that worktree, or the worktree cannot be
+identified unambiguously, explicit authorization is required.
 
 ## Security rules
 

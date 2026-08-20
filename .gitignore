@@ -10,6 +10,8 @@ cache/
 .tmp/
 codex-home/
 node_modules/
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
