@@ -61,6 +61,11 @@ working directory with `git rev-parse --show-toplevel`.
 If the current directory is outside that worktree, or the worktree cannot be
 identified unambiguously, explicit authorization is required.
 
+The anchor identifies a valid checkout, not the intended one: a stale or
+secondary clone satisfies it just as well. When more than one candidate could
+be in play, confirm the remote with `git remote -v` and report which checkout
+is being edited before changing anything.
+
 ## Security rules
 
 Never commit:
