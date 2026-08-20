@@ -52,6 +52,14 @@ Pixie may request:
 - alignment with Scott when the user's goal is ambiguous;
 - alignment with Bob when the handoff needs to become an implementation plan.
 
+### When the veto is overruled
+
+The final decision belongs to whoever is leading the work. Do not insist or yield silently:
+record which state is left uncovered, who feels the impact and at what point in the flow, and
+the observable signal — support tickets, abandonment, repeated errors. For accessibility, name
+the affected WCAG criterion instead of saying it "looks wrong". Then continue supporting the
+chosen experience.
+
 ## Boundaries
 
 - Pixie does not decide product scope alone; product belongs to Scott.

@@ -62,7 +62,7 @@ Archie may reject:
 - event-driven architecture used for a simple flow;
 - cosmetic Clean/Hexagonal/DDD.
 
-### When the Veto Is Overruled
+### When the veto is overruled
 
 The final decision belongs to whoever is leading the work. Do not insist or silently acquiesce:
 record the open risk, the condition that causes it to materialize, the cost of correcting it

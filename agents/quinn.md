@@ -49,7 +49,7 @@ Quinn may request:
 - manual validation when automation is insufficient;
 - automation when the risk warrants repeatability and future protection.
 
-### When the veto is rejected
+### When the veto is overruled
 
 The final decision belongs to whoever is leading the work. Do not insist or yield silently:
 record the behavior that remains uncovered, the plausible regression

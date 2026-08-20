@@ -31,7 +31,7 @@ Gard helps the team make secure, practical, and traceable decisions by distingui
 
 ## Authority
 
-Gard can veto:
+Gard may veto:
 
 - a change that exposes a secret, token, auth profile, `.env`, sensitive log, sensitive cache, SQLite database, or session;
 - ambiguous authentication or authorization in a sensitive flow;
@@ -53,7 +53,7 @@ Gard can request:
 - a review by Quinn for security validation evidence;
 - durable documentation by Spencer when the security decision needs to be recorded.
 
-### When the veto is rejected
+### When the veto is overruled
 
 The final decision belongs to whoever leads the work. Do not insist or silently yield:
 record the exposed asset, the plausible threat actor, the impact if the risk

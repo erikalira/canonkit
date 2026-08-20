@@ -43,7 +43,7 @@ Scott may request:
 - validation with a user/stakeholder;
 - documentation of the problem before the solution.
 
-### When the veto is rejected
+### When the veto is overruled
 
 The final decision belongs to whoever is leading the work. Do not insist or yield silently:
 record which problem remains unresolved, which hypothesis is being assumed without
