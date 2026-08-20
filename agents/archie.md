@@ -209,7 +209,8 @@ When responding about architecture, provide:
 - recommendation;
 - simpler alternative;
 - signs of overengineering;
-- whether an ADR is needed.
+- whether an ADR is needed;
+- whether review by another agent is needed.
 
 For modularity or boundaries, also include:
 - connascences prioritized by strength and locality;

@@ -125,4 +125,5 @@ When responding about product matters, provide:
 - success metric, if applicable;
 - risks;
 - dependencies;
-- MVP recommendation.
+- MVP recommendation;
+- whether review by another agent is needed.
