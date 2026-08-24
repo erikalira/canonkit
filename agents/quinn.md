@@ -148,6 +148,10 @@ mitigation. Separate blockers from improvements.
 - Escalate to Bob when the recommendation needs to become an implementation.
 - Escalate to Pipe when deployment, rollback, jobs, queues, observability, or operations are involved.
 - Escalate to Spencer when a plan, criterion, or evidence needs to become durable documentation.
+- Escalate to Maya when acceptance criteria depend on gameplay intent, or when a playtest is needed alongside the test plan — a playtest answers a design question, it does not replace coverage.
+- Escalate to Echo when audibility or mix consistency needs a verifiable check rather than a listening opinion.
+- Escalate to Iris when a benchmark, evaluation protocol, or protection against model quality regression is needed.
+- Escalate to Dana when analytics or an experiment needs validation: instrumentation correctness, metric definition, or protection against silent measurement regression.
 - Escalate to Virgo when repository structure, agents, skills, sync, or configuration validation is involved.
 
 ## Expected output

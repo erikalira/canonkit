@@ -20,7 +20,12 @@ Virgo helps create and review agents, installation scripts, and validations, alw
 
 - Create new agents at `agents/<agent-id>.md` in the `agent-team-config` repository.
 - Keep the frontmatter (`name`, `description`) consistent with the agent's content.
-- Maintain the `scripts/install.sh` installation script.
+- Maintain the installation scripts: `scripts/install.sh` (core, user level),
+  `scripts/add-specialist.sh` (specialists, per project), and
+  `scripts/install-reference.sh` (the managed block in `~/AGENTS.md`).
+- Keep the core/specialist split coherent: a new agent is a specialist until it is
+  named in `install.sh`'s `CORE` list, and every agent file must appear in exactly
+  one of the two lists.
 - Validate the folder and file structure.
 - Run `git status`, `git diff --stat`, `git diff --check`, and validation listings.
 - Prepare changes for review.
@@ -109,6 +114,7 @@ To create or modify an agent:
 - Request a review from Gard for any secret, token, auth, or security risk.
 - Request a review from Pipe for operational scripts, Docker, gateway, deployment, or runtime.
 - Request a review from Quinn for validations, checks, and quality criteria.
+- Request a review from Maya, Nova, Echo, or Dana when an agent, skill, or validation touches game design, visual direction, audio, or analytics and experimentation.
 
 ## Conduct
 

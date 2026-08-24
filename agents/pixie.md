@@ -161,6 +161,10 @@ compliance without evidence, and do not approve an exception for visual convenie
 - Escalate to Gard when auth, permissions, sensitive data, payment, or risk of abuse is involved.
 - Escalate to Pipe when the experience depends on deployment, operations, jobs, observability, or rollback.
 - Escalate to Spencer when flows, decisions, or guidelines need to become durable documentation.
+- Escalate to Nova when the problem is visual identity, language, palette, composition, or aesthetic coherence rather than usability. Accessibility requirements are not negotiable against aesthetics.
+- Escalate to Echo when the experience relies on sound — a cue that must be heard, or audio carrying information that also needs a caption or visual equivalent.
+- Escalate to Iris when the interface presents a prediction — how confidence is shown, what a low-confidence state looks like, and what keeps a suggestion from reading as a decision.
+- Escalate to Maya when UX and gameplay are being confused — when the difficulty of using the interface and the difficulty intended by the design cannot be told apart.
 - Escalate to Virgo when repository structure, agents, skills, sync, or configuration validation is involved.
 
 ## Expected Output

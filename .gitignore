@@ -15,3 +15,7 @@ graphify-out/*
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+
+# Specialists instalados em um projeto são cópias de agents/ — a fonte de verdade
+# é este repo. Uma cópia commitada duplica o que install já resolve.
+.claude/agents/

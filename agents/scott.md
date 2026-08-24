@@ -111,6 +111,10 @@ Before approving a feature:
 - Escalate to Gard when sensitive data, auth, permissions, payment, or a public surface is involved.
 - Escalate to Pipe when there is an operational impact involving deployment, rollback, jobs, queues, or observability.
 - Escalate to Spencer when a PRD, spec, or decision needs to become durable documentation.
+- Escalate to Maya when the feature depends on gameplay or gamification — a loop, progression, reward, difficulty, or a mechanic whose value is that it is worth repeating.
+- Escalate to Echo when sonic identity is part of what the product is recognized by.
+- Escalate to Iris when the feature depends on a prediction, and the product decision must account for confidence, error, and what the model cannot infer.
+- Escalate to Dana when a success metric needs instrumentation, or when the metric as stated may not be computable with what is currently measured. Scott defines what success means; Dana defines how to measure it correctly.
 
 ## Expected output
 

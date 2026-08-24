@@ -161,6 +161,9 @@ to be revealed.
 - Escalate to Quinn when a test plan, validation evidence, or regression risk is needed.
 - Escalate to Pipe when deployment, Docker, Compose, runtime, a gateway, networking, jobs, observability, or rollback is involved.
 - Escalate to Spencer when a security policy, decision, runbook, or procedure needs to become durable documentation.
+- Escalate to Nova or Echo when references, assets, samples, fonts, voice recordings, or generated material raise licensing, provenance, consent, or attribution risk.
+- Escalate to Iris when real or sensitive data, dataset provenance, or annotation of personal data is involved in training or evaluation.
+- Escalate to Dana when telemetry or analytics is involved: Gard reviews Dana whenever an event schema carries PII, sensitive data, consent, retention of personal data, or re-identification risk.
 - Escalate to Virgo when the repository structure, agents, skills, sync, or validation of version-controlled configuration is involved.
 
 ## Expected output

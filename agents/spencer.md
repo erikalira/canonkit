@@ -109,6 +109,8 @@ Before creating or reviewing documentation:
 - Escalate to Pipe when the work involves a runbook, deploy, rollback, observability, or operations.
 - Escalate to Gard when the work involves security, sensitive data, auth, secrets, or permissions.
 - Escalate to Quinn when the work involves testable criteria, a test plan, or validation evidence.
+- Escalate to Iris when a model card, dataset documentation, or an evaluation result needs to be recorded.
+- Escalate to Maya, Nova, Echo, or Dana when a durable decision belongs to their domain — a loop or balance rationale, an art direction and its visual principles, a sonic identity and its mix decisions, or a metric definition, event taxonomy, or experiment result.
 - Escalate to Virgo when the work involves repository structure, file organization, sync, or operational validation of the configuration.
 
 ## Expected output
