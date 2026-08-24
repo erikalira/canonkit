@@ -1,0 +1,335 @@
+#!/usr/bin/env bash
+# Validate the repository against the conventions the README promises.
+#
+# This is the Virgo protocol, automated: frontmatter, structure, the core /
+# specialist split, escalation routing, and the script inventory. It checks the
+# rules the team actually agreed on — not uniformity the repo never had. Pipe
+# says "Operational authority" instead of "Authority", Virgo classifies no
+# product risk, and both are correct; the checks below are written to accept
+# that and still catch a real defect.
+#
+#   ./scripts/validate.sh          # report and exit non-zero on failure
+#   ./scripts/validate.sh --quiet  # only failures and the summary
+#
+# Read-only. It never writes to the repo, your home, or any project.
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+QUIET=0
+for a in "${@:-}"; do
+  case "$a" in
+    --quiet|-q) QUIET=1 ;;
+    -h|--help)  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    "")         ;;
+    *)          echo "Unknown option: $a" >&2; exit 1 ;;
+  esac
+done
+
+# Python checks write here instead of running inside $( ), where bash parses
+# parentheses in the heredoc body before the heredoc is honored.
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+FAILURES=0
+WARNINGS=0
+
+pass() { [ "$QUIET" -eq 1 ] || printf '  \033[32mok\033[0m   %s\n' "$1"; }
+fail() { printf '  \033[31mFAIL\033[0m %s\n' "$1"; FAILURES=$((FAILURES + 1)); }
+warn() { printf '  \033[33mwarn\033[0m %s\n' "$1"; WARNINGS=$((WARNINGS + 1)); }
+head_() { [ "$QUIET" -eq 1 ] || printf '\n\033[1m%s\033[0m\n' "$1"; }
+
+# ---------------------------------------------------------------- frontmatter
+
+head_ "Frontmatter"
+
+for f in agents/*.md; do
+  base="$(basename "$f" .md)"
+
+  if [ "$(head -1 "$f")" != "---" ]; then
+    fail "$base: does not start with a frontmatter delimiter"
+    continue
+  fi
+
+  name="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^name:/{print $2}' "$f")"
+  desc="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^description:/{print}' "$f")"
+
+  if [ -z "$name" ]; then
+    fail "$base: no name in frontmatter"
+  elif [ "$name" != "$base" ]; then
+    fail "$base: frontmatter name is '$name' — must match the filename"
+  elif [ -z "$desc" ]; then
+    fail "$base: no description in frontmatter"
+  else
+    # The description is what the delegating model reads to route work. A bare
+    # title tells it nothing about what the agent owns.
+    len=$(printf '%s' "$desc" | wc -c | tr -d ' ')
+    if [ "$len" -lt 60 ]; then
+      warn "$base: description is very short ($len chars) — say what the agent owns"
+    else
+      pass "$base"
+    fi
+  fi
+done
+
+# ------------------------------------------------------------------ structure
+
+head_ "Structure"
+
+python3 - > "$TMP" <<'PY'
+import pathlib, re
+
+agents = sorted(p.stem for p in pathlib.Path("agents").glob("*.md"))
+
+# Virgo maintains the repo; it does not classify product-change risk and holds no
+# veto. That is by design, not an omission.
+NO_RISK = {"virgo"}
+
+for a in agents:
+    text = pathlib.Path(f"agents/{a}.md").read_text()
+    heads = [m.group(1).strip().lower() for m in re.finditer(r"^## (.+)$", text, re.M)]
+    joined = " | ".join(heads)
+    problems = []
+
+    for required in ("mission", "responsibilities", "collaboration", "expected output"):
+        if required not in heads:
+            problems.append(f"missing '## {required.title()}'")
+
+    # Accept a qualified heading: Pipe's "Operational authority" counts.
+    if not any("authorit" in h for h in heads):
+        problems.append("no authority section")
+    if not any(("boundar" in h) or ("scope" in h) for h in heads):
+        problems.append("no boundaries/scope section")
+
+    if a not in NO_RISK:
+        for level in ("LOW:", "MEDIUM:", "HIGH:"):
+            if level not in text:
+                problems.append(f"no {level.rstrip(':')} risk classification")
+
+    # The README's promise: an agent that can veto also says what to do when
+    # overruled. Checked as a rule, so agents without veto authority are fine.
+    # Veto is phrased more than one way: "Archie may veto", "Gard may veto",
+    # but also Spencer's bare "- veto confusing ... documentation;".
+    has_veto = re.search(r"may veto|^\s*[-*]\s*veto\b", text, re.M) is not None
+    has_overruled = "When the veto is overruled" in text
+    if has_veto and not has_overruled:
+        problems.append("declares a veto but no 'When the veto is overruled'")
+    if has_overruled and not has_veto:
+        problems.append("has 'When the veto is overruled' but declares no veto")
+
+    if problems:
+        print(f"FAIL\t{a}\t{'; '.join(problems)}")
+    else:
+        print(f"OK\t{a}\t{joined}")
+PY
+STRUCT="$(cat "$TMP")"
+
+while IFS=$'\t' read -r status agent detail; do
+  [ -z "${status:-}" ] && continue
+  if [ "$status" = "OK" ]; then pass "$agent"; else fail "$agent: $detail"; fi
+done <<< "$STRUCT"
+
+# ------------------------------------------------------------ core/specialist
+
+head_ "Core / specialist split"
+
+python3 - > "$TMP" <<'PY'
+import pathlib, re
+
+def arr(path, var):
+    text = pathlib.Path(path).read_text()
+    m = re.search(rf'^{var}=\(([^)]*)\)', text, re.M)
+    return set(m.group(1).split()) if m else None
+
+core = arr("scripts/install.sh", "CORE")
+spec = arr("scripts/install.sh", "SPECIALISTS")
+add  = arr("scripts/add-specialist.sh", "SPECIALISTS")
+files = {p.stem for p in pathlib.Path("agents").glob("*.md")}
+
+if core is None:  print("FAIL\tinstall.sh has no CORE list")
+if spec is None:  print("FAIL\tinstall.sh has no SPECIALISTS list")
+if add is None:   print("FAIL\tadd-specialist.sh has no SPECIALISTS list")
+
+if None in (core, spec, add):
+    raise SystemExit(0)
+
+# Every agent file belongs to exactly one list. An unclassified file is the real
+# hazard: install.sh would not install it and add-specialist.sh would refuse it,
+# so it would exist in the repo and be reachable from nowhere.
+unclassified = sorted(files - core - spec)
+if unclassified:
+    print(f"FAIL\tunclassified agents (in neither CORE nor SPECIALISTS): {', '.join(unclassified)}")
+else:
+    print("OK\tevery agent file is classified")
+
+ghost = sorted((core | spec) - files)
+if ghost:
+    print(f"FAIL\tlisted but no file in agents/: {', '.join(ghost)}")
+else:
+    print("OK\tno list names a missing agent")
+
+overlap = sorted(core & spec)
+if overlap:
+    print(f"FAIL\tin both CORE and SPECIALISTS: {', '.join(overlap)}")
+else:
+    print("OK\tno agent is both core and specialist")
+
+if spec != add:
+    only_i = sorted(spec - add)
+    only_a = sorted(add - spec)
+    detail = []
+    if only_i: detail.append(f"only in install.sh: {', '.join(only_i)}")
+    if only_a: detail.append(f"only in add-specialist.sh: {', '.join(only_a)}")
+    print(f"FAIL\tSPECIALISTS lists disagree — {'; '.join(detail)}")
+else:
+    print("OK\tSPECIALISTS identical in install.sh and add-specialist.sh")
+
+# The reference block is what Codex reads; a specialist missing from it is
+# invisible to that runtime.
+block = pathlib.Path("reference/agents-block.md").read_text()
+for name in sorted(core):
+    if not re.search(rf"\*\*{name}\*\*", block):
+        print(f"FAIL\treference/agents-block.md does not list core agent: {name}")
+for name in sorted(spec):
+    if not re.search(rf"\*\*{name}\*\*", block):
+        print(f"FAIL\treference/agents-block.md does not list specialist: {name}")
+print("OK\treference block checked against both lists")
+
+# add-specialist.sh writes a one-line summary per specialist into project
+# AGENTS.md files; a missing case falls through to the generic "specialist."
+addsh = pathlib.Path("scripts/add-specialist.sh").read_text()
+for name in sorted(spec):
+    if not re.search(rf"^\s*{name}\)", addsh, re.M):
+        print(f"FAIL\tadd-specialist.sh has no describe() entry for: {name}")
+print("OK\tdescribe() covers every specialist")
+PY
+SPLIT="$(cat "$TMP")"
+
+while IFS=$'\t' read -r status detail; do
+  [ -z "${status:-}" ] && continue
+  if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+done <<< "$SPLIT"
+
+# ------------------------------------------------------------------ escalation
+
+head_ "Escalation graph"
+
+python3 - > "$TMP" <<'PY'
+import pathlib, re, collections
+
+agents = sorted(p.stem for p in pathlib.Path("agents").glob("*.md"))
+out = collections.defaultdict(set)
+inc = collections.defaultdict(set)
+
+for a in agents:
+    text = pathlib.Path(f"agents/{a}.md").read_text()
+    m = re.search(r"^## Collaboration\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    body = m.group(1) if m else ""
+    for b in agents:
+        if b != a and re.search(rf"\b{b.capitalize()}\b", body):
+            out[a].add(b)
+            inc[b].add(a)
+
+# A role-shaped escalation ("the security owner") names no agent, so a subagent
+# report gives you nothing to route to.
+GENERIC = re.compile(r"\bthe [a-z][a-z-]*(?: [a-z-]+)? owner\b")
+for a in agents:
+    text = pathlib.Path(f"agents/{a}.md").read_text()
+    m = re.search(r"^## Collaboration\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    body = m.group(1) if m else ""
+    hits = {h for h in GENERIC.findall(body)}
+    # "Pipe remains the operational owner" names an agent — not a routing gap.
+    hits = {h for h in hits if not re.search(rf"(?:{'|'.join(x.capitalize() for x in agents)})[^.]*{re.escape(h)}", body)}
+    if hits:
+        print(f"FAIL\t{a}: escalates to a role, not an agent: {', '.join(sorted(hits))}")
+
+silent = [a for a in agents if not out[a]]
+if silent:
+    print(f"FAIL\tno outgoing escalation (report names nobody): {', '.join(silent)}")
+else:
+    print("OK\tevery agent escalates to someone by name")
+
+unreachable = [a for a in agents if not inc[a]]
+if unreachable:
+    print(f"FAIL\tnobody escalates to them (unreachable): {', '.join(unreachable)}")
+else:
+    print("OK\tevery agent is reachable from another agent")
+
+thin = [f"{a} (in={len(inc[a])})" for a in agents if 0 < len(inc[a]) < 3]
+if thin:
+    print(f"WARN\tfew agents route to them: {', '.join(thin)}")
+
+print(f"OK\t{len(agents)} agents, {sum(len(v) for v in out.values())} escalation edges")
+PY
+GRAPH="$(cat "$TMP")"
+
+while IFS=$'\t' read -r status detail; do
+  [ -z "${status:-}" ] && continue
+  case "$status" in
+    OK)   pass "$detail" ;;
+    WARN) warn "$detail" ;;
+    *)    fail "$detail" ;;
+  esac
+done <<< "$GRAPH"
+
+# --------------------------------------------------------------------- scripts
+
+head_ "Scripts"
+
+for s in scripts/*.sh; do
+  name="$(basename "$s")"
+  if ! bash -n "$s" 2>/dev/null; then
+    fail "$name: syntax error"
+    continue
+  fi
+  if [ ! -x "$s" ]; then
+    warn "$name: not executable (chmod +x)"
+    continue
+  fi
+  pass "$name"
+done
+
+# ------------------------------------------------------------------- hygiene
+
+head_ "Repository hygiene"
+
+if git rev-parse --git-dir >/dev/null 2>&1; then
+  if git diff --check >/dev/null 2>&1; then
+    pass "no whitespace errors in the diff"
+  else
+    fail "git diff --check reports whitespace errors"
+  fi
+
+  # A specialist copied into this repo for testing would duplicate the source of
+  # truth if it were ever committed.
+  # Probe with a path *inside* the directory: check-ignore on a directory that
+  # does not exist reports nothing, which would read as "not ignored".
+  if git check-ignore -q .claude/agents/probe.md 2>/dev/null; then
+    pass ".claude/agents/ is ignored"
+  else
+    fail ".claude/agents/ is not ignored — a test copy could be committed"
+  fi
+
+  tracked_sensitive="$(git ls-files | grep -Ei '(^|/)(\.env|.*\.token|.*\.secret|auth-profiles\.json|tokens\.json)$' || true)"
+  if [ -n "$tracked_sensitive" ]; then
+    fail "sensitive files are tracked: $(echo "$tracked_sensitive" | tr '\n' ' ')"
+  else
+    pass "no sensitive files tracked"
+  fi
+else
+  warn "not a git repository — skipped git checks"
+fi
+
+# -------------------------------------------------------------------- summary
+
+printf '\n'
+if [ "$FAILURES" -eq 0 ] && [ "$WARNINGS" -eq 0 ]; then
+  printf '\033[32mAll checks passed.\033[0m %s agents.\n' "$(ls agents/*.md | wc -l | tr -d ' ')"
+elif [ "$FAILURES" -eq 0 ]; then
+  printf '\033[32mPassed\033[0m with \033[33m%s warning(s)\033[0m. %s agents.\n' \
+    "$WARNINGS" "$(ls agents/*.md | wc -l | tr -d ' ')"
+else
+  printf '\033[31m%s failure(s)\033[0m, %s warning(s).\n' "$FAILURES" "$WARNINGS"
+  exit 1
+fi

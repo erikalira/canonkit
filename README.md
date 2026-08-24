@@ -135,13 +135,37 @@ Só o trecho entre os marcadores é gerenciado:
 Tudo fora dos marcadores é preservado. O script é idempotente e, na primeira
 execução, substitui uma seção `# subagentes` escrita à mão em vez de duplicá-la.
 
+## Validação
+
+```bash
+./scripts/validate.sh          # relatório completo
+./scripts/validate.sh --quiet  # só falhas e o resumo
+```
+
+Read-only, sai com código diferente de zero em qualquer falha. Automatiza o
+protocolo do Virgo e checa as convenções que este README promete:
+
+- frontmatter — `name` bate com o nome do arquivo, `description` presente e útil;
+- estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
+  fronteiras e LOW/MEDIUM/HIGH;
+- a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
+- o split core/specialist — todo agente está em exatamente uma das listas, as duas
+  listas de `SPECIALISTS` concordam, e todos aparecem em `reference/agents-block.md`;
+- o grafo de escalation — ninguém isolado, e ninguém escalando para um papel
+  genérico ("the security owner") em vez de um agente nomeado;
+- sintaxe dos scripts e higiene do repo.
+
+Checa a regra, não uniformidade: `pipe` usa "Operational authority", `virgo` não
+classifica risco de produto, e ambos passam.
+
 ## Editing an agent
 
 1. Edite `agents/<name>.md` neste repo.
 2. Se for core, rode `./scripts/install.sh`.
 3. Se for specialist, rode `add-specialist.sh <nome>` de novo nos projetos que o usam.
 4. Se mexeu na descrição do time, rode `./scripts/install-reference.sh`.
-5. Commit.
+5. Rode `./scripts/validate.sh`.
+6. Commit.
 
 Não edite `~/.agents`, `~/.claude/agents`, `.claude/agents/` de um projeto, nem o
 bloco gerenciado do `~/AGENTS.md` — a próxima instalação sobrescreve. Este repo é

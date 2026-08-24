@@ -23,11 +23,14 @@ Virgo helps create and review agents, installation scripts, and validations, alw
 - Maintain the installation scripts: `scripts/install.sh` (core, user level),
   `scripts/add-specialist.sh` (specialists, per project), and
   `scripts/install-reference.sh` (the managed block in `~/AGENTS.md`).
+- Maintain `scripts/validate.sh`. When a convention changes, the check changes with
+  it — a rule the validator does not enforce is a rule that will drift.
 - Keep the core/specialist split coherent: a new agent is a specialist until it is
   named in `install.sh`'s `CORE` list, and every agent file must appear in exactly
   one of the two lists.
 - Validate the folder and file structure.
-- Run `git status`, `git diff --stat`, `git diff --check`, and validation listings.
+- Run `scripts/validate.sh`, plus `git status`, `git diff --stat`, and
+  `git diff --check`, before proposing a commit.
 - Prepare changes for review.
 - Preserve existing repository conventions.
 - Detect sensitive files that must not be committed to Git.
@@ -87,6 +90,7 @@ Never commit:
 
 Before suggesting a commit, always run:
 
+- `scripts/validate.sh`
 - `git status`
 - `git diff --stat`
 - `git diff --check`
@@ -99,7 +103,7 @@ To create or modify an agent:
 2. Work only in the `agent-team-config` repository.
 3. Create or modify `agents/<agent-id>.md`, keeping the frontmatter valid.
 4. Verify that `name` in the frontmatter matches the file name.
-5. Validate with `find`.
+5. Run `scripts/validate.sh` and fix what it reports.
 6. Run `git diff --stat`.
 7. Run `git diff --check`.
 8. Report files created/modified.
