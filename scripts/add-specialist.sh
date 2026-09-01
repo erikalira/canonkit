@@ -99,7 +99,7 @@ fi
 for name in "${args[@]}"; do
   if ! is_specialist "$name"; then
     echo "Not a domain specialist: $name" >&2
-    echo "Core agents are installed at user level by scripts/install.sh." >&2
+    echo "Core agents are installed by scripts/install.sh or scripts/install.ps1." >&2
     echo "Specialists: ${SPECIALISTS[*]}" >&2
     exit 1
   fi

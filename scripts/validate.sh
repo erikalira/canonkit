@@ -87,7 +87,7 @@ agents = sorted(p.stem for p in pathlib.Path("agents").glob("*.md"))
 NO_RISK = {"virgo"}
 
 for a in agents:
-    text = pathlib.Path(f"agents/{a}.md").read_text()
+    text = pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8")
     heads = [m.group(1).strip().lower() for m in re.finditer(r"^## (.+)$", text, re.M)]
     joined = " | ".join(heads)
     problems = []
@@ -138,21 +138,40 @@ python3 - > "$TMP" <<'PY'
 import pathlib, re
 
 def arr(path, var):
-    text = pathlib.Path(path).read_text()
+    text = pathlib.Path(path).read_text(encoding="utf-8")
     m = re.search(rf'^{var}=\(([^)]*)\)', text, re.M)
     return set(m.group(1).split()) if m else None
+
+def ps_arr(path, var):
+    text = pathlib.Path(path).read_text(encoding="utf-8")
+    m = re.search(rf'^\${var}\s*=\s*@\((.*?)\)', text, re.M | re.S)
+    return set(re.findall(r'["\']([a-z0-9-]+)["\']', m.group(1))) if m else None
 
 core = arr("scripts/install.sh", "CORE")
 spec = arr("scripts/install.sh", "SPECIALISTS")
 add  = arr("scripts/add-specialist.sh", "SPECIALISTS")
+core_ps = ps_arr("scripts/install.ps1", "Core")
+spec_ps = ps_arr("scripts/install.ps1", "Specialists")
 files = {p.stem for p in pathlib.Path("agents").glob("*.md")}
 
 if core is None:  print("FAIL\tinstall.sh has no CORE list")
 if spec is None:  print("FAIL\tinstall.sh has no SPECIALISTS list")
 if add is None:   print("FAIL\tadd-specialist.sh has no SPECIALISTS list")
+if core_ps is None: print("FAIL\tinstall.ps1 has no Core list")
+if spec_ps is None: print("FAIL\tinstall.ps1 has no Specialists list")
 
-if None in (core, spec, add):
+if None in (core, spec, add, core_ps, spec_ps):
     raise SystemExit(0)
+
+if core != core_ps:
+    print("FAIL\tCORE lists disagree between install.sh and install.ps1")
+else:
+    print("OK\tCORE identical in install.sh and install.ps1")
+
+if spec != spec_ps:
+    print("FAIL\tSPECIALISTS lists disagree between install.sh and install.ps1")
+else:
+    print("OK\tSPECIALISTS identical in install.sh and install.ps1")
 
 # Every agent file belongs to exactly one list. An unclassified file is the real
 # hazard: install.sh would not install it and add-specialist.sh would refuse it,
@@ -187,7 +206,7 @@ else:
 
 # The reference block is what Codex reads; a specialist missing from it is
 # invisible to that runtime.
-block = pathlib.Path("reference/agents-block.md").read_text()
+block = pathlib.Path("reference/agents-block.md").read_text(encoding="utf-8")
 for name in sorted(core):
     if not re.search(rf"\*\*{name}\*\*", block):
         print(f"FAIL\treference/agents-block.md does not list core agent: {name}")
@@ -198,7 +217,7 @@ print("OK\treference block checked against both lists")
 
 # add-specialist.sh writes a one-line summary per specialist into project
 # AGENTS.md files; a missing case falls through to the generic "specialist."
-addsh = pathlib.Path("scripts/add-specialist.sh").read_text()
+addsh = pathlib.Path("scripts/add-specialist.sh").read_text(encoding="utf-8")
 for name in sorted(spec):
     if not re.search(rf"^\s*{name}\)", addsh, re.M):
         print(f"FAIL\tadd-specialist.sh has no describe() entry for: {name}")
@@ -223,7 +242,7 @@ out = collections.defaultdict(set)
 inc = collections.defaultdict(set)
 
 for a in agents:
-    text = pathlib.Path(f"agents/{a}.md").read_text()
+    text = pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8")
     m = re.search(r"^## Collaboration\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     body = m.group(1) if m else ""
     for b in agents:
@@ -235,7 +254,7 @@ for a in agents:
 # report gives you nothing to route to.
 GENERIC = re.compile(r"\bthe [a-z][a-z-]*(?: [a-z-]+)? owner\b")
 for a in agents:
-    text = pathlib.Path(f"agents/{a}.md").read_text()
+    text = pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8")
     m = re.search(r"^## Collaboration\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     body = m.group(1) if m else ""
     hits = {h for h in GENERIC.findall(body)}

@@ -18,7 +18,8 @@ está instalado não pode ser acionado por completude.
 
 ### Core Team
 
-Instalado no usuário (`~/.agents` e `~/.claude/agents`) por `./scripts/install.sh`.
+Instalado no usuário (`~/.agents` e `~/.claude/agents`) por
+`scripts/install.sh` no Linux/macOS ou `scripts/install.ps1` no Windows.
 Disponível para qualquer mudança, em qualquer projeto.
 
 | Agent | Role |
@@ -66,8 +67,23 @@ Fronteiras que costumam confundir:
 
 ### Core, no usuário
 
+Linux e macOS:
+
 ```bash
 ./scripts/install.sh
+```
+
+Windows (PowerShell):
+
+```powershell
+.\scripts\install.ps1
+```
+
+Se a política de execução bloquear scripts locais, rode somente essa execução
+com bypass, sem alterar a configuração permanente do sistema:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
 Copia os 9 agentes core para os dois caminhos de runtime:
@@ -78,11 +94,11 @@ Copia os 9 agentes core para os dois caminhos de runtime:
 Ambos são lidos pelo Claude Code. O script mantém os dois idênticos, que é o que
 impede a divergência entre eles.
 
-A lista de core é explícita dentro do script. Um arquivo novo em `agents/` é
-specialist até ser nomeado ali — adicionar um agente nunca o instala em todo
-lugar por acidente. O script também **remove** specialists que tenham sobrado no
-nível de usuário de instalações anteriores; uma cópia esquecida ali fica
-disponível em todo projeto e anula a regra.
+As listas de core são explícitas e validadas nos dois instaladores. Um arquivo
+novo em `agents/` é specialist até ser nomeado ali — adicionar um agente nunca o
+instala em todo lugar por acidente. Os instaladores também **removem** specialists
+que tenham sobrado no nível de usuário de instalações anteriores; uma cópia
+esquecida ali fica disponível em todo projeto e anula a regra.
 
 ### Specialists, por projeto
 
@@ -149,8 +165,9 @@ protocolo do Virgo e checa as convenções que este README promete:
 - estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
   fronteiras e LOW/MEDIUM/HIGH;
 - a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
-- o split core/specialist — todo agente está em exatamente uma das listas, as duas
-  listas de `SPECIALISTS` concordam, e todos aparecem em `reference/agents-block.md`;
+- o split core/specialist — todo agente está em exatamente uma das listas, os
+  instaladores Bash e PowerShell concordam, e todos aparecem em
+  `reference/agents-block.md`;
 - o grafo de escalation — ninguém isolado, e ninguém escalando para um papel
   genérico ("the security owner") em vez de um agente nomeado;
 - sintaxe dos scripts e higiene do repo.
@@ -161,7 +178,8 @@ classifica risco de produto, e ambos passam.
 ## Editing an agent
 
 1. Edite `agents/<name>.md` neste repo.
-2. Se for core, rode `./scripts/install.sh`.
+2. Se for core, rode `./scripts/install.sh` (Linux/macOS) ou
+   `.\scripts\install.ps1` (Windows).
 3. Se for specialist, rode `add-specialist.sh <nome>` de novo nos projetos que o usam.
 4. Se mexeu na descrição do time, rode `./scripts/install-reference.sh`.
 5. Rode `./scripts/validate.sh`.

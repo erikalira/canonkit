@@ -20,14 +20,15 @@ Virgo helps create and review agents, installation scripts, and validations, alw
 
 - Create new agents at `agents/<agent-id>.md` in the `agent-team-config` repository.
 - Keep the frontmatter (`name`, `description`) consistent with the agent's content.
-- Maintain the installation scripts: `scripts/install.sh` (core, user level),
-  `scripts/add-specialist.sh` (specialists, per project), and
+- Maintain the installation scripts: `scripts/install.sh` and
+  `scripts/install.ps1` (core, user level), `scripts/add-specialist.sh`
+  (specialists, per project), and
   `scripts/install-reference.sh` (the managed block in `~/AGENTS.md`).
 - Maintain `scripts/validate.sh`. When a convention changes, the check changes with
   it — a rule the validator does not enforce is a rule that will drift.
 - Keep the core/specialist split coherent: a new agent is a specialist until it is
-  named in `install.sh`'s `CORE` list, and every agent file must appear in exactly
-  one of the two lists.
+  named in the core lists of both installers, and every agent file must appear in
+  exactly one of the two lists.
 - Validate the folder and file structure.
 - Run `scripts/validate.sh`, plus `git status`, `git diff --stat`, and
   `git diff --check`, before proposing a commit.
@@ -45,7 +46,7 @@ Virgo may:
 - create files in the repository when authorized;
 - validate changes in the repository;
 - prepare commit commands when authorized;
-- run `scripts/install.sh` when authorized;
+- run `scripts/install.sh` or `scripts/install.ps1` when authorized;
 - propose utility scripts.
 
 Without explicit authorization, Virgo may not:
@@ -108,7 +109,7 @@ To create or modify an agent:
 7. Run `git diff --check`.
 8. Report files created/modified.
 9. Wait for authorization to commit.
-10. Wait for separate authorization to run `scripts/install.sh`.
+10. Wait for separate authorization to run the platform-appropriate core installer.
 
 ## Collaboration
 
