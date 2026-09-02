@@ -1,67 +1,48 @@
 #!/usr/bin/env bash
-# Sync the team description into the global reference files that Claude Code and
-# Codex read on every session.
+# Sync the team's global reference blocks into the files Claude Code and Codex
+# read on every session.
+#
+# Two blocks, two files, because two runtimes read different things:
+#
+#   reference/agents-block.md   -> ~/AGENTS.md          (roster; Codex + Claude Code)
+#   reference/routing-block.md  -> ~/.claude/CLAUDE.md  (routing; Claude Code only)
+#
+# The roster says who exists and what each one owns, and is runtime-neutral. The
+# routing block says how work is dispatched - subagent_type, model floors, hooks,
+# parallelism - which is meaningless to Codex, so it does not go in AGENTS.md.
 #
 # Only the block between the markers is managed. Everything else in those files
-# — your graphify note, the Codex model-assignment rules, whatever you add later
-# — is preserved untouched. Running this twice changes nothing the second time.
+# - your graphify note, whatever you add later - is preserved untouched. Running
+# this twice changes nothing the second time.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BLOCK="$REPO_ROOT/reference/agents-block.md"
+SYNC_PY="$REPO_ROOT/scripts/_sync_block.py"
 
-START="<!-- agent-team-config:start -->"
-END="<!-- agent-team-config:end -->"
+# sync_block <block-file> <target-file> <start-marker> <end-marker>
+#
+# On the first run the helper also replaces a hand-written section carrying the
+# block's own top-level heading, so syncing does not duplicate what was already
+# there by hand.
+sync_block() {
+  local block="$1" target="$2" start="$3" end="$4"
+
+  if [ ! -f "$block" ]; then
+    echo "Missing $block" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$target" ]; then
+    echo "Creating $target"
+    mkdir -p "$(dirname "$target")"
+    : > "$target"
+  fi
+
+  BLOCK="$block" TARGET="$target" START="$start" END="$end" python3 "$SYNC_PY"
+}
 
 # ~/AGENTS.md is read by Codex; ~/.claude/CLAUDE.md is read by Claude Code.
-# CLAUDE.md already imports AGENTS.md via @-reference, so the block lives in
-# AGENTS.md and CLAUDE.md only needs to keep that import.
-TARGET="$HOME/AGENTS.md"
-
-if [ ! -f "$BLOCK" ]; then
-  echo "Missing $BLOCK" >&2
-  exit 1
-fi
-
-if [ ! -f "$TARGET" ]; then
-  echo "Creating $TARGET"
-  : > "$TARGET"
-fi
-
-# Rewrite with python so the marker handling is exact rather than sed-fragile.
-BLOCK="$BLOCK" TARGET="$TARGET" START="$START" END="$END" python3 - <<'PY'
-import os, pathlib, re
-
-block = pathlib.Path(os.environ["BLOCK"]).read_text().strip()
-target = pathlib.Path(os.environ["TARGET"])
-start, end = os.environ["START"], os.environ["END"]
-
-managed = f"{start}\n{block}\n{end}"
-text = target.read_text()
-
-pattern = re.compile(re.escape(start) + r".*?" + re.escape(end), re.S)
-
-if pattern.search(text):
-    new = pattern.sub(lambda _: managed, text, count=1)
-    action = "updated managed block in"
-else:
-    # First run. Drop a pre-existing hand-written "# subagentes" section so the
-    # managed block replaces it instead of duplicating it.
-    legacy = re.compile(r"^#+ *subagentes\b.*?(?=^#[^#]|\Z)", re.S | re.M | re.I)
-    if legacy.search(text):
-        text = legacy.sub("", text)
-        action = "replaced hand-written subagentes section in"
-    else:
-        action = "appended managed block to"
-    text = text.rstrip()
-    new = (text + "\n\n" if text else "") + managed + "\n"
-
-if new != target.read_text():
-    target.write_text(new)
-    print(f"{action} {target}")
-else:
-    print(f"already current: {target}")
-PY
+sync_block "$REPO_ROOT/reference/agents-block.md" "$HOME/AGENTS.md" "<!-- agent-team-config:start -->" "<!-- agent-team-config:end -->"
 
 # Claude Code reads ~/.claude/CLAUDE.md. Ensure it imports AGENTS.md rather than
 # carrying a second copy that can drift.
@@ -84,5 +65,10 @@ else
   mv "$CLAUDE_MD.tmp" "$CLAUDE_MD"
   echo "Added import to $CLAUDE_MD"
 fi
+
+# The routing rules live in CLAUDE.md itself rather than in the imported roster:
+# they are Claude Code mechanics. Synced after the import so a freshly created
+# CLAUDE.md keeps the import on its first line.
+sync_block "$REPO_ROOT/reference/routing-block.md" "$CLAUDE_MD" "<!-- agent-team-config:routing:start -->" "<!-- agent-team-config:routing:end -->"
 
 echo "Done."

@@ -237,6 +237,17 @@ done <<< "$SPLIT"
 
 # ------------------------------------------------------------------ escalation
 
+# --------------------------------------------------------------- routing block
+
+head_ "Routing block (reference/routing-block.md -> ~/.claude/CLAUDE.md)"
+
+python3 "$REPO_ROOT/scripts/_check_routing.py" > "$TMP"
+
+while IFS=$'	' read -r status detail; do
+  [ -z "${status:-}" ] && continue
+  if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+done < "$TMP"
+
 head_ "Escalation graph"
 
 python3 - > "$TMP" <<'PY'
@@ -312,6 +323,18 @@ for s in scripts/*.sh; do
     continue
   fi
   pass "$name"
+done
+
+# The helpers the shell scripts call. They hold the marker rewriting and the
+# routing checks, which is exactly the logic a shell heredoc mangles.
+for s in scripts/*.py; do
+  [ -e "$s" ] || continue
+  name="$(basename "$s")"
+  if python3 -c "import ast,sys;ast.parse(open(sys.argv[1],encoding='utf-8').read())" "$s" 2>/dev/null; then
+    pass "$name"
+  else
+    fail "$name: syntax error"
+  fi
 done
 
 # ------------------------------------------------------------------- hygiene
