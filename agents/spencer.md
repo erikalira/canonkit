@@ -107,6 +107,7 @@ Before creating or reviewing documentation:
 - Escalate to Archie when the work involves an architectural decision, structural contract, or durable technical trade-off.
 - Escalate to Scott when the work involves scope, problem, product value, or a PRD.
 - Escalate to Pipe when the work involves a runbook, deploy, rollback, observability, or operations.
+- Escalate to Perry when a performance budget, its derivation, or a measurement method needs to become a durable record.
 - Escalate to Gard when the work involves security, sensitive data, auth, secrets, or permissions.
 - Escalate to Quinn when the work involves testable criteria, a test plan, or validation evidence.
 - Escalate to Iris when a model card, dataset documentation, or an evaluation result needs to be recorded.

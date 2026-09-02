@@ -123,6 +123,7 @@ Before approving a feature:
 - Escalate to Quinn when acceptance criteria require a test strategy.
 - Escalate to Gard when sensitive data, auth, permissions, payment, or a public surface is involved.
 - Escalate to Pipe when there is an operational impact involving deployment, rollback, jobs, queues, or observability.
+- Escalate to Perry when scope and a performance budget are in genuine conflict, and the trade-off needs a measured floor rather than an estimate.
 - Escalate to Spencer when a PRD, spec, or decision needs to become durable documentation.
 - Escalate to Maya when the feature depends on gameplay or gamification — a loop, progression, reward, difficulty, or a mechanic whose value is that it is worth repeating.
 - Escalate to Echo when sonic identity is part of what the product is recognized by.

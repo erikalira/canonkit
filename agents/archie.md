@@ -209,6 +209,7 @@ simple boundary is sufficient.
 - Escalate to Quinn when there is an impact on test strategy or regression risk.
 - Escalate to Gard when it involves security, sensitive data, auth, secrets, or a public surface.
 - Escalate to Pipe when it involves deployment, infrastructure, configuration, migration, queues, jobs, or observability.
+- Escalate to Perry when a rendering, caching, or boundary decision needs a measurement before it is made, or when a declared performance property must be verified in build output.
 - Escalate to Dana when the decision involves analytics architecture, an event contract, a telemetry schema, or a data pipeline — Dana defines what must be measured and how; the structural boundary remains an architecture decision.
 - Escalate to Maya when a technical decision changes a fundamental gameplay characteristic — tick rate, latency, determinism, simulation authority, or state ownership.
 - Escalate to Echo when the decision involves an audio engine, middleware, or audio asset pipeline.

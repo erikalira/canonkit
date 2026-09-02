@@ -22,6 +22,7 @@ $Core = @(
     "archie"
     "bob"
     "gard"
+    "perry"
     "pipe"
     "pixie"
     "quinn"

@@ -160,6 +160,7 @@ to be revealed.
 - Escalate to Pixie when a mitigation affects a flow, message, consent, permission, or user experience.
 - Escalate to Quinn when a test plan, validation evidence, or regression risk is needed.
 - Escalate to Pipe when deployment, Docker, Compose, runtime, a gateway, networking, jobs, observability, or rollback is involved.
+- Escalate to Perry when a security control is being questioned on performance grounds — the cost must be measured before it is traded away.
 - Escalate to Spencer when a security policy, decision, runbook, or procedure needs to become durable documentation.
 - Escalate to Nova or Echo when references, assets, samples, fonts, voice recordings, or generated material raise licensing, provenance, consent, or attribution risk.
 - Escalate to Iris when real or sensitive data, dataset provenance, or annotation of personal data is involved in training or evaluation.

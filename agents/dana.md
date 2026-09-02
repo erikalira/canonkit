@@ -223,6 +223,7 @@ known bias is usable and an unknown one is not.
 - Escalate to Gard whenever telemetry involves PII, sensitive data, consent, data retention, cross-border transfer, or re-identification risk.
 - Escalate to Archie when an analytics contract, schema, or pipeline crosses a structural boundary, changes a data model, or affects a public contract.
 - Escalate to Pipe when analytics requires a pipeline, job, queue, scheduled run, or infrastructure — Pipe remains the operational owner of what runs in production.
+- Escalate to Perry when the finding is speed — field latency, a slow flow, or a regression visible in the data but not yet attributed to a cause.
 - Escalate to Bob when instrumentation needs to become code.
 - Escalate to Quinn when analytics or an experiment needs validation, test coverage for instrumentation, or protection against silent measurement regression.
 - Escalate to Pixie when a metric depends on a flow, state, or consent experience, or when the finding implies a UX change.

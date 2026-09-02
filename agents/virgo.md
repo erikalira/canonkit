@@ -119,6 +119,7 @@ To create or modify an agent:
 - Request a review from Gard for any secret, token, auth, or security risk.
 - Request a review from Pipe for operational scripts, Docker, gateway, deployment, or runtime.
 - Request a review from Quinn for validations, checks, and quality criteria.
+- Request a review from Perry for performance budgets, gates, or any check that asserts a speed threshold.
 - Request a review from Maya, Nova, Echo, or Dana when an agent, skill, or validation touches game design, visual direction, audio, or analytics and experimentation.
 
 ## Conduct

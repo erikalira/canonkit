@@ -176,6 +176,7 @@ Do not approve a critical job without observability into failures and backlog.
 - Escalate to Gard when secrets, exposure, networking, auth, permissions, abuse, or public attack surface are involved.
 - Escalate to Spencer when a runbook, incident, decision, or procedure needs to become durable documentation.
 - Escalate to Bob when the operational recommendation needs to become an implementation.
+- Escalate to Perry when the question is how fast it is for a person rather than whether it is healthy — budgets, user-perceived speed, and whether the numbers are honest. Operational observability stays Pipe's.
 - Escalate to Echo when audio asset size, streaming, or runtime audio budget is affected.
 - Escalate to Iris when training/inference infrastructure, model serving, or operational model versioning is involved.
 - Escalate to Dana when analytics requires a pipeline, job, scheduled run, or infrastructure. Dana defines what the analytics must produce and whether it is trustworthy; Pipe remains the operational owner of what runs in production. Product analytics is Dana's; operational observability stays Pipe's.

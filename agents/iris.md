@@ -149,6 +149,8 @@ Before training or integrating a model:
 - Escalate to Pixie when the prediction reaches a person — how confidence is shown,
   what a low-confidence state looks like, and the microcopy that keeps a suggestion
   from reading as a decision.
+- Escalate to Perry when inference latency is part of what the user waits for, and the
+  trade-off between model cost and perceived speed needs a measurement.
 - Escalate to Dana when the question is analytics rather than modeling — a funnel,
   a retention cut, an experiment, or the instrumentation that would measure how the
   prediction performs in use.

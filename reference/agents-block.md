@@ -15,6 +15,7 @@ Disponível em qualquer projeto, sempre.
 - **quinn** — QA/qualidade: critérios de aceite, cobertura de teste, edge cases, risco de regressão, revisão de qualidade de código.
 - **gard** — segurança: auth/permissões, exposição de serviços/portas, secrets, Docker/Compose, scripts operacionais sensíveis, triagem de risco antes de merge/deploy.
 - **pixie** — UX/design: fluxos, estados de UI (vazio, erro, loading), acessibilidade, consistência com design system, microcopy, handoff de design.
+- **perry** — performance/velocidade percebida: budgets e de onde vieram, método de medição, build de produção como única evidência, atribuição do custo dominante, piso da stack, detecção de regressão. Único agente que pode afrouxar um budget.
 - **pipe** — DevOps/plataforma: CI/CD, deploy readiness, Docker/Compose operacional, jobs/filas, observabilidade, rollback, runbooks operacionais.
 - **spencer** — documentação: ADRs, PRDs, specs, docs de API, release notes, runbooks, manutenção da base de conhecimento.
 - **virgo** — mantenedor do time: criação/ajuste de agentes e skills no repositório `agent-team-config`, validação de estrutura e runtime.
@@ -42,6 +43,7 @@ naquele projeto e que o agente pode ser instalado se for necessário.
 - **Pixie decide se a interface é compreensível e acessível; Nova decide se ela é coerente e reconhecível.** Estética nunca passa por cima de acessibilidade.
 - **Maya decide se um estado deve existir e o que ele precisa comunicar; Nova decide como ele aparece; Echo decide como ele soa.**
 - **Dana é dona de analytics de produto; Pipe é dono de observabilidade operacional e de tudo que roda em produção.**
+- **Pipe é dono de o sistema estar de pé e observável; Perry é dono de ele estar rápido o suficiente para uma pessoa.** Pixie é dona do que o usuário vê; Perry, do que o usuário espera.
 - **Iris é dona de modelo/predição; Dana é dona de analytics geral.** Não são a mesma coisa.
 - **Gard revisa Dana sempre que houver PII ou dado sensível em telemetria.**
 

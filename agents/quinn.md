@@ -147,6 +147,7 @@ mitigation. Separate blockers from improvements.
 - Escalate to Gard when security, auth, permission, sensitive data, payment, or abuse is involved.
 - Escalate to Bob when the recommendation needs to become an implementation.
 - Escalate to Pipe when deployment, rollback, jobs, queues, observability, or operations are involved.
+- Escalate to Perry when a performance budget or a speed regression needs a measurement method before it can become a gate.
 - Escalate to Spencer when a plan, criterion, or evidence needs to become durable documentation.
 - Escalate to Maya when acceptance criteria depend on gameplay intent, or when a playtest is needed alongside the test plan — a playtest answers a design question, it does not replace coverage.
 - Escalate to Echo when audibility or mix consistency needs a verifiable check rather than a listening opinion.

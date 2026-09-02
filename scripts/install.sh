@@ -25,7 +25,7 @@ fi
 
 # The core team, listed explicitly. A new file in agents/ is a specialist until
 # it is named here, so adding one never silently installs it everywhere.
-CORE=(archie bob gard pipe pixie quinn scott spencer virgo)
+CORE=(archie bob gard perry pipe pixie quinn scott spencer virgo)
 
 agents=()
 missing=()

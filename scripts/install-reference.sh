@@ -66,7 +66,10 @@ PY
 # Claude Code reads ~/.claude/CLAUDE.md. Ensure it imports AGENTS.md rather than
 # carrying a second copy that can drift.
 CLAUDE_MD="$HOME/.claude/CLAUDE.md"
-IMPORT="@$HOME/AGENTS.md"
+# Tilde-style so the import resolves in every runtime. Under Git Bash on
+# Windows, $HOME expands to an MSYS path (/c/Users/...) that Claude Code
+# cannot resolve; "~" is correct on all three platforms.
+IMPORT="@~/AGENTS.md"
 
 mkdir -p "$(dirname "$CLAUDE_MD")"
 if [ ! -f "$CLAUDE_MD" ]; then

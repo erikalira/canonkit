@@ -30,6 +30,7 @@ Disponível para qualquer mudança, em qualquer projeto.
 | `quinn` | Qualidade — estratégia de teste, cobertura, risco de regressão |
 | `gard` | Segurança — auth, secrets, exposição de serviço |
 | `pixie` | UX — fluxos, estados de UI, acessibilidade, microcopy |
+| `perry` | Performance — budgets medidos, método de medição, velocidade percebida, regressão |
 | `pipe` | DevOps — CI/CD, Docker, deploy readiness, observabilidade, rollback |
 | `spencer` | Documentação — ADRs, specs, runbooks, release notes |
 | `virgo` | Maintainer — configuração de agentes |
@@ -62,6 +63,9 @@ Fronteiras que costumam confundir:
   decide como ele aparece; Echo decide como ele soa.**
 - **Dana é dona de analytics de produto; Pipe é dono de observabilidade
   operacional e de tudo que roda em produção.**
+- **Pipe é dono de o sistema estar de pé e observável; Perry é dono de ele estar
+  rápido o suficiente para uma pessoa.** Pixie é dona do que o usuário vê; Perry,
+  do que o usuário espera. Só Perry afrouxa um budget de performance.
 
 ## Install
 
@@ -86,7 +90,7 @@ com bypass, sem alterar a configuração permanente do sistema:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
 ```
 
-Copia os 9 agentes core para os dois caminhos de runtime:
+Copia os 10 agentes core para os dois caminhos de runtime:
 
 - `~/.agents`
 - `~/.claude/agents`

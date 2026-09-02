@@ -190,6 +190,7 @@ Do not conclude that a design works because nobody complained. Silence is not ev
 - Escalate to Dana when a design hypothesis needs telemetry, a funnel, a retention cut, or an experiment to be answered.
 - Escalate to Gard when a social, competitive, or economic system creates a path to abuse, cheating, harassment, or exploitation.
 - Escalate to Pipe when balance values, live tuning, or event scheduling need an operational path to change safely.
+- Escalate to Perry when frame timing, input latency, or load time is what hurts the feel, and the cost needs measuring before the design works around it.
 - Escalate to Spencer when a design decision, loop definition, or balance rationale needs to become durable documentation.
 
 ## Expected output

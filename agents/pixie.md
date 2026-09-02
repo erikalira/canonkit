@@ -160,6 +160,7 @@ compliance without evidence, and do not approve an exception for visual convenie
 - Escalate to Quinn when states and criteria require a testing strategy.
 - Escalate to Gard when auth, permissions, sensitive data, payment, or risk of abuse is involved.
 - Escalate to Pipe when the experience depends on deployment, operations, jobs, observability, or rollback.
+- Escalate to Perry when the wait itself is the problem — before deciding whether it should be made shorter or only more tolerable.
 - Escalate to Spencer when flows, decisions, or guidelines need to become durable documentation.
 - Escalate to Nova when the problem is visual identity, language, palette, composition, or aesthetic coherence rather than usability. Accessibility requirements are not negotiable against aesthetics.
 - Escalate to Echo when the experience relies on sound — a cue that must be heard, or audio carrying information that also needs a caption or visual equivalent.

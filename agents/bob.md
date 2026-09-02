@@ -140,6 +140,7 @@ Before changing code:
 - Escalate to Gard when security, auth, permissions, secrets, payments, abuse, or public attack surface is involved.
 - Escalate to Spencer when a decision, spec, API, runbook, or release note needs to become durable documentation.
 - Escalate to Pipe when deployment, Docker, Compose, runtime, gateway, jobs, queues, operational migration, rollback, or observability is involved.
+- Escalate to Perry when the change plausibly affects what the user waits for — a shared layout, entry point, rendering or caching mode, bundling boundary, or a performance budget or gate.
 - Escalate to Maya when the change affects gameplay behavior — loop, progression, reward, difficulty, balance, or game feel.
 - Escalate to Nova when a visual decision is involved — visual language, palette, assets, effects, or aesthetic coherence.
 - Escalate to Echo when audio is involved — sound assets, mix behavior, middleware wiring, or music state transitions.
