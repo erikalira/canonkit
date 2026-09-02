@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Validate the repository against the conventions the README promises.
 #
-# This is the Virgo protocol, automated: frontmatter, structure, the core /
-# specialist split, escalation routing, and the script inventory. It checks the
+# This is the Virgo protocol, automated: frontmatter (name, description, model),
+# structure, the core / specialist split, escalation routing, and the script inventory. It checks the
 # rules the team actually agreed on — not uniformity the repo never had. Pipe
 # says "Operational authority" instead of "Authority", Virgo classifies no
 # product risk, and both are correct; the checks below are written to accept
@@ -54,6 +54,7 @@ for f in agents/*.md; do
 
   name="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^name:/{print $2}' "$f")"
   desc="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^description:/{print}' "$f")"
+  model="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^model:/{print $2}' "$f")"
 
   if [ -z "$name" ]; then
     fail "$base: no name in frontmatter"
@@ -61,6 +62,10 @@ for f in agents/*.md; do
     fail "$base: frontmatter name is '$name' — must match the filename"
   elif [ -z "$desc" ]; then
     fail "$base: no description in frontmatter"
+  elif [ -z "$model" ]; then
+    fail "$base: no model in frontmatter — without it the runtime silently uses the session default"
+  elif [ "$model" != "opus" ] && [ "$model" != "sonnet" ] && [ "$model" != "haiku" ]; then
+    fail "$base: model is '$model' — expected opus, sonnet, or haiku"
   else
     # The description is what the delegating model reads to route work. A bare
     # title tells it nothing about what the agent owns.

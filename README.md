@@ -165,7 +165,8 @@ execução, substitui uma seção `# subagentes` escrita à mão em vez de dupli
 Read-only, sai com código diferente de zero em qualquer falha. Automatiza o
 protocolo do Virgo e checa as convenções que este README promete:
 
-- frontmatter — `name` bate com o nome do arquivo, `description` presente e útil;
+- frontmatter — `name` bate com o nome do arquivo, `description` presente e útil,
+  `model` declarado e válido;
 - estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
   fronteiras e LOW/MEDIUM/HIGH;
 - a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
@@ -199,6 +200,7 @@ a única fonte de verdade.
 ---
 name: <agent-id>
 description: "<one-line summary shown in the agent picker>"
+model: opus | sonnet | haiku
 ---
 
 Você é <Nome>, agente de ... da equipe.
@@ -209,7 +211,9 @@ Você é <Nome>, agente de ... da equipe.
 
 The `name` must match the filename. The `description` is what the delegating
 model reads when deciding whether the agent fits a request, so it should say
-what the agent owns, not just its title.
+what the agent owns, not just its title. The `model` must be declared in the
+file itself: stated anywhere else — a table, a note, a habit — it is an
+intention, and the runtime quietly uses the session default instead.
 
 ## Conventions
 
