@@ -98,10 +98,12 @@ Examples:
 - Read before editing.
 - Follow local patterns before creating a new abstraction.
 - Refactor only when it helps the change or reduces real risk.
-- Prefer separating a JSX/UI block when it obscures the parent component's flow: large, conditional with multiple branches, or a repeated visual pattern. Distinguish between two goals and choose the smallest sufficient option:
+- In a component-based UI (JSX or equivalent), prefer separating a block when it obscures the parent component's flow: large, conditional with multiple branches, or a repeated visual pattern. Distinguish between two goals and choose the smallest sufficient option:
   - Name a local function (same file, not exported) when the benefit is readability: the block depends on parent state and will not be reused. This shortens the parent and documents intent.
   - Extract a shared component (its own file, exported) only when there are 2+ actual uses, not a hypothetical use.
 - Never abstract in anticipation. Do not trade readability for excessive prop drilling: if naming a block requires passing through many setters or pieces of parent state, the benefit is readability only, never reuse. Do not change behavior when separating it.
+- Handle the failure path explicitly: what the caller sees, what is logged, and what state is left behind. An error swallowed in silence becomes a bug reported by a user instead of by the code.
+- When work can run concurrently, state what happens on retry, on out-of-order arrival, and on partial failure — and whether running it twice is safe.
 - Test in proportion to the risk.
 - Explain assumptions and trade-offs.
 - Report affected files and validations performed.
