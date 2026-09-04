@@ -1,10 +1,22 @@
-# Agent Team Config
+# canonkit
 
-Versioned source for the agent team used with Claude Code.
+Versioned source for the agent team used with Claude Code and Codex. Published
+on npm as `canonkit`; the repository is `agent-team-config`.
 
 Each agent is a single Markdown file in `agents/`, stored in exactly the format
 the runtime reads. Installing is a copy — there is no generation step and
 nothing to reconcile by hand.
+
+```bash
+npx canonkit install
+```
+
+> **canonkit 1.0 is not canonkit 0.x.** Versions up to `0.2.0` were a different
+> tool: a generator that installed Spec-Kit-style governance templates
+> (`.specify/`, constitution, gates, scale profiles) into a project, driven by
+> `canonkit init`. That tool is archived and none of its commands exist here.
+> The name carried over; the program did not. Pin `canonkit@0.2.0` if you were
+> using it.
 
 ## Agents
 
@@ -71,23 +83,21 @@ Fronteiras que costumam confundir:
 
 ### Core, no usuário
 
-Linux e macOS:
+Sem clonar nada:
 
 ```bash
-./scripts/install.sh
+npx canonkit install
 ```
 
-Windows (PowerShell):
+Roda igual em Linux, macOS e Windows: o instalador é Node puro, sem nenhuma
+dependência. Um instalador que roda **antes** de você confiar no repositório não
+deveria pedir que você confie numa árvore de dependências primeiro.
 
-```powershell
-.\scripts\install.ps1
-```
+De um clone, os scripts continuam valendo — são wrappers do mesmo `bin/cli.js`:
 
-Se a política de execução bloquear scripts locais, rode somente essa execução
-com bypass, sem alterar a configuração permanente do sistema:
-
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```bash
+./scripts/install.sh          # Linux e macOS
+.\scripts\install.ps1         # Windows
 ```
 
 Copia os 10 agentes core para os dois caminhos de runtime:
@@ -95,14 +105,68 @@ Copia os 10 agentes core para os dois caminhos de runtime:
 - `~/.agents`
 - `~/.claude/agents`
 
-Ambos são lidos pelo Claude Code. O script mantém os dois idênticos, que é o que
-impede a divergência entre eles.
+Ambos são lidos pelo Claude Code. O instalador mantém os dois idênticos, que é o
+que impede a divergência entre eles. Em seguida sincroniza os blocos de
+referência globais (`--no-reference` pula esse passo).
 
-As listas de core são explícitas e validadas nos dois instaladores. Um arquivo
-novo em `agents/` é specialist até ser nomeado ali — adicionar um agente nunca o
-instala em todo lugar por acidente. Os instaladores também **removem** specialists
-que tenham sobrado no nível de usuário de instalações anteriores; uma cópia
-esquecida ali fica disponível em todo projeto e anula a regra.
+O split core/specialist é declarado no **frontmatter de cada agente** (`tier:`),
+ao lado de `name` e `model` — que é onde o runtime já lê os outros fatos sobre o
+agente. Antes era uma lista literal repetida em três instaladores, e manter as
+três honestas custava uma seção inteira do `validate.sh`. Um arquivo novo em
+`agents/` sem `tier` válido não instala: falha, em vez de assumir um padrão — os
+dois padrões possíveis estão errados, um instala o agente em todo lugar e o
+outro o esconde.
+
+Os instaladores também **removem** specialists que tenham sobrado no nível de
+usuário de instalações anteriores; uma cópia esquecida ali fica disponível em
+todo projeto e anula a regra. Só nomes que este repo é dono são tocados.
+
+### Codex
+
+O mesmo core também vai para `~/.codex/agents/<nome>.toml`, no formato de custom
+agent que o Codex lê: `name`, `description`, `developer_instructions`, mais
+`model` e `model_reasoning_effort`. As instruções são o corpo do mesmo
+`agents/<nome>.md` — não existe uma segunda cópia editável. Antes disso, a única
+coisa que este repo conseguia contar ao Codex era o roster em prosa no
+`AGENTS.md`, que descreve o time mas não consegue acionar ninguém.
+
+O `model` do frontmatter diz o quanto o trabalho *normal* daquele agente exige,
+no eixo do Claude. O Codex tem eixo próprio, então a intenção atravessa por um
+mapa declarado — e não por um segundo campo de modelo em cada agente, que seriam
+mais quinze linhas para manter em sincronia e mais uma coisa para divergir:
+
+| frontmatter | Codex | reasoning effort |
+| --- | --- | --- |
+| `opus` | `gpt-5.6` | `high` |
+| `sonnet` | `gpt-5.6` | `medium` |
+| `haiku` | `gpt-5.6-luna` | `low` |
+
+Todo agente deste time é agente de julgamento, não scanner otimizado para
+velocidade — por isso os modelos rápidos ficam no fim do mapa e nada seleciona
+`gpt-5.6-luna` hoje.
+
+Seus próprios custom agents do Codex vivem no mesmo diretório e não são da conta
+do instalador. A única coisa que ele comenta é mais estreita: um arquivo que
+parece **cópia antiga de um agente que este repo é dono**, num formato que o
+Codex não carrega dali — o que deixa uma segunda versão divergente daquele agente
+solta. Reportado, nunca removido: o nome não é um que o repo reivindica, então
+apagar não é decisão de instalador.
+
+Scaffolding (`.gitignore`, `.github/`), diretórios e agentes seus não geram
+aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
+
+### Comandos
+
+| Comando | O que faz |
+| --- | --- |
+| `install` | core no usuário + blocos de referência globais |
+| `install --no-reference` | só os agentes |
+| `reference` | só os blocos globais |
+| `add <nome>...` | specialists no projeto atual |
+| `remove <nome>...` | remove specialists do projeto atual |
+| `list` | o roster e o que está instalado onde |
+
+`--dry-run` funciona em todos: relata o que mudaria sem escrever nada.
 
 ### Specialists, por projeto
 
@@ -110,24 +174,31 @@ Rodado **de dentro do projeto** que vai receber os agentes:
 
 ```bash
 cd ~/meu-projeto
-~/erika/agent-team-config/scripts/add-specialist.sh maya nova
+npx canonkit add maya nova
 ```
 
 Escolher quais specialists o projeto tem continua sendo decisão explícita sua —
-o script só cuida do que é fácil esquecer. Dois runtimes precisam saber do
-agente, e esquecer um deles é a falha que o script existe para evitar:
+o instalador só cuida do que é fácil esquecer. **Três** destinos precisam saber
+do agente, e esquecer um deles é a falha que ele existe para evitar:
 
 - **Claude Code** lê `.claude/agents/<nome>.md`
-- **Codex** lê `AGENTS.md` — ele não olha `.claude/agents/`
+- **Codex** lê `.codex/agents/<nome>.toml` — ele não olha `.claude/agents/`
+- **o `AGENTS.md` do projeto** é o que diz ao agente principal *quando* acionar
+  cada um; sem ele o subagente existe e ninguém o chama
 
-O script copia o arquivo **e** registra o agente no `AGENTS.md` do projeto, num
-passo só. O bloco é reconstruído a partir do que está de fato em disco, então o
-`AGENTS.md` sempre reflete a realidade e não o histórico de comandos.
+Os três são escritos num passo só. O bloco do `AGENTS.md` é reconstruído a partir
+do que está de fato em disco, então ele sempre reflete a realidade e não o
+histórico de comandos.
 
 ```bash
-add-specialist.sh --list           # o que este projeto tem instalado
-add-specialist.sh --remove nova    # remove o arquivo e a entrada
+npx canonkit list            # o que este projeto tem instalado
+npx canonkit remove nova     # remove o arquivo e a entrada
 ```
+
+A descrição de uma linha que vai para o `AGENTS.md` do projeto é lida do próprio
+`reference/agents-block.md`, não de uma segunda lista dentro do instalador — a
+frase final "Aciona quando ..." fica no roster, porque é orientação para
+escolher um agente e não descrição de um.
 
 Removendo o último specialist, o bloco inteiro sai do `AGENTS.md`. Tudo fora dos
 marcadores é preservado, e o script se recusa a rodar dentro do próprio
@@ -135,8 +206,11 @@ marcadores é preservado, e o script se recusa a rodar dentro do próprio
 
 ### Arquivos de referência globais
 
+Já rodam junto com `install`. Standalone, para quando você editou um bloco sem
+mexer em nenhum agente:
+
 ```bash
-./scripts/install-reference.sh
+npx canonkit reference
 ```
 
 Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
@@ -179,19 +253,37 @@ Read-only, sai com código diferente de zero em qualquer falha. Automatiza o
 protocolo do Virgo e checa as convenções que este README promete:
 
 - frontmatter — `name` bate com o nome do arquivo, `description` presente e útil,
-  `model` declarado e válido;
+  `model` e `tier` declarados e válidos;
 - estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
   fronteiras e LOW/MEDIUM/HIGH;
 - a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
-- o split core/specialist — todo agente está em exatamente uma das listas, os
-  instaladores Bash e PowerShell concordam, e todos aparecem em
-  `reference/agents-block.md`;
+- o split core/specialist — todo agente declara `tier`, todos têm linha de resumo
+  em `reference/agents-block.md`, o roster não lista nome sem arquivo, e as duas
+  seções do roster batem com o `tier` declarado;
 - o grafo de escalation — ninguém isolado, e ninguém escalando para um papel
   genérico ("the security owner") em vez de um agente nomeado;
 - o bloco de roteamento — todo agente aparece nele, a divisão core/specialist bate
   com os instaladores, a coluna de autoridade bate com quem declara veto no próprio
   arquivo, e a regra de modelo bate com o frontmatter;
+- o pacote npm — `bin/cli.js` compila, `files[]` inclui `agents/` e `reference/`
+  (o CLI publicado os lê em runtime, e um clone sempre os tem — é o erro de
+  empacotamento que rodar de um clone nunca pega), `bin` aponta para o arquivo
+  certo, LICENSE existe;
 - sintaxe dos scripts e higiene do repo.
+
+Os testes são separados e rodam o CLI de verdade contra um filesystem de verdade,
+num `HOME` descartável:
+
+```bash
+npm test
+```
+
+Sem mocks: a falha que este instalador pode de fato causar é escrever os bytes
+errados num arquivo que você já tinha — `~/AGENTS.md`, `~/.claude/CLAUDE.md`, o
+`AGENTS.md` de um projeto — e um filesystem mockado não prova nada sobre isso.
+
+`scripts/` e `test/` não vão no pacote npm — o tarball leva só `bin/`, `agents/`,
+`reference/`, README e LICENSE. Essas duas verificações são do clone.
 
 Checa a regra, não uniformidade: `pipe` usa "Operational authority", `virgo` não
 classifica risco de produto, e ambos passam.
@@ -199,12 +291,13 @@ classifica risco de produto, e ambos passam.
 ## Editing an agent
 
 1. Edite `agents/<name>.md` neste repo.
-2. Se for core, rode `./scripts/install.sh` (Linux/macOS) ou
-   `.\scripts\install.ps1` (Windows).
-3. Se for specialist, rode `add-specialist.sh <nome>` de novo nos projetos que o usam.
-4. Se mexeu na descrição do time, rode `./scripts/install-reference.sh`.
-5. Rode `./scripts/validate.sh`.
-6. Commit.
+2. Se for core, rode `npx canonkit install` (ou o script do clone).
+3. Se for specialist, rode `npx canonkit add <nome>` de novo nos
+   projetos que o usam.
+4. Rode `./scripts/validate.sh` e `npm test`.
+5. Commit.
+
+O passo de sincronizar os blocos globais saiu da lista porque `install` já faz.
 
 Não edite `~/.agents`, `~/.claude/agents`, `.claude/agents/` de um projeto, nem o
 bloco gerenciado do `~/AGENTS.md` — a próxima instalação sobrescreve. Este repo é
@@ -216,6 +309,7 @@ a única fonte de verdade.
 ---
 name: <agent-id>
 description: "<one-line summary shown in the agent picker>"
+tier: core | specialist
 model: opus | sonnet | haiku
 ---
 
@@ -229,7 +323,10 @@ The `name` must match the filename. The `description` is what the delegating
 model reads when deciding whether the agent fits a request, so it should say
 what the agent owns, not just its title. The `model` must be declared in the
 file itself: stated anywhere else — a table, a note, a habit — it is an
-intention, and the runtime quietly uses the session default instead.
+intention, and the runtime quietly uses the session default instead. The `tier`
+decides where the agent installs, and is read by every installer; it lives here
+for the same reason the model does — a fact kept beside the thing it describes
+cannot drift from it.
 
 The declared model is a **floor for the agent's normal work**, not a ceiling. A
 dispatch may override it for a task that is clearly an outlier — up for a

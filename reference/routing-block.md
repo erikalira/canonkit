@@ -1,7 +1,7 @@
 # Meu Time (agent team)
 
 Core team in `~/.claude/agents/`, available in every project. Specialists are per project and
-exist only where `add-specialist.sh` installed them. Each agent owns a domain and classifies its
+exist only where `npx canonkit add` installed them. Each agent owns a domain and classifies its
 own work LOW/MEDIUM/HIGH risk before acting. The agents themselves live in the `agent-team-config`
 repo, which is the source of truth; this table is the routing view of it.
 

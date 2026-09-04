@@ -13,7 +13,6 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
 block = (REPO / "reference/routing-block.md").read_text(encoding="utf-8")
-installer = (REPO / "scripts/install.sh").read_text(encoding="utf-8")
 agents = sorted(p.stem for p in (REPO / "agents").glob("*.md"))
 
 
@@ -21,12 +20,13 @@ def agent_text(name):
     return (REPO / "agents" / f"{name}.md").read_text(encoding="utf-8")
 
 
-def installer_list(var):
-    m = re.search(rf"^{var}=\((.*?)\)", installer, re.M | re.S)
-    return set(m.group(1).split()) if m else set()
+def tier(name):
+    m = re.search(r"^tier: *(\w+)", agent_text(name), re.M)
+    return m.group(1) if m else None
 
 
-core, specialists = installer_list("CORE"), installer_list("SPECIALISTS")
+core = {a for a in agents if tier(a) == "core"}
+specialists = {a for a in agents if tier(a) == "specialist"}
 problems = []
 
 # A name in the block that no longer exists routes work nowhere; an agent
@@ -47,7 +47,7 @@ else:
         side = "specialist" if block.find(f"**{a.capitalize()}**") > marker.start() else "core"
         want = "core" if a in core else "specialist" if a in specialists else None
         if want and side != want:
-            problems.append(f"{a} is {want} in install.sh but sits in the {side} table")
+            problems.append(f"{a} is {want} in its frontmatter but sits in the {side} table")
 
 # The authority column decides who cannot be skipped at HIGH risk. A veto
 # claimed here and absent from the agent file misroutes in silence.
