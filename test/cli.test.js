@@ -178,6 +178,75 @@ describe("install", () => {
   });
 });
 
+/* ---------------------------------------------------------------- codex */
+
+describe("codex custom agents", () => {
+  test("writes one TOML per core agent, with the required fields", async () => {
+    const { home } = await scratch("codex-core");
+    assert.equal(run(["install", "--no-reference"], { home }).status, 0);
+
+    const dest = path.join(home, ".codex", "agents");
+    const written = (await readdir(dest)).sort();
+    assert.deepEqual(written, CORE.map((n) => `${n}.toml`).sort());
+
+    const archie = await read(path.join(dest, "archie.toml"));
+    // Codex requires exactly these three; anything else is optional.
+    assert.match(archie, /^name = "archie"$/m);
+    assert.match(archie, /^description = ".+"$/m);
+    assert.match(archie, /^developer_instructions = '''$/m);
+    // The instructions are the agent file's body, not a summary of it.
+    assert.match(archie, /You are Archie/);
+    assert.match(archie, /## Anti-Patterns to Avoid/);
+  });
+
+  test("carries the frontmatter model onto the Codex axis", async () => {
+    const { home } = await scratch("codex-model");
+    run(["install", "--no-reference"], { home });
+    const dest = path.join(home, ".codex", "agents");
+
+    // archie is opus in frontmatter — the demanding end of the map.
+    const archie = await read(path.join(dest, "archie.toml"));
+    assert.match(archie, /^model = "gpt-5\.6"$/m);
+    assert.match(archie, /^model_reasoning_effort = "high"$/m);
+
+    // scott is sonnet — the balanced default.
+    const scott = await read(path.join(dest, "scott.toml"));
+    assert.match(scott, /^model_reasoning_effort = "medium"$/m);
+  });
+
+  test("every agent body survives as a TOML literal string", async () => {
+    // A literal string has no escape for its own delimiter, so a body
+    // containing ''' would truncate the instructions silently at that point.
+    for (const agent of await readAgents()) {
+      assert.ok(!agent.body.includes("'''"), `${agent.name}: body contains '''`);
+      assert.ok(agent.body.length > 500, `${agent.name}: body looks truncated`);
+    }
+  });
+
+  test("reports files it does not own instead of deleting them", async () => {
+    const { home } = await scratch("codex-foreign");
+    const dest = path.join(home, ".codex", "agents");
+    await mkdir(dest, { recursive: true });
+    // An agent from an older setup, saved in a format Codex no longer reads here.
+    await writeFile(path.join(dest, "archie-tech-architect.md"), "stale");
+
+    const result = run(["install", "--no-reference"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /this repo does not own: archie-tech-architect\.md/);
+    assert.ok(existsSync(path.join(dest, "archie-tech-architect.md")), "must not delete unowned files");
+  });
+
+  test("does not leave a specialist at user level", async () => {
+    const { home } = await scratch("codex-stray");
+    const dest = path.join(home, ".codex", "agents");
+    await mkdir(dest, { recursive: true });
+    await writeFile(path.join(dest, "maya.toml"), "name = \"maya\"");
+
+    assert.equal(run(["install", "--no-reference"], { home }).status, 0);
+    assert.equal(existsSync(path.join(dest, "maya.toml")), false);
+  });
+});
+
 /* ------------------------------------------------------------ specialists */
 
 describe("specialists", () => {
@@ -190,6 +259,9 @@ describe("specialists", () => {
     // at .claude/. Both have to learn about the agent.
     assert.ok(existsSync(path.join(project, ".claude", "agents", "maya.md")));
     assert.ok(existsSync(path.join(project, ".claude", "agents", "nova.md")));
+    // Codex reads .codex/agents/<name>.toml and never looks at .claude/.
+    assert.ok(existsSync(path.join(project, ".codex", "agents", "maya.toml")));
+    assert.ok(existsSync(path.join(project, ".codex", "agents", "nova.toml")));
 
     const agentsMd = await read(path.join(project, "AGENTS.md"));
     assert.match(agentsMd, /\*\*maya\*\* — game design/);
@@ -206,6 +278,9 @@ describe("specialists", () => {
     assert.match(agentsMd, /\*\*maya\*\*/);
     assert.doesNotMatch(agentsMd, /\*\*nova\*\*/);
     assert.equal(existsSync(path.join(project, ".claude", "agents", "nova.md")), false);
+    // Removing from one runtime and leaving the other is the drift this avoids.
+    assert.equal(existsSync(path.join(project, ".codex", "agents", "nova.toml")), false);
+    assert.ok(existsSync(path.join(project, ".codex", "agents", "maya.toml")));
   });
 
   test("removing the last specialist drops the block and keeps the rest of the file", async () => {

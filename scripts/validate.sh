@@ -347,6 +347,72 @@ else
   warn "node not found — skipped npm package checks"
 fi
 
+# ------------------------------------------------------------- codex agents
+
+head_ "Codex custom agents"
+
+# Codex loads these as configuration, so a file that does not parse is not a
+# degraded agent — it is an agent that does not exist. Rendering and parsing is
+# the only check that actually proves the emitter escapes what it must.
+if command -v node >/dev/null 2>&1 && python3 -c "import tomllib" 2>/dev/null; then
+  CODEX_TMP="$(node -e '
+    (async () => {
+      const m = await import("./bin/cli.js");
+      const { mkdtemp, writeFile } = await import("node:fs/promises");
+      const os = await import("node:os");
+      const path = await import("node:path");
+      const dir = await mkdtemp(path.join(os.tmpdir(), "atc-codex-"));
+      for (const a of await m.readAgents()) {
+        await writeFile(path.join(dir, a.name + ".toml"), m.codexAgent(a));
+      }
+      process.stdout.write(dir);
+    })().catch((e) => { console.error(e.message); process.exit(1); });
+  ' 2>"$TMP")"
+
+  if [ -z "$CODEX_TMP" ]; then
+    fail "could not render Codex agents: $(cat "$TMP")"
+  else
+    python3 - "$CODEX_TMP" > "$TMP" <<'PY'
+import pathlib, sys, tomllib
+
+d = pathlib.Path(sys.argv[1])
+files = sorted(d.glob("*.toml"))
+problems = []
+
+for f in files:
+    try:
+        data = tomllib.loads(f.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as e:
+        problems.append(f"{f.name} does not parse: {e}")
+        continue
+    # Codex requires these three; without them the file defines no agent.
+    for key in ("name", "description", "developer_instructions"):
+        if not data.get(key):
+            problems.append(f"{f.name} has no {key}")
+    # Codex identifies the agent by `name`, not the filename, so a mismatch
+    # would register the agent under a name nothing routes to.
+    if data.get("name") and data["name"] != f.stem:
+        problems.append(f"{f.name} declares name '{data['name']}'")
+    # A body cut short at a stray delimiter still parses — length is what
+    # catches it.
+    if len(data.get("developer_instructions", "")) < 500:
+        problems.append(f"{f.name} instructions look truncated")
+
+for p in problems:
+    print("FAIL\t" + p)
+if not problems:
+    print(f"OK\t{len(files)} agents render to valid Codex TOML")
+PY
+    while IFS=$'\t' read -r status detail; do
+      [ -z "${status:-}" ] && continue
+      if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+    done < "$TMP"
+    rm -rf "$CODEX_TMP"
+  fi
+else
+  warn "node or python tomllib unavailable — skipped Codex TOML checks"
+fi
+
 # ------------------------------------------------------------------- hygiene
 
 head_ "Repository hygiene"
@@ -362,11 +428,13 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   # truth if it were ever committed.
   # Probe with a path *inside* the directory: check-ignore on a directory that
   # does not exist reports nothing, which would read as "not ignored".
-  if git check-ignore -q .claude/agents/probe.md 2>/dev/null; then
-    pass ".claude/agents/ is ignored"
-  else
-    fail ".claude/agents/ is not ignored — a test copy could be committed"
-  fi
+  for d in .claude/agents .codex/agents; do
+    if git check-ignore -q "$d/probe" 2>/dev/null; then
+      pass "$d/ is ignored"
+    else
+      fail "$d/ is not ignored — a test copy could be committed"
+    fi
+  done
 
   tracked_sensitive="$(git ls-files | grep -Ei '(^|/)(\.env|.*\.token|.*\.secret|auth-profiles\.json|tokens\.json)$' || true)"
   if [ -n "$tracked_sensitive" ]; then

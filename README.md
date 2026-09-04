@@ -113,6 +113,35 @@ Os instaladores também **removem** specialists que tenham sobrado no nível de
 usuário de instalações anteriores; uma cópia esquecida ali fica disponível em
 todo projeto e anula a regra. Só nomes que este repo é dono são tocados.
 
+### Codex
+
+O mesmo core também vai para `~/.codex/agents/<nome>.toml`, no formato de custom
+agent que o Codex lê: `name`, `description`, `developer_instructions`, mais
+`model` e `model_reasoning_effort`. As instruções são o corpo do mesmo
+`agents/<nome>.md` — não existe uma segunda cópia editável. Antes disso, a única
+coisa que este repo conseguia contar ao Codex era o roster em prosa no
+`AGENTS.md`, que descreve o time mas não consegue acionar ninguém.
+
+O `model` do frontmatter diz o quanto o trabalho *normal* daquele agente exige,
+no eixo do Claude. O Codex tem eixo próprio, então a intenção atravessa por um
+mapa declarado — e não por um segundo campo de modelo em cada agente, que seriam
+mais quinze linhas para manter em sincronia e mais uma coisa para divergir:
+
+| frontmatter | Codex | reasoning effort |
+| --- | --- | --- |
+| `opus` | `gpt-5.6` | `high` |
+| `sonnet` | `gpt-5.6` | `medium` |
+| `haiku` | `gpt-5.6-luna` | `low` |
+
+Todo agente deste time é agente de julgamento, não scanner otimizado para
+velocidade — por isso os modelos rápidos ficam no fim do mapa e nada seleciona
+`gpt-5.6-luna` hoje.
+
+Arquivos em `~/.codex/agents/` que este repo não é dono são **reportados, nunca
+removidos** — inclusive agentes de um setup anterior salvos como `.md`, que o
+Codex não carrega desse diretório. Apagar um arquivo cujo nome o repo nunca
+reivindicou não é decisão de instalador.
+
 ### Comandos
 
 | Comando | O que faz |
@@ -136,15 +165,17 @@ npx agent-team-config add maya nova
 ```
 
 Escolher quais specialists o projeto tem continua sendo decisão explícita sua —
-o script só cuida do que é fácil esquecer. Dois runtimes precisam saber do
-agente, e esquecer um deles é a falha que o script existe para evitar:
+o instalador só cuida do que é fácil esquecer. **Três** destinos precisam saber
+do agente, e esquecer um deles é a falha que ele existe para evitar:
 
 - **Claude Code** lê `.claude/agents/<nome>.md`
-- **Codex** lê `AGENTS.md` — ele não olha `.claude/agents/`
+- **Codex** lê `.codex/agents/<nome>.toml` — ele não olha `.claude/agents/`
+- **o `AGENTS.md` do projeto** é o que diz ao agente principal *quando* acionar
+  cada um; sem ele o subagente existe e ninguém o chama
 
-O script copia o arquivo **e** registra o agente no `AGENTS.md` do projeto, num
-passo só. O bloco é reconstruído a partir do que está de fato em disco, então o
-`AGENTS.md` sempre reflete a realidade e não o histórico de comandos.
+Os três são escritos num passo só. O bloco do `AGENTS.md` é reconstruído a partir
+do que está de fato em disco, então ele sempre reflete a realidade e não o
+histórico de comandos.
 
 ```bash
 npx agent-team-config list            # o que este projeto tem instalado
