@@ -23,7 +23,7 @@ Disponível em qualquer projeto, sempre.
 ## Domain specialists — instalados por projeto (`.claude/agents/` do repositório)
 
 **Não estão disponíveis por padrão.** Um specialist só existe num projeto se
-alguém o instalou lá com `npx agent-team-config add <nome>`. Isso é intencional: a
+alguém o instalou lá com `npx canonkit add <nome>`. Isso é intencional: a
 ausência é o mecanismo que impede o time de crescer sem necessidade. Quando um
 projeto tem specialists instalados, eles estão listados no `AGENTS.md` dele.
 

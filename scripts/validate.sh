@@ -331,7 +331,7 @@ const shipped = new Set(pkg.files ?? []);
 for (const dir of ["bin", "agents", "reference"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
-if (pkg.bin?.["agent-team-config"] !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");
+if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");
 if (!pkg.license) console.log("FAIL\tpackage.json has no license");
 if (!pkg.repository?.url) console.log("FAIL\tpackage.json has no repository url");
 console.log(`OK\tpackage.json ships ${[...shipped].join(", ")}`);

@@ -1,14 +1,22 @@
-# Agent Team Config
+# canonkit
 
-Versioned source for the agent team used with Claude Code.
+Versioned source for the agent team used with Claude Code and Codex. Published
+on npm as `canonkit`; the repository is `agent-team-config`.
 
 Each agent is a single Markdown file in `agents/`, stored in exactly the format
 the runtime reads. Installing is a copy — there is no generation step and
 nothing to reconcile by hand.
 
 ```bash
-npx agent-team-config install
+npx canonkit install
 ```
+
+> **canonkit 1.0 is not canonkit 0.x.** Versions up to `0.2.0` were a different
+> tool: a generator that installed Spec-Kit-style governance templates
+> (`.specify/`, constitution, gates, scale profiles) into a project, driven by
+> `canonkit init`. That tool is archived and none of its commands exist here.
+> The name carried over; the program did not. Pin `canonkit@0.2.0` if you were
+> using it.
 
 ## Agents
 
@@ -78,7 +86,7 @@ Fronteiras que costumam confundir:
 Sem clonar nada:
 
 ```bash
-npx agent-team-config install
+npx canonkit install
 ```
 
 Roda igual em Linux, macOS e Windows: o instalador é Node puro, sem nenhuma
@@ -166,7 +174,7 @@ Rodado **de dentro do projeto** que vai receber os agentes:
 
 ```bash
 cd ~/meu-projeto
-npx agent-team-config add maya nova
+npx canonkit add maya nova
 ```
 
 Escolher quais specialists o projeto tem continua sendo decisão explícita sua —
@@ -183,8 +191,8 @@ do que está de fato em disco, então ele sempre reflete a realidade e não o
 histórico de comandos.
 
 ```bash
-npx agent-team-config list            # o que este projeto tem instalado
-npx agent-team-config remove nova     # remove o arquivo e a entrada
+npx canonkit list            # o que este projeto tem instalado
+npx canonkit remove nova     # remove o arquivo e a entrada
 ```
 
 A descrição de uma linha que vai para o `AGENTS.md` do projeto é lida do próprio
@@ -202,7 +210,7 @@ Já rodam junto com `install`. Standalone, para quando você editou um bloco sem
 mexer em nenhum agente:
 
 ```bash
-npx agent-team-config reference
+npx canonkit reference
 ```
 
 Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
@@ -283,8 +291,8 @@ classifica risco de produto, e ambos passam.
 ## Editing an agent
 
 1. Edite `agents/<name>.md` neste repo.
-2. Se for core, rode `npx agent-team-config install` (ou o script do clone).
-3. Se for specialist, rode `npx agent-team-config add <nome>` de novo nos
+2. Se for core, rode `npx canonkit install` (ou o script do clone).
+3. Se for specialist, rode `npx canonkit add <nome>` de novo nos
    projetos que o usam.
 4. Rode `./scripts/validate.sh` e `npm test`.
 5. Commit.
