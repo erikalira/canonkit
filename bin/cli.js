@@ -271,15 +271,21 @@ async function installCodex(ctx, agents, dest) {
     }
   }
 
-  // Anything else here belongs to someone else — including agents from an older
-  // setup saved as Markdown, which Codex does not load from this directory.
-  // Reported, never removed: deleting a file whose name this repo never claimed
-  // is not an installer's decision to make.
+  // Your own Codex agents live here too and are none of this installer's
+  // business. The one thing worth saying is narrower: a file that looks like an
+  // older copy of an agent this repo owns, in a format Codex does not load from
+  // here — which leaves a second, divergent version of that agent lying around.
+  // Reported, never removed: the name is not one this repo claims, so deleting
+  // it is not an installer's decision to make.
   const owned = new Set(agents.map((a) => `${a.name}.toml`));
-  const foreign = existsSync(dest) ? (await readdir(dest)).filter((f) => !owned.has(f)) : [];
-  if (foreign.length) {
-    ctx.log(`  ${foreign.length} file(s) here this repo does not own: ${foreign.join(", ")}`);
-    ctx.log("  Codex loads custom agents from .toml — review these and remove them yourself if stale.");
+  const entries = existsSync(dest) ? await readdir(dest, { withFileTypes: true }) : [];
+  const stale = entries
+    .filter((e) => e.isFile() && !owned.has(e.name) && !e.name.startsWith("."))
+    .filter((e) => agents.some((a) => e.name.toLowerCase().replace(/\.[^.]+$/, "").split(/[^a-z0-9]+/).includes(a.name)));
+
+  if (stale.length) {
+    ctx.log(`  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`);
+    ctx.log("  Codex does not load these — remove them yourself once you have checked.");
   }
 }
 

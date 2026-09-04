@@ -137,10 +137,15 @@ Todo agente deste time é agente de julgamento, não scanner otimizado para
 velocidade — por isso os modelos rápidos ficam no fim do mapa e nada seleciona
 `gpt-5.6-luna` hoje.
 
-Arquivos em `~/.codex/agents/` que este repo não é dono são **reportados, nunca
-removidos** — inclusive agentes de um setup anterior salvos como `.md`, que o
-Codex não carrega desse diretório. Apagar um arquivo cujo nome o repo nunca
-reivindicou não é decisão de instalador.
+Seus próprios custom agents do Codex vivem no mesmo diretório e não são da conta
+do instalador. A única coisa que ele comenta é mais estreita: um arquivo que
+parece **cópia antiga de um agente que este repo é dono**, num formato que o
+Codex não carrega dali — o que deixa uma segunda versão divergente daquele agente
+solta. Reportado, nunca removido: o nome não é um que o repo reivindica, então
+apagar não é decisão de instalador.
+
+Scaffolding (`.gitignore`, `.github/`), diretórios e agentes seus não geram
+aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
 ### Comandos
 

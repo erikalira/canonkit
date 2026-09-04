@@ -223,17 +223,34 @@ describe("codex custom agents", () => {
     }
   });
 
-  test("reports files it does not own instead of deleting them", async () => {
-    const { home } = await scratch("codex-foreign");
+  test("reports an older copy of an agent it owns, without deleting it", async () => {
+    const { home } = await scratch("codex-stale-copy");
     const dest = path.join(home, ".codex", "agents");
     await mkdir(dest, { recursive: true });
-    // An agent from an older setup, saved in a format Codex no longer reads here.
+    // An agent from an older setup, saved in a format Codex does not load here.
     await writeFile(path.join(dest, "archie-tech-architect.md"), "stale");
 
     const result = run(["install", "--no-reference"], { home });
     assert.equal(result.status, 0, result.out);
-    assert.match(result.out, /this repo does not own: archie-tech-architect\.md/);
-    assert.ok(existsSync(path.join(dest, "archie-tech-architect.md")), "must not delete unowned files");
+    assert.match(result.out, /older copies of agents this repo owns: archie-tech-architect\.md/);
+    assert.ok(existsSync(path.join(dest, "archie-tech-architect.md")), "must not delete it");
+  });
+
+  test("stays quiet about your own agents and about repo scaffolding", async () => {
+    // A warning that fires on .gitignore teaches you to ignore warnings.
+    const { home } = await scratch("codex-quiet");
+    const dest = path.join(home, ".codex", "agents");
+    await mkdir(path.join(dest, ".github"), { recursive: true });
+    await writeFile(path.join(dest, ".gitignore"), "*.log");
+    await writeFile(path.join(dest, "my-own-reviewer.toml"), 'name = "my_own_reviewer"');
+
+    const result = run(["install", "--no-reference"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.doesNotMatch(result.out, /older copies/);
+    assert.doesNotMatch(result.out, /\.gitignore|\.github|my-own-reviewer/);
+    // And it leaves them all alone.
+    assert.ok(existsSync(path.join(dest, "my-own-reviewer.toml")));
+    assert.ok(existsSync(path.join(dest, ".gitignore")));
   });
 
   test("does not leave a specialist at user level", async () => {
