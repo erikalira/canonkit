@@ -1,0 +1,48 @@
+{
+  "name": "agent-team-config",
+  "version": "0.1.0",
+  "description": "A versioned agent team for Claude Code and Codex. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
+  "type": "module",
+  "bin": {
+    "agent-team-config": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "agents",
+    "reference",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test \"test/*.test.js\"",
+    "validate": "bash scripts/validate.sh",
+    "pack:dry": "npm pack --dry-run",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "codex",
+    "agents",
+    "subagents",
+    "ai",
+    "code-review",
+    "architecture"
+  ],
+  "author": "Erika Lira",
+  "license": "MIT",
+  "homepage": "https://github.com/erikalira/openclaw-team-config#readme",
+  "bugs": {
+    "url": "https://github.com/erikalira/openclaw-team-config/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/erikalira/openclaw-team-config.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

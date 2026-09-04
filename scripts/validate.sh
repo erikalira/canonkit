@@ -55,6 +55,7 @@ for f in agents/*.md; do
   name="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^name:/{print $2}' "$f")"
   desc="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^description:/{print}' "$f")"
   model="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^model:/{print $2}' "$f")"
+  tier="$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f&&/^tier:/{print $2}' "$f")"
 
   if [ -z "$name" ]; then
     fail "$base: no name in frontmatter"
@@ -66,6 +67,8 @@ for f in agents/*.md; do
     fail "$base: no model in frontmatter — without it the runtime silently uses the session default"
   elif [ "$model" != "opus" ] && [ "$model" != "sonnet" ] && [ "$model" != "haiku" ]; then
     fail "$base: model is '$model' — expected opus, sonnet, or haiku"
+  elif [ "$tier" != "core" ] && [ "$tier" != "specialist" ]; then
+    fail "$base: tier is '${tier:-missing}' — the installers derive the split from it"
   else
     # The description is what the delegating model reads to route work. A bare
     # title tells it nothing about what the agent owns.
@@ -142,91 +145,60 @@ head_ "Core / specialist split"
 python3 - > "$TMP" <<'PY'
 import pathlib, re
 
-def arr(path, var):
-    text = pathlib.Path(path).read_text(encoding="utf-8")
-    m = re.search(rf'^{var}=\(([^)]*)\)', text, re.M)
-    return set(m.group(1).split()) if m else None
-
-def ps_arr(path, var):
-    text = pathlib.Path(path).read_text(encoding="utf-8")
-    m = re.search(rf'^\${var}\s*=\s*@\((.*?)\)', text, re.M | re.S)
-    return set(re.findall(r'["\']([a-z0-9-]+)["\']', m.group(1))) if m else None
-
-core = arr("scripts/install.sh", "CORE")
-spec = arr("scripts/install.sh", "SPECIALISTS")
-add  = arr("scripts/add-specialist.sh", "SPECIALISTS")
-core_ps = ps_arr("scripts/install.ps1", "Core")
-spec_ps = ps_arr("scripts/install.ps1", "Specialists")
-files = {p.stem for p in pathlib.Path("agents").glob("*.md")}
-
-if core is None:  print("FAIL\tinstall.sh has no CORE list")
-if spec is None:  print("FAIL\tinstall.sh has no SPECIALISTS list")
-if add is None:   print("FAIL\tadd-specialist.sh has no SPECIALISTS list")
-if core_ps is None: print("FAIL\tinstall.ps1 has no Core list")
-if spec_ps is None: print("FAIL\tinstall.ps1 has no Specialists list")
-
-if None in (core, spec, add, core_ps, spec_ps):
-    raise SystemExit(0)
-
-if core != core_ps:
-    print("FAIL\tCORE lists disagree between install.sh and install.ps1")
-else:
-    print("OK\tCORE identical in install.sh and install.ps1")
-
-if spec != spec_ps:
-    print("FAIL\tSPECIALISTS lists disagree between install.sh and install.ps1")
-else:
-    print("OK\tSPECIALISTS identical in install.sh and install.ps1")
-
-# Every agent file belongs to exactly one list. An unclassified file is the real
-# hazard: install.sh would not install it and add-specialist.sh would refuse it,
-# so it would exist in the repo and be reachable from nowhere.
-unclassified = sorted(files - core - spec)
-if unclassified:
-    print(f"FAIL\tunclassified agents (in neither CORE nor SPECIALISTS): {', '.join(unclassified)}")
-else:
-    print("OK\tevery agent file is classified")
-
-ghost = sorted((core | spec) - files)
-if ghost:
-    print(f"FAIL\tlisted but no file in agents/: {', '.join(ghost)}")
-else:
-    print("OK\tno list names a missing agent")
-
-overlap = sorted(core & spec)
-if overlap:
-    print(f"FAIL\tin both CORE and SPECIALISTS: {', '.join(overlap)}")
-else:
-    print("OK\tno agent is both core and specialist")
-
-if spec != add:
-    only_i = sorted(spec - add)
-    only_a = sorted(add - spec)
-    detail = []
-    if only_i: detail.append(f"only in install.sh: {', '.join(only_i)}")
-    if only_a: detail.append(f"only in add-specialist.sh: {', '.join(only_a)}")
-    print(f"FAIL\tSPECIALISTS lists disagree — {'; '.join(detail)}")
-else:
-    print("OK\tSPECIALISTS identical in install.sh and add-specialist.sh")
-
-# The reference block is what Codex reads; a specialist missing from it is
-# invisible to that runtime.
+agents = sorted(p.stem for p in pathlib.Path("agents").glob("*.md"))
 block = pathlib.Path("reference/agents-block.md").read_text(encoding="utf-8")
-for name in sorted(core):
-    if not re.search(rf"\*\*{name}\*\*", block):
-        print(f"FAIL\treference/agents-block.md does not list core agent: {name}")
-for name in sorted(spec):
-    if not re.search(rf"\*\*{name}\*\*", block):
-        print(f"FAIL\treference/agents-block.md does not list specialist: {name}")
-print("OK\treference block checked against both lists")
 
-# add-specialist.sh writes a one-line summary per specialist into project
-# AGENTS.md files; a missing case falls through to the generic "specialist."
-addsh = pathlib.Path("scripts/add-specialist.sh").read_text(encoding="utf-8")
-for name in sorted(spec):
-    if not re.search(rf"^\s*{name}\)", addsh, re.M):
-        print(f"FAIL\tadd-specialist.sh has no describe() entry for: {name}")
-print("OK\tdescribe() covers every specialist")
+
+def front(name, key):
+    text = pathlib.Path(f"agents/{name}.md").read_text(encoding="utf-8")
+    m = re.search(rf"^{key}: *(.+)$", text, re.M)
+    return m.group(1).strip() if m else None
+
+
+# The split used to be a literal list in install.sh, install.ps1 and
+# add-specialist.sh, and this section existed to keep those three copies honest.
+# It now lives in the agent's own frontmatter, next to name and model, and every
+# installer derives from it — so what is left to check is that it is declared
+# and that the roster agrees with it.
+tiers = {a: front(a, "tier") for a in agents}
+bad = sorted(a for a, t in tiers.items() if t not in ("core", "specialist"))
+if bad:
+    for a in bad:
+        print(f"FAIL\t{a}: tier is '{tiers[a] or 'missing'}' — expected core or specialist")
+else:
+    core = sorted(a for a, t in tiers.items() if t == "core")
+    spec = sorted(a for a, t in tiers.items() if t == "specialist")
+    print(f"OK\tevery agent declares a tier ({len(core)} core, {len(spec)} specialist)")
+
+# The roster block is where `add` reads the one-line summary it writes into a
+# project's AGENTS.md. An agent missing a line there installs with no
+# description for Codex to route on.
+listed = set(re.findall(r"^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+\S", block, re.M))
+for a in agents:
+    if a not in listed:
+        print(f"FAIL\treference/agents-block.md has no summary line for: {a}")
+ghost = sorted(listed - set(agents))
+if ghost:
+    print(f"FAIL\treference/agents-block.md lists agents with no file: {', '.join(ghost)}")
+if not (set(agents) - listed) and not ghost:
+    print("OK\tthe roster block has a summary line for every agent")
+
+# Two sections in the roster, and the split carries meaning: a specialist listed
+# under the core heading claims to be always available, which is the one thing a
+# specialist is not.
+marker = re.search(r"^## Domain specialists\b", block, re.M)
+if not marker:
+    print("FAIL\treference/agents-block.md has no '## Domain specialists' section")
+else:
+    misplaced = []
+    for a in sorted(listed & set(agents)):
+        side = "specialist" if block.find(f"- **{a}** —") > marker.start() else "core"
+        if tiers[a] and side != tiers[a]:
+            misplaced.append(f"{a} is {tiers[a]} but sits in the {side} section")
+    if misplaced:
+        print("FAIL\troster block: " + "; ".join(misplaced))
+    else:
+        print("OK\tthe roster block's two sections match the declared tiers")
 PY
 SPLIT="$(cat "$TMP")"
 
@@ -234,6 +206,7 @@ while IFS=$'\t' read -r status detail; do
   [ -z "${status:-}" ] && continue
   if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
 done <<< "$SPLIT"
+
 
 # ------------------------------------------------------------------ escalation
 
@@ -336,6 +309,43 @@ for s in scripts/*.py; do
     fail "$name: syntax error"
   fi
 done
+
+# ---------------------------------------------------------------- npm package
+
+head_ "npm package"
+
+if command -v node >/dev/null 2>&1; then
+  if node --check bin/cli.js 2>/dev/null; then
+    pass "bin/cli.js parses"
+  else
+    fail "bin/cli.js: syntax error"
+  fi
+
+  # The installer reads agents/ and reference/ at runtime. Leaving either out of
+  # the published tarball is the one packaging mistake that cannot be caught by
+  # running the CLI from a clone, because a clone always has them.
+  node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
+import { readFileSync } from "node:fs";
+const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+const shipped = new Set(pkg.files ?? []);
+for (const dir of ["bin", "agents", "reference"]) {
+  if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
+}
+if (pkg.bin?.["agent-team-config"] !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");
+if (!pkg.license) console.log("FAIL\tpackage.json has no license");
+if (!pkg.repository?.url) console.log("FAIL\tpackage.json has no repository url");
+console.log(`OK\tpackage.json ships ${[...shipped].join(", ")}`);
+JS
+
+  while IFS=$'\t' read -r status detail; do
+    [ -z "${status:-}" ] && continue
+    if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+  done < "$TMP"
+
+  if [ -f LICENSE ]; then pass "LICENSE present"; else fail "no LICENSE — npm publishes the field, not the file"; fi
+else
+  warn "node not found — skipped npm package checks"
+fi
 
 # ------------------------------------------------------------------- hygiene
 

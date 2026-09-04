@@ -23,7 +23,7 @@ Disponível em qualquer projeto, sempre.
 ## Domain specialists — instalados por projeto (`.claude/agents/` do repositório)
 
 **Não estão disponíveis por padrão.** Um specialist só existe num projeto se
-alguém o instalou lá com `scripts/add-specialist.sh`. Isso é intencional: a
+alguém o instalou lá com `npx agent-team-config add <nome>`. Isso é intencional: a
 ausência é o mecanismo que impede o time de crescer sem necessidade. Quando um
 projeto tem specialists instalados, eles estão listados no `AGENTS.md` dele.
 
@@ -84,6 +84,15 @@ Todo agente classifica LOW / MEDIUM / HIGH antes de recomendar, e diz o que
 *não* fazer em LOW. Não acione um specialist por completude: puxar Nova para uma
 mudança sem superfície visual, ou Dana para uma mudança sem decisão apoiada em
 dado, é exatamente a burocracia que a separação core/projeto existe para evitar.
+
+Risco da mudança e escala do projeto são dois eixos, não um. LOW/MEDIUM/HIGH mede
+o que *esta mudança* pode quebrar; a escala — usuários reais, blast radius
+operacional, custo de rollback, quantidade de gente que precisa concordar —
+decide quanta *evidência* ela precisa produzir. Uma mudança HIGH num protótipo de
+uma pessoa e uma HIGH num sistema multi-tenant em produção merecem o mesmo
+cuidado técnico e quantidades muito diferentes de cerimônia. A escala calibra
+evidência e nunca dispensa regra: não é permissão para pular fronteira, contrato,
+validação do caminho afetado, checagem de segurança ou impacto em documentação.
 
 Fonte de verdade: repositório `agent-team-config`. Não edite os agentes em
 `~/.agents`, `~/.claude/agents` ou `.claude/agents` — a próxima instalação
