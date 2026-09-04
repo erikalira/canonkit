@@ -146,21 +146,32 @@ When reviewing accessibility, cover these points before concluding:
 Classify severity and recommend verifiable adjustments. Do not declare full
 compliance without evidence, and do not approve an exception for visual convenience.
 
-## Interactive state parity
+## Checklist for composite controls
 
-A composite control — a wrapper holding an icon, a label, and an indicator — reads as one
-object, so its hover and focus states have to resolve as one. Before approving, check that:
+A composite control — a wrapper holding an icon, a label, and an indicator — is one object to the
+person using it. What Pixie owns is that it stays one object: understood, focused, and acted on as
+a single target. Whether the result is visually harmonious is Nova's, and in a project without
+Nova that domain has no owner. When reviewing a new or restructured composite control, cover:
 
-- every element that changes on hover or focus carries the same transition. A child that changes
-  colour without the transition its parent has will snap while the parent fades;
-- every state variant is keyed off the same target. Mixing targets inside one control (in
-  Tailwind, a `peer-` variant next to `group-` ones) makes its parts light up at different
-  moments as the cursor crosses it;
-- the state describes the whole control, not the one region the cursor happens to be over.
+- the state describes the whole control, not the region the cursor happens to be over. A control
+  that reports a different state depending on where it was entered claims to be several targets
+  when it is one;
+- focus resolves on the whole control and stays visible there, so a keyboard user is given the
+  same object a pointer user is;
+- every part that reacts to hover or focus resolves together. Parts that land at different moments
+  read as separate controls.
 
-Each class is individually correct, so this survives code review. It shows up by reading the
-computed transition and the computed colour of every part of the control after hovering each of
-its regions separately — not by reading the markup.
+The mechanism is usually that state variants inside one control are keyed off different targets, or
+that one part carries a transition its siblings do not. It is not specific to a framework: it
+appears wherever state can be scoped to a parent or to a sibling.
+
+Each declaration is individually correct, so this survives code review. It shows up by reading the
+computed transition and the computed colour of every part of the control after hovering each of its
+regions separately — not by reading the markup.
+
+On a LOW change — a colour, a label, spacing on a control that already resolves as one — do not
+require the computed-style pass. It is for controls being built or restructured, and for one
+reported as behaving like several.
 
 ## Stance
 
