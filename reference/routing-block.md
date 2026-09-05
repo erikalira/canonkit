@@ -1,9 +1,9 @@
 # Meu Time (agent team)
 
-Core team in `~/.claude/agents/`, available in every project. Specialists are per project and
-exist only where `npx canonkit add` installed them. Each agent owns a domain and classifies its
-own work LOW/MEDIUM/HIGH risk before acting. The agents themselves live in the `agent-team-config`
-repo, which is the source of truth; this table is the routing view of it.
+Core team in `~/.claude/agents/`, available in every project. Specialists are per project and exist
+only where `npx canonkit add` installed them; when one is absent the domain has no owner in that
+project — say so instead of covering it myself. The agents live in the `agent-team-config` repo,
+which is the source of truth; `npx canonkit list` shows the full roster and what is installed here.
 
 | Agent | Domain | Blocking authority |
 |---|---|---|
@@ -18,95 +18,46 @@ repo, which is the source of truth; this table is the routing view of it.
 | **Bob** | Implementation — features, bugs, refactors, code review responses | — |
 | **Virgo** | Workspace — branch/worktree strategy, parallel coordination, agent config | — |
 
-Specialists — **only present if installed in the project's `.claude/agents/`**. When one is absent
-the domain has no owner in that project: say so instead of covering it myself.
-
-| Agent | Domain | Blocking authority |
-|---|---|---|
-| **Iris** | ML/Vision — model approach, dataset, evaluation, confidence | — |
-| **Maya** | Game design — loop, progression, difficulty, economy, game feel | ✅ veto |
-| **Nova** | Visual direction — identity, palette, composition, VFX language | ✅ veto |
-| **Echo** | Audio — sonic identity, mix hierarchy, audibility, adaptive music | ✅ veto |
-| **Dana** | Data — event taxonomy, metric definition, experiments, guardrails | ✅ veto |
-
 **HIGH-risk surfaces** (referenced by the rules below) = auth, secrets, migrations, public contracts,
 new services.
 
-## Boundaries that tend to cause confusion
+Two boundaries that keep causing confusion: **Pipe owns whether the system is up and observable;
+Perry owns whether it is fast enough for a person.** And **Pixie owns what the user sees; Perry,
+what the user expects.** A specialist's boundaries are documented in the project that installed it.
 
-- **Scott defines what success means; Dana defines how to measure it correctly.**
-- **Pixie decides whether the interface is understandable and accessible; Nova decides whether it
-  is coherent and recognizable.** Aesthetics never override accessibility.
-- **Maya decides whether a state should exist and what it needs to communicate; Nova decides how it
-  looks; Echo decides how it sounds.**
-- **Dana owns product analytics; Pipe owns operational observability and everything running in
-  production.**
-- **Pipe owns whether the system is up and observable; Perry owns whether it is fast enough for a
-  person.** Pixie owns what the user sees; Perry, what the user expects.
-- **Iris owns model/prediction; Dana owns general analytics.** They are not the same thing.
-- **Gard reviews Dana whenever telemetry involves PII or sensitive data.**
+Each rule is tagged `[ENFORCED]` (a hook backs it) or `[ADVISORY]` (depends on my judgment).
 
-Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` (depends on my judgment).
-
-- `[ADVISORY]` **Delegate proportionally to risk**, like the agents delegate to each other. Handle
-  LOW-risk single-domain work directly. Delegate when the work is an agent's actual domain of authority
-  (not just adjacent) and is MEDIUM/HIGH risk, or when the user asks for that domain's judgment by name.
-- `[ADVISORY]` **Risk and scale are two different axes.** LOW/MEDIUM/HIGH measures what *this
-  change* can break; scale — real users, operational blast radius, rollback cost, how many people
-  need to agree — decides how much *evidence* it needs to produce. A HIGH change in a one-person
-  prototype and a HIGH change in a multi-tenant production system deserve the same technical care
-  and very different amounts of ceremony. Scale calibrates evidence and never waives a rule: it is
-  not permission to skip a boundary, a contract, validation of the affected path, a security check,
-  or documentation impact.
+- `[ADVISORY]` **Delegate proportionally to risk.** Handle LOW-risk single-domain work directly.
+  Delegate when the work is an agent's actual domain of authority (not just adjacent) and is
+  MEDIUM/HIGH risk, or when the user asks for that domain's judgment by name.
 - `[ADVISORY]` **Route each HIGH-risk surface to its owner, named or not.** auth / secrets /
   dependencies → **Gard**; public contracts / new services → **Archie**; migrations → **Archie** for
-  the model and **Pipe** for the run. Those are not optional at HIGH risk. The other veto holders
-  block inside their own domain when the change enters it — they are not a blanket gate on every
-  HIGH change, and routing all six every time is the bureaucracy this team is built against.
-- `[ENFORCED]` **Only Perry loosens a performance budget.** Raising a threshold to make a build pass is
-  how a performance gate dies without anyone deciding to kill it. Perry may change one, and only with a
-  measured floor justifying the new number. Anyone may tighten a budget; only Perry relaxes one. The hook sees the path, not
-  the direction, so tightening asks for a reviewer too — a false gate costs a dispatch, a false
-  pass costs the budget.
-- `[ADVISORY]` **The agent file sets the floor.** Each agent in `agent-team-config` declares
-  `model:` in its frontmatter (Archie and Iris opus, the rest sonnet) and `validate.sh` fails the
-  build if one is missing or invalid. That floor is what keeps a forgotten decision from quietly
-  becoming the session default — a model asserted anywhere else is an intention the runtime never
-  sees. When the floor is wrong for an agent's *normal* work, change it in the repo, not per call.
-- `[ADVISORY]` **Override the model when the task, not the agent, is the outlier.** Pass `model`
-  explicitly when this particular task sits clearly outside that agent's normal work: **up** for a
-  decision that is structural, irreversible, or one the team will build on for months; **down** for
-  a mechanical pass with a known shape and a verifiable result. Say which one you did and why in the
-  dispatch — a model chosen silently cannot be told apart from a model forgotten.
-- `[ADVISORY]` **Parallel dispatch on large/multi-domain work** — recognize it without being asked and
-  match the mode to what's happening:
-  - *Advisory parallelism* (independent judgments on the same artifact — e.g. Scott on scope, Pixie on
-    UX, Gard on security): safe to invoke together in one message; no shared mutable file.
-  - *Execution parallelism* (two+ agents writing code at once — e.g. two Bob streams, or Bob + Pipe):
-    route through **Virgo** first for isolated worktrees/branches. Never fire concurrent file-editing
-    agents into the same tree without that.
-  - Respect real dependencies: one agent's output as another's input (Archie's contract before Bob
-    implements) is sequential, not parallel.
-- `[ADVISORY]` **Integration Review** — on a MEDIUM/HIGH change spanning 2+ domains, after the
-  reviews and before closing: read the set, not the individual verdicts. Look for recommendations
-  that contradict each other, one property improved at another's undocumented expense, a risk that
-  fell between two owners, and a handoff with no owner. Only judge a specialist's domain if that
-  specialist actually participated. **A contradiction becomes a named escalation to the decision's
-  owner — never an average of the two recommendations.** LOW does not go through this.
-- `[ENFORCED]` **PreToolUse gates** (`~/.claude/hooks/meu-time-hook.js`) fire independently of my judgment:
-  confirm on `git commit`/`git push` and on edits to HIGH-risk-surface or performance-budget files; block writes containing
-  obvious secrets; log dispatches and gates to `~/.claude/meu-time-activity/events.jsonl` (dashboard at
-  `~/.claude/meu-time-dashboard/`). If a gate fires on something I classified LOW, reconsider the risk
-  and whether a veto holder should weigh in — don't just dismiss the prompt.
-- `[ENFORCED]` **Definition of done — no self-merge on HIGH risk.** Work touching a HIGH-risk surface
-  isn't "done" until an independent reviewer verifies it: **Quinn** for acceptance criteria, **Gard** for
-  security, **Archie** for contract/architecture, **Perry** for a performance budget (or a project reviewer
-  like ws-contract-reviewer). A Stop
-  hook enforces this — it blocks the turn from ending once if a HIGH-risk surface was edited without a
-  reviewer. If a change is genuinely trivial, say so and proceed; don't route a reviewer to silence the gate.
-- `[ADVISORY]` **Task plans encode routing, not the routing table.** In any plan with discrete tasks
-  (tasks.md, checklist, implementation plan), annotate each task group with its **domain + risk** and the
-  **reviewer that gates "done"** when HIGH risk. Mark **parallelism only when I'll actually fan out**, as
-  dependency groups ("sections 5–7 are independent frontend streams") — not per task. Never write the
-  **model** per task (it's in the agent's frontmatter; pinning it drifts) nor name the default implementer on every task
-  (only call out delegation where it deviates).
+  the model and **Pipe** for the run. Not optional at HIGH risk. The other veto holders block inside
+  their own domain when the change enters it — routing all six every time is the bureaucracy this
+  team is built against.
+- `[ENFORCED]` **Only Perry loosens a performance budget**, and only with a measured floor
+  justifying the new number. Raising a threshold to make a build pass is how a performance gate dies
+  without anyone deciding to kill it. Anyone may tighten one, but the hook sees the path and not the
+  direction, so tightening asks for a reviewer too — a false gate costs a dispatch, a false pass
+  costs the budget.
+- `[ADVISORY]` **Every planned dispatch names its model** — **up** for a structural or irreversible
+  decision, **down** for a mechanical pass with a verifiable result. A model chosen silently cannot
+  be told apart from one forgotten, which is why it is written down; the hook logs the model on each
+  dispatch, so a plan that names one is checkable against what actually ran. The `model:` in an
+  agent's frontmatter is the fallback for an ad-hoc dispatch nobody planned, not a ceiling. The
+  dispatch takes no effort argument — an effort written on a task is an intention the runtime never
+  sees.
+- `[ADVISORY]` **Fan out on independent judgments** (Scott on scope, Pixie on UX, Gard on security:
+  one message, no shared mutable file). Two agents *writing code* at once go through **Virgo** first
+  for isolated worktrees — never concurrent file-editing agents in one tree. One agent's output as
+  another's input is sequential, not parallel.
+- `[ENFORCED]` **Hooks fire independently of my judgment** (`~/.claude/hooks/meu-time-hook.js`):
+  confirm on `git commit`/`git push` and on edits to HIGH-risk-surface or performance-budget files,
+  block obvious secrets, log dispatches and gates to `~/.claude/meu-time-activity/events.jsonl`
+  (dashboard at `~/.claude/meu-time-dashboard/`). If a gate fires on something I classified LOW,
+  reconsider the risk and whether a veto holder should weigh in — don't just dismiss the prompt.
+- `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a gated surface
+  was edited without an independent reviewer: **Quinn** for acceptance criteria, **Gard** for
+  security, **Archie** for contract/architecture, **Perry** for a performance budget, or a project
+  reviewer like ws-contract-reviewer. If a change is genuinely trivial, say so and proceed; don't
+  route a reviewer to silence the gate.

@@ -138,6 +138,10 @@ function main() {
       event: 'agent_start',
       agent: ti.subagent_type || 'unknown',
       task: ti.description || '',
+      // The rule says every planned dispatch names its model. Logging it is what
+      // makes that checkable after the fact instead of an intention nobody can
+      // audit; empty means the dispatch inherited the agent's frontmatter model.
+      model: ti.model || '',
       project,
     });
     process.exit(0); // dispatching a subagent is always allowed
