@@ -121,6 +121,29 @@ Os instaladores também **removem** specialists que tenham sobrado no nível de
 usuário de instalações anteriores; uma cópia esquecida ali fica disponível em
 todo projeto e anula a regra. Só nomes que este repo é dono são tocados.
 
+### Hooks
+
+O bloco de roteamento promete gates `[ENFORCED]`: confirmação em `git commit`,
+bloqueio de segredos, e o gate de definition-of-done no `Stop`. Esses gates só
+existem enquanto `~/.claude/hooks/meu-time-hook.js` está no disco **e** é
+referenciado pelo `settings.json`. O `install` copia o arquivo; o registro no
+`settings.json` ele apenas **reporta**, com o JSON pronto para colar.
+
+A divisão é deliberada. O `settings.json` é seu — carrega permissões, env e
+escolha de modelo que este instalador não tem por que reescrever. Já um hook no
+disco que nenhum evento referencia não faz nada e não reclama, que é o pior modo
+de falha possível para um gate: todo mundo segue acreditando que ele roda.
+
+O hook **falha aberto** — `main()` é envolvido num `catch` que sai com 0, então
+um erro de sintaxe nunca trava sua sessão. Ele apenas desliga todos os gates, em
+silêncio. Por isso o `validate.sh` roda `node --check` em cada `hooks/*.js`.
+
+Editar esse arquivo no lugar sempre foi o único fluxo que ele teve, e foi assim
+que ele passou a existir numa cópia só, numa máquina só. Versioná-lo inverte a
+fonte de verdade, então o instalador protege o caso: se a cópia instalada
+divergir da do repo, ela é preservada como `meu-time-hook.js.local.bak` antes de
+ser sobrescrita.
+
 ### Codex
 
 O mesmo core também vai para `~/.codex/agents/<nome>.toml`, no formato de custom
@@ -159,8 +182,8 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
 | Comando | O que faz |
 | --- | --- |
-| `install` | core no usuário + blocos de referência globais |
-| `install --no-reference` | só os agentes |
+| `install` | core no usuário + hooks + blocos de referência globais |
+| `install --no-reference` | só os agentes e os hooks |
 | `reference` | só os blocos globais |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |

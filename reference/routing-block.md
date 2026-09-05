@@ -63,9 +63,11 @@ Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` 
   the model and **Pipe** for the run. Those are not optional at HIGH risk. The other veto holders
   block inside their own domain when the change enters it — they are not a blanket gate on every
   HIGH change, and routing all six every time is the bureaucracy this team is built against.
-- `[ADVISORY]` **Only Perry loosens a performance budget.** Raising a threshold to make a build pass is
+- `[ENFORCED]` **Only Perry loosens a performance budget.** Raising a threshold to make a build pass is
   how a performance gate dies without anyone deciding to kill it. Perry may change one, and only with a
-  measured floor justifying the new number. Anyone may tighten a budget; only Perry relaxes one.
+  measured floor justifying the new number. Anyone may tighten a budget; only Perry relaxes one. The hook sees the path, not
+  the direction, so tightening asks for a reviewer too — a false gate costs a dispatch, a false
+  pass costs the budget.
 - `[ADVISORY]` **The agent file sets the floor.** Each agent in `agent-team-config` declares
   `model:` in its frontmatter (Archie and Iris opus, the rest sonnet) and `validate.sh` fails the
   build if one is missing or invalid. That floor is what keeps a forgotten decision from quietly
@@ -92,13 +94,14 @@ Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` 
   specialist actually participated. **A contradiction becomes a named escalation to the decision's
   owner — never an average of the two recommendations.** LOW does not go through this.
 - `[ENFORCED]` **PreToolUse gates** (`~/.claude/hooks/meu-time-hook.js`) fire independently of my judgment:
-  confirm on `git commit`/`git push` and on edits to HIGH-risk-surface files; block writes containing
+  confirm on `git commit`/`git push` and on edits to HIGH-risk-surface or performance-budget files; block writes containing
   obvious secrets; log dispatches and gates to `~/.claude/meu-time-activity/events.jsonl` (dashboard at
   `~/.claude/meu-time-dashboard/`). If a gate fires on something I classified LOW, reconsider the risk
   and whether a veto holder should weigh in — don't just dismiss the prompt.
 - `[ENFORCED]` **Definition of done — no self-merge on HIGH risk.** Work touching a HIGH-risk surface
   isn't "done" until an independent reviewer verifies it: **Quinn** for acceptance criteria, **Gard** for
-  security, **Archie** for contract/architecture (or a project reviewer like ws-contract-reviewer). A Stop
+  security, **Archie** for contract/architecture, **Perry** for a performance budget (or a project reviewer
+  like ws-contract-reviewer). A Stop
   hook enforces this — it blocks the turn from ending once if a HIGH-risk surface was edited without a
   reviewer. If a change is genuinely trivial, say so and proceed; don't route a reviewer to silence the gate.
 - `[ADVISORY]` **Task plans encode routing, not the routing table.** In any plan with discrete tasks

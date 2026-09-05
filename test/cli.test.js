@@ -268,6 +268,72 @@ describe("codex custom agents", () => {
 
 /* ------------------------------------------------------------ specialists */
 
+/* ------------------------------------------------------------------ hooks */
+
+describe("hooks", () => {
+  const hookPath = (home) => path.join(home, ".claude", "hooks", "meu-time-hook.js");
+
+  test("installs the hook and says so when settings.json does not reference it", async () => {
+    const { home } = await scratch("hook-fresh");
+    const { out } = run(["install", "--no-reference"], { home });
+
+    assert.ok(existsSync(hookPath(home)), "hook was not installed");
+    assert.ok(out.includes("not referenced by ~/.claude/settings.json"));
+
+    // The message exists to be pasted into settings.json, where a Windows path
+    // separator is an invalid escape. Asserting the forward-slash form is the
+    // same check without writing a backslash into this file.
+    assert.ok(out.includes("/.claude/hooks/meu-time-hook.js"), "suggested command is not JSON-pastable");
+  });
+
+  test("keeps a locally edited hook as .local.bak before overwriting it", async () => {
+    const { home } = await scratch("hook-divergent");
+    run(["install", "--no-reference"], { home });
+
+    // Editing in place is the only workflow this file has ever had.
+    const edited = (await read(hookPath(home))) + "// local edit";
+    await writeFile(hookPath(home), edited);
+
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(out.includes("differed — previous copy kept"));
+    assert.equal(await read(hookPath(home) + ".local.bak"), edited);
+    assert.equal(await read(hookPath(home)), await read(path.join(REPO, "hooks", "meu-time-hook.js")));
+  });
+
+  test("is quiet when the hook is unchanged and already wired", async () => {
+    const { home } = await scratch("hook-wired");
+    await mkdir(path.join(home, ".claude"), { recursive: true });
+    await writeFile(
+      path.join(home, ".claude", "settings.json"),
+      JSON.stringify({
+        hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }] },
+      }),
+    );
+
+    run(["install", "--no-reference"], { home });
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(!out.includes("not referenced"));
+    assert.ok(!out.includes("differed"));
+  });
+
+  test("survives a settings.json that is not valid JSON", async () => {
+    const { home } = await scratch("hook-bad-settings");
+    await mkdir(path.join(home, ".claude"), { recursive: true });
+    await writeFile(path.join(home, ".claude", "settings.json"), "{ not json");
+
+    const { out, status } = run(["install", "--no-reference"], { home });
+    assert.equal(status, 0);
+    assert.ok(out.includes("not valid JSON"));
+    assert.ok(existsSync(hookPath(home)), "a broken settings.json must not stop the copy");
+  });
+
+  test("--dry-run installs no hook", async () => {
+    const { home } = await scratch("hook-dry");
+    run(["install", "--no-reference", "--dry-run"], { home });
+    assert.ok(!existsSync(hookPath(home)));
+  });
+});
+
 describe("specialists", () => {
   test("add copies the file and registers it in the project AGENTS.md", async () => {
     const { home, project } = await scratch("add-basic");
