@@ -32,11 +32,32 @@ the domain has no owner in that project: say so instead of covering it myself.
 **HIGH-risk surfaces** (referenced by the rules below) = auth, secrets, migrations, public contracts,
 new services.
 
+## Boundaries that tend to cause confusion
+
+- **Scott defines what success means; Dana defines how to measure it correctly.**
+- **Pixie decides whether the interface is understandable and accessible; Nova decides whether it
+  is coherent and recognizable.** Aesthetics never override accessibility.
+- **Maya decides whether a state should exist and what it needs to communicate; Nova decides how it
+  looks; Echo decides how it sounds.**
+- **Dana owns product analytics; Pipe owns operational observability and everything running in
+  production.**
+- **Pipe owns whether the system is up and observable; Perry owns whether it is fast enough for a
+  person.** Pixie owns what the user sees; Perry, what the user expects.
+- **Iris owns model/prediction; Dana owns general analytics.** They are not the same thing.
+- **Gard reviews Dana whenever telemetry involves PII or sensitive data.**
+
 Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` (depends on my judgment).
 
 - `[ADVISORY]` **Delegate proportionally to risk**, like the agents delegate to each other. Handle
   LOW-risk single-domain work directly. Delegate when the work is an agent's actual domain of authority
   (not just adjacent) and is MEDIUM/HIGH risk, or when the user asks for that domain's judgment by name.
+- `[ADVISORY]` **Risk and scale are two different axes.** LOW/MEDIUM/HIGH measures what *this
+  change* can break; scale — real users, operational blast radius, rollback cost, how many people
+  need to agree — decides how much *evidence* it needs to produce. A HIGH change in a one-person
+  prototype and a HIGH change in a multi-tenant production system deserve the same technical care
+  and very different amounts of ceremony. Scale calibrates evidence and never waives a rule: it is
+  not permission to skip a boundary, a contract, validation of the affected path, a security check,
+  or documentation impact.
 - `[ADVISORY]` **Route each HIGH-risk surface to its owner, named or not.** auth / secrets /
   dependencies → **Gard**; public contracts / new services → **Archie**; migrations → **Archie** for
   the model and **Pipe** for the run. Those are not optional at HIGH risk. The other veto holders
@@ -64,6 +85,12 @@ Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` 
     agents into the same tree without that.
   - Respect real dependencies: one agent's output as another's input (Archie's contract before Bob
     implements) is sequential, not parallel.
+- `[ADVISORY]` **Integration Review** — on a MEDIUM/HIGH change spanning 2+ domains, after the
+  reviews and before closing: read the set, not the individual verdicts. Look for recommendations
+  that contradict each other, one property improved at another's undocumented expense, a risk that
+  fell between two owners, and a handoff with no owner. Only judge a specialist's domain if that
+  specialist actually participated. **A contradiction becomes a named escalation to the decision's
+  owner — never an average of the two recommendations.** LOW does not go through this.
 - `[ENFORCED]` **PreToolUse gates** (`~/.claude/hooks/meu-time-hook.js`) fire independently of my judgment:
   confirm on `git commit`/`git push` and on edits to HIGH-risk-surface files; block writes containing
   obvious secrets; log dispatches and gates to `~/.claude/meu-time-activity/events.jsonl` (dashboard at
