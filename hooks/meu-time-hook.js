@@ -8,11 +8,13 @@
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
  *        - edits to HIGH-risk surfaces (auth, secrets, migrations, contracts) -> confirm
  *          (forces Archie/Gard consideration even if risk was misjudged as LOW)
+ *        - edits to lighthouserc (performance budgets) -> confirm (Perry owns loosening)
  *        - obvious secrets in written content -> block (Gard as a tripwire)
  *   2. OBSERVABILITY — append a structured event line that the dashboard reads.
- *   3. DEFINITION-OF-DONE — on Stop, if this session touched a HIGH-risk surface
- *      without an independent reviewer (Quinn/Gard/Archie/...) being dispatched,
- *      block the stop ONCE with a reminder (no self-merge on HIGH risk).
+ *   3. DEFINITION-OF-DONE — on Stop, if this session touched a gated surface
+ *      (HIGH-risk, a secret, or a performance budget) without an independent
+ *      reviewer (Quinn/Gard/Archie/Perry/...) being dispatched, block the stop
+ *      ONCE with a reminder (no self-merge on HIGH risk).
  *
  * DESIGN RULE: fail-open. Any internal error -> exit 0 (allow). A buggy hook must
  * never brick the user's workflow; the agents (Gard/Quinn/Archie) are the real review.
@@ -42,7 +44,10 @@ function readEvents() {
 }
 
 // Agents that count as an independent reviewer for the definition-of-done gate.
-const REVIEWER = /^(quinn|gard|archie|ws-contract|multiplayer-isolation)/;
+// perry is here because he owns performance budgets: the rule says only Perry
+// loosens one, and until now the gate that enforces "reviewed by someone" had
+// no idea he existed, so the one person who could sign off could not.
+const REVIEWER = /^(quinn|gard|archie|perry|ws-contract|multiplayer-isolation)/;
 
 function ask(reason) {
   process.stdout.write(JSON.stringify({
@@ -99,13 +104,20 @@ function main() {
   if (eventName === 'Stop') {
     if (input.stop_hook_active) process.exit(0); // already nudged once this turn — don't loop
     const evs = readEvents().filter((e) => e.session && e.session === SESSION);
-    const highRisk = evs.filter((e) => e.event === 'gate' && /high-risk-surface|secret-block|secret-ask/.test(e.kind || ''));
+    // perf-budget joins the gated kinds. This hook only ever sees the file path,
+    // never the direction of the change, so it cannot tell a tightening (which
+    // anyone may do) from a loosening (which only Perry may do). It gates both.
+    // That is deliberate: a false gate costs one dispatch, while a false pass
+    // costs the budget — which is exactly how a performance gate dies without
+    // anyone deciding to kill it.
+    const GATED = /high-risk-surface|secret-block|secret-ask|perf-budget/;
+    const highRisk = evs.filter((e) => e.event === 'gate' && GATED.test(e.kind || ''));
     const reviewed = evs.some((e) => e.event === 'agent_start' && REVIEWER.test(e.agent || ''));
     if (highRisk.length && !reviewed) {
       const files = [...new Set(highRisk.map((e) => e.file).filter(Boolean))].join(', ') || 'a HIGH-risk surface';
       process.stdout.write(JSON.stringify({
         decision: 'block',
-        reason: `Definition-of-done gate: this session edited HIGH-risk surfaces (${files}) without dispatching an independent reviewer. Per the no-self-merge rule, dispatch Quinn (verify acceptance criteria) and/or Gard (security) / Archie (contract) to confirm before declaring done — OR state explicitly why review isn't needed (e.g. trivial, user-authorized). This fires once per turn.`,
+        reason: `Definition-of-done gate: this session edited gated surfaces (${files}) without dispatching an independent reviewer. Per the no-self-merge rule, dispatch Quinn (acceptance criteria), Gard (security), Archie (contract) or Perry (performance budgets) to confirm before declaring done — OR state explicitly why review isn't needed (e.g. trivial, user-authorized). This fires once per turn.`,
       }));
       process.exit(0);
     }
