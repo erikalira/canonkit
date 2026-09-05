@@ -98,7 +98,7 @@ describe("install", () => {
     }
   });
 
-  test("syncs both reference blocks and puts the import on the first line", async () => {
+  test("syncs both reference blocks without importing AGENTS.md", async () => {
     const { home } = await scratch("install-reference");
     assert.equal(run(["install"], { home }).status, 0);
 
@@ -107,7 +107,9 @@ describe("install", () => {
     assert.match(agentsMd, /<!-- agent-team-config:end -->/);
 
     const claudeMd = await read(path.join(home, ".claude", "CLAUDE.md"));
-    assert.equal(claudeMd.split("\n")[0], "@~/AGENTS.md");
+    // The routing block is self-sufficient, so CLAUDE.md no longer imports the
+    // roster — that put the same roster in Claude's context twice.
+    assert.doesNotMatch(claudeMd, /^@~\/AGENTS\.md$/m);
     assert.match(claudeMd, /<!-- agent-team-config:routing:start -->/);
     // Routing mechanics are Claude Code only; the roster is runtime-neutral.
     assert.doesNotMatch(agentsMd, /<!-- agent-team-config:routing:start -->/);

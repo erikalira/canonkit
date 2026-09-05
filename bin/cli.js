@@ -36,12 +36,15 @@ const PROJECT_SPECIALISTS = [
   "<!-- agent-team-config:specialists:end -->",
 ];
 
-// Tilde-style so the import resolves in every runtime. Under Git Bash on
-// Windows an expanded $HOME is an MSYS path (/c/Users/...) that Claude Code
-// cannot resolve; "~" is correct on all three platforms.
-const AGENTS_IMPORT = "@~/AGENTS.md";
-
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// Files this repo owns, read as text with line endings normalized. A Windows
+// checkout with core.autocrlf on hands every one of them back as CRLF, which
+// made the frontmatter parser below reject every agent ("no frontmatter").
+// Normalizing at the single read boundary keeps newline handling out of the
+// parsing that follows. Files this installer does not own are read raw, so it
+// never reformats a user's AGENTS.md as a side effect of editing one block.
+const readOwned = async (p) => (await readFile(p, "utf8")).replace(/\r\n/g, "\n");
 
 /* ------------------------------------------------------------------ agents */
 
@@ -57,7 +60,7 @@ async function readAgents() {
 
   for (const file of files) {
     const name = path.basename(file, ".md");
-    const text = await readFile(path.join(AGENTS_DIR, file), "utf8");
+    const text = await readOwned(path.join(AGENTS_DIR, file));
     const end = text.indexOf("\n---", 4);
     if (!text.startsWith("---\n") || end === -1) {
       throw new Error(`agents/${file}: no frontmatter`);
@@ -102,7 +105,7 @@ const specialists = (agents) => agents.filter((a) => a.tier === "specialist");
  * one, so it stays in the roster and out of the per-project entry.
  */
 async function summaries() {
-  const block = await readFile(path.join(REFERENCE_DIR, "agents-block.md"), "utf8");
+  const block = await readOwned(path.join(REFERENCE_DIR, "agents-block.md"));
   const out = new Map();
   for (const line of block.split("\n")) {
     const m = /^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+(.*)$/.exec(line.trim());
@@ -202,7 +205,7 @@ function applyBlock(original, blockText, markers) {
 }
 
 async function syncBlock(blockPath, targetPath, markers, ctx) {
-  const blockText = await readFile(blockPath, "utf8");
+  const blockText = await readOwned(blockPath);
   const original = existsSync(targetPath) ? await readFile(targetPath, "utf8") : "";
   const { text, action } = applyBlock(original, blockText, markers);
 
@@ -293,28 +296,20 @@ async function syncReference(ctx) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
   await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
 
-  // Claude Code reads ~/.claude/CLAUDE.md. Ensure it imports AGENTS.md rather
-  // than carrying a second copy that can drift.
+  // Claude Code reads ~/.claude/CLAUDE.md. This installer used to also make it
+  // import AGENTS.md, so the roster would not drift out of sync between the
+  // two. That put the same roster in Claude's context twice — once via the
+  // import, once as the routing block's own table below — with no benefit to
+  // Codex, which reads ~/AGENTS.md straight off disk either way. The routing
+  // block is self-sufficient now (see reference/routing-block.md), so this no
+  // longer adds the import. An import a user already has is left exactly as
+  // is — this only stops creating a new one, never removes an existing one.
   const claudeMd = path.join(os.homedir(), ".claude", "CLAUDE.md");
-  await ctx.mkdir(path.dirname(claudeMd));
-  const current = existsSync(claudeMd) ? await readFile(claudeMd, "utf8") : null;
-
-  if (current === null) {
-    await ctx.write(claudeMd, `${AGENTS_IMPORT}\n`);
-    ctx.log(`Created ${claudeMd} with import`);
-  } else if (/^@.*AGENTS\.md[ \t]*$/m.test(current)) {
-    // Match any existing AGENTS.md import, not just this $HOME's exact path, so
-    // a moved home or a tilde-style import is not duplicated.
-    ctx.log(`already current: ${claudeMd} (imports AGENTS.md)`);
-  } else {
-    await ctx.write(claudeMd, `${AGENTS_IMPORT}\n${current}`);
-    ctx.log(`Added import to ${claudeMd}`);
-  }
 
   // The routing rules are Claude Code mechanics — subagent_type, model floors,
   // hooks, parallelism — which mean nothing to Codex, so they stay out of the
-  // runtime-neutral roster. Synced after the import so a freshly created
-  // CLAUDE.md keeps the import on its first line.
+  // runtime-neutral roster. A CLAUDE.md that does not exist yet is created by
+  // this call with the routing block as its entire content.
   await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
 }
 
