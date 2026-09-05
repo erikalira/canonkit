@@ -3,8 +3,13 @@
 
 The routing block is what the dispatcher reads to decide who is not optional on
 a change. Every claim it makes about an agent — which layer it is in, whether it
-holds a veto, which model it runs on — is a fact stored somewhere else, so it
-can drift without anything failing. This is the check that makes it fail.
+holds a veto — is a fact stored somewhere else, so it can drift without anything
+failing. This is the check that makes it fail.
+
+The block is the routing view of the CORE team only. Specialists are per project
+and are documented in the project that installed them: listing one here would
+claim it is always available, which is the one thing a specialist is not. So the
+absence of a specialist is an invariant to enforce, not a gap to report.
 
 Prints TAB-separated OK/FAIL lines for validate.sh to render.
 """
@@ -29,25 +34,21 @@ core = {a for a in agents if tier(a) == "core"}
 specialists = {a for a in agents if tier(a) == "specialist"}
 problems = []
 
-# A name in the block that no longer exists routes work nowhere; an agent
-# missing from the block is invisible to whoever dispatches.
 named = {a for a in agents if re.search(rf"\*\*{a.capitalize()}\*\*", block)}
-missing = sorted(set(agents) - named)
-if missing:
-    problems.append("agents absent from the block: " + ", ".join(missing))
 
-# Two tables, and the split carries meaning: a specialist listed as core claims
-# to be always available, which is the one thing a specialist is not.
-# Anchored at line start because the word also appears in the intro prose.
-marker = re.search(r"^Specialists\b", block, re.M)
-if not marker:
-    problems.append("no specialists section in the block")
-else:
-    for a in sorted(named):
-        side = "specialist" if block.find(f"**{a.capitalize()}**") > marker.start() else "core"
-        want = "core" if a in core else "specialist" if a in specialists else None
-        if want and side != want:
-            problems.append(f"{a} is {want} in its frontmatter but sits in the {side} table")
+# A core agent missing from the block is invisible to whoever dispatches.
+missing = sorted(core - named)
+if missing:
+    problems.append("core agents absent from the block: " + ", ".join(missing))
+
+# A specialist named here is available in every project by implication, which
+# silently defeats the per-project rule the installer enforces on the files.
+leaked = sorted(specialists & named)
+if leaked:
+    problems.append(
+        "specialists named in the global block: " + ", ".join(leaked)
+        + " — document them in the project that installed them"
+    )
 
 # The authority column decides who cannot be skipped at HIGH risk. A veto
 # claimed here and absent from the agent file misroutes in silence.
@@ -61,19 +62,15 @@ for a in sorted(named):
             f"agent file says {'veto' if declares else 'no veto'}"
         )
 
-# The model rule names the agents that run on opus. That is a claim about
-# frontmatter, and frontmatter is where the runtime actually reads it.
-rule = next((l for l in block.splitlines() if "opus" in l and "sonnet" in l), "")
-for a in agents:
-    m = re.search(r"^model: *(\w+)", agent_text(a), re.M)
-    model = m.group(1) if m else "?"
-    named_in_rule = a.capitalize() in rule
-    if model == "opus" and not named_in_rule:
-        problems.append(f"{a} is opus in frontmatter but the block's model rule does not name it")
-    if model != "opus" and named_in_rule:
-        problems.append(f"{a} is {model} in frontmatter but the block's model rule names it as opus")
+# The dispatcher names the model per dispatch; frontmatter is the fallback and
+# is validated in validate.sh directly. The block must still carry the rule —
+# without it the decision goes unrecorded — but it no longer restates which
+# agent runs on what, because a prose copy of frontmatter is the drift this
+# check exists to prevent.
+if not re.search(r"names its model", block):
+    problems.append("the block no longer carries a rule naming the model per dispatch")
 
 for p in problems:
-    print("FAIL\t" + p)
+    print("FAIL	" + p)
 if not problems:
-    print(f"OK\t{len(named)} agents routed; layer, authority and model match the agent files")
+    print(f"OK	{len(named)} core agents routed; layer and authority match the agent files")

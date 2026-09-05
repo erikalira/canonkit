@@ -35,25 +35,29 @@ Each rule is tagged `[ENFORCED]` (a hook backs it) or `[ADVISORY]` (depends on m
   the model and **Pipe** for the run. Not optional at HIGH risk. The other veto holders block inside
   their own domain when the change enters it — routing all six every time is the bureaucracy this
   team is built against.
-- `[ADVISORY]` **Only Perry loosens a performance budget**, and only with a measured floor
-  justifying the new number. Anyone may tighten one. Raising a threshold to make a build pass is how
-  a performance gate dies without anyone deciding to kill it.
+- `[ENFORCED]` **Only Perry loosens a performance budget**, and only with a measured floor
+  justifying the new number. Raising a threshold to make a build pass is how a performance gate dies
+  without anyone deciding to kill it. Anyone may tighten one, but the hook sees the path and not the
+  direction, so tightening asks for a reviewer too — a false gate costs a dispatch, a false pass
+  costs the budget.
 - `[ADVISORY]` **Every planned dispatch names its model** — **up** for a structural or irreversible
   decision, **down** for a mechanical pass with a verifiable result. A model chosen silently cannot
   be told apart from one forgotten, which is why it is written down; the hook logs the model on each
   dispatch, so a plan that names one is checkable against what actually ran. The `model:` in an
-  agent's frontmatter is the fallback for an ad-hoc dispatch, not a ceiling. The dispatch takes no
-  effort argument — an effort written on a task is an intention the runtime never sees.
+  agent's frontmatter is the fallback for an ad-hoc dispatch nobody planned, not a ceiling. The
+  dispatch takes no effort argument — an effort written on a task is an intention the runtime never
+  sees.
 - `[ADVISORY]` **Fan out on independent judgments** (Scott on scope, Pixie on UX, Gard on security:
   one message, no shared mutable file). Two agents *writing code* at once go through **Virgo** first
   for isolated worktrees — never concurrent file-editing agents in one tree. One agent's output as
   another's input is sequential, not parallel.
 - `[ENFORCED]` **Hooks fire independently of my judgment** (`~/.claude/hooks/meu-time-hook.js`):
-  confirm on `git commit`/`git push` and on HIGH-risk-surface edits, block obvious secrets, log
-  dispatches and gates to `~/.claude/meu-time-activity/events.jsonl` (dashboard at
-  `~/.claude/meu-time-dashboard/`). If a gate fires on something I classified LOW, reconsider the
-  risk and whether a veto holder should weigh in — don't just dismiss the prompt.
-- `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a HIGH-risk
-  surface was edited without an independent reviewer: **Quinn** for acceptance criteria, **Gard** for
-  security, **Archie** for contract/architecture, or a project reviewer like ws-contract-reviewer. If
-  a change is genuinely trivial, say so and proceed; don't route a reviewer to silence the gate.
+  confirm on `git commit`/`git push` and on edits to HIGH-risk-surface or performance-budget files,
+  block obvious secrets, log dispatches and gates to `~/.claude/meu-time-activity/events.jsonl`
+  (dashboard at `~/.claude/meu-time-dashboard/`). If a gate fires on something I classified LOW,
+  reconsider the risk and whether a veto holder should weigh in — don't just dismiss the prompt.
+- `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a gated surface
+  was edited without an independent reviewer: **Quinn** for acceptance criteria, **Gard** for
+  security, **Archie** for contract/architecture, **Perry** for a performance budget, or a project
+  reviewer like ws-contract-reviewer. If a change is genuinely trivial, say so and proceed; don't
+  route a reviewer to silence the gate.

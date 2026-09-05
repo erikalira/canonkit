@@ -321,14 +321,35 @@ if command -v node >/dev/null 2>&1; then
     fail "bin/cli.js: syntax error"
   fi
 
-  # The installer reads agents/ and reference/ at runtime. Leaving either out of
-  # the published tarball is the one packaging mistake that cannot be caught by
-  # running the CLI from a clone, because a clone always has them.
+  # A hook that fails open is the right runtime behaviour: main() sits in a catch
+  # that exits 0, so a broken hook never bricks a session. It is also why a broken
+  # hook is invisible — every gate the routing block calls [ENFORCED] simply stops
+  # firing, with nothing in the log to say so.
+  #
+  # `node --check` is not enough. It parses without executing, so it passed
+  # happily while this CommonJS hook sat inside a "type": "module" package and
+  # could not actually run from a clone. Feed it a benign event and watch it exit.
+  # HOME is redirected so the check does not append to the real activity log.
+  for hook in hooks/*.js; do
+    [ -e "$hook" ] || continue
+    hook_home="$(mktemp -d)"
+    if printf '%s' '{"session_id":"validate","hook_event_name":"UserPromptSubmit"}' \
+      | HOME="$hook_home" USERPROFILE="$hook_home" node "$hook" >/dev/null 2>&1; then
+      pass "$hook runs"
+    else
+      fail "$hook: does not run — hooks fail open, so this silently disables every gate"
+    fi
+    rm -rf "$hook_home"
+  done
+
+  # The installer reads agents/, reference/ and hooks/ at runtime. Leaving any of
+  # them out of the published tarball is the one packaging mistake that cannot be
+  # caught by running the CLI from a clone, because a clone always has them.
   node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference"]) {
+for (const dir of ["bin", "agents", "reference", "hooks"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");

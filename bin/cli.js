@@ -25,6 +25,7 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
 const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
+const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 
 // Two runtimes read different files, and forgetting either one is the failure
 // these markers exist to prevent. Claude Code reads .claude/agents/ and
@@ -244,6 +245,7 @@ async function install(ctx, options = {}) {
   }
 
   await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
+  await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"));
 
   if (reference) {
     ctx.log("");
@@ -289,6 +291,73 @@ async function installCodex(ctx, agents, dest) {
   if (stale.length) {
     ctx.log(`  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`);
     ctx.log("  Codex does not load these — remove them yourself once you have checked.");
+  }
+}
+
+/**
+ * Install the runtime hooks. These are the [ENFORCED] half of the team rules:
+ * the routing block promises gates that only exist while this file is on disk
+ * and referenced by settings.json.
+ *
+ * Until this command existed the hook lived only in ~/.claude/hooks/, edited in
+ * place, in one copy on one machine — the same "single list repeated nowhere"
+ * problem the agents had, in its worse form, because nothing validated it.
+ */
+async function installHooks(ctx, dest) {
+  const files = existsSync(HOOKS_DIR)
+    ? (await readdir(HOOKS_DIR)).filter((f) => f.endsWith(".js")).sort()
+    : [];
+  if (!files.length) return;
+
+  await ctx.mkdir(dest);
+  for (const file of files) {
+    const from = path.join(HOOKS_DIR, file);
+    const to = path.join(dest, file);
+
+    // Editing this file in place is the only workflow it has ever had, so an
+    // install that silently replaced a divergent copy would destroy the very
+    // customization that motivated versioning it. Keep it, then overwrite.
+    if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
+      await ctx.copy(to, `${to}.local.bak`);
+      ctx.log(`  ${file} differed — previous copy kept as ${file}.local.bak`);
+    }
+    await ctx.copy(from, to);
+  }
+  ctx.log(`Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`);
+
+  await reportHookWiring(ctx, dest, files);
+}
+
+/**
+ * A hook on disk that no event references does nothing and reports nothing —
+ * the failure mode is a gate everyone believes is running. settings.json is the
+ * user's file, holding permissions, env and model choices this installer has no
+ * business rewriting, so the wiring is reported and never applied.
+ */
+async function reportHookWiring(ctx, dest, files) {
+  const settings = path.join(os.homedir(), ".claude", "settings.json");
+
+  let parsed = {};
+  if (existsSync(settings)) {
+    try {
+      parsed = JSON.parse(await readFile(settings, "utf8"));
+    } catch {
+      ctx.log("  ~/.claude/settings.json is not valid JSON — cannot check hook wiring");
+      return;
+    }
+  }
+
+  const wired = JSON.stringify(parsed.hooks ?? {});
+  const missing = files.filter((f) => !wired.includes(f));
+  if (!missing.length) return;
+
+  ctx.log("");
+  ctx.log(`  not referenced by ~/.claude/settings.json: ${missing.join(", ")}`);
+  ctx.log("  A hook the runtime never calls fails silently. Register each one under");
+  ctx.log("  hooks.PreToolUse / UserPromptSubmit / SubagentStop / Stop as:");
+  for (const file of missing) {
+    const cmd = path.join(dest, file).split(path.sep).join("/");
+    ctx.log(`    { "type": "command", "command": "node ${cmd}" }`);
   }
 }
 
