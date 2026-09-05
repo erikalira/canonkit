@@ -38,6 +38,14 @@ const PROJECT_SPECIALISTS = [
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Files this repo owns, read as text with line endings normalized. A Windows
+// checkout with core.autocrlf on hands every one of them back as CRLF, which
+// made the frontmatter parser below reject every agent ("no frontmatter").
+// Normalizing at the single read boundary keeps newline handling out of the
+// parsing that follows. Files this installer does not own are read raw, so it
+// never reformats a user's AGENTS.md as a side effect of editing one block.
+const readOwned = async (p) => (await readFile(p, "utf8")).replace(/\r\n/g, "\n");
+
 /* ------------------------------------------------------------------ agents */
 
 /**
@@ -52,7 +60,7 @@ async function readAgents() {
 
   for (const file of files) {
     const name = path.basename(file, ".md");
-    const text = await readFile(path.join(AGENTS_DIR, file), "utf8");
+    const text = await readOwned(path.join(AGENTS_DIR, file));
     const end = text.indexOf("\n---", 4);
     if (!text.startsWith("---\n") || end === -1) {
       throw new Error(`agents/${file}: no frontmatter`);
@@ -97,7 +105,7 @@ const specialists = (agents) => agents.filter((a) => a.tier === "specialist");
  * one, so it stays in the roster and out of the per-project entry.
  */
 async function summaries() {
-  const block = await readFile(path.join(REFERENCE_DIR, "agents-block.md"), "utf8");
+  const block = await readOwned(path.join(REFERENCE_DIR, "agents-block.md"));
   const out = new Map();
   for (const line of block.split("\n")) {
     const m = /^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+(.*)$/.exec(line.trim());
@@ -197,7 +205,7 @@ function applyBlock(original, blockText, markers) {
 }
 
 async function syncBlock(blockPath, targetPath, markers, ctx) {
-  const blockText = await readFile(blockPath, "utf8");
+  const blockText = await readOwned(blockPath);
   const original = existsSync(targetPath) ? await readFile(targetPath, "utf8") : "";
   const { text, action } = applyBlock(original, blockText, markers);
 
