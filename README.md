@@ -217,13 +217,19 @@ Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
 
 | Arquivo do repo | Vai para | Lido por | Conteúdo |
 | --- | --- | --- | --- |
-| `reference/agents-block.md` | `~/AGENTS.md` | Codex + Claude Code | quem existe e o que cada um é dono |
+| `reference/agents-block.md` | `~/AGENTS.md` | Codex | quem existe e o que cada um é dono |
 | `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | como o trabalho é despachado |
 
 O roster é neutro de runtime. O bloco de roteamento fala de `subagent_type`, piso
 de modelo, hooks e paralelismo — mecânica que não significa nada para o Codex, e
-por isso não entra no `AGENTS.md`. O script também garante que o `CLAUDE.md`
-importe o `AGENTS.md`, para os dois runtimes partirem do mesmo roster.
+por isso não entra no `AGENTS.md`.
+
+Os dois runtimes partem do mesmo roster sem que um arquivo importe o outro: o
+Codex lê o `~/AGENTS.md` direto do disco, e o bloco de roteamento carrega a
+própria tabela do time. O instalador **não** adiciona mais um import do
+`AGENTS.md` ao `CLAUDE.md` — isso colocava o mesmo roster duas vezes no contexto
+do Claude e não mudava nada para o Codex. Um import que você já tem é
+preservado: o script só deixou de criar um novo.
 
 Só o trecho entre os marcadores é gerenciado:
 
