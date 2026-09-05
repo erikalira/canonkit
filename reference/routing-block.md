@@ -66,16 +66,15 @@ Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` 
 - `[ADVISORY]` **Only Perry loosens a performance budget.** Raising a threshold to make a build pass is
   how a performance gate dies without anyone deciding to kill it. Perry may change one, and only with a
   measured floor justifying the new number. Anyone may tighten a budget; only Perry relaxes one.
-- `[ADVISORY]` **The agent file sets the floor.** Each agent in `agent-team-config` declares
-  `model:` in its frontmatter (Archie and Iris opus, the rest sonnet) and `validate.sh` fails the
-  build if one is missing or invalid. That floor is what keeps a forgotten decision from quietly
-  becoming the session default — a model asserted anywhere else is an intention the runtime never
-  sees. When the floor is wrong for an agent's *normal* work, change it in the repo, not per call.
-- `[ADVISORY]` **Override the model when the task, not the agent, is the outlier.** Pass `model`
-  explicitly when this particular task sits clearly outside that agent's normal work: **up** for a
-  decision that is structural, irreversible, or one the team will build on for months; **down** for
-  a mechanical pass with a known shape and a verifiable result. Say which one you did and why in the
-  dispatch — a model chosen silently cannot be told apart from a model forgotten.
+- `[ADVISORY]` **Every planned dispatch names its model.** In any plan with discrete tasks, each
+  task carries an explicit model and I pass it on the dispatch: **up** for a decision that is
+  structural, irreversible, or one the team will build on for months; **down** for a mechanical pass
+  with a known shape and a verifiable result. A model chosen silently cannot be told apart from a
+  model forgotten, which is the whole reason it is written down. The `model:` in each agent's
+  frontmatter (Archie and Iris opus, the rest sonnet) is not a ceiling to respect — it renders the
+  Codex axis, where `model_reasoning_effort` is derived from it, and is the fallback for an ad-hoc
+  dispatch nobody planned. There is no per-task effort: the dispatch takes no such argument, so an
+  effort written on a task is an intention the runtime never sees.
 - `[ADVISORY]` **Parallel dispatch on large/multi-domain work** — recognize it without being asked and
   match the mode to what's happening:
   - *Advisory parallelism* (independent judgments on the same artifact — e.g. Scott on scope, Pixie on
@@ -102,8 +101,8 @@ Each rule is tagged `[ENFORCED]` (a hook backs it mechanically) or `[ADVISORY]` 
   hook enforces this — it blocks the turn from ending once if a HIGH-risk surface was edited without a
   reviewer. If a change is genuinely trivial, say so and proceed; don't route a reviewer to silence the gate.
 - `[ADVISORY]` **Task plans encode routing, not the routing table.** In any plan with discrete tasks
-  (tasks.md, checklist, implementation plan), annotate each task group with its **domain + risk** and the
-  **reviewer that gates "done"** when HIGH risk. Mark **parallelism only when I'll actually fan out**, as
-  dependency groups ("sections 5–7 are independent frontend streams") — not per task. Never write the
-  **model** per task (it's in the agent's frontmatter; pinning it drifts) nor name the default implementer on every task
-  (only call out delegation where it deviates).
+  (tasks.md, checklist, openspec change), annotate each task group with its **domain + risk** and the
+  **reviewer that gates "done"** when HIGH risk, and each task with the **model** it dispatches at.
+  Mark **parallelism only when I'll actually fan out**, as dependency groups ("sections 5–7 are
+  independent frontend streams") — not per task. Don't name the default implementer on every task;
+  call out delegation only where it deviates.
