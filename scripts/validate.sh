@@ -321,17 +321,25 @@ if command -v node >/dev/null 2>&1; then
     fail "bin/cli.js: syntax error"
   fi
 
-  # A hook that does not parse fails open: main() is wrapped in a catch that
-  # exits 0, so a broken hook never blocks a session. That is the right runtime
-  # behaviour and exactly why a syntax error here is invisible — every gate the
-  # routing block calls [ENFORCED] simply stops firing, with nothing in the log.
+  # A hook that fails open is the right runtime behaviour: main() sits in a catch
+  # that exits 0, so a broken hook never bricks a session. It is also why a broken
+  # hook is invisible — every gate the routing block calls [ENFORCED] simply stops
+  # firing, with nothing in the log to say so.
+  #
+  # `node --check` is not enough. It parses without executing, so it passed
+  # happily while this CommonJS hook sat inside a "type": "module" package and
+  # could not actually run from a clone. Feed it a benign event and watch it exit.
+  # HOME is redirected so the check does not append to the real activity log.
   for hook in hooks/*.js; do
     [ -e "$hook" ] || continue
-    if node --check "$hook" 2>/dev/null; then
-      pass "$hook parses"
+    hook_home="$(mktemp -d)"
+    if printf '%s' '{"session_id":"validate","hook_event_name":"UserPromptSubmit"}' \
+      | HOME="$hook_home" USERPROFILE="$hook_home" node "$hook" >/dev/null 2>&1; then
+      pass "$hook runs"
     else
-      fail "$hook: syntax error — hooks fail open, so this silently disables every gate"
+      fail "$hook: does not run — hooks fail open, so this silently disables every gate"
     fi
+    rm -rf "$hook_home"
   done
 
   # The installer reads agents/, reference/ and hooks/ at runtime. Leaving any of
