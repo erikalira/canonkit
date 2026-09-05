@@ -321,14 +321,27 @@ if command -v node >/dev/null 2>&1; then
     fail "bin/cli.js: syntax error"
   fi
 
-  # The installer reads agents/ and reference/ at runtime. Leaving either out of
-  # the published tarball is the one packaging mistake that cannot be caught by
-  # running the CLI from a clone, because a clone always has them.
+  # A hook that does not parse fails open: main() is wrapped in a catch that
+  # exits 0, so a broken hook never blocks a session. That is the right runtime
+  # behaviour and exactly why a syntax error here is invisible — every gate the
+  # routing block calls [ENFORCED] simply stops firing, with nothing in the log.
+  for hook in hooks/*.js; do
+    [ -e "$hook" ] || continue
+    if node --check "$hook" 2>/dev/null; then
+      pass "$hook parses"
+    else
+      fail "$hook: syntax error — hooks fail open, so this silently disables every gate"
+    fi
+  done
+
+  # The installer reads agents/, reference/ and hooks/ at runtime. Leaving any of
+  # them out of the published tarball is the one packaging mistake that cannot be
+  # caught by running the CLI from a clone, because a clone always has them.
   node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference"]) {
+for (const dir of ["bin", "agents", "reference", "hooks"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");
