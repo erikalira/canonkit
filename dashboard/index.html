@@ -1,0 +1,177 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Meu Time · Activity</title>
+<style>
+  :root {
+    --bg: #0e0f12; --panel: #16181d; --line: #23262e;
+    --txt: #e7e9ee; --dim: #8b909b; --faint: #5a5f6a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.5 ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+    padding: 32px clamp(16px, 5vw, 64px);
+  }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  h1 { font-size: 16px; font-weight: 600; letter-spacing: .04em; margin: 0; }
+  h1 .o { color: var(--faint); font-weight: 400; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: #57c46b; box-shadow: 0 0 0 0 #57c46b88; animation: p 2s infinite; }
+  @keyframes p { 0% { box-shadow: 0 0 0 0 #57c46b66; } 70% { box-shadow: 0 0 0 7px #57c46b00; } 100% { box-shadow: 0 0 0 0 #57c46b00; } }
+  .updated { color: var(--faint); font-size: 12px; margin-left: auto; }
+  .stats { display: flex; gap: 28px; margin: 18px 0 26px; color: var(--dim); font-size: 12px; }
+  .stats b { color: var(--txt); font-size: 18px; font-weight: 600; display: block; }
+  .label { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin: 22px 0 10px; }
+  .active { display: flex; flex-wrap: wrap; gap: 10px; min-height: 34px; }
+  .chip {
+    display: flex; align-items: center; gap: 9px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px 7px 11px;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; animation: p 1.6s infinite; }
+  .chip .who { font-weight: 600; }
+  .chip .task { color: var(--dim); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--faint); font-style: italic; }
+  .feed { border-top: 1px solid var(--line); }
+  .row { display: flex; gap: 12px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .row .t { color: var(--faint); font-size: 12px; min-width: 64px; }
+  .row .ic { min-width: 16px; text-align: center; }
+  .row .body { flex: 1; }
+  .row .who { font-weight: 600; }
+  .row .task, .row .meta { color: var(--dim); }
+  .gate { color: #e2a44e; }
+  .gate.block { color: #e2574e; }
+  .stop { color: var(--faint); }
+  .note { color: var(--faint); font-size: 12px; margin: -4px 0 10px; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; min-width: 520px; width: 100%; }
+  th, td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--faint); font-size: 11px; font-weight: 400; text-transform: uppercase; letter-spacing: .1em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  td.dim { color: var(--dim); }
+</style>
+
+<header>
+  <span class="pulse" id="pulse"></span>
+  <h1>Meu Time <span class="o">· activity</span></h1>
+  <span class="updated" id="updated">—</span>
+</header>
+
+<div class="stats">
+  <span><b id="s-agents">0</b> agent dispatches</span>
+  <span><b id="s-gates">0</b> gates fired</span>
+  <span><b id="s-prompts">0</b> prompts</span>
+</div>
+
+<div class="label">Active now</div>
+<div class="active" id="active"><span class="empty">idle</span></div>
+
+<div class="label">By model · effort</div>
+<div class="note">Tokens are summed over every API call of a dispatch, cache reads included. Effort “inherited” means the dispatch passed none.</div>
+<div class="wrap" id="by-model"><span class="empty">no finished dispatches yet</span></div>
+
+<div class="label">By agent</div>
+<div class="wrap" id="by-agent"><span class="empty">no finished dispatches yet</span></div>
+
+<div class="label">Timeline</div>
+<div class="feed" id="feed"></div>
+
+<script>
+  const AGENTS = {
+    archie:  { name: 'Archie',  c: '#e6c84f' }, bob:    { name: 'Bob',     c: '#57c46b' },
+    scott:   { name: 'Scott',   c: '#e08a3c' }, pixie:  { name: 'Pixie',   c: '#d9b34a' },
+    quinn:   { name: 'Quinn',   c: '#46c7d4' }, gard:   { name: 'Gard',    c: '#e2574e' },
+    iris:    { name: 'Iris',    c: '#9b6bd4' }, spencer:{ name: 'Spencer', c: '#e58bbf' },
+    pipe:    { name: 'Pipe',    c: '#4f86d6' }, virgo:  { name: 'Virgo',   c: '#d8d8d8' },
+    perry:   { name: 'Perry',   c: '#7fb3e8' },
+  };
+  // Explicit lookups: a hyphenated id ("s-agents") never becomes a global, and
+  // reading one that way threw on every render, which the catch below reported
+  // as "disconnected".
+  const $ = (id) => document.getElementById(id);
+  const s_agents = $('s-agents'), s_gates = $('s-gates'), s_prompts = $('s-prompts');
+  const activeEl = $('active'), feedEl = $('feed'), byModel = $('by-model'), byAgent = $('by-agent');
+  const pulse = $('pulse'), updated = $('updated');
+  const meta = (slug) => AGENTS[(slug || '').split('-')[0]] || { name: slug || 'agent', c: '#7c8088' };
+  const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const esc = (s) => (s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+
+  const tok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n));
+  const dur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')}s` : (ms / 1000).toFixed(1) + 's';
+  const modelOf = (e) => (e.resolved_model || e.model || '—').replace(/^claude-/, '');
+  const effortOf = (e) => e.effort || 'inherited';
+
+  // One row per group: dispatch count, and averages over the dispatches that
+  // carry the number — a dispatch whose transcript could not be read has no
+  // tokens, and counting it as zero would drag the average down.
+  function table(ds, keyOf, heads) {
+    const groups = new Map();
+    for (const d of ds) {
+      const k = keyOf(d), g = groups.get(k.join('\u0000')) || { k, n: 0, t: [], ms: [] };
+      g.n++;
+      if (d.tokens) g.t.push(d.tokens);
+      if (typeof d.duration_ms === 'number') g.ms.push(d.duration_ms);
+      groups.set(k.join('\u0000'), g);
+    }
+    const avg = (xs, f) => xs.reduce((s, x) => s + f(x), 0) / xs.length;
+    const rows = [...groups.values()].sort((a, b) => b.n - a.n).map((g) => {
+      const t = g.t.length ? `<span title="avg over ${g.t.length} of ${g.n} · in ${tok(avg(g.t, (x) => x.input))} · out ${tok(avg(g.t, (x) => x.output))} · cache read ${tok(avg(g.t, (x) => x.cache_read))} · cache write ${tok(avg(g.t, (x) => x.cache_creation))} · ${avg(g.t, (x) => x.api_calls).toFixed(1)} API calls">${tok(avg(g.t, (x) => x.total))}</span>` : '<span class="dim">—</span>';
+      const m = g.ms.length ? dur(avg(g.ms, (x) => x)) : '—';
+      return `<tr>${g.k.map((c, i) => `<td class="${i ? 'dim' : ''}">${esc(c)}</td>`).join('')}<td class="n">${g.n}</td><td class="n">${t}</td><td class="n">${m}</td></tr>`;
+    }).join('');
+    return `<table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}<th class="n">dispatches</th><th class="n">avg tokens</th><th class="n">avg duration</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function renderDispatches(ds) {
+    if (!ds.length) return;
+    byModel.innerHTML = table(ds, (d) => [modelOf(d), effortOf(d)], ['model', 'effort']);
+    byAgent.innerHTML = table(ds, (d) => [meta(d.agent).name], ['agent']);
+  }
+
+  function render(events) {
+    let agents = 0, gates = 0, prompts = 0;
+    // Dispatches logged with an id close on their own agent_end. Older lines
+    // have no id and keep the old first-in, first-out pairing with agent_stop.
+    const open = new Map(), legacy = [];
+    for (const e of events) {
+      if (e.event === 'agent_start') { agents++; e.id ? open.set(e.id, e) : legacy.push(e); }
+      else if (e.event === 'agent_end') open.delete(e.id);
+      else if (e.event === 'agent_stop' && !('agent_id' in e)) legacy.shift();
+      else if (e.event === 'gate') gates++;
+      else if (e.event === 'prompt') prompts++;
+    }
+    const active = [...legacy, ...open.values()];
+    s_agents.textContent = agents; s_gates.textContent = gates; s_prompts.textContent = prompts;
+
+    activeEl.innerHTML = active.length ? active.map((e) => {
+      const m = meta(e.agent);
+      return `<span class="chip"><span class="dot" style="background:${m.c}"></span>
+        <span class="who" style="color:${m.c}">${esc(m.name)}</span>
+        <span class="task">${esc(e.task) || '…'}</span></span>`;
+    }).join('') : '<span class="empty">idle — no agent running</span>';
+
+    feedEl.innerHTML = events.slice(-80).reverse().map((e) => {
+      const t = `<span class="t">${clock(e.ts)}</span>`;
+      if (e.event === 'prompt') return `<div class="row">${t}<span class="ic">▸</span><span class="body meta">user prompt · ${esc(e.project)}</span></div>`;
+      if (e.event === 'agent_start') { const m = meta(e.agent);
+        return `<div class="row">${t}<span class="ic" style="color:${m.c}">●</span><span class="body"><span class="who" style="color:${m.c}">${esc(m.name)}</span> <span class="task">${esc(e.task) || 'dispatched'}</span></span></div>`; }
+      if (e.event === 'agent_end') { const m = meta(e.agent);
+        const bits = [modelOf(e), effortOf(e), typeof e.duration_ms === 'number' ? dur(e.duration_ms) : '', e.tokens ? tok(e.tokens.total) + ' tok' : ''].filter(Boolean).join(' · ');
+        return `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop"><span style="color:${m.c}">${esc(m.name)}</span> finished · ${esc(bits)}</span></div>`; }
+      if (e.event === 'agent_stop') return 'agent_id' in e ? '' : `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop">subagent finished</span></div>`;
+      if (e.event === 'gate') { const block = e.kind === 'secret-block';
+        return `<div class="row">${t}<span class="ic gate ${block ? 'block' : ''}">${block ? '⛔' : '⚠'}</span><span class="body gate ${block ? 'block' : ''}">gate · ${esc(e.kind)}${e.file ? ' · ' + esc(e.file) : ''}${e.detail ? ' · ' + esc(e.detail) : ''}</span></div>`; }
+      return '';
+    }).join('');
+  }
+
+  async function tick() {
+    try {
+      const r = await fetch('/events.json', { cache: 'no-store' });
+      render(await r.json());
+      const d = await fetch('/dispatches.json', { cache: 'no-store' });
+      renderDispatches(await d.json());
+      updated.textContent = 'updated ' + clock(Date.now());
+      pulse.style.background = '#57c46b';
+    } catch (_) { pulse.style.background = '#e2574e'; updated.textContent = 'disconnected'; }
+  }
+  tick(); setInterval(tick, 2000);
+</script>

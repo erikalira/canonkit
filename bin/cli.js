@@ -26,6 +26,21 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
 const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
 const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
+const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
+
+// Every event each hook must be registered under, with the matcher it needs
+// there (null: no matcher). Checked per event, not per file: a hook wired to
+// some of its events half-works, which hides better than not working — the gates
+// fire, so nobody goes looking for the dispatch metrics that are never written.
+const HOOK_EVENTS = {
+  "meu-time-hook.js": {
+    PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task",
+    PostToolUse: "Agent|Task",
+    SubagentStop: null,
+    UserPromptSubmit: null,
+    Stop: null,
+  },
+};
 
 // Two runtimes read different files, and forgetting either one is the failure
 // these markers exist to prevent. Claude Code reads .claude/agents/ and
@@ -246,6 +261,7 @@ async function install(ctx, options = {}) {
 
   await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
   await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"));
+  await installDashboard(ctx, path.join(os.homedir(), ".claude", "meu-time-dashboard"));
 
   if (reference) {
     ctx.log("");
@@ -309,23 +325,42 @@ async function installHooks(ctx, dest) {
     : [];
   if (!files.length) return;
 
+  await copyKeepingLocal(ctx, HOOKS_DIR, dest, files);
+  ctx.log(`Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`);
+
+  await reportHookWiring(ctx, dest, files);
+}
+
+/**
+ * Install the activity dashboard the hook's event log feeds. It used to live
+ * only in ~/.claude/meu-time-dashboard/, the same unversioned single copy the
+ * hook once was — so the hook could change the log's shape with nothing in the
+ * repo able to follow it.
+ */
+async function installDashboard(ctx, dest) {
+  if (!existsSync(DASHBOARD_DIR)) return;
+  const files = (await readdir(DASHBOARD_DIR)).sort();
+  await copyKeepingLocal(ctx, DASHBOARD_DIR, dest, files);
+  const serve = path.join(dest, "serve.js").split(path.sep).join("/");
+  ctx.log(`Installed dashboard -> ${dest}  (run: node ${serve})`);
+}
+
+/**
+ * Editing these files in place is the only workflow they ever had, so an
+ * install that silently replaced a divergent copy would destroy the very
+ * customization that motivated versioning them. Keep it, then overwrite.
+ */
+async function copyKeepingLocal(ctx, fromDir, dest, files) {
   await ctx.mkdir(dest);
   for (const file of files) {
-    const from = path.join(HOOKS_DIR, file);
+    const from = path.join(fromDir, file);
     const to = path.join(dest, file);
-
-    // Editing this file in place is the only workflow it has ever had, so an
-    // install that silently replaced a divergent copy would destroy the very
-    // customization that motivated versioning it. Keep it, then overwrite.
     if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
       await ctx.copy(to, `${to}.local.bak`);
       ctx.log(`  ${file} differed — previous copy kept as ${file}.local.bak`);
     }
     await ctx.copy(from, to);
   }
-  ctx.log(`Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`);
-
-  await reportHookWiring(ctx, dest, files);
 }
 
 /**
@@ -347,17 +382,32 @@ async function reportHookWiring(ctx, dest, files) {
     }
   }
 
-  const wired = JSON.stringify(parsed.hooks ?? {});
-  const missing = files.filter((f) => !wired.includes(f));
+  const hooks = parsed.hooks ?? {};
+  const missing = []; // [file, event, matcher]
+  for (const file of files) {
+    const events = HOOK_EVENTS[file];
+    if (!events) {
+      // A hook this map does not describe: the most that can be said is whether
+      // anything references it at all.
+      if (!JSON.stringify(hooks).includes(file)) missing.push([file, null, null]);
+      continue;
+    }
+    for (const [event, matcher] of Object.entries(events)) {
+      if (!JSON.stringify(hooks[event] ?? []).includes(file)) missing.push([file, event, matcher]);
+    }
+  }
   if (!missing.length) return;
 
   ctx.log("");
-  ctx.log(`  not referenced by ~/.claude/settings.json: ${missing.join(", ")}`);
-  ctx.log("  A hook the runtime never calls fails silently. Register each one under");
-  ctx.log("  hooks.PreToolUse / UserPromptSubmit / SubagentStop / Stop as:");
-  for (const file of missing) {
+  for (const file of new Set(missing.map(([f]) => f))) {
+    const events = missing.filter(([f, e]) => f === file && e).map(([, e]) => e);
+    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json${events.length ? ` under: ${events.join(", ")}` : ""}`);
+  }
+  ctx.log("  A hook the runtime never calls fails silently. Add under \"hooks\" in settings.json:");
+  for (const [file, event, matcher] of missing) {
     const cmd = path.join(dest, file).split(path.sep).join("/");
-    ctx.log(`    { "type": "command", "command": "node ${cmd}" }`);
+    const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${cmd}" }] }`;
+    ctx.log(event ? `    "${event}": [${entry}]` : `    ${entry}`);
   }
 }
 

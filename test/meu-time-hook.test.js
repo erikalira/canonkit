@@ -15,7 +15,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, appendFile, mkdir } from "node:fs/promises";
+import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
@@ -48,6 +48,19 @@ function decide(input) {
   const j = JSON.parse(out);
   return j.decision || j.hookSpecificOutput?.permissionDecision || "allow";
 }
+
+/** Runs the hook and returns the raw process result. */
+function runHook(input) {
+  return spawnSync(process.execPath, [HOOK], {
+    input: typeof input === "string" ? input : JSON.stringify(input),
+    encoding: "utf8",
+    env: { ...process.env, HOME, USERPROFILE: HOME },
+  });
+}
+
+const logged = async (session) =>
+  (await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8"))
+    .trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.session === session);
 
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
@@ -107,6 +120,160 @@ describe("file-editing tools", () => {
   });
   test("lighthouserc.json is Perry-gated", () => {
     assert.equal(decide(pre("Edit", { file_path: "lighthouserc.json", new_string: "{}" })), "ask");
+  });
+});
+
+describe("dispatch metrics", () => {
+  // Payload shapes are the ones captured from Claude Code 2.1.300. Prompt and
+  // result carry markers so the test can prove neither reaches the log.
+  const PROMPT = "PROMPT-TEXT-MUST-NOT-BE-LOGGED";
+  const RESULT = "RESULT-TEXT-MUST-NOT-BE-LOGGED";
+  const ti = { subagent_type: "gard", description: "review auth", prompt: PROMPT, model: "haiku", effort: "low" };
+
+  // A subagent transcript as the runtime writes it: one assistant entry per API
+  // call, each with that call's usage; the same message split over two entries
+  // must count once. The usage in PostToolUse is deliberately different (it is
+  // the last call only) so the test fails if the hook reads that instead.
+  async function transcript(dir, agentId) {
+    const call = (id, input, output, cr, cc) => JSON.stringify({
+      type: "assistant", requestId: `req_${id}`,
+      message: { id, model: "claude-haiku-5-5", content: [{ type: "text", text: RESULT }],
+        usage: { input_tokens: input, output_tokens: output, cache_read_input_tokens: cr, cache_creation_input_tokens: cc } },
+    });
+    const lines = [
+      JSON.stringify({ type: "user", message: { role: "user", content: PROMPT } }),
+      call("msg_1", 3, 10, 1000, 500),
+      call("msg_1", 3, 10, 1000, 500),
+      call("msg_2", 2, 20, 2000, 0),
+      "not json",
+    ];
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, `agent-${agentId}.jsonl`), lines.join("\n") + "\n");
+  }
+
+  test("a foreground dispatch logs agent_start with model and effort, and a linked agent_end with numbers", async () => {
+    const S = "METRICS-FG";
+    const parent = path.join(HOME, "projects", "p", `${S}.jsonl`);
+    await transcript(path.join(HOME, "projects", "p", S, "subagents"), "afg1");
+
+    assert.equal(decide({ ...pre("Agent", ti, S), tool_use_id: "toolu_fg" }), "allow");
+    const post = runHook({
+      hook_event_name: "PostToolUse", session_id: S, tool_name: "Agent", tool_input: ti,
+      tool_use_id: "toolu_fg", transcript_path: parent, duration_ms: 9001,
+      tool_response: {
+        status: "completed", agentId: "afg1", resolvedModel: "claude-haiku-5-5",
+        totalDurationMs: 9000, totalToolUseCount: 4, totalTokens: 1,
+        usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 1, cache_creation_input_tokens: 1 },
+        content: [{ type: "text", text: RESULT }],
+      },
+    });
+    assert.equal(post.status, 0);
+    assert.equal(post.stdout.trim(), "", "PostToolUse must never answer with a decision");
+
+    const evs = await logged(S);
+    const start = evs.find((e) => e.event === "agent_start");
+    const end = evs.find((e) => e.event === "agent_end");
+    assert.equal(start.model, "haiku");
+    assert.equal(start.effort, "low");
+    assert.equal(end.id, start.id);
+    assert.equal(end.id, "toolu_fg");
+    assert.deepEqual(
+      { agent: end.agent, task: end.task, model: end.model, effort: end.effort, mode: end.mode },
+      { agent: "gard", task: "review auth", model: "haiku", effort: "low", mode: "foreground" },
+    );
+    assert.equal(end.resolved_model, "claude-haiku-5-5");
+    assert.equal(end.duration_ms, 9000);
+    assert.equal(end.tool_uses, 4);
+    assert.deepEqual(end.tokens, { api_calls: 2, input: 5, output: 30, cache_read: 3000, cache_creation: 500, total: 3535 });
+
+    const raw = JSON.stringify(evs);
+    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
+  });
+
+  test("a dispatch with no effort logs it as empty (inherited)", async () => {
+    const S = "METRICS-NOEFFORT";
+    decide(pre("Agent", { subagent_type: "bob", description: "x" }, S));
+    const [start] = await logged(S);
+    assert.equal(start.effort, "");
+    assert.equal(start.model, "");
+  });
+
+  test("a background dispatch gets its agent_end at SubagentStop, linked through the launch", async () => {
+    const S = "METRICS-BG";
+    const dir = path.join(HOME, "projects", "p", S, "subagents");
+    await transcript(dir, "abg1");
+
+    decide({ ...pre("Agent", { ...ti, run_in_background: true }, S), tool_use_id: "toolu_bg" });
+    runHook({
+      hook_event_name: "PostToolUse", session_id: S, tool_name: "Agent", tool_use_id: "toolu_bg",
+      tool_input: { ...ti, run_in_background: true },
+      tool_response: { status: "async_launched", isAsync: true, agentId: "abg1", resolvedModel: "claude-haiku-5-5", prompt: PROMPT },
+    });
+    assert.equal((await logged(S)).filter((e) => e.event === "agent_end").length, 0, "no numbers exist at launch");
+
+    const stop = (stop_hook_active) => runHook({
+      hook_event_name: "SubagentStop", session_id: S, agent_id: "abg1", agent_type: "gard", stop_hook_active,
+      agent_transcript_path: path.join(dir, "agent-abg1.jsonl"), last_assistant_message: RESULT,
+    });
+    assert.equal(stop(false).stdout.trim(), "");
+    stop(true); // the runtime fires SubagentStop again after a stop hook continues the agent
+
+    const evs = await logged(S);
+    const ends = evs.filter((e) => e.event === "agent_end");
+    assert.ok(ends.length >= 1);
+    const end = ends.at(-1);
+    assert.equal(end.id, "toolu_bg");
+    assert.equal(end.mode, "background");
+    assert.equal(end.effort, "low");
+    assert.equal(end.resolved_model, "claude-haiku-5-5");
+    assert.equal(typeof end.duration_ms, "number");
+    assert.equal(end.tokens.total, 3535);
+    assert.equal(evs.filter((e) => e.event === "agent_stop").length, 1, "one agent finishing reads as one stop");
+    const raw = JSON.stringify(evs);
+    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
+  });
+
+  test("a foreground SubagentStop writes no agent_end of its own (PostToolUse does)", async () => {
+    const S = "METRICS-FG-STOP";
+    runHook({ hook_event_name: "SubagentStop", session_id: S, agent_id: "afg9", stop_hook_active: false });
+    assert.equal((await logged(S)).filter((e) => e.event === "agent_end").length, 0);
+  });
+
+  describe("payloads without usage never break the hook", () => {
+    const cases = {
+      "no tool_response": {},
+      "tool_response is a string": { tool_response: "Agent failed" },
+      "no usage, no duration": { tool_response: { status: "completed", agentId: "anone" } },
+      "an agentId that is not an id": { tool_response: { status: "completed", agentId: "../../etc/passwd" }, transcript_path: "/x.jsonl" },
+    };
+    for (const [name, extra] of Object.entries(cases)) {
+      test(name, async () => {
+        const S = `METRICS-EMPTY-${name}`;
+        const r = runHook({ hook_event_name: "PostToolUse", session_id: S, tool_name: "Agent", tool_input: {}, tool_use_id: "t", ...extra });
+        assert.equal(r.status, 0);
+        assert.equal(r.stdout.trim(), "");
+        const end = (await logged(S)).find((e) => e.event === "agent_end");
+        assert.equal(end.tokens, null, "no tokens is null, never a guess");
+        assert.equal(end.duration_ms, null);
+      });
+    }
+    test("a SubagentStop whose transcript is missing", () => {
+      const r = runHook({ hook_event_name: "SubagentStop", session_id: "X", agent_id: "amissing", agent_transcript_path: "/nope.jsonl" });
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout.trim(), "");
+    });
+    test("stdin that is not JSON", () => {
+      const r = runHook("{ not json");
+      assert.equal(r.status, 0);
+      assert.equal(r.stdout.trim(), "");
+    });
+  });
+
+  test("PostToolUse on a gated tool never answers as PreToolUse", () => {
+    // The hook is wired to PostToolUse for Agent|Task only, but a matcher is
+    // config, not code. If it ever widens, a gate must not fire after the fact.
+    const r = runHook({ hook_event_name: "PostToolUse", session_id: "X", tool_name: "Bash", tool_input: { command: "git push" } });
+    assert.equal(r.stdout.trim(), "");
   });
 });
 

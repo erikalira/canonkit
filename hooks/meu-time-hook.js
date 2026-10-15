@@ -2,8 +2,8 @@
 /**
  * Meu Time — mechanical enforcement + process-observability hook.
  *
- * Wired (in ~/.claude/settings.json) to PreToolUse, SubagentStop, UserPromptSubmit, Stop.
- * Three jobs:
+ * Wired (in ~/.claude/settings.json) to PreToolUse, PostToolUse (matcher Agent|Task),
+ * SubagentStop, UserPromptSubmit, Stop. Three jobs:
  *   1. ENFORCEMENT — turn the team's soft HIGH-risk gates into mechanical ones:
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
  *        - edits to HIGH-risk surfaces (auth, secrets, migrations, contracts) -> confirm
@@ -22,8 +22,8 @@
  * past it. Bash and PowerShell therefore share one code path here, and the
  * settings matcher must list both. Same reasoning for NotebookEdit next to Edit/Write.
  *
- * Tests: `npm test` in the agent-team-config repo (test/meu-time-hook.test.js) — 18 hermetic
- * cases. This file is the installed copy; fix it in the repo, not here.
+ * Tests: `npm test` in the agent-team-config repo (test/meu-time-hook.test.js) — hermetic,
+ * real process. This file is the installed copy; fix it in the repo, not here.
  *
  * DESIGN RULE: fail-open. Any internal error -> exit 0 (allow). A buggy hook must
  * never brick the user's workflow; the agents (Gard/Quinn/Archie) are the real review.
@@ -51,11 +51,69 @@ function log(event) {
   } catch (_) { /* never throw from logging */ }
 }
 
-function readEvents() {
-  try {
-    return fs.readFileSync(LOG_FILE, 'utf8').trim().split('\n')
-      .map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-  } catch (_) { return []; }
+// withRotated: also read events.jsonl.1, for lookups that must survive a rotation
+// landing between two halves of the same dispatch.
+function readEvents(withRotated = false) {
+  const files = withRotated ? [LOG_FILE + '.1', LOG_FILE] : [LOG_FILE];
+  const out = [];
+  for (const f of files) {
+    try {
+      for (const l of fs.readFileSync(f, 'utf8').trim().split('\n')) {
+        try { const e = JSON.parse(l); if (e) out.push(e); } catch (_) {}
+      }
+    } catch (_) {}
+  }
+  return out;
+}
+
+// ---- DISPATCH METRICS ----
+// Where each number comes from was captured from real payloads, not assumed
+// (2026-10-15, Claude Code 2.1.300):
+//   PreToolUse(Agent)    tool_input.{model, effort}, tool_use_id. No usage.
+//   PostToolUse(Agent)   foreground: status "completed", agentId, resolvedModel,
+//                        totalDurationMs, totalToolUseCount, usage — but usage and
+//                        totalTokens describe only the LAST API call (≈ final context
+//                        size): a 5-call probe reported cache_read 75k where its calls
+//                        summed 348k. Background (the default): status
+//                        "async_launched", agentId, resolvedModel; no usage, no duration.
+//   SubagentStop         agent_id, agent_transcript_path; no usage, no duration. Fires
+//                        more than once per agent (again after a stop hook continues it).
+// So tokens are summed from the subagent's transcript, where every API call is one
+// assistant entry carrying its own usage, and a dispatch is identified by
+// tool_use_id — the only id both PreToolUse and PostToolUse carry. Only numbers
+// and metadata are logged: never the prompt, never the result.
+const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+const safeId = (v) => (typeof v === 'string' && /^[\w-]{1,64}$/.test(v) ? v : '');
+
+function transcriptUsage(file) {
+  let text;
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return null; }
+  const calls = new Map(); // keyed by message id: a call split over entries counts once
+  for (const line of text.split('\n')) {
+    if (!line.includes('"assistant"')) continue; // skip parsing the bulk of the file
+    let e;
+    try { e = JSON.parse(line); } catch (_) { continue; }
+    const m = e && e.type === 'assistant' && e.message;
+    if (m && m.usage && typeof m.usage === 'object') calls.set(m.id || e.requestId || e.uuid, m.usage);
+  }
+  if (!calls.size) return null;
+  const t = { api_calls: calls.size, input: 0, output: 0, cache_read: 0, cache_creation: 0 };
+  for (const u of calls.values()) {
+    t.input += num(u.input_tokens);
+    t.output += num(u.output_tokens);
+    t.cache_read += num(u.cache_read_input_tokens);
+    t.cache_creation += num(u.cache_creation_input_tokens);
+  }
+  t.total = t.input + t.output + t.cache_read + t.cache_creation;
+  return t;
+}
+
+// PostToolUse names the parent transcript, not the subagent's. The subagent's sits
+// beside it as <session>/subagents/agent-<id>.jsonl; if that layout ever changes the
+// read fails and tokens are logged as null rather than guessed.
+function subagentTranscript(parentTranscript, agentId) {
+  if (typeof parentTranscript !== 'string' || !agentId) return '';
+  return path.join(parentTranscript.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`);
 }
 
 // Agents that count as an independent reviewer for the definition-of-done gate.
@@ -180,18 +238,83 @@ function main() {
     process.exit(0);
   }
   if (eventName === 'SubagentStop') {
-    log({ event: 'agent_stop', project });
+    const agentId = safeId(input.agent_id);
+    // Logged on the first stop only: a stop hook that continues the agent fires
+    // this event again, and two agent_stop lines read as two agents finishing.
+    if (!input.stop_hook_active) log({ event: 'agent_stop', agent_id: agentId, project });
+    // A background dispatch has no PostToolUse at its end, so its agent_end is
+    // written here, linked through the agent_launch recorded at launch. A
+    // foreground one has no agent_launch and is written by PostToolUse instead.
+    // Written on every stop, with cumulative tokens: a continued or resumed agent
+    // produces a later line for the same id, and the last line per id is the total
+    // (for a resumed agent, its duration then spans the idle gap as well).
+    if (agentId) {
+      const evs = readEvents(true).filter((e) => e.session === SESSION);
+      const launch = evs.filter((e) => e.event === 'agent_launch' && e.agent_id === agentId).pop();
+      if (launch) {
+        const start = evs.filter((e) => e.event === 'agent_start' && e.id === launch.id).pop() || {};
+        log({
+          event: 'agent_end',
+          id: launch.id,
+          agent_id: agentId,
+          agent: start.agent || input.agent_type || 'unknown',
+          task: start.task || '',
+          model: start.model || '',
+          effort: start.effort || '',
+          resolved_model: launch.resolved_model || '',
+          mode: 'background',
+          duration_ms: start.ts ? Date.now() - start.ts : null,
+          tool_uses: null,
+          tokens: transcriptUsage(input.agent_transcript_path),
+          project,
+        });
+      }
+    }
+    process.exit(0);
+  }
+  if (eventName === 'PostToolUse') {
+    // Observability only. Nothing below this block may run here: the enforcement
+    // paths answer as PreToolUse, which a PostToolUse event must never emit.
+    if (tool === 'Agent' || tool === 'Task') {
+      const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
+      const id = input.tool_use_id || '';
+      const agentId = safeId(r.agentId);
+      if (r.status === 'async_launched') {
+        log({ event: 'agent_launch', id, agent_id: agentId, resolved_model: r.resolvedModel || '', project });
+      } else {
+        log({
+          event: 'agent_end',
+          id,
+          agent_id: agentId,
+          agent: ti.subagent_type || 'unknown',
+          task: ti.description || '',
+          model: ti.model || '',
+          effort: ti.effort || '',
+          resolved_model: r.resolvedModel || '',
+          mode: 'foreground',
+          status: typeof r.status === 'string' ? r.status : '',
+          duration_ms: num(r.totalDurationMs) || num(input.duration_ms) || null,
+          tool_uses: typeof r.totalToolUseCount === 'number' ? r.totalToolUseCount : null,
+          tokens: agentId ? transcriptUsage(subagentTranscript(input.transcript_path, agentId)) : null,
+          project,
+        });
+      }
+    }
     process.exit(0);
   }
   if (tool === 'Agent' || tool === 'Task') {
     log({
       event: 'agent_start',
+      // Links this line to its agent_end: tool_use_id is the one id PreToolUse
+      // and PostToolUse share.
+      id: input.tool_use_id || '',
       agent: ti.subagent_type || 'unknown',
       task: ti.description || '',
-      // The rule says every planned dispatch names its model. Logging it is what
-      // makes that checkable after the fact instead of an intention nobody can
-      // audit; empty means the dispatch inherited the agent's frontmatter model.
+      // The rule says every planned dispatch names its model and effort. Logging
+      // both is what makes that checkable after the fact instead of an intention
+      // nobody can audit; empty means the dispatch inherited the default.
       model: ti.model || '',
+      effort: ti.effort || '',
       project,
     });
     process.exit(0); // dispatching a subagent is always allowed

@@ -144,6 +144,32 @@ fonte de verdade, então o instalador protege o caso: se a cópia instalada
 divergir da do repo, ela é preservada como `meu-time-hook.js.local.bak` antes de
 ser sobrescrita.
 
+O registro é conferido **por evento**: `PreToolUse`, `PostToolUse` (matcher
+`Agent|Task`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
+deles funciona pela metade — os gates disparam, então ninguém procura as métricas
+de despacho que nunca são gravadas.
+
+### Métricas de despacho e dashboard
+
+Cada despacho de subagente vira duas linhas em
+`~/.claude/meu-time-activity/events.jsonl`, ligadas pelo `id` (o `tool_use_id`):
+`agent_start` (agente, descrição, `model`, `effort`; vazio = herdou o padrão) e
+`agent_end` (modelo resolvido, duração, tokens de entrada / saída / cache read /
+cache write e número de chamadas de API). Só números e metadados — nunca o texto
+do prompt nem do resultado.
+
+Os tokens são **somados do transcript do subagente**, não lidos do payload do
+hook: o `usage` que o `PostToolUse` entrega descreve só a última chamada de API
+(≈ tamanho final do contexto) e subestima justamente os despachos de muitas
+voltas. Num despacho em background (o padrão), o `PostToolUse` chega no
+lançamento, sem números, e o `agent_end` é gravado no `SubagentStop`. Se o
+transcript não puder ser lido, `tokens` fica `null` — nunca estimado.
+
+O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
+`node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
+da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
+de despachos, tokens médios e duração média.
+
 ### Codex
 
 O mesmo core também vai para `~/.codex/agents/<nome>.toml`, no formato de custom
@@ -182,8 +208,8 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
 | Comando | O que faz |
 | --- | --- |
-| `install` | core no usuário + hooks + blocos de referência globais |
-| `install --no-reference` | só os agentes e os hooks |
+| `install` | core no usuário + hooks + dashboard + blocos de referência globais |
+| `install --no-reference` | só os agentes, os hooks e o dashboard |
 | `reference` | só os blocos globais |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |

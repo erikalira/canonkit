@@ -342,14 +342,21 @@ if command -v node >/dev/null 2>&1; then
     rm -rf "$hook_home"
   done
 
-  # The installer reads agents/, reference/ and hooks/ at runtime. Leaving any of
+  # The dashboard is CommonJS for the same reason as the hooks, and is only ever
+  # run by hand — so nothing else would notice it stopped parsing.
+  for f in dashboard/*.js; do
+    [ -e "$f" ] || continue
+    if node --check "$f" 2>/dev/null; then pass "$f parses"; else fail "$f: syntax error"; fi
+  done
+
+  # The installer reads agents/, reference/, hooks/ and dashboard/ at runtime. Leaving any of
   # them out of the published tarball is the one packaging mistake that cannot be
   # caught by running the CLI from a clone, because a clone always has them.
   node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference", "hooks"]) {
+for (const dir of ["bin", "agents", "reference", "hooks", "dashboard"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");

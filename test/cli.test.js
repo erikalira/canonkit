@@ -300,20 +300,39 @@ describe("hooks", () => {
     assert.equal(await read(hookPath(home)), await read(path.join(REPO, "hooks", "meu-time-hook.js")));
   });
 
-  test("is quiet when the hook is unchanged and already wired", async () => {
-    const { home } = await scratch("hook-wired");
-    await mkdir(path.join(home, ".claude"), { recursive: true });
-    await writeFile(
-      path.join(home, ".claude", "settings.json"),
-      JSON.stringify({
-        hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }] },
-      }),
+  const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "UserPromptSubmit", "Stop"];
+  const wire = (home, events) =>
+    mkdir(path.join(home, ".claude"), { recursive: true }).then(() =>
+      writeFile(
+        path.join(home, ".claude", "settings.json"),
+        JSON.stringify({
+          hooks: Object.fromEntries(
+            events.map((e) => [e, [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }]]),
+          ),
+        }),
+      ),
     );
+
+  test("is quiet when the hook is unchanged and wired to every event it needs", async () => {
+    const { home } = await scratch("hook-wired");
+    await wire(home, EVENTS);
 
     run(["install", "--no-reference"], { home });
     const { out } = run(["install", "--no-reference"], { home });
     assert.ok(!out.includes("not referenced"));
     assert.ok(!out.includes("differed"));
+  });
+
+  test("names the event a partially wired hook is missing, with its matcher", async () => {
+    // The install this guards: wired before PostToolUse existed. Every gate still
+    // fires, so nothing looks wrong — and no dispatch ever gets an agent_end.
+    const { home } = await scratch("hook-partial");
+    await wire(home, EVENTS.filter((e) => e !== "PostToolUse"));
+
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(out.includes("under: PostToolUse"), out);
+    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task"'), out);
+    assert.ok(!out.includes('"Stop": ['), "an event that is wired must not be reported");
   });
 
   test("survives a settings.json that is not valid JSON", async () => {
@@ -331,6 +350,29 @@ describe("hooks", () => {
     const { home } = await scratch("hook-dry");
     run(["install", "--no-reference", "--dry-run"], { home });
     assert.ok(!existsSync(hookPath(home)));
+    assert.ok(!existsSync(path.join(home, ".claude", "meu-time-dashboard")));
+  });
+});
+
+describe("dashboard", () => {
+  const dash = (home) => path.join(home, ".claude", "meu-time-dashboard");
+
+  test("installs the dashboard beside the hook it reads from", async () => {
+    const { home } = await scratch("dash-fresh");
+    run(["install", "--no-reference"], { home });
+    for (const f of await readdir(path.join(REPO, "dashboard"))) {
+      assert.equal(await read(path.join(dash(home), f)), await read(path.join(REPO, "dashboard", f)), f);
+    }
+  });
+
+  test("keeps a locally edited dashboard as .local.bak", async () => {
+    const { home } = await scratch("dash-divergent");
+    run(["install", "--no-reference"], { home });
+    const edited = (await read(path.join(dash(home), "index.html"))) + "<!-- local -->";
+    await writeFile(path.join(dash(home), "index.html"), edited);
+
+    run(["install", "--no-reference"], { home });
+    assert.equal(await read(path.join(dash(home), "index.html.local.bak")), edited);
   });
 });
 

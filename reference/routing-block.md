@@ -44,11 +44,10 @@ Each rule is tagged `[ENFORCED]` (a hook backs it) or `[ADVISORY]` (depends on m
   costs the budget.
 - `[ADVISORY]` **Every planned dispatch names its model** — **up** for a structural or irreversible
   decision, **down** for a mechanical pass with a verifiable result. A model chosen silently cannot
-  be told apart from one forgotten, which is why it is written down; the hook logs the model on each
-  dispatch, so a plan that names one is checkable against what actually ran. The `model:` in an
-  agent's frontmatter is the fallback for an ad-hoc dispatch nobody planned, not a ceiling. The
-  dispatch takes no effort argument — an effort written on a task is an intention the runtime never
-  sees.
+  be told apart from one forgotten, which is why it is written down. Model and effort are both
+  passed on each dispatch, and the hook logs both — plus the dispatch's tokens and duration when it
+  ends — so a plan that names them is checkable against what actually ran. The `model:` in an
+  agent's frontmatter is the fallback for an ad-hoc dispatch nobody planned, not a ceiling.
 - `[ADVISORY]` **Fan out on independent judgments** (Scott on scope, Pixie on UX, Gard on security:
   one message, no shared mutable file). Two agents *writing code* at once go through **Virgo** first
   for isolated worktrees — never concurrent file-editing agents in one tree. One agent's output as
