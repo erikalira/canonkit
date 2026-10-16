@@ -341,11 +341,11 @@ describe("context-size reminder (UserPromptSubmit)", () => {
     const f = await transcript("ctx-bands", [asst(20000), asst(120000), asst(190000, { isSidechain: true })]);
     const first = prompt(S, f);
     assert.equal(first.hookEventName, "UserPromptSubmit");
-    assert.match(first.additionalContext, /~120 mil tokens/);
+    assert.match(first.additionalContext, /~120k tokens/);
     assert.equal(prompt(S, f), null, "same band must not nag again");
 
     await appendFile(f, asst(155000) + "\n");
-    assert.match(prompt(S, f).additionalContext, /~155 mil tokens/);
+    assert.match(prompt(S, f).additionalContext, /~155k tokens/);
     assert.equal(prompt(S, f), null);
   });
 

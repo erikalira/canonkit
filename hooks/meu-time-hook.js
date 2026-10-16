@@ -117,7 +117,7 @@ function subagentTranscript(parentTranscript, agentId) {
 }
 
 // ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
-// Enforced half of the "Sessão nova quando o assunto muda" rule. A long session is
+// Enforced half of the "New session when the subject changes" rule. A long session is
 // re-read in full on every turn, so the cost of bundling unrelated jobs grows
 // silently; this puts the size in front of the model when it crosses a band.
 // Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
@@ -190,7 +190,7 @@ function contextReminder(input) {
   if (reached === 0) return null;
 
   log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(input.cwd || process.cwd()) });
-  return `Contexto desta sessão em ~${Math.round(tokens / 1000)} mil tokens. Se o pedido não depende do que veio antes, sugira uma sessão nova com handoff (regra 'Sessão nova quando o assunto muda').`;
+  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff (rule 'New session when the subject changes').`;
 }
 
 // Agents that count as an independent reviewer for the definition-of-done gate.

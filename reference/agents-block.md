@@ -97,3 +97,13 @@ validação do caminho afetado, checagem de segurança ou impacto em documentaç
 Fonte de verdade: repositório `agent-team-config`. Não edite os agentes em
 `~/.agents`, `~/.claude/agents` ou `.claude/agents` — a próxima instalação
 sobrescreve.
+
+## New session when the subject changes
+
+When a request does not depend on what is already in context (another change,
+another area, or the previous task is done), say so in one line before starting
+and suggest a new session. A request that bundles independent jobs gets the same
+suggestion: one session per job. If the next session will need state, first
+write a short handoff (the change's tasks.md, an ops file, or memory) and give
+its path. Not a block: if the user wants to continue, continue. In Claude Code
+a hook reminds when the context passes ~100k/150k/200k tokens.
