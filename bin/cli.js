@@ -116,8 +116,8 @@ const specialists = (agents) => agents.filter((a) => a.tier === "specialist");
 
 /**
  * The one-line summary written into a project's AGENTS.md, read out of the
- * roster block rather than kept in a second list here. The trailing "Aciona
- * quando ..." sentence is guidance for choosing an agent, not a description of
+ * roster block rather than kept in a second list here. The trailing "Use when
+ * ..." sentence is guidance for choosing an agent, not a description of
  * one, so it stays in the roster and out of the per-project entry.
  */
 async function summaries() {
@@ -125,7 +125,7 @@ async function summaries() {
   const out = new Map();
   for (const line of block.split("\n")) {
     const m = /^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+(.*)$/.exec(line.trim());
-    if (m) out.set(m[1], m[2].replace(/\s*Aciona quando[^.]*\.\s*$/i, "").trim());
+    if (m) out.set(m[1], m[2].replace(/\s*Use when[^.]*\.\s*$/i, "").trim());
   }
   return out;
 }
@@ -415,19 +415,16 @@ async function syncReference(ctx) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
   await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
 
-  // Claude Code reads ~/.claude/CLAUDE.md. This installer used to also make it
-  // import AGENTS.md, so the roster would not drift out of sync between the
-  // two. That put the same roster in Claude's context twice — once via the
-  // import, once as the routing block's own table below — with no benefit to
-  // Codex, which reads ~/AGENTS.md straight off disk either way. The routing
-  // block is self-sufficient now (see reference/routing-block.md), so this no
-  // longer adds the import. An import a user already has is left exactly as
-  // is — this only stops creating a new one, never removes an existing one.
+  // Claude Code reads ~/.claude/CLAUDE.md. The routing block imports
+  // ~/AGENTS.md (`@~/AGENTS.md`) so the team is defined in exactly one place and
+  // reaches Claude in projects outside the home tree and in projects that have
+  // their own CLAUDE.md, where AGENTS.md is not picked up on its own. The block
+  // no longer carries a roster table of its own, so the import does not put the
+  // roster in context twice.
   const claudeMd = path.join(os.homedir(), ".claude", "CLAUDE.md");
 
-  // The routing rules are Claude Code mechanics — subagent_type, model floors,
-  // hooks, parallelism — which mean nothing to Codex, so they stay out of the
-  // runtime-neutral roster. A CLAUDE.md that does not exist yet is created by
+  // The Claude Code mechanics — hooks and their enforcement — mean nothing to
+  // Codex, so they stay out of the runtime-neutral roster. A CLAUDE.md that does not exist yet is created by
   // this call with the routing block as its entire content.
   await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
 }
@@ -528,16 +525,16 @@ async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = 
 
   const entries = installed.map((a) => `- **${a.name}** — ${summary.get(a.name) ?? "specialist."}`).join("\n");
   const managed = `${start}
-# subagentes deste projeto
+# Project subagents
 
-Além do core (ver ~/AGENTS.md), este projeto instala os specialists abaixo. Use o
-Agent tool para delegar a eles quando o pedido se encaixar claramente no papel.
+Besides the core team (see ~/AGENTS.md), this project installs the specialists below.
+Use the Agent tool to delegate to them when the request clearly fits their role.
 
 ${entries}
 
-Um specialist entra quando o domínio dele está em jogo, não por completude.
-Fonte de verdade: repositório agent-team-config. Não edite os arquivos em
-.claude/agents/ — eles são cópias.
+A specialist is in play when its domain is, not for completeness.
+Source of truth: the agent-team-config repository. Do not edit the files in
+.claude/agents/ — they are copies.
 ${end}`;
 
   const text = had

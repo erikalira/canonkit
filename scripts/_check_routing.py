@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Check reference/routing-block.md against the agents it routes work to.
+"""Check the team roster (reference/agents-block.md) against the agents it routes work to.
 
-The routing block is what the dispatcher reads to decide who is not optional on
+The roster block is what the dispatcher reads to decide who is not optional on
 a change. Every claim it makes about an agent — which layer it is in, whether it
 holds a veto — is a fact stored somewhere else, so it can drift without anything
 failing. This is the check that makes it fail.
 
-The block is the routing view of the CORE team only. Specialists are per project
+The roster's authority table is the routing view of the CORE team only. Specialists are per project
 and are documented in the project that installed them: listing one here would
 claim it is always available, which is the one thing a specialist is not. So the
 absence of a specialist is an invariant to enforce, not a gap to report.
@@ -17,7 +17,8 @@ import pathlib
 import re
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-block = (REPO / "reference/routing-block.md").read_text(encoding="utf-8")
+block = (REPO / "reference/agents-block.md").read_text(encoding="utf-8")
+routing = (REPO / "reference/routing-block.md").read_text(encoding="utf-8")
 agents = sorted(p.stem for p in (REPO / "agents").glob("*.md"))
 
 
@@ -68,7 +69,13 @@ for a in sorted(named):
 # agent runs on what, because a prose copy of frontmatter is the drift this
 # check exists to prevent.
 if not re.search(r"names its model", block):
-    problems.append("the block no longer carries a rule naming the model per dispatch")
+    problems.append("the roster no longer carries a rule naming the model per dispatch")
+
+# The Claude-specific block must not restate the team: it points at AGENTS.md.
+if "@~/AGENTS.md" not in routing:
+    problems.append("routing-block.md does not import ~/AGENTS.md")
+if re.search(r"^\|\s*\*\*\w+\*\*", routing, re.M):
+    problems.append("routing-block.md restates the roster table — it belongs in agents-block.md")
 
 for p in problems:
     print("FAIL	" + p)

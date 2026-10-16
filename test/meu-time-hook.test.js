@@ -94,6 +94,43 @@ describe("staying quiet on ordinary work", () => {
   test("tokenizer.ts is not an auth file", () => {
     assert.equal(decide(pre("Edit", { file_path: "src/utils/tokenizer.ts", new_string: "x" })), "allow");
   });
+  // `tokens` in the context-size sense (and design tokens, lexer tokens) is not a
+  // credential: it fired the Stop gate three times in a session about context size.
+  test("tokens in the context-size / design-token sense are not auth surfaces", () => {
+    for (const fp of [
+      "src/styles/tokens.css",
+      "design/design-tokens.json",
+      "docs/context-tokens.md",
+      "hooks/token-count.js",
+      "src/lexer/tokens.ts",
+    ]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "allow", fp);
+    }
+  });
+  test("a shell write to a context-tokens note is not gated", () => {
+    assert.equal(decide(pre("Bash", { command: "echo 120k > notes/context-tokens.md" })), "allow");
+  });
+  test("real auth-token surfaces are still gated", () => {
+    for (const fp of [
+      "src/auth/tokens.ts",
+      "src/lib/refresh_token.ts",
+      "src/lib/access-token.ts",
+      "src/lib/token-store.ts",
+      "server/token_service.py",
+      "src/lib/api-token.ts",
+      "src/lib/jwt_token.ts",
+      "config/github_token",
+      "config/npm-token",
+      "secrets/pat-tokens.json",
+      ".npmrc",
+      "home/.netrc",
+    ]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "ask", fp);
+    }
+  });
+  test("a shell write to a vendor token file is gated", () => {
+    assert.equal(decide(pre("Bash", { command: "echo abc > npm-token" })), "ask");
+  });
   test("a credential in a test fixture is not a leak", () => {
     assert.equal(
       decide(pre("Edit", { file_path: "src/data/pals.test.ts", new_string: 'const password = "hunter2000"' })),
@@ -305,5 +342,78 @@ describe("definition-of-done gate", () => {
   });
   test("the re-entry guard never blocks twice in one turn", () => {
     assert.equal(stop({ stop_hook_active: true }), "allow");
+  });
+});
+
+describe("context-size reminder (UserPromptSubmit)", () => {
+  const asst = (tokens, extra = {}) =>
+    JSON.stringify({
+      type: "assistant",
+      message: { id: "m" + tokens, usage: { input_tokens: 5, cache_read_input_tokens: tokens - 10, cache_creation_input_tokens: 5, output_tokens: 99 } },
+      ...extra,
+    });
+  const transcript = async (name, lines) => {
+    const f = path.join(HOME, name + ".jsonl");
+    await writeFile(f, lines.join("\n") + "\n");
+    return f;
+  };
+  const prompt = (session, transcript_path, env = {}) => {
+    const r = spawnSync(process.execPath, [HOOK], {
+      input: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: session, transcript_path }),
+      encoding: "utf8",
+      env: { ...process.env, HOME, USERPROFILE: HOME, ...env },
+    });
+    assert.equal(r.status, 0);
+    return r.stdout.trim() ? JSON.parse(r.stdout).hookSpecificOutput : null;
+  };
+
+  test("stays silent below the first band", async () => {
+    const f = await transcript("ctx-low", [asst(50000)]);
+    assert.equal(prompt("CTX-LOW", f), null);
+  });
+
+  test("injects additionalContext once per band crossing, using the latest main-chain entry", async () => {
+    const S = "CTX-BANDS";
+    // The sidechain entry is later in the file but belongs to a subagent: must be ignored.
+    const f = await transcript("ctx-bands", [asst(20000), asst(120000), asst(190000, { isSidechain: true })]);
+    const first = prompt(S, f);
+    assert.equal(first.hookEventName, "UserPromptSubmit");
+    assert.match(first.additionalContext, /~120k tokens/);
+    assert.equal(prompt(S, f), null, "same band must not nag again");
+
+    await appendFile(f, asst(155000) + "\n");
+    assert.match(prompt(S, f).additionalContext, /~155k tokens/);
+    assert.equal(prompt(S, f), null);
+  });
+
+  test("reminds again after the context shrinks below every band and climbs back", async () => {
+    const S = "CTX-COMPACT";
+    const f = await transcript("ctx-compact", [asst(130000)]);
+    assert.ok(prompt(S, f));
+    await appendFile(f, asst(20000) + "\n");
+    assert.equal(prompt(S, f), null);
+    await appendFile(f, asst(130000) + "\n");
+    assert.ok(prompt(S, f));
+  });
+
+  test("bands are overridable by env, and 'off' disables", async () => {
+    const f = await transcript("ctx-env", [asst(30000)]);
+    assert.ok(prompt("CTX-ENV", f, { MEU_TIME_CONTEXT_BANDS: "20000" }));
+    assert.equal(prompt("CTX-OFF", f, { MEU_TIME_CONTEXT_BANDS: "off" }), null);
+  });
+
+  test("logs a context-size gate that the definition-of-done gate ignores", async () => {
+    const f = await transcript("ctx-log", [asst(110000)]);
+    prompt("CTX-LOG", f);
+    const log = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    assert.match(log, /"session":"CTX-LOG".*"kind":"context-size"/);
+    assert.equal(decide({ hook_event_name: "Stop", session_id: "CTX-LOG" }), "allow");
+  });
+
+  test("fails open and silent on a missing, empty or garbage transcript", async () => {
+    assert.equal(prompt("CTX-MISSING", path.join(HOME, "nope.jsonl")), null);
+    assert.equal(prompt("CTX-EMPTY", await transcript("ctx-empty", [""])), null);
+    assert.equal(prompt("CTX-GARBAGE", await transcript("ctx-garbage", ['{"usage" broken', "not json"])), null);
+    assert.equal(runHook({ hook_event_name: "UserPromptSubmit" }).status, 0);
   });
 });
