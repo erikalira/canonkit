@@ -15,7 +15,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { applyBlock, readAgents, summaries } from "../bin/cli.js";
+import { applyBlock, readAgents, parseAgent, summaries } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -64,6 +64,28 @@ describe("agent roster", () => {
     assert.equal(agents.length, CORE.length + SPECIALISTS.length);
     assert.deepEqual(agents.filter((a) => a.tier === "core").map((a) => a.name).sort(), [...CORE].sort());
     assert.deepEqual(agents.filter((a) => a.tier === "specialist").map((a) => a.name).sort(), [...SPECIALISTS].sort());
+  });
+
+  test("every specialist declares its blocking authority", async () => {
+    const authority = Object.fromEntries((await readAgents()).filter((a) => a.tier === "specialist").map((a) => [a.name, a.authority]));
+    assert.deepEqual(authority, { dana: "veto", echo: "veto", iris: "none", maya: "veto", nova: "veto" });
+  });
+
+  test("a specialist without a valid authority is a hard error", () => {
+    const file = (extra) => `---
+name: zed
+description: x
+tier: specialist
+${extra}model: sonnet
+---
+
+body
+`;
+    assert.throws(() => parseAgent("zed.md", file("")), /authority is 'missing'/);
+    assert.throws(() => parseAgent("zed.md", file("authority: vetoes\n")), /authority is 'vetoes'/);
+    assert.equal(parseAgent("zed.md", file("authority: blocks\n")).authority, "blocks");
+    // Core agents are not required to declare it.
+    assert.doesNotThrow(() => parseAgent("zed.md", file("").replace("specialist", "core")));
   });
 
   test("every agent declares a model the runtime accepts", async () => {
@@ -392,9 +414,15 @@ describe("specialists", () => {
     assert.ok(existsSync(path.join(project, ".codex", "agents", "nova.toml")));
 
     const agentsMd = await read(path.join(project, "AGENTS.md"));
-    assert.match(agentsMd, /\*\*maya\*\* — game design/);
-    assert.match(agentsMd, /\*\*nova\*\* — visual direction/);
+    assert.match(agentsMd, /\*\*maya\*\* \(veto\) — game design/);
+    assert.match(agentsMd, /\*\*nova\*\* \(veto\) — visual direction/);
     assert.doesNotMatch(agentsMd, /\*\*iris\*\*/);
+  });
+
+  test("the project block states 'no veto' for a specialist without one", async () => {
+    const { home, project } = await scratch("add-authority-none");
+    assert.equal(run(["add", "iris"], { home, cwd: project }).status, 0);
+    assert.match(await read(path.join(project, "AGENTS.md")), /\*\*iris\*\* \(no veto\) — /);
   });
 
   test("the block is rebuilt from disk, not from the history of commands", async () => {

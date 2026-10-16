@@ -126,6 +126,21 @@ for a in agents:
     if has_overruled and not has_veto:
         problems.append("has 'When the veto is overruled' but declares no veto")
 
+    # A specialist's declared authority must match its body: `veto` needs the
+    # veto section, `none` must not have one. The project AGENTS.md block is
+    # generated from the frontmatter, so a mismatch would publish a false claim.
+    fm = re.match(r"---\n(.*?)\n---", text, re.S)
+    auth = re.search(r"^authority:\s*(\S+)", fm.group(1), re.M) if fm else None
+    tier = re.search(r"^tier:\s*(\S+)", fm.group(1), re.M) if fm else None
+    if tier and tier.group(1) == "specialist":
+        val = auth.group(1) if auth else None
+        if val not in ("veto", "blocks", "none"):
+            problems.append(f"authority is '{val or 'missing'}' - expected veto, blocks, or none")
+        elif val == "veto" and not has_veto:
+            problems.append("authority: veto but the body has no 'may veto' section")
+        elif val == "none" and has_veto:
+            problems.append("authority: none but the body declares a veto")
+
     if problems:
         print(f"FAIL\t{a}\t{'; '.join(problems)}")
     else:
