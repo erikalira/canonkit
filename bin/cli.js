@@ -75,40 +75,58 @@ async function readAgents() {
   const agents = [];
 
   for (const file of files) {
-    const name = path.basename(file, ".md");
-    const text = await readOwned(path.join(AGENTS_DIR, file));
-    const end = text.indexOf("\n---", 4);
-    if (!text.startsWith("---\n") || end === -1) {
-      throw new Error(`agents/${file}: no frontmatter`);
-    }
-
-    const front = {};
-    for (const line of text.slice(4, end).split("\n")) {
-      const m = /^([a-z]+):\s*(.*)$/.exec(line);
-      if (m) front[m[1]] = m[2].trim().replace(/^"(.*)"$/, "$1");
-    }
-
-    if (front.name !== name) {
-      throw new Error(`agents/${file}: frontmatter name is '${front.name}' — must match the filename`);
-    }
-    if (front.tier !== "core" && front.tier !== "specialist") {
-      throw new Error(`agents/${file}: tier is '${front.tier ?? "missing"}' — expected core or specialist`);
-    }
-
-    agents.push({
-      name,
-      tier: front.tier,
-      model: front.model,
-      description: front.description ?? "",
-      // Everything after the frontmatter is the agent's actual instructions.
-      // Claude Code reads the file as-is; Codex needs them as a TOML field.
-      body: text.slice(end + 4).replace(/^\n+/, ""),
-      file: path.join(AGENTS_DIR, file),
-    });
+    agents.push(parseAgent(file, await readOwned(path.join(AGENTS_DIR, file))));
   }
 
   if (!agents.length) throw new Error(`No agents found in ${AGENTS_DIR}`);
   return agents;
+}
+
+const AUTHORITIES = ["veto", "blocks", "none"];
+
+/**
+ * Parse one agent file (already newline-normalized). A specialist must declare
+ * `authority` (veto | blocks | none): the project block states it per agent, and
+ * a default would be a guess about who can stop a change. Core agents are not
+ * required to declare it — theirs lives in the roster table in
+ * reference/agents-block.md — but a value, if present, is carried through.
+ */
+function parseAgent(file, text) {
+  const name = path.basename(file, ".md");
+  const end = text.indexOf("\n---", 4);
+  if (!text.startsWith("---\n") || end === -1) {
+    throw new Error(`agents/${file}: no frontmatter`);
+  }
+
+  const front = {};
+  for (const line of text.slice(4, end).split("\n")) {
+    const m = /^([a-z]+):\s*(.*)$/.exec(line);
+    if (m) front[m[1]] = m[2].trim().replace(/^"(.*)"$/, "$1");
+  }
+
+  if (front.name !== name) {
+    throw new Error(`agents/${file}: frontmatter name is '${front.name}' — must match the filename`);
+  }
+  if (front.tier !== "core" && front.tier !== "specialist") {
+    throw new Error(`agents/${file}: tier is '${front.tier ?? "missing"}' — expected core or specialist`);
+  }
+  if (front.tier === "specialist" && !AUTHORITIES.includes(front.authority)) {
+    throw new Error(
+      `agents/${file}: authority is '${front.authority ?? "missing"}' — a specialist must declare ${AUTHORITIES.join(", ")}`,
+    );
+  }
+
+  return {
+    name,
+    tier: front.tier,
+    authority: front.authority,
+    model: front.model,
+    description: front.description ?? "",
+    // Everything after the frontmatter is the agent's actual instructions.
+    // Claude Code reads the file as-is; Codex needs them as a TOML field.
+    body: text.slice(end + 4).replace(/^\n+/, ""),
+    file: path.join(AGENTS_DIR, file),
+  };
 }
 
 const core = (agents) => agents.filter((a) => a.tier === "core");
@@ -521,7 +539,10 @@ async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = 
     return ctx.log("Removed specialist block from AGENTS.md");
   }
 
-  const entries = installed.map((a) => `- **${a.name}** — ${summary.get(a.name) ?? "specialist."}`).join("\n");
+  const label = { veto: "veto", blocks: "blocks", none: "no veto" };
+  const entries = installed
+    .map((a) => `- **${a.name}** (${label[a.authority]}) — ${summary.get(a.name) ?? "specialist."}`)
+    .join("\n");
   const managed = `${start}
 # Project subagents
 
@@ -685,4 +706,4 @@ if (invokedDirectly) {
     });
 }
 
-export { applyBlock, readAgents, summaries, codexAgent, CODEX_MODELS };
+export { applyBlock, readAgents, parseAgent, summaries, codexAgent, CODEX_MODELS };
