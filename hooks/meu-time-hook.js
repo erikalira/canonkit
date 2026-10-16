@@ -116,6 +116,83 @@ function subagentTranscript(parentTranscript, agentId) {
   return path.join(parentTranscript.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`);
 }
 
+// ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
+// Enforced half of the "Sessão nova quando o assunto muda" rule. A long session is
+// re-read in full on every turn, so the cost of bundling unrelated jobs grows
+// silently; this puts the size in front of the model when it crosses a band.
+// Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
+// session_id + transcript_path; stdout
+//   {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
+// adds context alongside the prompt and exit 0 never blocks it. The transcript is
+// written asynchronously, so the figure can lag one turn — fine for a reminder.
+// The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
+// MEU_TIME_CONTEXT_BANDS (comma-separated token counts; "off" disables).
+const DEFAULT_BANDS = [100000, 150000, 200000];
+const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
+const BANDS_FILE = path.join(LOG_DIR, 'context-bands.json');
+const MAX_TRACKED_SESSIONS = 50;
+
+function contextBands() {
+  const raw = process.env.MEU_TIME_CONTEXT_BANDS;
+  if (raw === undefined || raw.trim() === '') return DEFAULT_BANDS;
+  if (/^(off|0|none)$/i.test(raw.trim())) return [];
+  const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  return bands.length ? [...new Set(bands)].sort((a, b) => a - b) : DEFAULT_BANDS;
+}
+
+// Context size = what the most recent main-chain API call consumed as input.
+// Read from the end only: transcripts reach several MB.
+function currentContextTokens(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, TAIL_BYTES);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"usage"')) continue;
+      let e;
+      try { e = JSON.parse(lines[i]); } catch (_) { continue; } // first line may be cut mid-entry
+      const u = e && e.type === 'assistant' && !e.isSidechain && e.message && e.message.usage;
+      if (!u || typeof u !== 'object') continue;
+      const total = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
+      if (total > 0) return total;
+    }
+  } catch (_) { /* unreadable: do nothing */ } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
+  }
+  return null;
+}
+
+function contextReminder(input) {
+  const bands = contextBands();
+  if (!bands.length || !SESSION || typeof input.transcript_path !== 'string') return null;
+  const tokens = currentContextTokens(input.transcript_path);
+  if (tokens === null) return null;
+
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(BANDS_FILE, 'utf8')) || {}; } catch (_) {}
+  const reached = bands.filter((b) => tokens >= b).pop() || 0; // 0: below every band
+  const last = num(state[SESSION]);
+  // Below every band (e.g. after /compact) the record is dropped so the next climb reminds again.
+  if (reached === 0 && !(SESSION in state)) return null;
+  if (reached !== 0 && reached <= last) return null;
+
+  if (reached === 0) delete state[SESSION]; else state[SESSION] = reached;
+  const keys = Object.keys(state);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACKED_SESSIONS))) delete state[k];
+  try {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+    fs.writeFileSync(BANDS_FILE, JSON.stringify(state));
+  } catch (_) { /* cannot persist: skip the reminder rather than repeat it every turn */ return null; }
+  if (reached === 0) return null;
+
+  log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(input.cwd || process.cwd()) });
+  return `Contexto desta sessão em ~${Math.round(tokens / 1000)} mil tokens. Se o pedido não depende do que veio antes, sugira uma sessão nova com handoff (regra 'Sessão nova quando o assunto muda').`;
+}
+
 // Agents that count as an independent reviewer for the definition-of-done gate.
 // perry is here because he owns performance budgets: the rule says only Perry
 // loosens one, and until now the gate that enforces "reviewed by someone" had
@@ -235,6 +312,13 @@ function main() {
   // ---- OBSERVABILITY (never blocks) ----
   if (eventName === 'UserPromptSubmit') {
     log({ event: 'prompt', project });
+    let note = null;
+    try { note = contextReminder(input); } catch (_) { /* fail-open */ }
+    if (note) {
+      process.stdout.write(JSON.stringify({
+        hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext: note },
+      }));
+    }
     process.exit(0);
   }
   if (eventName === 'SubagentStop') {

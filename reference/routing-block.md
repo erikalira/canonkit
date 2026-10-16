@@ -66,3 +66,9 @@ Each rule is tagged `[ENFORCED]` (a hook backs it) or `[ADVISORY]` (depends on m
   not carry. The gate is one that must be *answered*, not one that cannot be passed: if a change is
   genuinely trivial, say so and why, then proceed — but don't route a reviewer to silence it, and
   don't call something trivial to skip the sentence.
+- `[ADVISORY]` **Sessão nova quando o assunto muda.** Quando um pedido não depende do que já está no
+  contexto (outro change, outra área, ou a tarefa anterior terminou), diga isso numa linha antes de
+  começar e sugira uma sessão nova. Pedido que junta trabalhos independentes recebe a mesma sugestão:
+  uma sessão por trabalho. Se houver estado que a próxima sessão vai precisar, grave antes um handoff
+  curto (tasks.md do change, arquivo de operação ou memória) e diga o caminho. Não é bloqueio: se o
+  usuário quiser continuar, continue. Um hook lembra quando o contexto passa de ~100k/150k/200k tokens.
