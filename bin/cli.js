@@ -415,12 +415,10 @@ async function syncReference(ctx) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
   await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
 
-  // Claude Code reads ~/.claude/CLAUDE.md. The routing block imports
-  // ~/AGENTS.md (`@~/AGENTS.md`) so the team is defined in exactly one place and
-  // reaches Claude in projects outside the home tree and in projects that have
-  // their own CLAUDE.md, where AGENTS.md is not picked up on its own. The block
-  // no longer carries a roster table of its own, so the import does not put the
-  // roster in context twice.
+  // Claude Code reads ~/.claude/CLAUDE.md. The routing block only points at
+  // ~/AGENTS.md in plain text: projects live under a folder that contains it, so
+  // Claude Code already loads it as an ancestor, and an `@` import would load it
+  // a second time.
   const claudeMd = path.join(os.homedir(), ".claude", "CLAUDE.md");
 
   // The Claude Code mechanics — hooks and their enforcement — mean nothing to

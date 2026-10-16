@@ -98,7 +98,7 @@ describe("install", () => {
     }
   });
 
-  test("syncs both reference blocks, the routing block importing AGENTS.md once", async () => {
+  test("syncs both reference blocks, the routing block not importing AGENTS.md", async () => {
     const { home } = await scratch("install-reference");
     assert.equal(run(["install"], { home }).status, 0);
 
@@ -107,9 +107,9 @@ describe("install", () => {
     assert.match(agentsMd, /<!-- agent-team-config:end -->/);
 
     const claudeMd = await read(path.join(home, ".claude", "CLAUDE.md"));
-    // The routing block holds no roster of its own, so the import is the only
-    // way the team reaches Claude outside the home tree — and it is not a copy.
-    assert.equal(claudeMd.match(/^@~\/AGENTS\.md$/gm).length, 1);
+    // AGENTS.md already loads as an ancestor of the project; an import would
+    // load it twice, and the block holds no roster of its own to copy.
+    assert.doesNotMatch(claudeMd, /^@\S*AGENTS\.md/m);
     assert.doesNotMatch(claudeMd, /^\| \*\*Archie\*\*/m);
     assert.match(claudeMd, /<!-- agent-team-config:routing:start -->/);
     // Routing mechanics are Claude Code only; the roster is runtime-neutral.

@@ -1,10 +1,9 @@
 # Meu Time (agent team) — Claude Code specifics
 
 The team (roster, blocking authority, HIGH-risk routing, boundaries, dispatch
-rules) is defined in `~/AGENTS.md`; this block holds only what is specific to
-Claude Code.
-
-@~/AGENTS.md
+rules) is defined in `~/AGENTS.md` (not imported here: projects live under a
+folder that contains it, so Claude Code already loads it); this block holds only
+what is specific to Claude Code.
 
 Everything under `~/.claude/agents/` and `~/.claude/hooks/` is an **installed copy**:
 the `agent-team-config` repo is the source of truth, so a fix to an agent, a hook or this block goes
@@ -31,9 +30,5 @@ Each rule below is `[ENFORCED]`: a hook backs it, independently of my judgment.
   machine with two is a gate with a side door. If a gate fires on something I classified LOW,
   reconsider the risk and whether a veto holder should weigh in — don't just dismiss the prompt.
 - `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a gated surface
-  was edited and no independent reviewer was dispatched **after that edit**: **Quinn** for acceptance
-  criteria, **Gard** for security, **Archie** for contract/architecture, **Perry** for a performance
-  budget, or a project reviewer like ws-contract-reviewer. A review from earlier in the session does
-  not carry. The gate is one that must be *answered*, not one that cannot be passed: if a change is
-  genuinely trivial, say so and why, then proceed — but don't route a reviewer to silence it, and
-  don't call something trivial to skip the sentence.
+  was edited and no independent reviewer was dispatched **after that edit**. Who counts as a reviewer
+  and how to answer the gate: "No self-merge on HIGH risk" in `~/AGENTS.md`.

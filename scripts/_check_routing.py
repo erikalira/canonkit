@@ -72,8 +72,10 @@ if not re.search(r"names its model", block):
     problems.append("the roster no longer carries a rule naming the model per dispatch")
 
 # The Claude-specific block must not restate the team: it points at AGENTS.md.
-if "@~/AGENTS.md" not in routing:
-    problems.append("routing-block.md does not import ~/AGENTS.md")
+if re.search(r"^@\S*AGENTS\.md", routing, re.M):
+    problems.append("routing-block.md imports AGENTS.md — it already loads as an ancestor of the project, so the import loads it twice")
+if "~/AGENTS.md" not in routing:
+    problems.append("routing-block.md does not point at ~/AGENTS.md")
 if re.search(r"^\|\s*\*\*\w+\*\*", routing, re.M):
     problems.append("routing-block.md restates the roster table — it belongs in agents-block.md")
 
