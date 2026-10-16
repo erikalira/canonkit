@@ -267,15 +267,13 @@ Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
 | Arquivo do repo | Vai para | Lido por | Conteúdo |
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex e Claude Code | o time inteiro: quem existe, autoridade de bloqueio, roteamento HIGH, regras de despacho |
-| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o import de `~/AGENTS.md`, o gatilho `/graphify` e as regras `[ENFORCED]` dos hooks |
+| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o ponteiro para `~/AGENTS.md`, o gatilho `/graphify` e as regras `[ENFORCED]` dos hooks |
 
 O `AGENTS.md` é neutro de runtime e é a única definição do time. O bloco de
 roteamento guarda só o que é mecânica do Claude Code (hooks e o que eles
-impõem) e importa `~/AGENTS.md` com `@~/AGENTS.md`. O import cobre os projetos
-fora da árvore do home e os que têm `CLAUDE.md` próprio, onde o Claude não
-carregaria o `AGENTS.md` sozinho; a documentação do Claude Code diz que um
-`AGENTS.md` já carregado não é lido duas vezes. O bloco não carrega mais tabela
-própria do time, então o import não duplica o roster no contexto.
+impõem) e apenas aponta para `~/AGENTS.md`, sem `@`: os projetos ficam sob uma
+pasta que contém o `AGENTS.md`, o Claude Code já o carrega como ancestral, e um
+import o carregaria duas vezes. O bloco não carrega tabela própria do time.
 
 Só o trecho entre os marcadores é gerenciado:
 
@@ -316,7 +314,7 @@ protocolo do Virgo e checa as convenções que este README promete:
   genérico ("the security owner") em vez de um agente nomeado;
 - o roster e o bloco de roteamento — todo agente aparece no roster, a divisão core/specialist bate
   com os instaladores, a coluna de autoridade bate com quem declara veto no próprio
-  arquivo, e a regra de modelo bate com o frontmatter, e o bloco de roteamento importa o `AGENTS.md` em vez de repetir a tabela;
+  arquivo, e a regra de modelo bate com o frontmatter, e o bloco de roteamento aponta para o `AGENTS.md` (sem importá-lo) em vez de repetir a tabela;
 - o pacote npm — `bin/cli.js` compila, `files[]` inclui `agents/` e `reference/`
   (o CLI publicado os lê em runtime, e um clone sempre os tem — é o erro de
   empacotamento que rodar de um clone nunca pega), `bin` aponta para o arquivo
