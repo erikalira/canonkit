@@ -227,7 +227,15 @@ function deny(reason) {
 // in ordinary code (`tokenizer.ts`, `sessionStorage.ts`), so they only count on a
 // path-segment boundary. A gate that cries wolf is a gate people click through.
 const HIGH_RISK_STRONG = /(auth|oauth|jwt|passport|secret|credential|\.env|rbac|schema\.prisma|prisma[\/\\]migrations)/i;
-const HIGH_RISK_WORD = /(^|[\/\\._-])(login|sessions?|tokens?|contracts?|permissions?|acl|gateway|migrations?)([\/\\._-]|$)/i;
+// A bare `token(s)` is not here: design tokens, context/LLM tokens and lexer
+// tokens are far more common in paths than credentials. Only a token that names
+// what kind it is (`refresh_token`, `access-token.ts`) or a module that manages
+// them (`token-store.ts`, `token_service.py`) counts; `auth/tokens.ts` is caught
+// by the STRONG `auth` term anyway. Vendor/PAT tokens (`github_token`,
+// `npm-token`) and the dotfiles that hold registry credentials stay gated: the
+// secret-content check does not recognise ghp_/npm_ values, so the path is the
+// only backstop for them.
+const HIGH_RISK_WORD = /(^|[\/\\._-])(login|sessions?|contracts?|permissions?|acl|gateway|migrations?|(refresh|access|id|auth|api|bearer|csrf|device|reset|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?|tokens?[_-](store|storage|service|manager|vault|rotation|refresh|validation|verify|issuer)|\.?(npmrc|netrc|pypirc))([\/\\._-]|$)/i;
 // Generated, vendored or throwaway: never the surface the gate is about.
 const NOISE_PATH = /(node_modules|[\/\\]\.next|[\/\\]dist|[\/\\]build|coverage|graphify-out|[\/\\]\.git[\/\\])/i;
 const TEST_PATH = /(\.test\.|\.spec\.|__tests__|__mocks__|[\/\\]fixtures?[\/\\]|[\/\\]mocks?[\/\\]|\.example$|\.sample$)/i;

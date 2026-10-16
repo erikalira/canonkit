@@ -246,7 +246,7 @@ npx canonkit remove nova     # remove o arquivo e a entrada
 
 A descrição de uma linha que vai para o `AGENTS.md` do projeto é lida do próprio
 `reference/agents-block.md`, não de uma segunda lista dentro do instalador — a
-frase final "Aciona quando ..." fica no roster, porque é orientação para
+frase final "Use when ..." fica no roster, porque é orientação para
 escolher um agente e não descrição de um.
 
 Removendo o último specialist, o bloco inteiro sai do `AGENTS.md`. Tudo fora dos
@@ -266,19 +266,16 @@ Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
 
 | Arquivo do repo | Vai para | Lido por | Conteúdo |
 | --- | --- | --- | --- |
-| `reference/agents-block.md` | `~/AGENTS.md` | Codex | quem existe e o que cada um é dono |
-| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | como o trabalho é despachado |
+| `reference/agents-block.md` | `~/AGENTS.md` | Codex e Claude Code | o time inteiro: quem existe, autoridade de bloqueio, roteamento HIGH, regras de despacho |
+| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o import de `~/AGENTS.md`, o gatilho `/graphify` e as regras `[ENFORCED]` dos hooks |
 
-O roster é neutro de runtime. O bloco de roteamento fala de `subagent_type`, piso
-de modelo, hooks e paralelismo — mecânica que não significa nada para o Codex, e
-por isso não entra no `AGENTS.md`.
-
-Os dois runtimes partem do mesmo roster sem que um arquivo importe o outro: o
-Codex lê o `~/AGENTS.md` direto do disco, e o bloco de roteamento carrega a
-própria tabela do time. O instalador **não** adiciona mais um import do
-`AGENTS.md` ao `CLAUDE.md` — isso colocava o mesmo roster duas vezes no contexto
-do Claude e não mudava nada para o Codex. Um import que você já tem é
-preservado: o script só deixou de criar um novo.
+O `AGENTS.md` é neutro de runtime e é a única definição do time. O bloco de
+roteamento guarda só o que é mecânica do Claude Code (hooks e o que eles
+impõem) e importa `~/AGENTS.md` com `@~/AGENTS.md`. O import cobre os projetos
+fora da árvore do home e os que têm `CLAUDE.md` próprio, onde o Claude não
+carregaria o `AGENTS.md` sozinho; a documentação do Claude Code diz que um
+`AGENTS.md` já carregado não é lido duas vezes. O bloco não carrega mais tabela
+própria do time, então o import não duplica o roster no contexto.
 
 Só o trecho entre os marcadores é gerenciado:
 
@@ -293,7 +290,7 @@ execução, substitui a seção escrita à mão em vez de duplicá-la — identi
 pelo próprio título do bloco, não por um regex passado à mão, porque um erro de
 quoting ali duplica a seção em silêncio em vez de substituí-la.
 
-O bloco de roteamento afirma coisas sobre os agentes — em que camada estão, quem
+O roster afirma coisas sobre os agentes — em que camada estão, quem
 tem veto, quem roda em opus. São fatos guardados em outro lugar, então podem
 divergir sem nada quebrar. É o `validate.sh` que faz isso quebrar.
 
@@ -317,9 +314,9 @@ protocolo do Virgo e checa as convenções que este README promete:
   seções do roster batem com o `tier` declarado;
 - o grafo de escalation — ninguém isolado, e ninguém escalando para um papel
   genérico ("the security owner") em vez de um agente nomeado;
-- o bloco de roteamento — todo agente aparece nele, a divisão core/specialist bate
+- o roster e o bloco de roteamento — todo agente aparece no roster, a divisão core/specialist bate
   com os instaladores, a coluna de autoridade bate com quem declara veto no próprio
-  arquivo, e a regra de modelo bate com o frontmatter;
+  arquivo, e a regra de modelo bate com o frontmatter, e o bloco de roteamento importa o `AGENTS.md` em vez de repetir a tabela;
 - o pacote npm — `bin/cli.js` compila, `files[]` inclui `agents/` e `reference/`
   (o CLI publicado os lê em runtime, e um clone sempre os tem — é o erro de
   empacotamento que rodar de um clone nunca pega), `bin` aponta para o arquivo

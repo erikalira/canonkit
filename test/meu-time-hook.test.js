@@ -94,6 +94,43 @@ describe("staying quiet on ordinary work", () => {
   test("tokenizer.ts is not an auth file", () => {
     assert.equal(decide(pre("Edit", { file_path: "src/utils/tokenizer.ts", new_string: "x" })), "allow");
   });
+  // `tokens` in the context-size sense (and design tokens, lexer tokens) is not a
+  // credential: it fired the Stop gate three times in a session about context size.
+  test("tokens in the context-size / design-token sense are not auth surfaces", () => {
+    for (const fp of [
+      "src/styles/tokens.css",
+      "design/design-tokens.json",
+      "docs/context-tokens.md",
+      "hooks/token-count.js",
+      "src/lexer/tokens.ts",
+    ]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "allow", fp);
+    }
+  });
+  test("a shell write to a context-tokens note is not gated", () => {
+    assert.equal(decide(pre("Bash", { command: "echo 120k > notes/context-tokens.md" })), "allow");
+  });
+  test("real auth-token surfaces are still gated", () => {
+    for (const fp of [
+      "src/auth/tokens.ts",
+      "src/lib/refresh_token.ts",
+      "src/lib/access-token.ts",
+      "src/lib/token-store.ts",
+      "server/token_service.py",
+      "src/lib/api-token.ts",
+      "src/lib/jwt_token.ts",
+      "config/github_token",
+      "config/npm-token",
+      "secrets/pat-tokens.json",
+      ".npmrc",
+      "home/.netrc",
+    ]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "ask", fp);
+    }
+  });
+  test("a shell write to a vendor token file is gated", () => {
+    assert.equal(decide(pre("Bash", { command: "echo abc > npm-token" })), "ask");
+  });
   test("a credential in a test fixture is not a leak", () => {
     assert.equal(
       decide(pre("Edit", { file_path: "src/data/pals.test.ts", new_string: 'const password = "hunter2000"' })),

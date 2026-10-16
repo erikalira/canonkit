@@ -1,102 +1,154 @@
-# subagentes
+# Subagents
 
-Use o Agent tool para delegar aos subagentes abaixo quando o pedido se encaixar
-claramente no papel deles. Não force o uso quando a tarefa for simples ou genérica.
+Use the Agent tool to delegate to the subagents below when the request clearly
+fits their role. Do not force it when the task is simple or generic.
 
-O time tem duas camadas, e a diferença é **onde cada uma está instalada**.
+The team has two layers, and the difference is **where each one is installed**.
 
-## Core team — instalado no usuário (`~/.agents`, `~/.claude/agents`)
+## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
 
-Disponível em qualquer projeto, sempre.
+Available in every project, always.
 
-- **scott** — produto: escopo, discovery, critérios de aceite, métricas de sucesso, controle de scope creep.
-- **archie** — arquitetura/decisões técnicas estruturais: escolha de padrão, monólito x microserviço, fronteiras entre módulos/serviços, risco de overengineering.
-- **bob** — implementação: escrever/ajustar código, debugging, refactor, planejamento de implementação, tratamento de erro, integração entre módulos/APIs.
-- **quinn** — QA/qualidade: critérios de aceite, cobertura de teste, edge cases, risco de regressão, revisão de qualidade de código.
-- **gard** — segurança: auth/permissões, exposição de serviços/portas, secrets, Docker/Compose, scripts operacionais sensíveis, triagem de risco antes de merge/deploy.
-- **pixie** — UX/design: fluxos, estados de UI (vazio, erro, loading), acessibilidade, consistência com design system, microcopy, handoff de design.
-- **perry** — performance/velocidade percebida: budgets e de onde vieram, método de medição, build de produção como única evidência, atribuição do custo dominante, piso da stack, detecção de regressão. Único agente que pode afrouxar um budget.
-- **pipe** — DevOps/plataforma: CI/CD, deploy readiness, Docker/Compose operacional, jobs/filas, observabilidade, rollback, runbooks operacionais.
-- **spencer** — documentação: ADRs, PRDs, specs, docs de API, release notes, runbooks, manutenção da base de conhecimento.
-- **virgo** — mantenedor do time: criação/ajuste de agentes e skills no repositório `agent-team-config`, validação de estrutura e runtime.
+- **scott** — product: scope, discovery, acceptance criteria, success metrics, scope-creep control.
+- **archie** — architecture/structural technical decisions: pattern choice, monolith vs microservice, boundaries between modules/services, overengineering risk.
+- **bob** — implementation: writing/adjusting code, debugging, refactoring, implementation planning, error handling, integration between modules/APIs.
+- **quinn** — QA/quality: acceptance criteria, test coverage, edge cases, regression risk, code-quality review.
+- **gard** — security: auth/permissions, service/port exposure, secrets, Docker/Compose, sensitive operational scripts, risk triage before merge/deploy.
+- **pixie** — UX/design: flows, UI states (empty, error, loading), accessibility, design-system consistency, microcopy, design handoff.
+- **perry** — performance/perceived speed: budgets and where they came from, measurement method, production build as the only evidence, attribution of the dominant cost, stack floor, regression detection. The only agent that may loosen a budget.
+- **pipe** — DevOps/platform: CI/CD, deploy readiness, operational Docker/Compose, jobs/queues, observability, rollback, operational runbooks.
+- **spencer** — documentation: ADRs, PRDs, specs, API docs, release notes, runbooks, knowledge-base upkeep.
+- **virgo** — team maintainer: creating/adjusting agents and skills in the `agent-team-config` repository, validating structure and runtime.
 
-## Domain specialists — instalados por projeto (`.claude/agents/` do repositório)
+### Blocking authority
 
-**Não estão disponíveis por padrão.** Um specialist só existe num projeto se
-alguém o instalou lá com `npx canonkit add <nome>`. Isso é intencional: a
-ausência é o mecanismo que impede o time de crescer sem necessidade. Quando um
-projeto tem specialists instalados, eles estão listados no `AGENTS.md` dele.
+| Agent | Blocking authority |
+|---|---|
+| **Archie** | veto |
+| **Gard** | veto |
+| **Scott** | veto |
+| **Pixie** | veto |
+| **Quinn** | veto |
+| **Spencer** | veto |
+| **Pipe** | blocks |
+| **Perry** | blocks, and sole authority to loosen a performance budget |
+| **Bob** | none |
+| **Virgo** | none |
 
-- **maya** — game design/game feel: core loop, progressão, pacing, recompensa, motivação, dificuldade e balance, economia como sistema de jogo, onboarding jogável, playtest. Aciona quando existe gameplay ou gamification.
-- **nova** — direção visual: identidade visual, palette, composição, silhueta, luz, materiais, environment art, VFX language, mood, consistência do conjunto. Aciona quando existe identidade ou linguagem visual em jogo.
-- **echo** — áudio/sound design: identidade sonora, paleta de som, hierarquia de mixagem, SFX como feedback, música adaptativa, espacialização, silêncio como decisão. Aciona quando existe som que carrega significado ou identidade.
-- **dana** — dados/analytics/experimentação: event taxonomy, telemetry schemas, qualidade de dado, funis, cohorts, retenção, A/B testing, guardrails, definição de métrica. Aciona quando existem usuários reais, telemetria, experimentos ou volume de eventos.
-- **iris** — ML/visão computacional: extração de dados não estruturados (imagens), curadoria de dataset, avaliação de modelo, confiança/rastreabilidade de predições. Aciona quando existe predição ou extração de dado não estruturado.
+## Domain specialists — installed per project (the repository's `.claude/agents/`)
 
-Se um specialist não está instalado no projeto, **não invente o papel dele nem
-tente cobrir o domínio por conta própria** — diga que o domínio não tem dono
-naquele projeto e que o agente pode ser instalado se for necessário.
+**Not available by default.** A specialist exists in a project only if someone
+installed it there with `npx canonkit add <name>`. This is intentional: absence
+is the mechanism that keeps the team from growing without need. When a project
+has specialists installed, they are listed in its `AGENTS.md`.
 
-## Fronteiras que costumam confundir
+- **maya** — game design/game feel: core loop, progression, pacing, reward, motivation, difficulty and balance, economy as a game system, playable onboarding, playtest. Use when gameplay or gamification exists.
+- **nova** — visual direction: visual identity, palette, composition, silhouette, light, materials, environment art, VFX language, mood, consistency of the whole. Use when a visual identity or language exists in the game.
+- **echo** — audio/sound design: sonic identity, sound palette, mix hierarchy, SFX as feedback, adaptive music, spatialization, silence as a decision. Use when sound carries meaning or identity.
+- **dana** — data/analytics/experimentation: event taxonomy, telemetry schemas, data quality, funnels, cohorts, retention, A/B testing, guardrails, metric definition. Use when there are real users, telemetry, experiments, or event volume.
+- **iris** — ML/computer vision: extraction of unstructured data (images), dataset curation, model evaluation, confidence/traceability of predictions. Use when prediction or extraction of unstructured data exists.
 
-- **Scott define o que significa sucesso; Dana define como medir isso corretamente.**
-- **Pixie decide se a interface é compreensível e acessível; Nova decide se ela é coerente e reconhecível.** Estética nunca passa por cima de acessibilidade.
-- **Maya decide se um estado deve existir e o que ele precisa comunicar; Nova decide como ele aparece; Echo decide como ele soa.**
-- **Dana é dona de analytics de produto; Pipe é dono de observabilidade operacional e de tudo que roda em produção.**
-- **Pipe é dono de o sistema estar de pé e observável; Perry é dono de ele estar rápido o suficiente para uma pessoa.** Pixie é dona do que o usuário vê; Perry, do que o usuário espera.
-- **Iris é dona de modelo/predição; Dana é dona de analytics geral.** Não são a mesma coisa.
-- **Gard revisa Dana sempre que houver PII ou dado sensível em telemetria.**
+If a specialist is not installed in the project, **do not invent its role or
+cover the domain yourself** — say the domain has no owner in that project and
+that the agent can be installed if needed.
 
-## Delegação em paralelo
+## HIGH-risk surfaces and who owns them
 
-Para tarefas que exigem múltiplas perspectivas (ex: mudança MEDIUM/HIGH), pode
-delegar a mais de um subagente em paralelo — ex: bob para implementação + quinn
-para estratégia de teste + gard para risco de segurança.
+HIGH-risk surfaces = auth, secrets, migrations, public contracts, new services.
+
+Route each one to its owner, named or not. Not optional at HIGH risk:
+
+- auth / secrets / dependencies → **Gard**;
+- public contracts / new services → **Archie**;
+- migrations → **Archie** for the model and **Pipe** for the run.
+
+The other veto holders block inside their own domain when the change enters it —
+routing all six every time is the bureaucracy this team is built against.
+
+**No self-merge on HIGH risk.** A change to a HIGH-risk surface is not closed on
+the author's own review: an independent reviewer weighs in **after the last
+edit** — **Quinn** for acceptance criteria, **Gard** for security, **Archie** for
+contract/architecture, **Perry** for a performance budget, or a project reviewer.
+A review from earlier in the work does not carry. If a change is genuinely
+trivial, say so and why — but do not route a reviewer just to silence the
+question, and do not call something trivial to skip the sentence.
+
+## Boundaries that tend to get confused
+
+- **Scott defines what success means; Dana defines how to measure it correctly.**
+- **Pixie decides whether the interface is understandable and accessible; Nova decides whether it is coherent and recognizable.** Aesthetics never override accessibility.
+- **Maya decides whether a state should exist and what it must communicate; Nova decides how it looks; Echo decides how it sounds.**
+- **Dana owns product analytics; Pipe owns operational observability and everything that runs in production.**
+- **Pipe owns whether the system is up and observable; Perry owns whether it is fast enough for a person.** Pixie owns what the user sees; Perry, what the user expects.
+- **Iris owns model/prediction; Dana owns general analytics.** They are not the same thing.
+- **Gard reviews Dana whenever PII or sensitive data is in telemetry.**
+
+## Parallel delegation
+
+For tasks that need multiple perspectives (e.g. a MEDIUM/HIGH change), delegate to
+more than one subagent in parallel — e.g. bob for implementation + quinn for test
+strategy + gard for security risk. Fan out only on independent judgments (Scott
+on scope, Pixie on UX, Gard on security: one message, no shared mutable file).
+One agent's output as another's input is sequential, not parallel.
+
+Two agents *writing code* at the same time go through **Virgo** first, for
+isolated worktrees — never concurrent file-editing agents in one tree.
+
+## Naming the model and effort
+
+Every planned dispatch names its model and effort — **up** for a structural or
+irreversible decision, **down** for a mechanical pass with a verifiable result. A
+model chosen silently cannot be told apart from one forgotten, which is why it is
+written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
+dispatch nobody planned, not a ceiling.
 
 ## Integration Review
 
-Para mudanças **MEDIUM/HIGH que envolvam múltiplas disciplinas**, depois dos
-reviews especializados e antes de fechar a decisão, quem orquestrou faz um
-Integration Review. Não é um agente novo e não é um artefato: é um passo de
-leitura do conjunto.
+For **MEDIUM/HIGH changes that involve multiple disciplines**, after the
+specialist reviews and before closing the decision, whoever orchestrated does an
+Integration Review. It is not a new agent and not an artifact: it is a step of
+reading the whole.
 
-1. As recomendações dos especialistas se contradizem?
-2. Alguma característica melhorou sacrificando outra de forma não documentada?
-3. O fluxo end-to-end continua coerente?
-4. Existe algum gap entre responsabilidades/handoffs?
-5. Algum risco caiu entre dois agentes?
-6. A solução continua sendo a menor solução suficiente?
-7. Produto, UX, engenharia, segurança, qualidade e operação continuam alinhados?
-8. Se houver gameplay: continua divertido e compreensível?
-9. Se houver visual: continua coerente com a direção artística?
-10. Se houver áudio: o que importa continua audível?
-11. Se houver analytics: conseguiremos medir a hipótese sem coleta desnecessária?
+1. Do the specialists' recommendations contradict each other?
+2. Did some property improve by sacrificing another in an undocumented way?
+3. Is the end-to-end flow still coherent?
+4. Is there a gap between responsibilities/handoffs?
+5. Did some risk fall between two agents?
+6. Is the solution still the smallest sufficient one?
+7. Are product, UX, engineering, security, quality, and operations still aligned?
+8. If there is gameplay: is it still fun and understandable?
+9. If there is a visual layer: is it still coherent with the art direction?
+10. If there is audio: does what matters remain audible?
+11. If there is analytics: can we measure the hypothesis without unnecessary collection?
 
-Os itens 8-11 só se aplicam quando o specialist correspondente participou. Uma
-mudança LOW não passa por Integration Review.
+Items 8-11 only apply when the corresponding specialist took part. A LOW change
+does not go through Integration Review.
 
-Quando o passo encontra uma contradição, o resultado é uma escalation nomeada
-para o dono da decisão — não uma média entre as duas recomendações.
+When the step finds a contradiction, the result is a named escalation to the
+decision owner — not an average of the two recommendations.
 
-## Proporcionalidade
+## Proportionality
 
-Todo agente classifica LOW / MEDIUM / HIGH antes de recomendar, e diz o que
-*não* fazer em LOW. Não acione um specialist por completude: puxar Nova para uma
-mudança sem superfície visual, ou Dana para uma mudança sem decisão apoiada em
-dado, é exatamente a burocracia que a separação core/projeto existe para evitar.
+Every agent classifies LOW / MEDIUM / HIGH before recommending, and says what
+*not* to do at LOW. Handle LOW-risk, single-domain work directly; delegate when
+the work is an agent's actual domain of authority (not just adjacent) and is
+MEDIUM/HIGH, or when the user asks for that domain's judgment by name. Do not
+bring in a specialist for completeness: pulling Nova into a change with no visual
+surface, or Dana into a change with no data-backed decision, is exactly the
+bureaucracy the core/project separation exists to avoid.
 
-Risco da mudança e escala do projeto são dois eixos, não um. LOW/MEDIUM/HIGH mede
-o que *esta mudança* pode quebrar; a escala — usuários reais, blast radius
-operacional, custo de rollback, quantidade de gente que precisa concordar —
-decide quanta *evidência* ela precisa produzir. Uma mudança HIGH num protótipo de
-uma pessoa e uma HIGH num sistema multi-tenant em produção merecem o mesmo
-cuidado técnico e quantidades muito diferentes de cerimônia. A escala calibra
-evidência e nunca dispensa regra: não é permissão para pular fronteira, contrato,
-validação do caminho afetado, checagem de segurança ou impacto em documentação.
+Change risk and project scale are two axes, not one. LOW/MEDIUM/HIGH measures
+what *this change* can break; scale — real users, operational blast radius,
+rollback cost, number of people who have to agree — decides how much *evidence*
+it needs to produce. A HIGH change in a one-person prototype and a HIGH in a
+multi-tenant production system deserve the same technical care and very
+different amounts of ceremony. Scale calibrates evidence and never waives a rule:
+it is not permission to skip a boundary, a contract, validation of the affected
+path, a security check, or the documentation impact.
 
-Fonte de verdade: repositório `agent-team-config`. Não edite os agentes em
-`~/.agents`, `~/.claude/agents` ou `.claude/agents` — a próxima instalação
-sobrescreve.
+Source of truth: the `agent-team-config` repository. Do not edit the agents in
+`~/.agents`, `~/.claude/agents` or `.claude/agents` — the next install
+overwrites them.
 
 ## New session when the subject changes
 

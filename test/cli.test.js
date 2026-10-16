@@ -79,7 +79,7 @@ describe("agent roster", () => {
     const summary = await summaries();
     for (const name of SPECIALISTS) {
       assert.ok(summary.get(name), `no roster line for ${name}`);
-      assert.ok(!/Aciona quando/i.test(summary.get(name)), `${name}: trailing guidance not stripped`);
+      assert.ok(!/Use when/i.test(summary.get(name)), `${name}: trailing guidance not stripped`);
     }
   });
 });
@@ -98,7 +98,7 @@ describe("install", () => {
     }
   });
 
-  test("syncs both reference blocks without importing AGENTS.md", async () => {
+  test("syncs both reference blocks, the routing block importing AGENTS.md once", async () => {
     const { home } = await scratch("install-reference");
     assert.equal(run(["install"], { home }).status, 0);
 
@@ -107,9 +107,10 @@ describe("install", () => {
     assert.match(agentsMd, /<!-- agent-team-config:end -->/);
 
     const claudeMd = await read(path.join(home, ".claude", "CLAUDE.md"));
-    // The routing block is self-sufficient, so CLAUDE.md no longer imports the
-    // roster — that put the same roster in Claude's context twice.
-    assert.doesNotMatch(claudeMd, /^@~\/AGENTS\.md$/m);
+    // The routing block holds no roster of its own, so the import is the only
+    // way the team reaches Claude outside the home tree — and it is not a copy.
+    assert.equal(claudeMd.match(/^@~\/AGENTS\.md$/gm).length, 1);
+    assert.doesNotMatch(claudeMd, /^\| \*\*Archie\*\*/m);
     assert.match(claudeMd, /<!-- agent-team-config:routing:start -->/);
     // Routing mechanics are Claude Code only; the roster is runtime-neutral.
     assert.doesNotMatch(agentsMd, /<!-- agent-team-config:routing:start -->/);
@@ -166,8 +167,8 @@ describe("install", () => {
 
     const claudeMd = await read(path.join(home, ".claude", "CLAUDE.md"));
     assert.match(claudeMd, /regra local/);
-    // The import was already there; adding a second one is the bug this guards.
-    assert.equal(claudeMd.match(/^@.*AGENTS\.md$/gm).length, 1);
+    // Content outside the markers is untouched, including an import the user wrote.
+    assert.match(claudeMd, /# graphify\s+regra local/);
   });
 
   test("--dry-run writes nothing", async () => {
@@ -392,7 +393,7 @@ describe("specialists", () => {
 
     const agentsMd = await read(path.join(project, "AGENTS.md"));
     assert.match(agentsMd, /\*\*maya\*\* — game design/);
-    assert.match(agentsMd, /\*\*nova\*\* — direção visual/);
+    assert.match(agentsMd, /\*\*nova\*\* — visual direction/);
     assert.doesNotMatch(agentsMd, /\*\*iris\*\*/);
   });
 
