@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CASES = path.join(REPO, "evals", "routing-cases.json");
-const EXPECT_KEYS = ["includes", "includesAny", "excludes", "avoids", "none", "says"];
+const EXPECT_KEYS = ["includes", "includesAny", "excludes", "avoids", "none", "says", "notSays"];
 
 // The team is whatever agents/ ships. `none` means no *team* agent: plan mode
 // reaches for Explore or Plan on its own, and counting those would fail a LOW
@@ -60,6 +60,8 @@ export function parseRun(stream) {
   const text = [];
   const plan = [];
   const planFiles = [];
+  let toolUses = 0;
+  let failed = false;
   for (const line of stream.split(/\r?\n/)) {
     if (!line.trim().startsWith("{")) continue;
     let event;
@@ -68,10 +70,12 @@ export function parseRun(stream) {
     } catch {
       continue;
     }
+    if (event.type === "result" && event.is_error) failed = true;
     if (event.type !== "assistant") continue;
     for (const block of event.message?.content ?? []) {
       if (block.type === "text") text.push(block.text);
       if (block.type !== "tool_use") continue;
+      toolUses++;
       // "Task" is the dispatch tool's earlier name; both are the same decision.
       if (block.name === "Agent" || block.name === "Task") {
         dispatches.push(String(block.input?.subagent_type ?? "general-purpose").toLowerCase());
@@ -83,7 +87,21 @@ export function parseRun(stream) {
       }
     }
   }
-  return { dispatches, text: text.join("\n"), plan: plan.join("\n"), planFiles };
+  const said = text.join("\n");
+  // A run the model never got to answer — usage limit, rate limit, an API
+  // error — says nothing about the instructions. Scoring it as a FAIL would
+  // read an outage as a routing regression.
+  const infra = /hit your (session|usage|weekly) limit|rate limit|overloaded|credit balance|api error/i;
+  // A run cut off by --budget or --max-turns before it said or planned anything
+  // is the same: no answer to judge.
+  const silent = !said.trim() && !plan.length;
+  // A limit can also land mid-run, after a few tool calls: then the run's last
+  // words are the limit message, not an answer.
+  const last = text.length ? text[text.length - 1] : "";
+  const error = (toolUses === 0 && (failed || silent || infra.test(said))) || (failed && silent) || infra.test(last)
+    ? (said.trim().split("\n")[0] || "no answer (cut off before answering)").slice(0, 120)
+    : null;
+  return { dispatches, text: said, plan: plan.join("\n"), planFiles, error };
 }
 
 /** Subagents dispatched in a stream-json transcript, in order, lowercased. */
@@ -91,7 +109,7 @@ export const dispatches = (stream) => parseRun(stream).dispatches;
 
 // "no need for Gard", "skip Archie", "without Perry": naming an agent to rule it
 // out is not bringing it in.
-const NEGATION = /\b(no need|not needed|unnecessary|without|skip|skipping|don't|do not|doesn't|does not|won't|no reason|isn't needed|rather than|instead of)\b/i;
+const NEGATION = /\b(no need|not needed|unnecessary|not necessary|not required|isn't required|without|skip|skipping|don't|do not|doesn't|does not|won't|no reason|isn't needed|rather than|instead of)\b|\bno\b[^.]{0,60}\b(needed|required|necessary)\b/i;
 
 /**
  * Whether a run's own words bring an agent in: named as an agent — "Gard",
@@ -120,6 +138,7 @@ export function judge(expect, run, team = TEAM) {
   for (const a of expect.excludes ?? []) if (seen.has(a)) problems.push(`dispatched ${a}, which it must not`);
   for (const a of expect.avoids ?? []) if (brought(a)) problems.push(`brought in ${a}, which it must not`);
   if (expect.says && !new RegExp(expect.says, "i").test(words)) problems.push(`never said /${expect.says}/`);
+  if (expect.notSays && new RegExp(expect.notSays, "i").test(words)) problems.push(`said /${expect.notSays}/`);
   return { pass: problems.length === 0, problems };
 }
 
@@ -274,24 +293,34 @@ function main() {
   // The model is not deterministic, so one run is a sample, not a verdict. A
   // case holds when it passes in at least two thirds of its runs.
   const failed = [];
+  const unmeasured = [];
   let judged = 0;
   for (const c of cases) {
     const runs = saved ? saved.get(c.id) : Array.from({ length: opts.runs }, (_, i) => () => runCase(c, i + 1, data.fixture, opts));
     if (!runs.length) continue;
     let passes = 0;
+    let valid = 0;
     runs.forEach((r, i) => {
       const run = typeof r === "function" ? r() : r;
+      const tag = runs.length > 1 ? ` #${i + 1}` : "";
+      if (run.error) return console.log(`ERROR ${c.id}${tag}  not scored: ${run.error}`);
+      valid++;
       const { pass, problems } = judge(c.expect, run);
       if (pass) passes++;
-      const tag = runs.length > 1 ? ` #${i + 1}` : "";
       console.log(`${pass ? "PASS" : "FAIL"}  ${c.id}${tag}  dispatched: ${run.dispatches.join(", ") || "nobody"}${pass ? "" : `  (${problems.join("; ")})`}`);
     });
+    // A case is judged on the runs the model actually answered.
+    if (!valid) {
+      unmeasured.push(c.id);
+      continue;
+    }
     judged++;
-    if (passes < Math.ceil(runs.length * (2 / 3))) failed.push(`${c.id} (${passes}/${runs.length})`);
+    if (passes < Math.ceil(valid * (2 / 3))) failed.push(`${c.id} (${passes}/${valid})`);
   }
-  console.log(`\n${judged - failed.length}/${judged} cases held (each needs 2/3 of its runs); model: ${opts.model ?? "session default"}.`);
+  console.log(`\n${judged - failed.length}/${judged} cases held (each needs 2/3 of its answered runs); model: ${opts.model ?? "session default"}.`);
   if (failed.length) console.log(`Did not hold: ${failed.join(", ")}`);
-  return failed.length ? 1 : 0;
+  if (unmeasured.length) console.log(`Not measured (every run errored): ${unmeasured.join(", ")}`);
+  return failed.length || unmeasured.length ? 1 : 0;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

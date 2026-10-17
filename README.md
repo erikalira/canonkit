@@ -382,7 +382,9 @@ npm run eval -- --only high-auth --save out/   # guarda o transcript
   crédito de API, então roda à mão antes de um release, não no `npm test` (que
   testa o parser, o juiz e o arquivo de casos). Codex fica fora do escopo.
 - O modelo não é determinístico: com `--runs 3`, um caso só se sustenta se passar
-  em 2 de 3. `--model` fixa o modelo do loop principal; `--rescore <dir>` rejulga
+  em 2 de 3 das execuções respondidas. Uma execução que o modelo não chegou a
+  responder (limite de uso, rate limit, erro de API) sai como `ERROR` e fica fora
+  da conta — uma queda não é regressão de roteamento. `--model` fixa o modelo do loop principal; `--rescore <dir>` rejulga
   transcripts salvos sem chamar nada.
 - Plan mode grava o plano em `~/.claude/plans`; o eval apaga exatamente os
   arquivos que ele mesmo escreveu.
@@ -399,9 +401,28 @@ trabalho LOW que deve ficar inline, as superfícies HIGH (auth, migração, cont
 público, budget) e um specialist ausente que precisa ser declarado sem dono, não
 inventado.
 
-Baseline (blocos anteriores a esta versão, 1 execução por caso, 2026-10-17): 7/7.
-Exigindo despacho imediato em vez de "despachado ou planejado", seria 3/7: o
-modelo planeja o revisor para depois da edição, como a regra manda.
+Antes e depois desta versão (2026-10-17, mesmo juiz, 3 execuções por caso, modelo
+padrão da sessão):
+
+| Versão | Casos sustentados | Execuções |
+| --- | --- | --- |
+| anterior (`da7d5a2`) | 10/12 | 30/36 |
+| esta | 12/12 | 34/34 respondidas (2 sem resposta: limite de uso, orçamento) |
+
+Dez casos não distinguem as versões — as duas acertam; provam ausência de
+regressão, não melhora. Dois distinguem, e miram regras que mudaram:
+
+- `parallel-writers` (0/3 → 2/2 respondidas): o texto anterior mandava dois
+  agentes que escrevem código "passar pelo Virgo", e o modelo fez isso nas três
+  execuções; o atual isola cada um num worktree.
+- `customize-installed-agent` (0/3 → 3/3): o texto anterior chamava o repositório
+  `agent-team-config` de fonte da verdade, e o modelo mandou editar lá nas três
+  execuções — um repositório que quem instala o pacote não tem; o atual cria um
+  agente do projeto com outro nome ou corrige upstream.
+
+Nos dois juntos, 0/6 contra 5/5 (teste exato de Fisher, p ≈ 0,002). Exigindo despacho
+imediato em vez de "despachado ou planejado", os casos HIGH falhariam nas duas
+versões: o modelo planeja o revisor para depois da edição, como a regra manda.
 
 ### Custo sempre carregado
 

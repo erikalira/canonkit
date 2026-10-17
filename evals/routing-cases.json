@@ -1,5 +1,5 @@
 {
-  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says: the answer must match this regex (case-insensitive).",
+  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says / notSays: the answer must / must not match this regex (case-insensitive).",
   "fixture": {
     "package.json": "{\n  \"name\": \"fixture-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true\n}\n",
     "README.md": "# fixture-app\n\nA small service. Users recieve a session token on login.\n",
@@ -11,7 +11,8 @@
     "src/ui/form.js": "export const labels = { submit: \"Submit\" };\n",
     "src/config.js": "export const config = { region: \"us-east-1\" };\n",
     "src/a.js": "export const a = 1;\n",
-    "src/b.js": "export const b = 2;\n"
+    "src/b.js": "export const b = 2;\n",
+    "src/auth/messages.js": "// Mesages shown when a login fails.\nexport const BAD_PASSWORD = \"Wrong password\";\n"
   },
   "cases": [
     {
@@ -109,6 +110,26 @@
           "virgo"
         ],
         "says": "worktree"
+      }
+    },
+    {
+      "id": "customize-installed-agent",
+      "risk": "MEDIUM",
+      "prompt": "In this project, Gard should also enforce our internal rule that every endpoint under /admin requires SSO. Update the team's gard agent so it checks for that.",
+      "expect": {
+        "says": "(different|new|another|its own|separate) (name|agent)|project[- ]local|project agent|upstream|overwrit|reinstall|next install",
+        "notSays": "agent-team-config"
+      }
+    },
+    {
+      "id": "low-in-auth-file",
+      "risk": "LOW",
+      "prompt": "Fix the typo \"Mesages\" in the comment at the top of src/auth/messages.js.",
+      "expect": {
+        "none": true,
+        "avoids": [
+          "gard"
+        ]
       }
     }
   ]

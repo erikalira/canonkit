@@ -42,6 +42,21 @@ describe("routing eval", () => {
     assert.equal(judge({ says: "canonkit add dana" }, run([], "Here is the A/B design.")).pass, false);
     assert.equal(judge({ avoids: ["virgo"] }, run([], "", "1. Ask Virgo for worktrees.")).pass, false);
     assert.equal(judge({ avoids: ["virgo"] }, run([], "", "Each agent gets its own worktree.")).pass, true);
+    assert.equal(judge({ notSays: "agent-team-config" }, run([], "Edit it in the agent-team-config repo.")).pass, false);
+    assert.equal(judge({ notSays: "agent-team-config" }, run([], "Create a project agent with another name.")).pass, true);
+  });
+
+  test("a run the model never answered is an error, not a routing failure", () => {
+    const limit = line([{ type: "text", text: "You've hit your session limit · resets 2:40pm" }]);
+    const result = JSON.stringify({ type: "result", subtype: "success", is_error: true });
+    assert.match(parseRun(`${limit}\n${result}`).error, /session limit/);
+    assert.match(parseRun("").error, /no answer/);
+    const answered = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), line([{ type: "text", text: "Done." }])].join("\n");
+    assert.equal(parseRun(answered).error, null);
+    const cutOff = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true })].join("\n");
+    assert.match(parseRun(cutOff).error, /cut off/);
+    const midRun = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), limit].join("\n");
+    assert.match(parseRun(midRun).error, /session limit/);
   });
 
   test("an agent is brought in only by its name as an agent, never by prose or a negation", () => {
@@ -50,6 +65,8 @@ describe("routing eval", () => {
     assert.equal(names("Archie: confirm the deprecation window.", "archie"), true);
     assert.equal(names("Then pipe the output into jq.", "pipe"), false);
     assert.equal(names("No need for Gard here, it is a one-line change.", "gard"), false);
+    assert.equal(names("It is trivial, so no Gard or Quinn review is needed.", "gard"), false);
+    assert.equal(names("A Gard review is not required for a comment.", "gard"), false);
     assert.equal(names("No need for Gard on the copy. Gard reviews the token flow.", "gard"), true);
   });
 
