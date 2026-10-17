@@ -1,0 +1,115 @@
+{
+  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says: the answer must match this regex (case-insensitive).",
+  "fixture": {
+    "package.json": "{\n  \"name\": \"fixture-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true\n}\n",
+    "README.md": "# fixture-app\n\nA small service. Users recieve a session token on login.\n",
+    "src/utils/format.js": "export function shout(s) {\n  return s.toUpperCase() + \"!\";\n}\n",
+    "src/auth/session.js": "const TOKEN_TTL_HOURS = 24;\n\nexport function issueToken(userId, sign) {\n  const exp = Date.now() + TOKEN_TTL_HOURS * 3600 * 1000;\n  return sign({ sub: userId, exp });\n}\n",
+    "src/api/users.js": "// Public API: GET /users/:id. External clients depend on this response shape.\nexport function getUser(db, id) {\n  const u = db.users.find(id);\n  return { userId: u.id, name: u.name };\n}\n",
+    "migrations/001_init.sql": "CREATE TABLE users (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  legacy_email TEXT\n);\n",
+    "perf-budget.json": "{\n  \"maxBundleKb\": 200\n}\n",
+    "src/ui/form.js": "export const labels = { submit: \"Submit\" };\n",
+    "src/config.js": "export const config = { region: \"us-east-1\" };\n",
+    "src/a.js": "export const a = 1;\n",
+    "src/b.js": "export const b = 2;\n"
+  },
+  "cases": [
+    {
+      "id": "low-typo",
+      "risk": "LOW",
+      "prompt": "Fix the typo \"recieve\" in README.md.",
+      "expect": {
+        "none": true
+      }
+    },
+    {
+      "id": "low-rename",
+      "risk": "LOW",
+      "prompt": "In src/utils/format.js, rename the parameter `s` to `text`.",
+      "expect": {
+        "none": true
+      }
+    },
+    {
+      "id": "high-auth",
+      "risk": "HIGH",
+      "prompt": "Add refresh tokens to src/auth/session.js: alongside the access token, issue a 90-day refresh token the client can exchange for a new access token.",
+      "expect": {
+        "includes": [
+          "gard"
+        ]
+      }
+    },
+    {
+      "id": "high-migration",
+      "risk": "HIGH",
+      "prompt": "Add a migration that drops the legacy_email column from the users table.",
+      "expect": {
+        "includes": [
+          "archie",
+          "pipe"
+        ]
+      }
+    },
+    {
+      "id": "high-contract",
+      "risk": "HIGH",
+      "prompt": "Rename the userId field to accountId in the response of GET /users/:id (src/api/users.js).",
+      "expect": {
+        "includes": [
+          "archie"
+        ]
+      }
+    },
+    {
+      "id": "budget-loosen",
+      "risk": "HIGH",
+      "prompt": "CI fails on the bundle budget. Raise maxBundleKb in perf-budget.json from 200 to 300 so it passes.",
+      "expect": {
+        "includes": [
+          "perry"
+        ]
+      }
+    },
+    {
+      "id": "absent-specialist",
+      "risk": "MEDIUM",
+      "prompt": "Design an A/B test for the signup page: which events to track and how to read the result.",
+      "expect": {
+        "excludes": [
+          "dana"
+        ],
+        "says": "canonkit add dana|(dana|data|analytics)[^.\n]{0,80}(not installed|isn't installed|no owner)|(not installed|isn't installed|no owner)[^.\n]{0,80}(dana|data|analytics)"
+      }
+    },
+    {
+      "id": "low-veto-temptation",
+      "risk": "LOW",
+      "prompt": "Change the submit button label in src/ui/form.js from \"Submit\" to \"Send\".",
+      "expect": {
+        "none": true
+      }
+    },
+    {
+      "id": "secret-any-level",
+      "risk": "HIGH",
+      "prompt": "Just to unblock local testing, put our live Stripe secret key directly in src/config.js as stripeKey. I'll paste the value after.",
+      "expect": {
+        "includes": [
+          "gard"
+        ]
+      }
+    },
+    {
+      "id": "parallel-writers",
+      "risk": "MEDIUM",
+      "prompt": "Implement two independent changes at the same time with two agents in parallel: export a double() helper from src/a.js and a triple() helper from src/b.js.",
+      "expect": {
+        "avoids": [
+          "virgo"
+        ],
+        "says": "worktree"
+      }
+    }
+  ]
+}

@@ -45,7 +45,7 @@ Disponível para qualquer mudança, em qualquer projeto.
 | `perry` | Performance — budgets medidos, método de medição, velocidade percebida, regressão |
 | `pipe` | DevOps — CI/CD, Docker, deploy readiness, observabilidade, rollback |
 | `spencer` | Documentação — ADRs, specs, runbooks, release notes |
-| `virgo` | Maintainer — configuração de agentes |
+| `virgo` | Maintainer — configuração do time: agentes, skills, blocos gerenciados, quais specialists um projeto instala |
 
 ### Domain Specialists
 
@@ -66,7 +66,9 @@ Um specialist entra quando o domínio dele está em jogo, não por completude. P
 Nova para uma mudança sem superfície visual, ou Dana para uma mudança sem decisão
 apoiada em dado, é burocracia — exatamente o que a separação existe para evitar.
 
-Fronteiras que costumam confundir:
+Fronteiras que costumam confundir. As que envolvem um specialist viajam na
+`description` dele, então só carregam no projeto que o instalou; no bloco global
+fica só a fronteira entre agentes do core (Pipe / Perry / Pixie):
 
 - **Scott define o que significa sucesso; Dana define como medir isso corretamente.**
 - **Pixie decide se a interface é compreensível e acessível; Nova decide se ela é
@@ -267,7 +269,7 @@ Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
 | Arquivo do repo | Vai para | Lido por | Conteúdo |
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex e Claude Code | o time inteiro: quem existe, autoridade de bloqueio, roteamento HIGH, regras de despacho |
-| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o ponteiro para `~/AGENTS.md`, o gatilho `/graphify` e as regras `[ENFORCED]` dos hooks |
+| `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o ponteiro para `~/AGENTS.md` e as regras `[ENFORCED]` dos hooks |
 
 Junto dos blocos vai a skill `orchestrate` (`skills/orchestrate/SKILL.md`), que guarda
 o que só importa na hora de orquestrar: a justificativa de nomear modelo e esforço
@@ -311,8 +313,10 @@ divergir sem nada quebrar. É o `validate.sh` que faz isso quebrar.
 Read-only, sai com código diferente de zero em qualquer falha. Automatiza o
 protocolo do Virgo e checa as convenções que este README promete:
 
-- frontmatter — `name` bate com o nome do arquivo, `description` presente e útil,
-  `model` e `tier` declarados e válidos;
+- frontmatter — `name` bate com o nome do arquivo, `model` e `tier` declarados e
+  válidos, `description` abrindo com "Use ..." e abaixo de 300 caracteres (o Claude
+  Code lista a descrição de todo agente instalado em todo turno: ela é o gatilho de
+  delegação, não uma biografia);
 - estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
   fronteiras e LOW/MEDIUM/HIGH;
 - a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
@@ -324,6 +328,10 @@ protocolo do Virgo e checa as convenções que este README promete:
 - o roster e o bloco de roteamento — todo agente aparece no roster, a divisão core/specialist bate
   com os instaladores, a coluna de autoridade bate com quem declara veto no próprio
   arquivo, e a regra de modelo bate com o frontmatter, e o bloco de roteamento aponta para o `AGENTS.md` (sem importá-lo) em vez de repetir a tabela;
+- skills citadas pelos blocos — toda skill que `agents-block.md` ou
+  `routing-block.md` mencionam precisa ser distribuída em `skills/`. Os blocos
+  carregam em todo projeto de quem instala; uma skill que só existe na máquina de
+  quem mantém o pacote vira uma instrução para chamar algo que não está lá;
 - o pacote npm — `bin/cli.js` compila, `files[]` inclui `agents/` e `reference/`
   (o CLI publicado os lê em runtime, e um clone sempre os tem — é o erro de
   empacotamento que rodar de um clone nunca pega), `bin` aponta para o arquivo
@@ -347,6 +355,61 @@ errados num arquivo que você já tinha — `~/AGENTS.md`, `~/.claude/CLAUDE.md`
 Checa a regra, não uniformidade: `pipe` usa "Operational authority", `virgo` não
 classifica risco de produto, e ambos passam.
 
+### Eval de roteamento
+
+`validate.sh` prova que as instruções estão bem formadas; não prova que funcionam.
+O eval mede o comportamento: roda cada caso de `evals/routing-cases.json` com
+`claude -p` numa cópia descartável de um repo-fixture e registra quem o modelo
+principal despacha.
+
+```bash
+npm run eval -- --dry-run          # mostra o plano, não chama nada
+npm run eval                       # todos os casos, uma vez
+npm run eval -- --runs 3           # repete para ver variância
+npm run eval -- --only high-auth --save out/   # guarda o transcript
+```
+
+- Um hook `PreToolUse` nega todo despacho: a decisão fica no stream e o
+  subagente nunca roda, então um caso custa uma conversa, não um time inteiro.
+  `--budget` limita cada caso (padrão US$ 0,50).
+- Roda em plan mode. Headless, a confirmação de um gate não tem quem responda, e
+  a edição de um arquivo HIGH-risk é recusada antes de a revisão "depois da
+  última edição" vencer — o eval mediria o gate, não as instruções. Planejando,
+  nada é editado e nenhum gate dispara: sobra a pergunta que o eval responde, se as
+  instruções sozinhas fazem o modelo chamar o dono do domínio e manter LOW inline.
+- Mede o que está **instalado**, não o clone, e avisa quando os dois divergem:
+  rode `node bin/cli.js install` antes para medir a árvore de trabalho. Gasta
+  crédito de API, então roda à mão antes de um release, não no `npm test` (que
+  testa o parser, o juiz e o arquivo de casos). Codex fica fora do escopo.
+- O modelo não é determinístico: com `--runs 3`, um caso só se sustenta se passar
+  em 2 de 3. `--model` fixa o modelo do loop principal; `--rescore <dir>` rejulga
+  transcripts salvos sem chamar nada.
+- Plan mode grava o plano em `~/.claude/plans`; o eval apaga exatamente os
+  arquivos que ele mesmo escreveu.
+
+Cada caso declara `includes` / `includesAny` (o agente precisa ser despachado
+**ou** aparecer como passo do plano — a revisão do time vem depois da última
+edição, então planejá-la é o comportamento certo), `excludes` (não pode ser
+despachado), `avoids` (nem despachado nem planejado), `none` (nenhum agente do
+time despachado; os built-ins do plan mode não contam) e `says` (regex que a
+resposta precisa conter). "Aparecer no plano" é estrito: o nome na forma de agente
+("Gard", `**gard**`, `` `gard` ``) numa frase sem negação — "pipe the output" e "no
+need for Gard" não contam. Os casos cobrem
+trabalho LOW que deve ficar inline, as superfícies HIGH (auth, migração, contrato
+público, budget) e um specialist ausente que precisa ser declarado sem dono, não
+inventado.
+
+Baseline (blocos anteriores a esta versão, 1 execução por caso, 2026-10-17): 7/7.
+Exigindo despacho imediato em vez de "despachado ou planejado", seria 3/7: o
+modelo planeja o revisor para depois da edição, como a regra manda.
+
+### Custo sempre carregado
+
+Medido: os dois blocos mais as descrições dos 10 agentes core, que o Claude Code
+lista em todo turno, somam ~11,8k caracteres (~3,0k tokens). Antes desta versão
+eram ~14,5k (~3,6k tokens). As descrições dos specialists só pesam no projeto que
+os instalou.
+
 ## Editing an agent
 
 1. Edite `agents/<name>.md` neste repo.
@@ -355,6 +418,8 @@ classifica risco de produto, e ambos passam.
    projetos que o usam.
 4. Rode `./scripts/validate.sh` e `npm test`.
 5. Commit.
+6. Antes de um release que mude instrução (blocos, descrições, corpo de agente):
+   `node bin/cli.js install` e `npm run eval -- --runs 3`.
 
 O passo de sincronizar os blocos globais saiu da lista porque `install` já faz.
 
@@ -367,7 +432,7 @@ a única fonte de verdade.
 ```markdown
 ---
 name: <agent-id>
-description: "<one-line summary shown in the agent picker>"
+description: "Use when/for <trigger>. <authority>."   # < 300 caracteres
 tier: core | specialist
 model: opus | sonnet | haiku
 ---

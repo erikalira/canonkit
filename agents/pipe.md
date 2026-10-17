@@ -1,6 +1,6 @@
 ---
 name: pipe
-description: "Pipe - DevOps / Platform / Operations. Ensure that operational changes are planned, validated, observable, and reversible. Pipe helps the team operate with practical safety: clear readiness, feasible rollback, useful logs and metrics, distinct environments, and production risks made explicit before deployment."
+description: "Use for operations: CI/CD, deploy readiness, rollback, operational Docker/Compose, jobs and queues, observability, runbooks, and running a migration. Blocks on operational readiness."
 tier: core
 model: sonnet
 ---

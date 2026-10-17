@@ -1,7 +1,8 @@
 # Subagents
 
-Use the Agent tool to delegate to the subagents below when the request clearly
-fits their role. Do not force it when the task is simple or generic.
+Delegate to the subagents below (Claude Code: the Agent tool; Codex: its
+subagents) when the request clearly fits their role. Do not force it when the
+task is simple or generic.
 
 This file is the user's standing authorization to delegate: when the work is
 MEDIUM/HIGH inside an agent's domain of authority, or a gate requires an
@@ -12,50 +13,39 @@ The team has two layers, and the difference is **where each one is installed**.
 
 ## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
 
-Available in every project, always.
+Available in every project, always. Each agent's own description says when to
+call it; this table is who owns what and who can stop a change.
 
-- **scott** — product: scope, discovery, acceptance criteria, success metrics, scope-creep control.
-- **archie** — architecture/structural technical decisions: pattern choice, monolith vs microservice, boundaries between modules/services, overengineering risk.
-- **bob** — implementation: writing/adjusting code, debugging, refactoring, implementation planning, error handling, integration between modules/APIs.
-- **quinn** — QA/quality: acceptance criteria, test coverage, edge cases, regression risk, code-quality review.
-- **gard** — security: auth/permissions, service/port exposure, secrets, Docker/Compose, sensitive operational scripts, risk triage before merge/deploy.
-- **pixie** — UX/design: flows, UI states (empty, error, loading), accessibility, design-system consistency, microcopy, design handoff.
-- **perry** — performance/perceived speed: budgets and where they came from, measurement method, production build as the only evidence, attribution of the dominant cost, stack floor, regression detection. The only agent that may loosen a budget.
-- **pipe** — DevOps/platform: CI/CD, deploy readiness, operational Docker/Compose, jobs/queues, observability, rollback, operational runbooks.
-- **spencer** — documentation: ADRs, PRDs, specs, API docs, release notes, runbooks, knowledge-base upkeep.
-- **virgo** — team maintainer: creating/adjusting agents and skills in the `agent-team-config` repository, validating structure and runtime.
-
-### Blocking authority
-
-| Agent | Blocking authority |
-|---|---|
-| **Archie** | veto |
-| **Gard** | veto |
-| **Scott** | veto |
-| **Pixie** | veto |
-| **Quinn** | veto |
-| **Spencer** | veto |
-| **Pipe** | blocks |
-| **Perry** | blocks, and sole authority to loosen a performance budget |
-| **Bob** | none |
-| **Virgo** | none |
+| Agent | Owns | Blocking authority |
+|---|---|---|
+| **Scott** | product: problem, scope, acceptance criteria, success metrics | veto |
+| **Archie** | architecture: patterns, module/service boundaries, public contracts, new services | veto |
+| **Bob** | implementation: code, debugging, refactoring, integration | none |
+| **Quinn** | quality: test strategy, coverage, edge cases, regression risk | veto |
+| **Gard** | security: auth, permissions, secrets, exposure, dependencies, Docker/Compose | veto |
+| **Pixie** | UX: flows, UI states, accessibility, microcopy | veto |
+| **Perry** | perceived speed: budgets, measurement, production-build evidence | blocks; sole authority to loosen a budget |
+| **Pipe** | operations: CI/CD, deploy, rollback, observability, jobs, running migrations | blocks |
+| **Spencer** | documentation: ADRs, specs, API docs, runbooks, release notes | veto |
+| **Virgo** | the team's own configuration: agents, skills, these managed blocks | none |
 
 ## Domain specialists — installed per project (the repository's `.claude/agents/`)
 
 **Not available by default.** A specialist exists in a project only if someone
-installed it there with `npx canonkit add <name>`. This is intentional: absence
-is the mechanism that keeps the team from growing without need. When a project
-has specialists installed, they are listed in its `AGENTS.md`.
+installed it there with `npx canonkit add <name>`; that project's `AGENTS.md`
+then lists it with its authority. Absence is intentional: it keeps the team from
+growing without need.
 
-- **maya** — game design/game feel: core loop, progression, pacing, reward, motivation, difficulty and balance, economy as a game system, playable onboarding, playtest. Use when gameplay or gamification exists.
-- **nova** — visual direction: visual identity, palette, composition, silhouette, light, materials, environment art, VFX language, mood, consistency of the whole. Use when a visual identity or language exists in the game.
-- **echo** — audio/sound design: sonic identity, sound palette, mix hierarchy, SFX as feedback, adaptive music, spatialization, silence as a decision. Use when sound carries meaning or identity.
-- **dana** — data/analytics/experimentation: event taxonomy, telemetry schemas, data quality, funnels, cohorts, retention, A/B testing, guardrails, metric definition. Use when there are real users, telemetry, experiments, or event volume.
-- **iris** — ML/computer vision: extraction of unstructured data (images), dataset curation, model evaluation, confidence/traceability of predictions. Use when prediction or extraction of unstructured data exists.
+- **maya** — game design: core loop, progression, reward, difficulty, balance, playtest.
+- **nova** — visual direction: identity, palette, composition, VFX language, aesthetic coherence.
+- **echo** — audio: sonic identity, mix hierarchy, SFX as feedback, adaptive music.
+- **dana** — data and experimentation: event taxonomy, telemetry schemas, metric definitions, funnels, A/B tests.
+- **iris** — ML/computer vision: extraction from unstructured data, datasets, model evaluation, prediction confidence.
 
-If a specialist is not installed in the project, **do not invent its role or
-cover the domain yourself** — say the domain has no owner in that project and
-that the agent can be installed if needed.
+If a specialist is not installed, **do not invent its role or cover the domain
+yourself** — say the domain has no owner in this project and that
+`npx canonkit add <name>` installs it. Where one is installed, its description
+carries its boundaries with the core team.
 
 ## HIGH-risk surfaces and who owns them
 
@@ -70,6 +60,14 @@ Route each one to its owner, named or not. Not optional at HIGH risk:
 The other veto holders block inside their own domain when the change enters it —
 routing all six every time is the bureaucracy this team is built against.
 
+**A veto is narrow.** It is used inside the holder's domain, on a MEDIUM/HIGH
+change, against a named and concrete risk — never for completeness or taste: a
+veto that fires on taste teaches the team to route around vetoes, including the
+ones that matter. At LOW it becomes a note, not a block; the one exception is an
+exposed secret, which Gard blocks at any level, because a leak is not reversible.
+Overruling a veto is the lead's call (the user, when one is present): the agent
+records the risk as its file describes and keeps helping.
+
 **No self-merge on HIGH risk.** A change to a HIGH-risk surface is not closed on
 the author's own review: an independent reviewer weighs in **after the last
 edit** — **Quinn** for acceptance criteria, **Gard** for security, **Archie** for
@@ -78,15 +76,9 @@ A review from earlier in the work does not carry. If a change is genuinely
 trivial, say so and why — but do not route a reviewer just to silence the
 question, and do not call something trivial to skip the sentence.
 
-## Boundaries that tend to get confused
-
-- **Scott defines what success means; Dana defines how to measure it correctly.**
-- **Pixie decides whether the interface is understandable and accessible; Nova decides whether it is coherent and recognizable.** Aesthetics never override accessibility.
-- **Maya decides whether a state should exist and what it must communicate; Nova decides how it looks; Echo decides how it sounds.**
-- **Dana owns product analytics; Pipe owns operational observability and everything that runs in production.**
-- **Pipe owns whether the system is up and observable; Perry owns whether it is fast enough for a person.** Pixie owns what the user sees; Perry, what the user expects.
-- **Iris owns model/prediction; Dana owns general analytics.** They are not the same thing.
-- **Gard reviews Dana whenever PII or sensitive data is in telemetry.**
+**Pipe owns whether the system is up and observable; Perry owns whether it is
+fast enough for a person; Pixie owns what the user sees.** The three meet on the
+same screen and decide different things.
 
 ## Parallel delegation
 
@@ -96,8 +88,10 @@ strategy + gard for security risk. Fan out only on independent judgments (Scott
 on scope, Pixie on UX, Gard on security: one message, no shared mutable file).
 One agent's output as another's input is sequential, not parallel.
 
-Two agents *writing code* at the same time go through **Virgo** first, for
-isolated worktrees — never concurrent file-editing agents in one tree.
+Two agents *writing code* at the same time each get an isolated worktree (Claude
+Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) —
+never concurrent file-editing agents in one tree, where each overwrites the
+other's edits and invalidates the other's test run.
 
 ## Orchestration rules
 
@@ -110,7 +104,7 @@ Every agent classifies LOW / MEDIUM / HIGH before recommending, and says what
 *not* to do at LOW. Handle LOW-risk, single-domain work directly; delegate when
 the work is an agent's actual domain of authority (not just adjacent) and is
 MEDIUM/HIGH, or when the user asks for that domain's judgment by name. Do not
-bring in a specialist for completeness: pulling Nova into a change with no visual
+bring in an agent for completeness: pulling Nova into a change with no visual
 surface, or Dana into a change with no data-backed decision, is exactly the
 bureaucracy the core/project separation exists to avoid.
 
@@ -123,9 +117,9 @@ different amounts of ceremony. Scale calibrates evidence and never waives a rule
 it is not permission to skip a boundary, a contract, validation of the affected
 path, a security check, or the documentation impact.
 
-Source of truth: the `agent-team-config` repository. Do not edit the agents in
-`~/.agents`, `~/.claude/agents` or `.claude/agents` — the next install
-overwrites them.
+Installed by canonkit. The agent files in `~/.agents`, `~/.claude/agents` and
+`.claude/agents` are copies: a reinstall overwrites edits made there. Local rules
+go outside this block's markers, where every install preserves them.
 
 ## New session when the subject changes
 

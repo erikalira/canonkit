@@ -75,6 +75,13 @@ for f in agents/*.md; do
     len=$(printf '%s' "$desc" | wc -c | tr -d ' ')
     if [ "$len" -lt 60 ]; then
       warn "$base: description is very short ($len chars) — say what the agent owns"
+    elif ! printf '%s' "$desc" | grep -q '^description: "Use '; then
+      # Claude Code lists every installed agent's description in the Agent tool
+      # on every turn: it is the trigger, so it opens with when to call the
+      # agent, not with who the agent is.
+      fail "$base: description must open with \"Use ...\" — it is the delegation trigger"
+    elif [ "$len" -gt 300 ]; then
+      fail "$base: description is $len chars — it loads on every turn; keep it under 300"
     else
       pass "$base"
     fi
@@ -188,7 +195,11 @@ else:
 # The roster block is where `add` reads the one-line summary it writes into a
 # project's AGENTS.md. An agent missing a line there installs with no
 # description for Codex to route on.
-listed = set(re.findall(r"^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+\S", block, re.M))
+# Core agents sit in the roster table (one row: owns + authority); specialists
+# keep a bullet, because `add` copies that line into the project's AGENTS.md.
+bullets = set(re.findall(r"^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+\S", block, re.M))
+rows = {m.lower() for m in re.findall(r"^\|\s*\*\*([A-Za-z0-9-]+)\*\*\s*\|\s*\S", block, re.M)}
+listed = bullets | rows
 for a in agents:
     if a not in listed:
         print(f"FAIL\treference/agents-block.md has no summary line for: {a}")
@@ -207,7 +218,8 @@ if not marker:
 else:
     misplaced = []
     for a in sorted(listed & set(agents)):
-        side = "specialist" if block.find(f"- **{a}** —") > marker.start() else "core"
+        pos = block.find(f"- **{a}** —") if a in bullets else block.find(f"| **{a.capitalize()}** |")
+        side = "specialist" if pos > marker.start() else "core"
         if tiers[a] and side != tiers[a]:
             misplaced.append(f"{a} is {tiers[a]} but sits in the {side} section")
     if misplaced:
