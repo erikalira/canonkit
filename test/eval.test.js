@@ -55,6 +55,8 @@ describe("routing eval", () => {
     assert.equal(parseRun(answered).error, null);
     const cutOff = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true })].join("\n");
     assert.match(parseRun(cutOff).error, /cut off/);
+    const halfAnswer = [line([{ type: "text", text: "Let me look at the auth module first." }]), line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), JSON.stringify({ type: "result", subtype: "error_max_budget_usd", is_error: true })].join("\n");
+    assert.match(parseRun(halfAnswer).error, /cut off mid-answer \(error_max_budget_usd\)/);
     const midRun = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), limit].join("\n");
     assert.match(parseRun(midRun).error, /session limit/);
   });

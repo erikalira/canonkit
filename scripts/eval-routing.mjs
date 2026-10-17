@@ -62,6 +62,7 @@ export function parseRun(stream) {
   const planFiles = [];
   let toolUses = 0;
   let failed = false;
+  let stopped = null;
   for (const line of stream.split(/\r?\n/)) {
     if (!line.trim().startsWith("{")) continue;
     let event;
@@ -71,6 +72,9 @@ export function parseRun(stream) {
       continue;
     }
     if (event.type === "result" && event.is_error) failed = true;
+    // error_max_budget_usd, error_max_turns, error_during_execution: the run
+    // ended before its answer did.
+    if (event.type === "result" && String(event.subtype ?? "").startsWith("error")) stopped = event.subtype;
     if (event.type !== "assistant") continue;
     for (const block of event.message?.content ?? []) {
       if (block.type === "text") text.push(block.text);
@@ -98,9 +102,14 @@ export function parseRun(stream) {
   // A limit can also land mid-run, after a few tool calls: then the run's last
   // words are the limit message, not an answer.
   const last = text.length ? text[text.length - 1] : "";
-  const error = (toolUses === 0 && (failed || silent || infra.test(said))) || (failed && silent) || infra.test(last)
-    ? (said.trim().split("\n")[0] || "no answer (cut off before answering)").slice(0, 120)
-    : null;
+  // Cut off by a limit after it had started talking, its words are half an
+  // answer: judging them could fail it for what it never reached, or pass it for
+  // a dispatch it never got to make.
+  const error = stopped && !silent
+    ? `cut off mid-answer (${stopped})`
+    : (toolUses === 0 && (failed || silent || infra.test(said))) || (failed && silent) || infra.test(last)
+      ? (said.trim().split("\n")[0] || "no answer (cut off before answering)").slice(0, 120)
+      : null;
   return { dispatches, text: said, plan: plan.join("\n"), planFiles, error };
 }
 
@@ -297,7 +306,13 @@ function main() {
   let judged = 0;
   for (const c of cases) {
     const runs = saved ? saved.get(c.id) : Array.from({ length: opts.runs }, (_, i) => () => runCase(c, i + 1, data.fixture, opts));
-    if (!runs.length) continue;
+    // A case with no saved transcript was not measured; skipping it would let an
+    // empty or partial directory report success.
+    if (!runs.length) {
+      console.log(`ERROR ${c.id}  not scored: no saved transcript (${c.id}-<run>.jsonl)`);
+      unmeasured.push(c.id);
+      continue;
+    }
     let passes = 0;
     let valid = 0;
     runs.forEach((r, i) => {
@@ -319,7 +334,7 @@ function main() {
   }
   console.log(`\n${judged - failed.length}/${judged} cases held (each needs 2/3 of its answered runs); model: ${opts.model ?? "session default"}.`);
   if (failed.length) console.log(`Did not hold: ${failed.join(", ")}`);
-  if (unmeasured.length) console.log(`Not measured (every run errored): ${unmeasured.join(", ")}`);
+  if (unmeasured.length) console.log(`Not measured (no answered run):${unmeasured.join(", ")}`);
   return failed.length || unmeasured.length ? 1 : 0;
 }
 
