@@ -79,6 +79,18 @@ if "~/AGENTS.md" not in routing:
 if re.search(r"^\|\s*\*\*\w+\*\*", routing, re.M):
     problems.append("routing-block.md restates the roster table — it belongs in agents-block.md")
 
+# Both blocks load in every project of everyone who installs canonkit. A skill
+# they point at that the package does not ship is an instruction to call
+# something that is not there — the maintainer never notices, because their
+# own machine has it.
+shipped = {p.parent.name for p in (REPO / "skills").glob("*/SKILL.md")}
+for label, text in (("agents-block.md", block), ("routing-block.md", routing)):
+    cited = set(re.findall(r"skills/([a-z0-9-]+)/SKILL\.md", text))
+    cited |= set(re.findall(r'skill: *"([a-z0-9-]+)"', text))
+    cited |= set(re.findall(r"`([a-z0-9-]+)` skill", text))
+    for s in sorted(cited - shipped):
+        problems.append(f"{label} points at the '{s}' skill, which the package does not ship")
+
 for p in problems:
     print("FAIL	" + p)
 if not problems:

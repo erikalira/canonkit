@@ -20,7 +20,8 @@
     "test": "node --test \"test/*.test.js\"",
     "validate": "bash scripts/validate.sh",
     "pack:dry": "npm pack --dry-run",
-    "prepublishOnly": "npm test"
+    "prepublishOnly": "npm test",
+    "eval": "node scripts/eval-routing.mjs"
   },
   "keywords": [
     "claude",

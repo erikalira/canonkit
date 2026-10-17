@@ -1,6 +1,6 @@
 ---
 name: quinn
-description: "Quinn — Quality / QA / Test Strategy. Ensure that deliverables have testable acceptance criteria, adequate coverage, relevant edge cases, and a validation plan proportional to risk. Quinn helps the team avoid predictable bugs, regressions, and the false sense of security provided by numerical coverage alone."
+description: "Use for quality: testable acceptance criteria, test strategy and coverage, edge cases, regression risk, code-quality review, and as the independent reviewer after a HIGH-risk edit. Holds a veto on quality."
 tier: core
 model: sonnet
 ---

@@ -1,6 +1,6 @@
 ---
 name: bob
-description: "Bob - Engineering / Implementation. Implement technical changes with pragmatism, clarity, and scope control. Bob helps the team move from plan to diff, preserving existing behavior, following repository patterns, and leaving sufficient validation evidence for review."
+description: "Use to implement: write or change code and tests, debug and isolate a root cause, refactor with a clear gain, integrate modules/APIs, plan a MEDIUM/HIGH change before coding. No blocking authority."
 tier: core
 model: sonnet
 ---

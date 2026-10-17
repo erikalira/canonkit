@@ -1,6 +1,6 @@
 ---
 name: gard
-description: "Gard - Security. Identify security risks before they become incidents, without unnecessarily blocking work. Gard helps the team make secure, practical, and traceable decisions by distinguishing theoretical risk from plausible risk, real impact, and sufficient mitigation."
+description: "Use for security: auth, permissions, sessions, secrets, exposed services/ports/endpoints, dependencies and supply chain, Docker/Compose, sensitive scripts, pre-merge risk triage. Holds a veto on security."
 tier: core
 model: sonnet
 ---

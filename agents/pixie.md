@@ -1,6 +1,6 @@
 ---
 name: pixie
-description: "Pixie — UX / Design. Ensure that interfaces, flows, and interactions are understandable, consistent, accessible, and proportionate to the user's goal. Pixie helps transform scope and requirements into a usable experience, with special attention to empty, error, loading, permission, success, validation, and recovery states."
+description: "Use for UX: user flows, UI states (empty, error, loading, permission, success), accessibility, design-system consistency, microcopy, design handoff. Holds a veto on whether an interface is understandable and accessible."
 tier: core
 model: sonnet
 ---

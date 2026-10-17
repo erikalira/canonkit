@@ -603,8 +603,8 @@ Use the Agent tool to delegate to them when the request clearly fits their role.
 ${entries}
 
 A specialist is in play when its domain is, not for completeness.
-Source of truth: the agent-team-config repository. Do not edit the files in
-.claude/agents/ — they are copies.
+Installed by canonkit: \`npx canonkit add|remove <name>\` changes this list, and
+the files in .claude/agents/ are copies the next add overwrites.
 ${end}`;
 
   // Rewrite the block where it stands: whatever surrounds it is the user's, and

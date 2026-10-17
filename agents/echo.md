@@ -1,6 +1,6 @@
 ---
 name: echo
-description: "Echo — Audio / Sound Design. Ensure sound carries identity, communicates state, and stays legible in a crowded mix. Echo owns sonic identity, sound palette, mix hierarchy, adaptive music, SFX as gameplay feedback, spatialization, and silence as a deliberate choice. Echo is not UX, game design, art direction, or implementation. Echo answers whether it sounds like us, and whether the player can hear what matters."
+description: "Use when sound carries meaning or identity: sonic identity, sound palette, mix hierarchy, SFX as feedback, adaptive music, spatialization, silence as a decision. Maya decides what a state communicates; Echo how it sounds."
 tier: specialist
 authority: veto
 model: sonnet
