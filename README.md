@@ -208,9 +208,9 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
 | Comando | O que faz |
 | --- | --- |
-| `install` | core no usuário + hooks + dashboard + blocos de referência globais |
+| `install` | core no usuário + hooks + dashboard + blocos de referência globais + skill `orchestrate` |
 | `install --no-reference` | só os agentes, os hooks e o dashboard |
-| `reference` | só os blocos globais |
+| `reference` | só os blocos globais e a skill `orchestrate` |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |
 | `list` | o roster e o que está instalado onde |
@@ -268,6 +268,15 @@ Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex e Claude Code | o time inteiro: quem existe, autoridade de bloqueio, roteamento HIGH, regras de despacho |
 | `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o ponteiro para `~/AGENTS.md`, o gatilho `/graphify` e as regras `[ENFORCED]` dos hooks |
+
+Junto dos blocos vai a skill `orchestrate` (`skills/orchestrate/SKILL.md`), que guarda
+o que só importa na hora de orquestrar: a justificativa de nomear modelo e esforço
+em cada despacho e o procedimento do Integration Review. O `AGENTS.md` mantém uma
+linha sempre carregada por regra, apontando para a skill, então a regra não some
+quando a skill não é carregada. A skill é instalada em `~/.claude/skills/orchestrate/`
+(Claude Code) e em `~/.agents/skills/orchestrate/` (Codex lê skills de
+`$HOME/.agents/skills`, conforme a documentação oficial de skills da OpenAI). Uma cópia
+divergente é preservada como `SKILL.md.local.bak` antes de ser sobrescrita.
 
 O `AGENTS.md` é neutro de runtime e é a única definição do time. O bloco de
 roteamento guarda só o que é mecânica do Claude Code (hooks e o que eles
@@ -417,22 +426,18 @@ reviews especializados e antes de fechar a decisão, o agente principal — quem
 orquestra, não um agente novo — faz um Integration Review.
 
 Não é um agente. Não é um artefato. É um passo de leitura do conjunto, feito por
-quem juntou os reviews.
+quem juntou os reviews. O procedimento completo mora na skill `orchestrate`; o
+`AGENTS.md` mantém só a linha sempre carregada que manda executá-la.
 
 1. As recomendações dos especialistas se contradizem?
 2. Alguma característica melhorou sacrificando outra de forma não documentada?
 3. O fluxo end-to-end continua coerente?
-4. Existe algum gap entre responsabilidades/handoffs?
-5. Algum risco caiu entre dois agentes?
-6. A solução continua sendo a menor solução suficiente?
-7. Produto, UX, engenharia, segurança, qualidade e operação continuam alinhados?
-8. Se houver gameplay: continua divertido e compreensível?
-9. Se houver visual: continua coerente com a direção artística?
-10. Se houver áudio: o que importa continua audível?
-11. Se houver analytics: conseguiremos medir a hipótese sem coleta desnecessária?
+4. Existe algum gap entre responsabilidades/handoffs, ou algum risco que caiu entre dois agentes?
+5. A solução continua sendo a menor solução suficiente?
+6. Produto, UX, engenharia, segurança, qualidade e operação continuam alinhados?
+7. Só se Maya/Nova/Echo/Dana participaram: continua divertido e compreensível, coerente com a direção artística, o que importa continua audível, a hipótese é mensurável sem coleta desnecessária?
 
-Os itens 8-11 só se aplicam quando o specialist correspondente participou. Uma
-mudança LOW não passa por Integration Review.
+Uma mudança LOW não passa por Integration Review.
 
 Quando o passo encontra uma contradição, o resultado é uma escalation nomeada
 para o dono da decisão — não uma média entre as duas recomendações.

@@ -3,7 +3,9 @@
 The team (roster, blocking authority, HIGH-risk routing, boundaries, dispatch
 rules) is defined in `~/AGENTS.md` (not imported here: projects live under a
 folder that contains it, so Claude Code already loads it); this block holds only
-what is specific to Claude Code.
+what is specific to Claude Code. This file loads in every project, but
+`~/AGENTS.md` loads only when the project sits under the home folder: if the team
+definition is not in context, read `~/AGENTS.md` before dispatching any agent.
 
 Everything under `~/.claude/agents/` and `~/.claude/hooks/` is an **installed copy**:
 the `agent-team-config` repo is the source of truth, so a fix to an agent, a hook or this block goes

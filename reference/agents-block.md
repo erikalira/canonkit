@@ -3,6 +3,11 @@
 Use the Agent tool to delegate to the subagents below when the request clearly
 fits their role. Do not force it when the task is simple or generic.
 
+This file is the user's standing authorization to delegate: when the work is
+MEDIUM/HIGH inside an agent's domain of authority, or a gate requires an
+independent reviewer, dispatch without waiting to be asked. LOW or generic work
+stays inline.
+
 The team has two layers, and the difference is **where each one is installed**.
 
 ## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
@@ -94,38 +99,10 @@ One agent's output as another's input is sequential, not parallel.
 Two agents *writing code* at the same time go through **Virgo** first, for
 isolated worktrees — never concurrent file-editing agents in one tree.
 
-## Naming the model and effort
+## Orchestration rules
 
-Every planned dispatch names its model and effort — **up** for a structural or
-irreversible decision, **down** for a mechanical pass with a verifiable result. A
-model chosen silently cannot be told apart from one forgotten, which is why it is
-written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
-dispatch nobody planned, not a ceiling.
-
-## Integration Review
-
-For **MEDIUM/HIGH changes that involve multiple disciplines**, after the
-specialist reviews and before closing the decision, whoever orchestrated does an
-Integration Review. It is not a new agent and not an artifact: it is a step of
-reading the whole.
-
-1. Do the specialists' recommendations contradict each other?
-2. Did some property improve by sacrificing another in an undocumented way?
-3. Is the end-to-end flow still coherent?
-4. Is there a gap between responsibilities/handoffs?
-5. Did some risk fall between two agents?
-6. Is the solution still the smallest sufficient one?
-7. Are product, UX, engineering, security, quality, and operations still aligned?
-8. If there is gameplay: is it still fun and understandable?
-9. If there is a visual layer: is it still coherent with the art direction?
-10. If there is audio: does what matters remain audible?
-11. If there is analytics: can we measure the hypothesis without unnecessary collection?
-
-Items 8-11 only apply when the corresponding specialist took part. A LOW change
-does not go through Integration Review.
-
-When the step finds a contradiction, the result is a named escalation to the
-decision owner — not an average of the two recommendations.
+- Every planned dispatch names its model and effort (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result); the rationale is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
+- MEDIUM/HIGH multi-discipline changes get an Integration Review before the decision is closed: run the `orchestrate` skill.
 
 ## Proportionality
 

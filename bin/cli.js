@@ -27,6 +27,7 @@ const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
 const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
 const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
+const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 
 // Every event each hook must be registered under, with the matcher it needs
 // there (null: no matcher). Checked per event, not per file: a hook wired to
@@ -209,6 +210,26 @@ ${agent.body.replace(/\n+$/, "")}
  * silently appending a duplicate instead of replacing.
  */
 function applyBlock(original, blockText, markers) {
+  const crlf = usesCrlf(original);
+  const result = applyBlockLf(toLf(original), blockText, markers);
+  return { ...result, text: toEol(result.text, crlf) };
+}
+
+/**
+ * Line endings are the file's, not the block's. A Windows checkout (git
+ * autocrlf) holds CRLF, while the blocks are LF; edited as-is, the pattern that
+ * swallows the newlines around a marker leaves a stray "\r" behind and the next
+ * write turns it into one more blank line, on every run. Work on LF, then
+ * write back in the file's own ending.
+ */
+const usesCrlf = (s) => {
+  const crlf = (s.match(/\r\n/g) || []).length;
+  return crlf > (s.match(/\n/g) || []).length - crlf;
+};
+const toLf = (s) => s.replace(/\r\n/g, "\n");
+const toEol = (s, crlf) => (crlf ? s.replace(/\n/g, "\r\n") : s);
+
+function applyBlockLf(original, blockText, markers) {
   const [start, end] = markers;
   const block = blockText.trim();
   const managed = `${start}\n${block}\n${end}`;
@@ -443,6 +464,32 @@ async function syncReference(ctx) {
   // Codex, so they stay out of the runtime-neutral roster. A CLAUDE.md that does not exist yet is created by
   // this call with the routing block as its entire content.
   await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
+
+  await installSkills(ctx);
+}
+
+/**
+ * Skills are the on-demand half of the reference: the roster keeps one
+ * always-loaded line per rule and points at the skill for the rationale, so the
+ * rule never disappears when the skill is not loaded. Claude Code discovers
+ * them under ~/.claude/skills; Codex under $HOME/.agents/skills (checked
+ * against OpenAI's skills documentation, "Build skills", user scope).
+ */
+async function installSkills(ctx) {
+  if (!existsSync(SKILLS_DIR)) return;
+  const names = (await readdir(SKILLS_DIR, { withFileTypes: true }))
+    .filter((e) => e.isDirectory() && existsSync(path.join(SKILLS_DIR, e.name, "SKILL.md")))
+    .map((e) => e.name)
+    .sort();
+  if (!names.length) return;
+
+  const roots = [path.join(os.homedir(), ".claude", "skills"), path.join(os.homedir(), ".agents", "skills")];
+  for (const root of roots) {
+    for (const name of names) {
+      await copyKeepingLocal(ctx, path.join(SKILLS_DIR, name), path.join(root, name), ["SKILL.md"]);
+    }
+    ctx.log(`Installed ${names.length} skill${names.length === 1 ? "" : "s"} (${names.join(", ")}) -> ${root}`);
+  }
 }
 
 /**
@@ -527,15 +574,19 @@ async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = 
   );
   const target = path.join(project, "AGENTS.md");
   const [start, end] = PROJECT_SPECIALISTS;
-  const original = existsSync(target) ? await readFile(target, "utf8") : "";
+  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  // Compare and edit in LF, write back in the file's own line ending (see usesCrlf).
+  const crlf = usesCrlf(raw);
+  const original = toLf(raw);
   const pattern = new RegExp(`\\n*${esc(start)}[\\s\\S]*?${esc(end)}\\n*`);
+  const inPlace = new RegExp(`${esc(start)}[\\s\\S]*?${esc(end)}`);
   const had = pattern.test(original);
 
   if (!installed.length) {
     // No specialists left: drop the block entirely rather than leave an empty one.
     if (!had) return ctx.log("No specialist block in AGENTS.md");
     const stripped = original.replace(pattern, "\n").trim();
-    await ctx.write(target, stripped ? `${stripped}\n` : "");
+    await ctx.write(target, toEol(stripped ? `${stripped}\n` : "", crlf));
     return ctx.log("Removed specialist block from AGENTS.md");
   }
 
@@ -556,11 +607,14 @@ Source of truth: the agent-team-config repository. Do not edit the files in
 .claude/agents/ — they are copies.
 ${end}`;
 
-  const text = had
-    ? `${original.replace(pattern, `\n\n${managed}\n`).trim()}\n`
+  // Rewrite the block where it stands: whatever surrounds it is the user's, and
+  // re-running with the same specialists must leave the file byte-identical.
+  const lf = had
+    ? original.replace(inPlace, () => managed)
     : (original.trim() ? `${original.replace(/\s+$/, "")}\n\n` : "") + managed + "\n";
+  const text = toEol(lf, crlf);
 
-  if (text === original) return ctx.log("already current: AGENTS.md");
+  if (text === raw) return ctx.log("already current: AGENTS.md");
   await ctx.write(target, text);
   ctx.log(`${had ? "Updated" : "Added"} specialist block in AGENTS.md`);
 }
