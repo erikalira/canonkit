@@ -115,7 +115,8 @@ describe("install", () => {
     assert.equal(result.status, 0, result.out);
 
     for (const dest of [path.join(home, ".agents"), path.join(home, ".claude", "agents")]) {
-      const installed = (await readdir(dest)).map((f) => path.basename(f, ".md")).sort();
+      // ~/.agents also holds skills/ (Codex's user-scope skill path); only the agent files count here.
+      const installed = (await readdir(dest)).filter((f) => f.endsWith(".md")).map((f) => path.basename(f, ".md")).sort();
       assert.deepEqual(installed, [...CORE].sort(), `wrong contents in ${dest}`);
     }
   });
@@ -200,6 +201,50 @@ describe("install", () => {
     assert.match(result.out, /\[dry-run\]/);
     assert.equal(existsSync(path.join(home, ".claude", "agents")), false);
     assert.equal(existsSync(path.join(home, "AGENTS.md")), false);
+    assert.equal(existsSync(path.join(home, ".claude", "skills")), false);
+  });
+});
+
+/* ---------------------------------------------------------------- skills */
+
+describe("orchestrate skill", () => {
+  const skillPath = (home, root) => path.join(home, root, "skills", "orchestrate", "SKILL.md");
+
+  test("install writes the skill for Claude Code and for Codex", async () => {
+    const { home } = await scratch("skill-install");
+    assert.equal(run(["install"], { home }).status, 0);
+
+    const source = await read(path.join(REPO, "skills", "orchestrate", "SKILL.md"));
+    for (const root of [".claude", ".agents"]) {
+      assert.equal(await read(skillPath(home, root)), source, `${root} copy differs from the repo`);
+    }
+    assert.match(source, /^---\r?\nname: orchestrate\r?\ndescription: .{40,}/);
+  });
+
+  test("the roster keeps a line per moved rule and points at the skill", async () => {
+    const block = await read(path.join(REPO, "reference", "agents-block.md"));
+    assert.match(block, /names its model and effort/);
+    assert.match(block, /Integration Review/);
+    assert.match(block, /~\/\.claude\/skills\/orchestrate\/SKILL\.md/);
+    assert.match(block, /~\/\.agents\/skills\/orchestrate\/SKILL\.md/);
+  });
+
+  test("keeps a locally edited copy as .local.bak before overwriting it", async () => {
+    const { home } = await scratch("skill-local-bak");
+    run(["install"], { home });
+    const edited = "---\nname: orchestrate\ndescription: my own version\n---\n";
+    await writeFile(skillPath(home, ".claude"), edited);
+
+    const result = run(["install"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(await read(skillPath(home, ".claude") + ".local.bak"), edited);
+    assert.equal(await read(skillPath(home, ".claude")), await read(path.join(REPO, "skills", "orchestrate", "SKILL.md")));
+  });
+
+  test("--no-reference leaves the skill alone, like the blocks it belongs to", async () => {
+    const { home } = await scratch("skill-no-reference");
+    assert.equal(run(["install", "--no-reference"], { home }).status, 0);
+    assert.equal(existsSync(skillPath(home, ".claude")), false);
   });
 });
 
@@ -439,6 +484,27 @@ describe("specialists", () => {
     assert.ok(existsSync(path.join(project, ".codex", "agents", "maya.toml")));
   });
 
+  for (const [label, eol] of [["LF", "\n"], ["CRLF", "\r\n"]]) {
+    test(`re-running add with the same specialists leaves a ${label} AGENTS.md byte-identical`, async () => {
+      const { home, project } = await scratch(`add-idempotent-${label}`);
+      const target = path.join(project, "AGENTS.md");
+      // Text on both sides of the block: what follows it must not be disturbed either.
+      await writeFile(target, ["# projeto", "", "instrucoes locais", ""].join(eol));
+      assert.equal(run(["add", "dana", "maya", "nova"], { home, cwd: project }).status, 0);
+
+      const withTail = (await read(target)) + eol + "## depois" + eol + eol + "resto" + eol;
+      await writeFile(target, withTail);
+
+      for (let i = 0; i < 3; i++) {
+        const result = run(["add", "dana", "maya", "nova"], { home, cwd: project });
+        assert.equal(result.status, 0, result.out);
+        assert.equal(await read(target), withTail, `run ${i + 1} changed the file`);
+      }
+      // The block is written in the file's own line ending, not mixed into it.
+      if (eol === "\r\n") assert.doesNotMatch(await read(target), /(^|[^\r])\n/);
+    });
+  }
+
   test("removing the last specialist drops the block and keeps the rest of the file", async () => {
     const { home, project } = await scratch("add-last");
     await writeFile(path.join(project, "AGENTS.md"), "# projeto\n\ninstrucoes locais\n");
@@ -510,6 +576,15 @@ describe("applyBlock", () => {
     assert.match(second.text, /v2/);
     assert.doesNotMatch(second.text, /v1/);
     assert.equal(applyBlock(second.text, "# t\n\nv2\n", markers).text, second.text);
+  });
+
+  test("a CRLF file stays CRLF and a repeat run changes nothing", () => {
+    const original = "# keep\r\n\r\nmine\r\n";
+    const first = applyBlock(original, "# t\n\nv1\n", markers).text;
+    assert.doesNotMatch(first, /(^|[^\r])\n/);
+    const second = applyBlock(first, "# t\n\nv1\n", markers).text;
+    assert.equal(second, first);
+    assert.match(applyBlock(first, "# t\n\nv2\n", markers).text, /v2/);
   });
 
   test("a block containing regex metacharacters is written literally", () => {

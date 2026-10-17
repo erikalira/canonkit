@@ -236,6 +236,56 @@ while IFS=$'	' read -r status detail; do
   if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
 done < "$TMP"
 
+head_ "Skills"
+
+# A skill is the on-demand half of the reference: the roster keeps one always-on
+# line per moved rule and points at the skill. A skill that cannot be found, or
+# a roster that stops pointing at it, loses the rule without any error.
+python3 - > "$TMP" <<'PY'
+import pathlib, re
+
+block = pathlib.Path("reference/agents-block.md").read_text(encoding="utf-8")
+skills = sorted(p.parent.name for p in pathlib.Path("skills").glob("*/SKILL.md"))
+
+if "orchestrate" not in skills:
+    print("FAIL\tskills/orchestrate/SKILL.md is missing")
+
+for s in skills:
+    text = pathlib.Path(f"skills/{s}/SKILL.md").read_text(encoding="utf-8")
+    fm = re.match(r"---\r?\n(.*?)\r?\n---", text, re.S)
+    name = re.search(r"^name:\s*(\S+)", fm.group(1), re.M) if fm else None
+    desc = re.search(r"^description:\s*(.+)$", fm.group(1), re.M) if fm else None
+    if not fm:
+        print(f"FAIL\tskill {s}: no frontmatter")
+    elif not name or name.group(1) != s:
+        print(f"FAIL\tskill {s}: frontmatter name must match its directory")
+    elif not desc or len(desc.group(1).strip()) < 40:
+        print(f"FAIL\tskill {s}: description missing or too short to trigger on")
+    else:
+        print(f"OK\tskill {s}")
+
+if "orchestrate" in skills:
+    needles = (
+        ("`orchestrate` skill", "the skill by name"),
+        ("~/.claude/skills/orchestrate/SKILL.md", "its Claude Code path"),
+        ("~/.agents/skills/orchestrate/SKILL.md", "its Codex path"),
+        ("Integration Review", "the Integration Review rule"),
+        ("names its model and effort", "the rule naming model and effort"),
+    )
+    for needle, what in needles:
+        if needle not in block:
+            print(f"FAIL\treference/agents-block.md no longer carries {what}")
+    skill = pathlib.Path("skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
+    for heading in ("## Naming the model and effort", "## Integration Review"):
+        if heading not in skill:
+            print(f"FAIL\tskills/orchestrate/SKILL.md lost '{heading}'")
+PY
+
+while IFS=$'\t' read -r status detail; do
+  [ -z "${status:-}" ] && continue
+  if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+done < "$TMP"
+
 head_ "Escalation graph"
 
 python3 - > "$TMP" <<'PY'
@@ -364,14 +414,14 @@ if command -v node >/dev/null 2>&1; then
     if node --check "$f" 2>/dev/null; then pass "$f parses"; else fail "$f: syntax error"; fi
   done
 
-  # The installer reads agents/, reference/, hooks/ and dashboard/ at runtime. Leaving any of
+  # The installer reads agents/, reference/, hooks/, dashboard/ and skills/ at runtime. Leaving any of
   # them out of the published tarball is the one packaging mistake that cannot be
   # caught by running the CLI from a clone, because a clone always has them.
   node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference", "hooks", "dashboard"]) {
+for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");
