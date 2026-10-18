@@ -373,9 +373,14 @@ if unreachable:
 else:
     print("OK\tevery core agent is reachable from another core agent")
 
-thin = [f"{a} (in={len(inc[a])})" for a in core if 0 < len(inc[a]) < 3]
-if thin:
-    print(f"WARN\tfew agents route to them: {', '.join(thin)}")
+# Collaboration lists only the handoffs the roster does not make obvious; the
+# rest routes by domain through the roster. So a low in-degree is by design, and
+# what must hold is that every Collaboration points at the roster.
+for a in agents:
+    text = pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8")
+    m = re.search(r"^## Collaboration\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    if m and "`AGENTS.md` roster" not in m.group(1):
+        print(f"FAIL\t{a}: Collaboration does not point at the `AGENTS.md` roster for the obvious handoffs")
 
 print(f"OK\t{len(agents)} agents, {sum(len(v) for v in out.values())} escalation edges")
 PY

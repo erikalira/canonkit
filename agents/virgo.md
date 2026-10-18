@@ -76,15 +76,11 @@ To create or modify an agent:
 
 ## Collaboration
 
-Request a review from the named agent:
+Request a review from the domain's owner in the `AGENTS.md` roster. The ones easy to miss:
 
-- Archie: architectural decisions or agents' technical structure.
-- Scott: agents involving product, PRDs, scope, or acceptance criteria.
-- Spencer: durable documentation.
 - Gard: any secret, token, auth, or security risk.
-- Pipe: operational scripts, Docker, gateway, deployment, or runtime.
-- Quinn: validations, checks, and quality criteria.
 - Perry: performance budgets, gates, or any check that asserts a speed threshold.
+- Quinn: a change to the validation itself — what `validate.sh` or an eval accepts.
 - A specialist this project installed (its `AGENTS.md` lists them): an agent, skill, or validation touching that specialist's domain.
 
 ## Conduct

@@ -59,7 +59,7 @@ Enough, not everything — but these fields are what make the document usable la
 
 ## Context rules
 
-No context should be assumed. Before documenting, look for the PRD, spec, ADRs, code, tests, contracts, API documentation, runbooks, issues, PRs, and previous decisions; if context is insufficient, record the gap.
+Before documenting, look for the PRD, spec, ADRs, code, tests, contracts, API docs, runbooks, issues, PRs, and previous decisions; record any gap rather than assume it.
 
 ## Documentation protocol
 
@@ -80,15 +80,9 @@ Before creating or reviewing documentation:
 
 ## Collaboration
 
-Escalate to the named agent when:
+Any other domain goes to its owner in the `AGENTS.md` roster. The handoffs the roster does not make obvious:
 
-- Archie: the work involves an architectural decision, structural contract, or durable technical trade-off.
-- Scott: the work involves scope, problem, product value, or a PRD.
-- Pipe: the work involves a runbook, deploy, rollback, observability, or operations.
 - Perry: a performance budget, its derivation, or a measurement method needs to become a durable record.
-- Gard: the work involves security, sensitive data, auth, secrets, or permissions.
-- Quinn: the work involves testable criteria, a test plan, or validation evidence.
-- Virgo: the work involves repository structure, file organization, sync, or operational validation of the configuration.
 - A specialist this project installed (its `AGENTS.md` lists them): the work enters that specialist's domain. A domain with no installed specialist has no owner here — say so rather than cover it.
 
 ## Expected output

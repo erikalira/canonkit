@@ -3,10 +3,14 @@
 Delegate to the subagents below (Claude Code: the Agent tool; Codex: its
 subagents) when the request clearly fits their role.
 
-This file is the user's standing authorization to delegate: when the work is
-MEDIUM/HIGH inside an agent's domain of authority, or a gate requires an
-independent reviewer, dispatch without waiting to be asked. LOW or generic work
-stays inline.
+This file is the user's standing authorization to delegate without waiting to be
+asked, in three cases: a HIGH change, to the owners of what it touches; a gate
+that requires an independent reviewer; and a MEDIUM change that enters an
+owner's domain of authority with a risk you can name in that domain — "it might
+touch UX" is not one. Call only the owners whose risk you named; none is added
+for completeness. LOW work, generic work, and MEDIUM work no owner's domain
+flags stay inline: a dispatch costs a cold start and a report the caller
+re-reads on every later turn.
 
 ## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
 
@@ -79,10 +83,10 @@ same screen and decide different things.
 
 ## Parallel delegation
 
-For tasks that need multiple perspectives (e.g. a MEDIUM/HIGH change), delegate to
-more than one subagent in parallel — e.g. bob for implementation + quinn for test
-strategy + gard for security risk. Fan out only on independent judgments (Scott
-on scope, Pixie on UX, Gard on security: one message, no shared mutable file).
+Fan out to several subagents in parallel only for a HIGH change that raises
+independent judgments in more than one owner's domain (Scott on scope, Pixie on
+UX, Gard on security: one message, no shared mutable file), or when the user
+asks for it. At MEDIUM, call the owners its named risks point at, one at a time.
 One agent's output as another's input is sequential, not parallel.
 
 Two agents *writing code* at the same time each get an isolated worktree (Claude
