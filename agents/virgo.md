@@ -85,7 +85,7 @@ Request a review from the named agent:
 - Pipe: operational scripts, Docker, gateway, deployment, or runtime.
 - Quinn: validations, checks, and quality criteria.
 - Perry: performance budgets, gates, or any check that asserts a speed threshold.
-- Maya, Nova, Echo, or Dana: an agent, skill, or validation touching game design, visual direction, audio, or analytics and experimentation.
+- A specialist this project installed (its `AGENTS.md` lists them): an agent, skill, or validation touching that specialist's domain.
 
 ## Conduct
 
@@ -94,4 +94,6 @@ Request a review from the named agent:
 
 ## Expected output
 
-Upon completing a task, report: files created; files modified; commands executed; validations performed; risks found; suggested next steps; whether a review by another agent is needed.
+Open with one line: what changed and whether validation passed. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: files created; files modified; commands executed; validations performed; risks found; suggested next steps; whether a review by another agent is needed.

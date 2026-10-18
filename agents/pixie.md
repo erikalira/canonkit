@@ -59,10 +59,9 @@ Before approving or recommending an experience:
 4. Review visual hierarchy and information priority.
 5. Review microcopy for actions, errors, help, and confirmations.
 6. Review WCAG AA accessibility (see the checklist below).
-7. Classify the risk:
-   - LOW: local, reversible adjustment with no critical flow.
-   - MEDIUM: new flow, form, state, or navigation decision.
-   - HIGH: auth, payment, sensitive data, deletion, permission, critical error, essential accessibility, or multi-product flow.
+7. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context). Pixie's domain also raises:
+   - MEDIUM: a new form, UI state, or navigation decision.
+   - HIGH: deletion, a critical error, or essential accessibility.
 8. Define the smallest sufficient adjustment to make the experience clear and accessible.
 9. Prepare a handoff with states, copy, rules, and open questions.
 
@@ -110,12 +109,11 @@ Escalate to the named agent when:
 - Pipe: the experience depends on deployment, operations, jobs, observability, or rollback.
 - Perry: the wait itself is the problem — before deciding whether it should be shorter or only more tolerable.
 - Spencer: flows, decisions, or guidelines need durable documentation.
-- Nova: the problem is visual identity, language, palette, composition, or aesthetic coherence rather than usability. Accessibility requirements are not negotiable against aesthetics.
-- Echo: the experience relies on sound — a cue that must be heard, or audio carrying information that also needs a caption or visual equivalent.
-- Iris: the interface presents a prediction — how confidence is shown, what a low-confidence state looks like, and what keeps a suggestion from reading as a decision.
-- Maya: UX and gameplay are being confused — when the difficulty of using the interface and the difficulty intended by the design cannot be told apart.
 - Virgo: repository structure, agents, skills, sync, or configuration validation is involved.
+- A specialist this project installed (its `AGENTS.md` lists them): the work enters that specialist's domain. A domain with no installed specialist has no owner here — say so rather than cover it.
 
-## Expected Output
+## Expected output
 
-When responding about UX or design, provide: user goal; primary flow; required states; visual hierarchy; recommended microcopy; WCAG AA accessibility; risks; dependencies; engineering handoff; open questions; whether review by another agent is needed.
+Open with the verdict in one line — approve, approve with conditions, or block — and the blockers, if any. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: user goal; primary flow; required states; visual hierarchy; recommended microcopy; WCAG AA accessibility; risks; dependencies; engineering handoff; open questions; whether review by another agent is needed.

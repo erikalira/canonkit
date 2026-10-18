@@ -117,10 +117,19 @@ for a in agents:
     if not any(("boundar" in h) or ("scope" in h) for h in heads):
         problems.append("no boundaries/scope section")
 
-    if a not in NO_RISK:
+    # Either the team's shared Risk scale (AGENTS.md) plus what the domain
+    # raises, or a scale of the domain's own (Perry, the specialists) — never a
+    # private copy of the generic one, which is how fourteen copies drifted.
+    if a not in NO_RISK and "**Risk scale**" not in text:
         for level in ("LOW:", "MEDIUM:", "HIGH:"):
             if level not in text:
-                problems.append(f"no {level.rstrip(':')} risk classification")
+                problems.append(f"no {level.rstrip(':')} risk classification and no reference to the team's Risk scale")
+
+    # The report lands in the caller's context and is re-read on every turn
+    # after it, so the cap is a cost rule, not a style preference.
+    out = re.search(r"^## Expected output\n(.*?)(?=^## |\Z)", text, re.S | re.M)
+    if out and not ("Open with" in out.group(1) and "omit empty" in out.group(1) and re.search(r"under ~\d+ lines", out.group(1))):
+        problems.append("Expected output is unbounded: open with the verdict, omit empty fields, cap the lines")
 
     # The README's promise: an agent that can veto also says what to do when
     # overruled. Checked as a rule, so agents without veto authority are fine.
@@ -208,6 +217,14 @@ if ghost:
     print(f"FAIL\treference/agents-block.md lists agents with no file: {', '.join(ghost)}")
 if not (set(agents) - listed) and not ghost:
     print("OK\tthe roster block has a summary line for every agent")
+
+# Agent files point at this scale instead of carrying a copy; without it they
+# point at nothing.
+scale = re.search(r"\*\*Risk scale\*\*.*?\n\n((?:- .*\n)+)", block, re.S)
+if not scale or not all(f"- {lvl}:" in scale.group(1) for lvl in ("LOW", "MEDIUM", "HIGH")):
+    print("FAIL\treference/agents-block.md has no **Risk scale** with LOW, MEDIUM and HIGH lines")
+else:
+    print("OK\tthe roster block carries the team's Risk scale")
 
 # Two sections in the roster, and the split carries meaning: a specialist listed
 # under the core heading claims to be always available, which is the one thing a
@@ -335,13 +352,28 @@ if silent:
 else:
     print("OK\tevery agent escalates to someone by name")
 
-unreachable = [a for a in agents if not inc[a]]
-if unreachable:
-    print(f"FAIL\tnobody escalates to them (unreachable): {', '.join(unreachable)}")
-else:
-    print("OK\tevery agent is reachable from another agent")
+# A core agent is installed everywhere; a specialist only where a project added
+# it. A core file naming a specialist routes, in most projects, to an agent that
+# does not exist — the opposite of "say the domain has no owner". Core files
+# carry one line pointing at the project's installed specialists instead, and
+# specialists are reached from that line and from each other.
+tier = {a: (re.search(r"^tier: *(\w+)", pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8"), re.M) or [None, None])[1] for a in agents}
+core = [a for a in agents if tier[a] == "core"]
+for a in core:
+    named = sorted(b for b in out[a] if tier[b] == "specialist")
+    if named:
+        print(f"FAIL\t{a}: core Collaboration names specialists ({', '.join(named)}) — point at the project's installed specialists instead")
+    text = pathlib.Path(f"agents/{a}.md").read_text(encoding="utf-8")
+    if "A specialist this project installed" not in text:
+        print(f"FAIL\t{a}: core Collaboration has no line for the project's installed specialists")
 
-thin = [f"{a} (in={len(inc[a])})" for a in agents if 0 < len(inc[a]) < 3]
+unreachable = [a for a in core if not (inc[a] & set(core))]
+if unreachable:
+    print(f"FAIL\tno core agent escalates to them (unreachable): {', '.join(unreachable)}")
+else:
+    print("OK\tevery core agent is reachable from another core agent")
+
+thin = [f"{a} (in={len(inc[a])})" for a in core if 0 < len(inc[a]) < 3]
 if thin:
     print(f"WARN\tfew agents route to them: {', '.join(thin)}")
 

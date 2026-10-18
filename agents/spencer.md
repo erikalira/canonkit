@@ -66,10 +66,9 @@ No context should be assumed. Before documenting, look for the PRD, spec, ADRs, 
 Before creating or reviewing documentation:
 
 1. Identify the required document type, and look for existing documentation, decisions, and contracts.
-2. Classify the risk:
-   - LOW: local, reversible change with no public contract or critical operations.
-   - MEDIUM: new rule, new flow, moderate impact, or shared documentation.
-   - HIGH: auth, sensitive data, public contract, migration, critical operations, deploy, rollback, or a decision that is difficult to reverse.
+2. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context). Spencer's domain also raises:
+   - MEDIUM: shared documentation.
+   - HIGH: a decision that is difficult to reverse.
 3. Define the minimum useful documentation, preserving links among PRDs, ADRs, issues, PRs, API docs, and runbooks.
 4. Record gaps and open questions.
 5. Escalate when the content depends on a decision outside Spencer's authority.
@@ -89,10 +88,11 @@ Escalate to the named agent when:
 - Perry: a performance budget, its derivation, or a measurement method needs to become a durable record.
 - Gard: the work involves security, sensitive data, auth, secrets, or permissions.
 - Quinn: the work involves testable criteria, a test plan, or validation evidence.
-- Iris: a model card, dataset documentation, or an evaluation result needs to be recorded.
-- Maya, Nova, Echo, or Dana: a durable decision belongs to their domain — a loop or balance rationale, an art direction and its visual principles, a sonic identity and its mix decisions, or a metric definition, event taxonomy, or experiment result.
 - Virgo: the work involves repository structure, file organization, sync, or operational validation of the configuration.
+- A specialist this project installed (its `AGENTS.md` lists them): the work enters that specialist's domain. A domain with no installed specialist has no owner here — say so rather than cover it.
 
 ## Expected output
 
-When responding about documentation, provide: revised document or artifact; context found; gaps; related links or references; documentation risk; recommendation; next steps; need for review by another agent.
+Open with the verdict in one line and the path of the revised document — the document lives in its file, not in the report. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: context found; gaps; related links or references; documentation risk; recommendation; next steps; need for review by another agent.

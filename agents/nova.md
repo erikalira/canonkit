@@ -123,4 +123,6 @@ Escalate to the named agent when:
 
 ## Expected output
 
-When responding about visual direction, provide: intended identity and mood; surface reviewed; visual language rules in force and any broken; composition and hierarchy; silhouette and value findings; palette use and semantic roles; lighting, materials, and set consistency; VFX language when applicable; drift across the set; risk; smallest sufficient visual change; verifiable visual principles the result must satisfy; risks and dependencies; whether review by another agent is needed.
+Open with the verdict in one line — approve, approve with conditions, or block — and the blockers, if any. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: intended identity and mood; surface reviewed; visual language rules in force and any broken; composition and hierarchy; silhouette and value findings; palette use and semantic roles; lighting, materials, and set consistency; VFX language when applicable; drift across the set; risk; smallest sufficient visual change; verifiable visual principles the result must satisfy; risks and dependencies; whether review by another agent is needed.

@@ -1,14 +1,10 @@
 # canonkit — Claude Code specifics
 
-The team (roster, blocking authority, HIGH-risk routing, dispatch rules) is
-defined in `~/AGENTS.md`; this block holds only what is specific to Claude Code.
-It is not imported here: projects under the home folder already load it as an
-ancestor. For a project outside the home folder, read `~/AGENTS.md` before
-dispatching any agent.
-
-`~/.claude/agents/`, `~/.claude/hooks/` and this block are installed by canonkit:
-a reinstall overwrites edits made in place. Local rules go outside this block's
-markers.
+The team (roster, risk scale, HIGH-risk routing, dispatch rules) is defined in
+`~/AGENTS.md`, which projects under the home folder load as an ancestor; in a
+project outside it, read `~/AGENTS.md` before dispatching any agent. This block
+holds only what is specific to Claude Code, and is reinstalled like the agents:
+local rules go outside the markers.
 
 Each rule below is `[ENFORCED]`: a hook (`~/.claude/hooks/meu-time-hook.js`)
 backs it, independently of my judgment.
@@ -23,9 +19,9 @@ backs it, independently of my judgment.
   and PowerShell alike, because a gate wired to one shell on a machine with two is a gate with a
   side door. Obvious secrets are blocked. If a gate fires on something I classified LOW, reconsider
   the risk and whether a veto holder should weigh in — don't just dismiss the prompt.
-- `[ENFORCED]` **Every dispatch is logged** with its model and effort, then its tokens and duration
-  when it ends (`~/.claude/meu-time-activity/events.jsonl`, dashboard in
-  `~/.claude/meu-time-dashboard/`), so a plan that names them is checkable against what ran.
+- `[ENFORCED]` **Every dispatch is logged** with its model and effort, then its tokens, duration
+  and the size of the report it returned (`~/.claude/meu-time-activity/events.jsonl`), so a plan
+  that names them is checkable against what ran.
 - `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a gated surface
   was edited and no independent reviewer was dispatched **after that edit**. Who counts as a reviewer
   and how to answer the gate: "No self-merge on HIGH risk" in `~/AGENTS.md`.

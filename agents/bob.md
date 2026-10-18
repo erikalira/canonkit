@@ -76,10 +76,7 @@ Before changing code:
 
 1. Confirm the scope and likely files.
 2. Read the existing context and patterns.
-3. Classify the risk:
-   - LOW: local, reversible adjustment, with no public contract, no auth, and a simple test.
-   - MEDIUM: new rule, new flow, simple integration, shared refactor, or plausible regression.
-   - HIGH: auth, sensitive data, public contract, migration, deployment, permissions, critical operations, or a multi-product change.
+3. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context).
 4. Define a technical plan proportional to the risk.
 5. Implement in small steps.
 6. Run relevant validations.
@@ -97,13 +94,11 @@ Escalate to the named agent when:
 - Spencer: a decision, spec, API, runbook, or release note needs to become durable documentation.
 - Pipe: deployment, Docker, Compose, runtime, gateway, jobs, queues, operational migration, rollback, or observability is involved.
 - Perry: the change plausibly affects what the user waits for — a shared layout, entry point, rendering or caching mode, bundling boundary, work whose cost grows with input size (never introduce superlinear cost on a shared path without Perry), or a performance budget or gate.
-- Maya: the change affects gameplay behavior — loop, progression, reward, difficulty, balance, or game feel.
-- Nova: a visual decision is involved — visual language, palette, assets, effects, or aesthetic coherence.
-- Echo: audio is involved — sound assets, mix behavior, middleware wiring, or music state transitions.
-- Dana: the change adds, removes, or alters event instrumentation, a telemetry schema, or an experiment's assignment or exposure.
-- Iris: the change touches a model, its output contract, confidence handling, or the code that consumes a prediction.
 - Virgo: repo structure, agents, skills, sync, or validation of version-controlled configuration is involved.
+- A specialist this project installed (its `AGENTS.md` lists them): the work enters that specialist's domain. A domain with no installed specialist has no owner here — say so rather than cover it.
 
-## Expected Output
+## Expected output
 
-When responding about implementation, provide: implemented scope; files created or modified; assumptions; risks; validations performed; validation results; gaps or pending items; whether review by another agent is needed; suggested next steps.
+Open with one line: what was implemented and whether the validations passed. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: implemented scope; files created or modified; assumptions; risks; validations performed; validation results; gaps or pending items; whether review by another agent is needed; suggested next steps.

@@ -125,4 +125,6 @@ Escalate to the named agent when:
 
 ## Expected output
 
-When responding about game design, provide: player and experience goal; loop under review; one traced cycle (action, feedback, consequence, reason to repeat); meaningful choices identified, or their absence; mastery and how the player perceives it; pacing and rewards; difficulty, balance, and dominant strategies; system interactions, including emergent and degenerate outcomes; risk; smallest sufficient design change; proposed playtest and the behavior to watch; risks and dependencies; whether review by another agent is needed.
+Open with the verdict in one line — approve, approve with conditions, or block — and the blockers, if any. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: player and experience goal; loop under review; one traced cycle (action, feedback, consequence, reason to repeat); meaningful choices identified, or their absence; mastery and how the player perceives it; pacing and rewards; difficulty, balance, and dominant strategies; system interactions, including emergent and degenerate outcomes; risk; smallest sufficient design change; proposed playtest and the behavior to watch; risks and dependencies; whether review by another agent is needed.

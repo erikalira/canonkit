@@ -1,0 +1,129 @@
+{
+  "about": "Quality eval: does an agent, run directly from this checkout's file (or a --variant of it), find the defect planted in a change, open with its verdict, and stay short? Each case writes `fixture` and commits it, then writes `change` uncommitted: the diff under review. says: every regex must match the report. notSays: none may. firstLine: the report's first non-empty line must match (verdict first). maxLines: the report's non-empty lines must not exceed it. A control case with nothing wrong checks the other failure: a blocker invented on a LOW change.",
+  "cases": [
+    {
+      "id": "gard-missing-authz",
+      "agent": "gard",
+      "risk": "HIGH",
+      "fixture": {
+        "src/middleware/guards.js": "// requireUser: any signed-in user. requireAdmin: role === \"admin\".\nexport const requireUser = (req, res, next) => (req.user ? next() : res.status(401).end());\nexport const requireAdmin = (req, res, next) => (req.user?.role === \"admin\" ? next() : res.status(403).end());\n",
+        "src/api/admin.js": "import { Router } from \"express\";\nimport { requireAdmin } from \"../middleware/guards.js\";\n\nexport const admin = Router();\n\nadmin.get(\"/admin/stats\", requireAdmin, (req, res) => res.json(req.app.locals.stats()));\n"
+      },
+      "change": {
+        "src/api/admin.js": "import { Router } from \"express\";\nimport { requireAdmin, requireUser } from \"../middleware/guards.js\";\n\nexport const admin = Router();\n\nadmin.get(\"/admin/stats\", requireAdmin, (req, res) => res.json(req.app.locals.stats()));\n\nadmin.delete(\"/admin/users/:id\", requireUser, async (req, res) => {\n  await req.app.locals.db.users.delete(req.params.id);\n  res.status(204).end();\n});\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) for security before it merges.",
+      "expect": {
+        "says": ["requireAdmin|authori[sz]|admin (role|check)|privilege|any (signed-in|authenticated|logged-in) user"],
+        "firstLine": "block|veto|P0|P1|request(ed)? changes|do not merge|not approv",
+        "maxLines": 30
+      }
+    },
+    {
+      "id": "gard-token-in-log",
+      "agent": "gard",
+      "risk": "HIGH",
+      "fixture": {
+        "src/session/login.js": "import { logger } from \"../logger.js\";\n\nexport async function login(users, sign, email, pass) {\n  const user = await users.verify(email, pass);\n  if (!user) return null;\n  const token = sign({ sub: user.id });\n  logger.info(`login ok user=${user.id}`);\n  return token;\n}\n",
+        "src/logger.js": "// Ships to the shared log platform; every engineer and two vendors can read it.\nexport const logger = { info: (m) => console.log(m) };\n"
+      },
+      "change": {
+        "src/session/login.js": "import { logger } from \"../logger.js\";\n\nexport async function login(users, sign, email, pass) {\n  const user = await users.verify(email, pass);\n  if (!user) return null;\n  const token = sign({ sub: user.id });\n  // Debugging intermittent 401s in production.\n  logger.info(`login ok user=${user.id} token=${token}`);\n  return token;\n}\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) for security before it merges.",
+      "expect": {
+        "says": ["token[^\\n]{0,120}log|log[^\\n]{0,120}token"],
+        "firstLine": "block|veto|P0|P1|request(ed)? changes|do not merge|not approv",
+        "maxLines": 30
+      }
+    },
+    {
+      "id": "gard-clean-low",
+      "agent": "gard",
+      "risk": "LOW",
+      "fixture": {
+        "src/utils/format.js": "export function shout(s) {\n  return s.toUpperCase() + \"!\";\n}\n"
+      },
+      "change": {
+        "src/utils/format.js": "export function shout(text) {\n  return text.toUpperCase() + \"!\";\n}\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) for security before it merges.",
+      "expect": {
+        "firstLine": "approv|LOW|no (security )?(issue|concern|risk|finding|blocker)|nothing|lgtm|clean",
+        "notSays": ["\\bP0\\b", "\\bP1\\b", "\\bveto"],
+        "maxLines": 12
+      }
+    },
+    {
+      "id": "quinn-mock-the-subject",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/pricing.js": "export function computeTotal(items, taxRate) {\n  const sub = items.reduce((s, i) => s + i.price * i.qty, 0);\n  return Math.round(sub * (1 + taxRate) * 100) / 100;\n}\n",
+        "package.json": "{\n  \"name\": \"shop\",\n  \"private\": true,\n  \"scripts\": { \"test\": \"vitest run\" }\n}\n"
+      },
+      "change": {
+        "src/pricing.test.js": "import { vi, test, expect } from \"vitest\";\nimport * as pricing from \"./pricing.js\";\n\nvi.mock(\"./pricing.js\", () => ({ computeTotal: vi.fn(() => 21.6) }));\n\ntest(\"computes the total with tax\", () => {\n  const total = pricing.computeTotal([{ price: 10, qty: 2 }], 0.08);\n  expect(pricing.computeTotal).toHaveBeenCalled();\n  expect(total).toBe(21.6);\n});\n"
+      },
+      "prompt": "Review the test added in the uncommitted change (git diff) before it merges: is computeTotal covered?",
+      "expect": {
+        "says": ["mock"],
+        "notSays": ["computeTotal is (adequately |well )?covered"],
+        "firstLine": "block|veto|request(ed)? changes|do not merge|not approv|not covered|reject|fail",
+        "maxLines": 30
+      }
+    },
+    {
+      "id": "quinn-skipped-case",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/pricing.js": "export function computeTotal(items, taxRate) {\n  const sub = items.reduce((s, i) => s + i.price * i.qty, 0);\n  return Math.round(sub * (1 + taxRate) * 100) / 100;\n}\n",
+        "src/pricing.test.js": "import { test, expect } from \"vitest\";\nimport { computeTotal } from \"./pricing.js\";\n\ntest(\"adds tax\", () => {\n  expect(computeTotal([{ price: 10, qty: 2 }], 0.08)).toBe(21.6);\n});\n\ntest(\"rounds half a cent up\", () => {\n  expect(computeTotal([{ price: 0.125, qty: 1 }], 0)).toBe(0.13);\n});\n"
+      },
+      "change": {
+        "src/pricing.test.js": "import { test, expect } from \"vitest\";\nimport { computeTotal } from \"./pricing.js\";\n\ntest(\"adds tax\", () => {\n  expect(computeTotal([{ price: 10, qty: 2 }], 0.08)).toBe(21.6);\n});\n\n// Flaky on CI, skipping to unblock the release.\ntest.skip(\"rounds half a cent up\", () => {\n  expect(computeTotal([{ price: 0.125, qty: 1 }], 0)).toBe(0.13);\n});\n"
+      },
+      "prompt": "The suite is green again after this change (git diff). Review it before it merges.",
+      "expect": {
+        "says": ["skip"],
+        "firstLine": "block|veto|request(ed)? changes|do not merge|not approv|reject|fail",
+        "maxLines": 30
+      }
+    },
+    {
+      "id": "archie-contract-break",
+      "agent": "archie",
+      "risk": "HIGH",
+      "fixture": {
+        "src/api/users.js": "// Public API: GET /users/:id. External clients depend on this response shape.\nexport function getUser(db, id) {\n  const u = db.users.find(id);\n  return { userId: u.id, name: u.name };\n}\n"
+      },
+      "change": {
+        "src/api/users.js": "// Public API: GET /users/:id. External clients depend on this response shape.\nexport function getUser(db, id) {\n  const u = db.users.find(id);\n  // Consistency: every other entity uses `id`.\n  return { id: u.id, name: u.name };\n}\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) before it merges.",
+      "expect": {
+        "says": ["breaking|backward|versio|deprecat|external clients"],
+        "firstLine": "block|veto|request(ed)? changes|do not merge|not approv|reject",
+        "maxLines": 30
+      }
+    },
+    {
+      "id": "pixie-inaccessible-form",
+      "agent": "pixie",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/signup.html": "<form id=\"signup\">\n  <button type=\"submit\">Create account</button>\n</form>\n"
+      },
+      "change": {
+        "src/signup.html": "<form id=\"signup\">\n  <input name=\"email\" placeholder=\"Email\">\n  <input name=\"password\" type=\"password\" placeholder=\"Password\">\n  <style>.invalid { border-color: red; }</style>\n  <!-- On a failed submit, the script adds .invalid to the bad field. -->\n  <button type=\"submit\">Create account</button>\n</form>\n"
+      },
+      "prompt": "Review the signup form change (git diff) before it ships.",
+      "expect": {
+        "says": ["label", "colou?r"],
+        "firstLine": "block|veto|request(ed)? changes|do not (merge|ship)|not approv|reject|fail",
+        "maxLines": 30
+      }
+    }
+  ]
+}

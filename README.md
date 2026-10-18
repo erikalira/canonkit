@@ -157,8 +157,10 @@ Cada despacho de subagente vira duas linhas em
 `~/.claude/meu-time-activity/events.jsonl`, ligadas pelo `id` (o `tool_use_id`):
 `agent_start` (agente, descrição, `model`, `effort`; vazio = herdou o padrão) e
 `agent_end` (modelo resolvido, duração, tokens de entrada / saída / cache read /
-cache write e número de chamadas de API). Só números e metadados — nunca o texto
-do prompt nem do resultado.
+cache write, número de chamadas de API e `report_chars`, o tamanho do relatório
+que voltou para o contexto de quem despachou — ele é relido em todo turno
+seguinte, então é um custo à parte do que o subagente gastou). Só números e
+metadados — nunca o texto do prompt nem do resultado.
 
 Os tokens são **somados do transcript do subagente**, não lidos do payload do
 hook: o `usage` que o `PostToolUse` entrega descreve só a última chamada de API
@@ -170,7 +172,7 @@ transcript não puder ser lido, `tokens` fica `null` — nunca estimado.
 O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
 `node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
 da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
-de despachos, tokens médios e duração média.
+de despachos, tokens médios, tamanho médio do relatório e duração média.
 
 ### Codex
 
@@ -318,12 +320,19 @@ protocolo do Virgo e checa as convenções que este README promete:
   Code lista a descrição de todo agente instalado em todo turno: ela é o gatilho de
   delegação, não uma biografia);
 - estrutura — Mission, Responsibilities, Collaboration, Expected Output, autoridade,
-  fronteiras e LOW/MEDIUM/HIGH;
+  fronteiras e risco: a **Risk scale** do time (no `AGENTS.md`) mais o que o domínio
+  eleva, ou uma escala própria do domínio (Perry, specialists) — nunca uma cópia
+  privada da genérica;
+- relatório limitado — o Expected Output abre com o veredito, omite campo vazio e
+  tem teto de linhas, porque o relatório é relido em todo turno de quem despachou;
+- core não nomeia specialist — um agente core instalado em todo projeto apontaria,
+  na maioria deles, para um agente que não existe; ele aponta para os specialists
+  que o projeto instalou;
 - a regra de veto — quem declara veto também diz o que fazer quando é rejeitado;
 - o split core/specialist — todo agente declara `tier`, todos têm linha de resumo
   em `reference/agents-block.md`, o roster não lista nome sem arquivo, e as duas
   seções do roster batem com o `tier` declarado;
-- o grafo de escalation — ninguém isolado, e ninguém escalando para um papel
+- o grafo de escalation — nenhum agente core isolado, e ninguém escalando para um papel
   genérico ("the security owner") em vez de um agente nomeado;
 - o roster e o bloco de roteamento — todo agente aparece no roster, a divisão core/specialist bate
   com os instaladores, a coluna de autoridade bate com quem declara veto no próprio
@@ -424,12 +433,41 @@ Nos dois juntos, 0/6 contra 5/5 (teste exato de Fisher, p ≈ 0,002). Exigindo d
 imediato em vez de "despachado ou planejado", os casos HIGH falhariam nas duas
 versões: o modelo planeja o revisor para depois da edição, como a regra manda.
 
+### Eval de qualidade
+
+O eval de roteamento nunca roda o corpo de um agente: o despacho é negado. Este
+roda só o corpo. Cada caso de `evals/quality-cases.json` grava um fixture, commita,
+e grava por cima uma mudança com um defeito plantado (rota admin sem checagem de
+papel, token em log, teste que mocka o próprio alvo, caso pulado para o suite
+ficar verde, contrato público quebrado, formulário sem label); o agente revisa o
+diff em plan mode. Um caso de controle sem defeito cobre a falha oposta: bloqueio
+inventado numa mudança LOW.
+
+```bash
+npm run eval:quality -- --dry-run
+npm run eval:quality -- --runs 3
+npm run eval:quality -- --variant gard=out/gard-lean.md --runs 3   # A/B de corpo
+```
+
+- O agente vem **deste checkout** (`--agents` + `--agent`), não do que está
+  instalado: dá para medir um corpo antes de publicá-lo. `--variant` troca só o
+  corpo, mantendo nome, descrição e modelo — a pergunta que ele responde é se um
+  corpo mais curto acha o mesmo tanto.
+- Cada caso exige o defeito (`says`), o veredito na primeira linha (`firstLine`) e
+  um teto de linhas (`maxLines`); o resumo dá a média de linhas por agente.
+- Os blocos globais são os instalados, como numa sessão real. Gasta crédito: roda
+  à mão, não no `npm test`.
+
 ### Custo sempre carregado
 
 Medido: os dois blocos mais as descrições dos 10 agentes core, que o Claude Code
-lista em todo turno, somam ~11,8k caracteres (~3,0k tokens). Antes desta versão
-eram ~14,5k (~3,6k tokens). As descrições dos specialists só pesam no projeto que
-os instalou.
+lista em todo turno, somam ~12,0k caracteres (~3,0k tokens) — já contando a Risk
+scale, que passou a existir uma vez no bloco em vez de catorze vezes nos agentes.
+Antes da 1.1 eram ~14,5k (~3,6k tokens). As descrições dos specialists só pesam no
+projeto que os instalou.
+
+Por despacho, o corpo de um agente core tem ~6–10,5k caracteres (~1,5–2,6k
+tokens); o relatório que ele devolve é medido em `report_chars` no log.
 
 ## Editing an agent
 
@@ -440,7 +478,8 @@ os instalou.
 4. Rode `./scripts/validate.sh` e `npm test`.
 5. Commit.
 6. Antes de um release que mude instrução (blocos, descrições, corpo de agente):
-   `node bin/cli.js install` e `npm run eval -- --runs 3`.
+   `node bin/cli.js install` e `npm run eval -- --runs 3`; se mudou o corpo de um
+   agente com caso de qualidade, também `npm run eval:quality -- --runs 3`.
 
 O passo de sincronizar os blocos globais saiu da lista porque `install` já faz.
 
@@ -489,7 +528,12 @@ by the hardest imaginable task makes every agent expensive for no gain.
   the condition that materializes it, the cost of fixing later, and the
   observable signal — then support the chosen implementation.
 - **Proporcionalidade.** Every agent classifies LOW / MEDIUM / HIGH before
-  recommending, and states what *not* to do on LOW.
+  recommending, and states what *not* to do on LOW. The scale lives once, as the
+  **Risk scale** in the `AGENTS.md` block; an agent file adds only what its domain
+  raises.
+- **Relatório curto.** Every agent opens with its verdict, reports only the
+  fields that have content, and stays under ~25 lines unless asked for more —
+  the report lands in the caller's context and is re-read on every later turn.
 - **Nenhum contexto assumido.** Agents look for existing context first and
   declare gaps explicitly instead of inventing evidence.
 - **Escalonamento.** Agents name the owner when a decision leaves their

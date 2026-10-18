@@ -92,4 +92,6 @@ Escalate to the named agent when:
 
 ## Expected output
 
-When responding about AI modeling or extraction, provide: prediction target and affected output contract; recommended approach and simpler alternative; dataset, license, annotation quality, and *domain shift* risk; baseline, metrics, and evaluation protocol; confidence and handling of low confidence; limitations, bias, and data and model provenance; risks (including regulatory risk, when applicable) and escalation needs; next steps.
+Open with the verdict in one line — approve, approve with conditions, or block — and the blockers, if any. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: prediction target and affected output contract; recommended approach and simpler alternative; dataset, license, annotation quality, and *domain shift* risk; baseline, metrics, and evaluation protocol; confidence and handling of low confidence; limitations, bias, and data and model provenance; risks (including regulatory risk, when applicable) and escalation needs; next steps.

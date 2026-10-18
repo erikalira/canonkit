@@ -202,46 +202,67 @@ export function drift(home = os.homedir()) {
   return out;
 }
 
-function writeFixture(dir, fixture) {
-  for (const [rel, text] of Object.entries(fixture)) {
-    const p = path.join(dir, rel);
-    mkdirSync(path.dirname(p), { recursive: true });
-    writeFileSync(p, text);
-  }
-  // A repository, because the team's gates (commit, HIGH-risk surfaces) are
-  // written for one, and an eval outside a repo would measure a different path.
+/**
+ * Write files into dir and commit them, so the eval runs inside a repository:
+ * the team's gates (commit, HIGH-risk surfaces) are written for one. `change`,
+ * when given, is written after the commit and left uncommitted — the diff a
+ * reviewer is asked about.
+ */
+export function writeFixture(dir, fixture, change = {}) {
+  const put = (files) => {
+    for (const [rel, text] of Object.entries(files)) {
+      const p = path.join(dir, rel);
+      mkdirSync(path.dirname(p), { recursive: true });
+      writeFileSync(p, text);
+    }
+  };
+  put(fixture);
   const git = (...args) => spawnSync("git", args, { cwd: dir, stdio: "ignore" });
   git("init", "-q");
   git("add", "-A");
   git("-c", "user.name=eval", "-c", "user.email=eval@example.invalid", "commit", "-qm", "fixture");
+  // The runner's own files (.eval-*) are not part of the change under review.
+  writeFileSync(path.join(dir, ".git", "info", "exclude"), ".eval-*\n");
+  put(change);
+}
+
+/**
+ * One headless `claude -p` in dir, read-only (plan mode), with every subagent
+ * dispatch denied by a PreToolUse hook: the decision is still in the stream,
+ * the subagent never runs. Returns the raw stream-json.
+ */
+export function runClaude(dir, input, opts, extraArgs = []) {
+  const deny = path.join(dir, ".eval-deny.cjs");
+  writeFileSync(deny, "process.stderr.write('canonkit eval: dispatch recorded, not run');process.exit(2);\n");
+  const settings = path.join(dir, ".eval-settings.json");
+  const hook = { type: "command", command: `node "${deny.replace(/\\/g, "/")}"` };
+  writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [hook] }] } }));
+
+  const args = [
+    "-p", "--output-format", "stream-json", "--verbose",
+    "--max-turns", String(opts.maxTurns),
+    "--max-budget-usd", String(opts.budget),
+    "--permission-mode", "plan",
+    "--settings", settings,
+    ...(opts.model ? ["--model", opts.model] : []),
+    ...extraArgs,
+  ];
+  // Windows ships claude as a .cmd shim, which Node only spawns through a
+  // shell; the line is built here, from values this script wrote itself.
+  const shell = process.platform === "win32";
+  const spawnOpts = { cwd: dir, input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: opts.timeoutMs };
+  const res = shell
+    ? spawnSync(["claude", ...args.map((a) => (/[\s"]/.test(a) ? `"${a}"` : a))].join(" "), { ...spawnOpts, shell: true })
+    : spawnSync("claude", args, spawnOpts);
+  if (res.error) throw res.error;
+  return res.stdout ?? "";
 }
 
 function runCase(kase, run, fixture, opts) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-eval-"));
   try {
     writeFixture(dir, fixture);
-    const deny = path.join(dir, ".eval-deny.cjs");
-    writeFileSync(deny, "process.stderr.write('canonkit eval: dispatch recorded, not run');process.exit(2);\n");
-    const settings = path.join(dir, ".eval-settings.json");
-    const hook = { type: "command", command: `node "${deny.replace(/\\/g, "/")}"` };
-    writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [hook] }] } }));
-
-    const args = [
-      "-p", "--output-format", "stream-json", "--verbose",
-      "--max-turns", String(opts.maxTurns),
-      "--max-budget-usd", String(opts.budget),
-      "--permission-mode", "plan",
-      "--settings", settings,
-      ...(opts.model ? ["--model", opts.model] : []),
-    ];
-    // Windows ships claude as a .cmd shim, which Node only spawns through a
-    // shell; the line is built here, from values this script wrote itself.
-    const shell = process.platform === "win32";
-    const spawnOpts = { cwd: dir, input: kase.prompt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: opts.timeoutMs };
-    const res = shell
-      ? spawnSync(["claude", ...args.map((a) => (/[\s"]/.test(a) ? `"${a}"` : a))].join(" "), { ...spawnOpts, shell: true })
-      : spawnSync("claude", args, spawnOpts);
-    if (res.error) throw res.error;
+    const res = { stdout: runClaude(dir, kase.prompt, opts) };
     if (opts.save) {
       mkdirSync(opts.save, { recursive: true });
       writeFileSync(path.join(opts.save, `${kase.id}-${run}.jsonl`), res.stdout ?? "");

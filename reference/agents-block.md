@@ -1,20 +1,17 @@
 # Subagents
 
 Delegate to the subagents below (Claude Code: the Agent tool; Codex: its
-subagents) when the request clearly fits their role. Do not force it when the
-task is simple or generic.
+subagents) when the request clearly fits their role.
 
 This file is the user's standing authorization to delegate: when the work is
 MEDIUM/HIGH inside an agent's domain of authority, or a gate requires an
 independent reviewer, dispatch without waiting to be asked. LOW or generic work
 stays inline.
 
-The team has two layers, and the difference is **where each one is installed**.
-
 ## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
 
-Available in every project, always. Each agent's own description says when to
-call it; this table is who owns what and who can stop a change.
+Available in every project. Each agent's description says when to call it; this
+table is who owns what and who can stop a change.
 
 | Agent | Owns | Blocking authority |
 |---|---|---|
@@ -101,7 +98,14 @@ other's edits and invalidates the other's test run.
 ## Proportionality
 
 Every agent classifies LOW / MEDIUM / HIGH before recommending, and says what
-*not* to do at LOW. Handle LOW-risk, single-domain work directly; delegate when
+*not* to do at LOW. **Risk scale** — the one every agent uses; an agent file adds
+only what its own domain raises:
+
+- LOW: local and reversible; no public contract, auth, sensitive data, or shared runtime.
+- MEDIUM: a new rule, flow, integration, permission, or configuration; a shared refactor; a plausible regression.
+- HIGH: a HIGH-risk surface (above), sensitive data, permissions, payment, production deploy or a hard rollback, or a multi-product change.
+
+Handle LOW-risk, single-domain work directly; delegate when
 the work is an agent's actual domain of authority (not just adjacent) and is
 MEDIUM/HIGH, or when the user asks for that domain's judgment by name. Do not
 bring in an agent for completeness: pulling Nova into a change with no visual
@@ -117,9 +121,9 @@ different amounts of ceremony. Scale calibrates evidence and never waives a rule
 it is not permission to skip a boundary, a contract, validation of the affected
 path, a security check, or the documentation impact.
 
-Installed by canonkit. The agent files in `~/.agents`, `~/.claude/agents` and
-`.claude/agents` are copies: a reinstall overwrites edits made there. Local rules
-go outside this block's markers, where every install preserves them.
+Installed agent files (`~/.agents`, `~/.claude/agents`, `.claude/agents`) and
+this block are copies a reinstall overwrites: a local variant is a new agent with
+another name, and local rules go outside this block's markers.
 
 ## New session when the subject changes
 

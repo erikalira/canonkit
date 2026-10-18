@@ -122,4 +122,6 @@ Escalate to the named agent when:
 
 ## Expected output
 
-When responding about audio, provide: intended sonic identity and mood; surface reviewed; meaning of each sound and any collisions; mix hierarchy and what the change displaces; audibility findings in the worst realistic case; repetition, variation, and fatigue; music states and transitions when applicable; spatialization, loudness, and dynamic range; non-audio equivalent needed and the Pixie handoff; mix drift across the set; risk; smallest sufficient audio change; verifiable audio principles the result must satisfy; risks and dependencies; whether review by another agent is needed.
+Open with the verdict in one line — approve, approve with conditions, or block — and the blockers, if any. Then only the fields with content (omit empty ones), under ~25 lines unless asked for more: the caller re-reads the report on every later turn. Longer detail goes in a file whose path you cite.
+
+Fields: intended sonic identity and mood; surface reviewed; meaning of each sound and any collisions; mix hierarchy and what the change displaces; audibility findings in the worst realistic case; repetition, variation, and fatigue; music states and transitions when applicable; spatialization, loudness, and dynamic range; non-audio equivalent needed and the Pixie handoff; mix drift across the set; risk; smallest sufficient audio change; verifiable audio principles the result must satisfy; risks and dependencies; whether review by another agent is needed.
