@@ -61,6 +61,10 @@ describe("routing eval", () => {
     assert.match(parseRun(halfAnswer).error, /cut off mid-answer \(error_max_budget_usd\)/);
     const midRun = [line([{ type: "tool_use", name: "Read", input: { file_path: "a" } }]), limit].join("\n");
     assert.match(parseRun(midRun).error, /session limit/);
+    // A review that recommends a rate limit is an answer, not an outage.
+    const review = "**Verdict: BLOCK (P0).** The route skips requireAdmin.\n\n" + "Any signed-in user can delete accounts. ".repeat(6) + "\n3. P2: add a rate limit on this endpoint.";
+    const reviewed = [line([{ type: "tool_use", name: "Bash", input: { command: "git diff" } }]), line([{ type: "text", text: review }])].join("\n");
+    assert.equal(parseRun(reviewed).error, null);
   });
 
   test("an agent is brought in only by its name as an agent, never by prose or a negation", () => {
@@ -155,7 +159,7 @@ describe("quality eval", () => {
   test("defines the agent from this checkout, or swaps in a variant body under the same name", () => {
     const shipped = agentDefinition("gard");
     assert.equal(shipped.gard.model, "sonnet");
-    assert.match(shipped.gard.prompt, /^You are Gard/);
+    assert.match(shipped.gard.prompt, /^## Mission/);
     assert.doesNotMatch(shipped.gard.prompt, /^---/m, "frontmatter is not part of the body");
     const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-variant-"));
     try {

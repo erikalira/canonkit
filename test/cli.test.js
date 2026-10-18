@@ -265,8 +265,8 @@ describe("codex custom agents", () => {
     assert.match(archie, /^description = ".+"$/m);
     assert.match(archie, /^developer_instructions = '''$/m);
     // The instructions are the agent file's body, not a summary of it.
-    assert.match(archie, /You are Archie/);
-    assert.match(archie, /## Anti-Patterns to Avoid/);
+    assert.match(archie, /## Mission/);
+    assert.match(archie, /## Anti-patterns/);
   });
 
   test("carries the frontmatter model onto the Codex axis", async () => {

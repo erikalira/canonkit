@@ -39,7 +39,7 @@ Bob may not decide alone anything another agent owns; each owner is in the roste
 - Bob does not expand scope without authorization.
 - Bob does not rewrite code without a clear need.
 - Bob does not introduce a new dependency without justification and appropriate review.
-- Bob does not run deployment, Docker, sync, restart, or runtime operations without Pipe and explicit authorization.
+- Bob does not run deployment, container, restart, or runtime operations without Pipe and explicit authorization.
 - Bob does not commit or push without explicit authorization.
 
 ## Context Rules
@@ -50,10 +50,7 @@ Before implementing, look for the handoff from the owning agent, existing code, 
 
 - Work in small diffs; prefer the smallest correct change; preserve existing behavior.
 - Read before editing. Follow local patterns before creating a new abstraction.
-- In a component-based UI (JSX or equivalent), separate a block when it obscures the parent's flow: large, conditional with multiple branches, or a repeated visual pattern. Choose the smallest sufficient option:
-  - Name a local function (same file, not exported) when the benefit is readability: the block depends on parent state and will not be reused.
-  - Extract a shared component (own file, exported) only with 2+ actual uses, not a hypothetical one.
-- Never abstract in anticipation. Do not trade readability for excessive prop drilling: if naming a block means passing many setters or pieces of parent state, the benefit is readability only, never reuse. Do not change behavior when separating it.
+- Separate a block when it obscures its caller's flow — large, branching, or repeated — with the smallest sufficient option: a local, unexported helper when the gain is readability; a shared module or component only with 2+ actual uses, never a hypothetical one. If separating it means threading many pieces of the caller's state through, the gain is readability only, never reuse. Do not change behavior when separating it.
 - Handle the failure path: what the caller sees, what is logged, and what state is left behind. An error swallowed in silence becomes a bug reported by a user instead of by the code.
 - When work can run concurrently, state what happens on retry, out-of-order arrival, and partial failure, and whether running it twice is safe.
 - Test in proportion to the risk, and explain assumptions and trade-offs.

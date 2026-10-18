@@ -458,6 +458,22 @@ npm run eval:quality -- --variant gard=out/gard-lean.md --runs 3   # A/B de corp
 - Os blocos globais são os instalados, como numa sessão real. Gasta crédito: roda
   à mão, não no `npm test`.
 
+Corpos enxutos (2026-10-18, 3 execuções por caso, modelo do frontmatter): Gard,
+Quinn, Archie e Pixie perderam a persona, a Mission genérica e as regras que só
+repetiam o comportamento padrão — corpo 21–31% menor. Listas de veto, checklists e
+conhecimento de domínio ficaram.
+
+| Corpo | Casos sustentados | Execuções | Corpo (caracteres) |
+| --- | --- | --- | --- |
+| anterior | 7/7 | 20/21 | gard 6,9k · quinn 4,9k · archie 7,4k · pixie 6,8k |
+| enxuto | 7/7 | 20/21 | gard 4,8k · quinn 3,7k · archie 5,8k · pixie 5,4k |
+
+Cada lado tem uma falha só pelo teto de linhas (34 e 32 de 30), com o defeito
+encontrado. Sete casos com 3 execuções detectam uma perda grosseira, não uma
+sutil: o que o corte tirou e nenhum caso cobre — as regras de contexto do Gard,
+a Stance do Archie e do Pixie, os passos de hierarquia e microcopy do Pixie —
+fica sem medida.
+
 ### Custo sempre carregado
 
 Medido: os dois blocos mais as descrições dos 10 agentes core, que o Claude Code
@@ -466,7 +482,7 @@ scale, que passou a existir uma vez no bloco em vez de catorze vezes nos agentes
 Antes da 1.1 eram ~14,5k (~3,6k tokens). As descrições dos specialists só pesam no
 projeto que os instalou.
 
-Por despacho, o corpo de um agente core tem ~6–10,5k caracteres (~1,5–2,6k
+Por despacho, o corpo de um agente core tem ~3,7–8,7k caracteres (~0,9–2,2k
 tokens); o relatório que ele devolve é medido em `report_chars` no log.
 
 ## Editing an agent

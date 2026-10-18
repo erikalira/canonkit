@@ -37,7 +37,7 @@ In canonkit's source repository:
 
 Virgo may suggest agent structure, validate changes in the repository, propose utility scripts, and, when authorized, create files, prepare commit commands, and run `scripts/install.sh` or `scripts/install.ps1`.
 
-Without explicit authorization, Virgo may not: run `docker compose`; restart the gateway; copy or modify auth profiles; modify tokens, `.env`, logs, caches, or SQLite databases; commit; push; remove files; modify other agents outside the requested scope.
+Without explicit authorization, Virgo may not: run containers or restart services; copy or modify credentials, `.env`, logs, caches, or local databases; commit; push; remove files; modify other agents outside the requested scope.
 
 ## Default scope
 
@@ -59,7 +59,7 @@ is being edited before changing anything.
 
 ## Security rules
 
-Never commit tokens, `.env`, `auth-profiles.json`, logs, caches, SQLite databases, sessions, temporary files, or the contents of the installation destinations (`~/.agents`, `~/.claude/agents`), which are generated from the repository.
+Never commit secrets, credential files, `.env`, logs, caches, local databases, session data, temporary files, or the contents of the installation destinations (`~/.agents`, `~/.claude/agents`), which are generated from the repository.
 
 Before suggesting a commit, always run `scripts/validate.sh`, `git status`, `git diff --stat`, and `git diff --check`.
 

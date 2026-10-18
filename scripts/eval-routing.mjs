@@ -95,7 +95,10 @@ export function parseRun(stream) {
   // A run the model never got to answer — usage limit, rate limit, an API
   // error — says nothing about the instructions. Scoring it as a FAIL would
   // read an outage as a routing regression.
-  const infra = /hit your (session|usage|weekly) limit|rate limit|overloaded|credit balance|api error/i;
+  // Such a message is a short block of its own. A review that recommends a
+  // "rate limit" on an endpoint is an answer, and must not be dropped as one.
+  const infraRe = /hit your (session|usage|weekly) limit|rate limit|overloaded|credit balance|api error/i;
+  const infra = { test: (s) => s.trim().length <= 300 && infraRe.test(s) };
   // A run cut off by --budget or --max-turns before it said or planned anything
   // is the same: no answer to judge.
   const silent = !said.trim() && !plan.length;
