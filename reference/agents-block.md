@@ -54,9 +54,13 @@ HIGH-risk surfaces = auth, secrets, migrations, public contracts, new services.
 
 Route each one to its owner, named or not. Not optional at HIGH risk:
 
-- auth / secrets / dependencies → **Gard**;
+- auth / secrets → **Gard**;
 - public contracts / new services → **Archie**;
 - migrations → **Archie** for the model and **Pipe** for the run.
+
+A dependency change is MEDIUM, not a HIGH-risk surface: route it to **Gard** when
+it adds a package or code that runs at install or build time; a lockfile-only
+patch bump stays inline.
 
 The other veto holders block inside their own domain when the change enters it —
 routing all six every time is the bureaucracy this team is built against.
@@ -83,16 +87,10 @@ same screen and decide different things.
 
 ## Parallel delegation
 
-Fan out to several subagents in parallel only for a HIGH change that raises
-independent judgments in more than one owner's domain (Scott on scope, Pixie on
-UX, Gard on security: one message, no shared mutable file), or when the user
-asks for it. At MEDIUM, call the owners its named risks point at, one at a time.
-One agent's output as another's input is sequential, not parallel.
-
-Two agents *writing code* at the same time each get an isolated worktree (Claude
-Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) —
-never concurrent file-editing agents in one tree, where each overwrites the
-other's edits and invalidates the other's test run.
+Fan out in parallel only for a HIGH change with independent judgments in more
+than one owner's domain, or when the user asks. Two agents *writing code* at the
+same time each get an isolated worktree (Claude Code: `isolation: "worktree"`;
+elsewhere, a separate checkout), never one shared tree. When and how: the `orchestrate` skill.
 
 ## Orchestration rules
 
@@ -116,14 +114,11 @@ bring in an agent for completeness: pulling Nova into a change with no visual
 surface, or Dana into a change with no data-backed decision, is exactly the
 bureaucracy the core/project separation exists to avoid.
 
-Change risk and project scale are two axes, not one. LOW/MEDIUM/HIGH measures
-what *this change* can break; scale — real users, operational blast radius,
-rollback cost, number of people who have to agree — decides how much *evidence*
-it needs to produce. A HIGH change in a one-person prototype and a HIGH in a
-multi-tenant production system deserve the same technical care and very
-different amounts of ceremony. Scale calibrates evidence and never waives a rule:
-it is not permission to skip a boundary, a contract, validation of the affected
-path, a security check, or the documentation impact.
+Risk and scale are two axes. Risk (LOW/MEDIUM/HIGH) is what *this change* can
+break; scale (real users, blast radius, rollback cost, people who must agree)
+sets how much *evidence* it needs. Scale calibrates evidence and never waives a
+rule: not a boundary, a contract, validation of the affected path, a security
+check, or the documentation impact.
 
 Installed agent files (`~/.agents`, `~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
@@ -131,10 +126,9 @@ another name, and local rules go outside this block's markers.
 
 ## New session when the subject changes
 
-When a request does not depend on what is already in context (another change,
-another area, or the previous task is done), say so in one line before starting
-and suggest a new session. A request that bundles independent jobs gets the same
-suggestion: one session per job. If the next session will need state, first
-write a short handoff (the change's tasks.md, an ops file, or memory) and give
-its path. Not a block: if the user wants to continue, continue. In Claude Code
-a hook reminds when the context passes ~100k/150k/200k tokens.
+When a request does not depend on what is in context (another change or area,
+or the previous task is done), or bundles independent jobs, say so in one line
+and suggest a new session per job. If the next session needs state, first write
+a short handoff (tasks.md, an ops file, or memory) and give its path. Not a
+block: if the user wants to continue, continue. In Claude Code a hook reminds at
+~100k/150k/200k tokens.
