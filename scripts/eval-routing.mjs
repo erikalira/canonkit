@@ -62,6 +62,7 @@ export function parseRun(stream) {
   const planFiles = [];
   let toolUses = 0;
   let failed = false;
+  let stopped = null;
   for (const line of stream.split(/\r?\n/)) {
     if (!line.trim().startsWith("{")) continue;
     let event;
@@ -71,6 +72,9 @@ export function parseRun(stream) {
       continue;
     }
     if (event.type === "result" && event.is_error) failed = true;
+    // error_max_budget_usd, error_max_turns, error_during_execution: the run
+    // ended before its answer did.
+    if (event.type === "result" && String(event.subtype ?? "").startsWith("error")) stopped = event.subtype;
     if (event.type !== "assistant") continue;
     for (const block of event.message?.content ?? []) {
       if (block.type === "text") text.push(block.text);
@@ -91,16 +95,24 @@ export function parseRun(stream) {
   // A run the model never got to answer — usage limit, rate limit, an API
   // error — says nothing about the instructions. Scoring it as a FAIL would
   // read an outage as a routing regression.
-  const infra = /hit your (session|usage|weekly) limit|rate limit|overloaded|credit balance|api error/i;
+  // Such a message is a short block of its own. A review that recommends a
+  // "rate limit" on an endpoint is an answer, and must not be dropped as one.
+  const infraRe = /hit your (session|usage|weekly) limit|rate limit|overloaded|credit balance|api error/i;
+  const infra = { test: (s) => s.trim().length <= 300 && infraRe.test(s) };
   // A run cut off by --budget or --max-turns before it said or planned anything
   // is the same: no answer to judge.
   const silent = !said.trim() && !plan.length;
   // A limit can also land mid-run, after a few tool calls: then the run's last
   // words are the limit message, not an answer.
   const last = text.length ? text[text.length - 1] : "";
-  const error = (toolUses === 0 && (failed || silent || infra.test(said))) || (failed && silent) || infra.test(last)
-    ? (said.trim().split("\n")[0] || "no answer (cut off before answering)").slice(0, 120)
-    : null;
+  // Cut off by a limit after it had started talking, its words are half an
+  // answer: judging them could fail it for what it never reached, or pass it for
+  // a dispatch it never got to make.
+  const error = stopped && !silent
+    ? `cut off mid-answer (${stopped})`
+    : (toolUses === 0 && (failed || silent || infra.test(said))) || (failed && silent) || infra.test(last)
+      ? (said.trim().split("\n")[0] || "no answer (cut off before answering)").slice(0, 120)
+      : null;
   return { dispatches, text: said, plan: plan.join("\n"), planFiles, error };
 }
 
@@ -193,46 +205,67 @@ export function drift(home = os.homedir()) {
   return out;
 }
 
-function writeFixture(dir, fixture) {
-  for (const [rel, text] of Object.entries(fixture)) {
-    const p = path.join(dir, rel);
-    mkdirSync(path.dirname(p), { recursive: true });
-    writeFileSync(p, text);
-  }
-  // A repository, because the team's gates (commit, HIGH-risk surfaces) are
-  // written for one, and an eval outside a repo would measure a different path.
+/**
+ * Write files into dir and commit them, so the eval runs inside a repository:
+ * the team's gates (commit, HIGH-risk surfaces) are written for one. `change`,
+ * when given, is written after the commit and left uncommitted — the diff a
+ * reviewer is asked about.
+ */
+export function writeFixture(dir, fixture, change = {}) {
+  const put = (files) => {
+    for (const [rel, text] of Object.entries(files)) {
+      const p = path.join(dir, rel);
+      mkdirSync(path.dirname(p), { recursive: true });
+      writeFileSync(p, text);
+    }
+  };
+  put(fixture);
   const git = (...args) => spawnSync("git", args, { cwd: dir, stdio: "ignore" });
   git("init", "-q");
   git("add", "-A");
   git("-c", "user.name=eval", "-c", "user.email=eval@example.invalid", "commit", "-qm", "fixture");
+  // The runner's own files (.eval-*) are not part of the change under review.
+  writeFileSync(path.join(dir, ".git", "info", "exclude"), ".eval-*\n");
+  put(change);
+}
+
+/**
+ * One headless `claude -p` in dir, read-only (plan mode), with every subagent
+ * dispatch denied by a PreToolUse hook: the decision is still in the stream,
+ * the subagent never runs. Returns the raw stream-json.
+ */
+export function runClaude(dir, input, opts, extraArgs = []) {
+  const deny = path.join(dir, ".eval-deny.cjs");
+  writeFileSync(deny, "process.stderr.write('canonkit eval: dispatch recorded, not run');process.exit(2);\n");
+  const settings = path.join(dir, ".eval-settings.json");
+  const hook = { type: "command", command: `node "${deny.replace(/\\/g, "/")}"` };
+  writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [hook] }] } }));
+
+  const args = [
+    "-p", "--output-format", "stream-json", "--verbose",
+    "--max-turns", String(opts.maxTurns),
+    "--max-budget-usd", String(opts.budget),
+    "--permission-mode", "plan",
+    "--settings", settings,
+    ...(opts.model ? ["--model", opts.model] : []),
+    ...extraArgs,
+  ];
+  // Windows ships claude as a .cmd shim, which Node only spawns through a
+  // shell; the line is built here, from values this script wrote itself.
+  const shell = process.platform === "win32";
+  const spawnOpts = { cwd: dir, input, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: opts.timeoutMs };
+  const res = shell
+    ? spawnSync(["claude", ...args.map((a) => (/[\s"]/.test(a) ? `"${a}"` : a))].join(" "), { ...spawnOpts, shell: true })
+    : spawnSync("claude", args, spawnOpts);
+  if (res.error) throw res.error;
+  return res.stdout ?? "";
 }
 
 function runCase(kase, run, fixture, opts) {
   const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-eval-"));
   try {
     writeFixture(dir, fixture);
-    const deny = path.join(dir, ".eval-deny.cjs");
-    writeFileSync(deny, "process.stderr.write('canonkit eval: dispatch recorded, not run');process.exit(2);\n");
-    const settings = path.join(dir, ".eval-settings.json");
-    const hook = { type: "command", command: `node "${deny.replace(/\\/g, "/")}"` };
-    writeFileSync(settings, JSON.stringify({ hooks: { PreToolUse: [{ matcher: "Agent|Task", hooks: [hook] }] } }));
-
-    const args = [
-      "-p", "--output-format", "stream-json", "--verbose",
-      "--max-turns", String(opts.maxTurns),
-      "--max-budget-usd", String(opts.budget),
-      "--permission-mode", "plan",
-      "--settings", settings,
-      ...(opts.model ? ["--model", opts.model] : []),
-    ];
-    // Windows ships claude as a .cmd shim, which Node only spawns through a
-    // shell; the line is built here, from values this script wrote itself.
-    const shell = process.platform === "win32";
-    const spawnOpts = { cwd: dir, input: kase.prompt, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: opts.timeoutMs };
-    const res = shell
-      ? spawnSync(["claude", ...args.map((a) => (/[\s"]/.test(a) ? `"${a}"` : a))].join(" "), { ...spawnOpts, shell: true })
-      : spawnSync("claude", args, spawnOpts);
-    if (res.error) throw res.error;
+    const res = { stdout: runClaude(dir, kase.prompt, opts) };
     if (opts.save) {
       mkdirSync(opts.save, { recursive: true });
       writeFileSync(path.join(opts.save, `${kase.id}-${run}.jsonl`), res.stdout ?? "");
@@ -297,7 +330,13 @@ function main() {
   let judged = 0;
   for (const c of cases) {
     const runs = saved ? saved.get(c.id) : Array.from({ length: opts.runs }, (_, i) => () => runCase(c, i + 1, data.fixture, opts));
-    if (!runs.length) continue;
+    // A case with no saved transcript was not measured; skipping it would let an
+    // empty or partial directory report success.
+    if (!runs.length) {
+      console.log(`ERROR ${c.id}  not scored: no saved transcript (${c.id}-<run>.jsonl)`);
+      unmeasured.push(c.id);
+      continue;
+    }
     let passes = 0;
     let valid = 0;
     runs.forEach((r, i) => {
@@ -319,7 +358,7 @@ function main() {
   }
   console.log(`\n${judged - failed.length}/${judged} cases held (each needs 2/3 of its answered runs); model: ${opts.model ?? "session default"}.`);
   if (failed.length) console.log(`Did not hold: ${failed.join(", ")}`);
-  if (unmeasured.length) console.log(`Not measured (every run errored): ${unmeasured.join(", ")}`);
+  if (unmeasured.length) console.log(`Not measured (no answered run):${unmeasured.join(", ")}`);
   return failed.length || unmeasured.length ? 1 : 0;
 }
 

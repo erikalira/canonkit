@@ -222,6 +222,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.duration_ms, 9000);
     assert.equal(end.tool_uses, 4);
     assert.deepEqual(end.tokens, { api_calls: 2, input: 5, output: 30, cache_read: 3000, cache_creation: 500, total: 3535 });
+    assert.equal(end.report_chars, RESULT.length, "the size of what returned to the caller, not its text");
 
     const raw = JSON.stringify(evs);
     assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
@@ -265,6 +266,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.resolved_model, "claude-haiku-5-5");
     assert.equal(typeof end.duration_ms, "number");
     assert.equal(end.tokens.total, 3535);
+    assert.equal(end.report_chars, RESULT.length);
     assert.equal(evs.filter((e) => e.event === "agent_stop").length, 1, "one agent finishing reads as one stop");
     const raw = JSON.stringify(evs);
     assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
@@ -292,6 +294,7 @@ describe("dispatch metrics", () => {
         const end = (await logged(S)).find((e) => e.event === "agent_end");
         assert.equal(end.tokens, null, "no tokens is null, never a guess");
         assert.equal(end.duration_ms, null);
+        assert.equal(end.report_chars, null);
       });
     }
     test("a SubagentStop whose transcript is missing", () => {

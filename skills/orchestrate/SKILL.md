@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Use when planning or dispatching subagents (naming the model and effort for each dispatch), or when closing a MEDIUM/HIGH change that involved more than one discipline (Integration Review before the decision is closed).
+description: Use when planning or dispatching subagents (naming the model and effort for each dispatch, fanning out in parallel, isolating agents that write code), or when closing a MEDIUM/HIGH change that involved more than one discipline (Integration Review before the decision is closed).
 ---
 
 # Orchestrate
 
-Two orchestration rules whose one-line form lives in `~/AGENTS.md`. This is the rationale and the procedure.
+Three orchestration rules whose short form lives in `~/AGENTS.md`. This is the rationale and the procedure.
 
 ## Naming the model and effort
 
@@ -14,6 +14,19 @@ irreversible decision, **down** for a mechanical pass with a verifiable result. 
 model chosen silently cannot be told apart from one forgotten, which is why it is
 written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
 dispatch nobody planned, not a ceiling.
+
+## Parallel delegation
+
+Fan out to several subagents in parallel only for a HIGH change that raises
+independent judgments in more than one owner's domain (Scott on scope, Pixie on
+UX, Gard on security: one message, no shared mutable file), or when the user
+asks for it. At MEDIUM, call the owners its named risks point at, one at a time.
+One agent's output as another's input is sequential, not parallel.
+
+Two agents *writing code* at the same time each get an isolated worktree (Claude
+Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) —
+never concurrent file-editing agents in one tree, where each overwrites the
+other's edits and invalidates the other's test run.
 
 ## Integration Review
 

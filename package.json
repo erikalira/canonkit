@@ -21,7 +21,8 @@
     "validate": "bash scripts/validate.sh",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test",
-    "eval": "node scripts/eval-routing.mjs"
+    "eval": "node scripts/eval-routing.mjs",
+    "eval:quality": "node scripts/eval-quality.mjs"
   },
   "keywords": [
     "claude",

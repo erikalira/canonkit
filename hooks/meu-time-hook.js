@@ -108,6 +108,17 @@ function transcriptUsage(file) {
   return t;
 }
 
+// The report a dispatch hands back is re-read by the caller on every later turn,
+// so its size is a cost of its own, apart from the tokens the subagent spent.
+// Foreground: tool_response.content (text blocks). Background: SubagentStop's
+// last_assistant_message. Only the length is logged, never the text.
+function reportChars(v) {
+  if (typeof v === 'string') return v.length;
+  if (!Array.isArray(v)) return null;
+  const texts = v.filter((b) => b && b.type === 'text' && typeof b.text === 'string');
+  return texts.length ? texts.reduce((n, b) => n + b.text.length, 0) : null;
+}
+
 // PostToolUse names the parent transcript, not the subagent's. The subagent's sits
 // beside it as <session>/subagents/agent-<id>.jsonl; if that layout ever changes the
 // read fails and tokens are logged as null rather than guessed.
@@ -358,6 +369,7 @@ function main() {
           duration_ms: start.ts ? Date.now() - start.ts : null,
           tool_uses: null,
           tokens: transcriptUsage(input.agent_transcript_path),
+          report_chars: reportChars(input.last_assistant_message),
           project,
         });
       }
@@ -388,6 +400,7 @@ function main() {
           duration_ms: num(r.totalDurationMs) || num(input.duration_ms) || null,
           tool_uses: typeof r.totalToolUseCount === 'number' ? r.totalToolUseCount : null,
           tokens: agentId ? transcriptUsage(subagentTranscript(input.transcript_path, agentId)) : null,
+          report_chars: reportChars(r.content),
           project,
         });
       }

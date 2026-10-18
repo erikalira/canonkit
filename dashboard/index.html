@@ -105,19 +105,22 @@
   function table(ds, keyOf, heads) {
     const groups = new Map();
     for (const d of ds) {
-      const k = keyOf(d), g = groups.get(k.join('\u0000')) || { k, n: 0, t: [], ms: [] };
+      const k = keyOf(d), g = groups.get(k.join('\u0000')) || { k, n: 0, t: [], ms: [], rc: [] };
       g.n++;
       if (d.tokens) g.t.push(d.tokens);
       if (typeof d.duration_ms === 'number') g.ms.push(d.duration_ms);
+      // What came back into the caller's context, which re-reads it every turn.
+      if (typeof d.report_chars === 'number') g.rc.push(d.report_chars);
       groups.set(k.join('\u0000'), g);
     }
     const avg = (xs, f) => xs.reduce((s, x) => s + f(x), 0) / xs.length;
     const rows = [...groups.values()].sort((a, b) => b.n - a.n).map((g) => {
       const t = g.t.length ? `<span title="avg over ${g.t.length} of ${g.n} · in ${tok(avg(g.t, (x) => x.input))} · out ${tok(avg(g.t, (x) => x.output))} · cache read ${tok(avg(g.t, (x) => x.cache_read))} · cache write ${tok(avg(g.t, (x) => x.cache_creation))} · ${avg(g.t, (x) => x.api_calls).toFixed(1)} API calls">${tok(avg(g.t, (x) => x.total))}</span>` : '<span class="dim">—</span>';
       const m = g.ms.length ? dur(avg(g.ms, (x) => x)) : '—';
-      return `<tr>${g.k.map((c, i) => `<td class="${i ? 'dim' : ''}">${esc(c)}</td>`).join('')}<td class="n">${g.n}</td><td class="n">${t}</td><td class="n">${m}</td></tr>`;
+      const r = g.rc.length ? `<span title="avg over ${g.rc.length} of ${g.n} · ~${tok(avg(g.rc, (x) => x) / 4)} tok">${tok(avg(g.rc, (x) => x))} ch</span>` : '<span class="dim">—</span>';
+      return `<tr>${g.k.map((c, i) => `<td class="${i ? 'dim' : ''}">${esc(c)}</td>`).join('')}<td class="n">${g.n}</td><td class="n">${t}</td><td class="n">${r}</td><td class="n">${m}</td></tr>`;
     }).join('');
-    return `<table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}<th class="n">dispatches</th><th class="n">avg tokens</th><th class="n">avg duration</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}<th class="n">dispatches</th><th class="n">avg tokens</th><th class="n">avg report</th><th class="n">avg duration</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
 
   function renderDispatches(ds) {
