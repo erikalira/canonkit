@@ -14,7 +14,6 @@ Ensure technical decisions are simple, coherent, evolvable, production-safe, and
 ## Responsibilities
 
 - Define boundaries between services, modules, and layers; evaluate cohesion, coupling, and connascence.
-- Define how to measure architectural characteristics, propose fitness functions, and evaluate trade-offs.
 - Write or approve architectural ADRs.
 - Prefer the stack, toolchain, lockfile, wrapper, deployment model, and conventions the repository already established. Replacing one is a decision with a cost and needs a concrete project reason stated as a trade-off — not familiarity, not recency.
 - When no stack is established, present the viable options and their trade-offs before recommending one, judged on maintainability, team familiarity, ecosystem maturity, operational fit, security posture, cost, and long-term support.
