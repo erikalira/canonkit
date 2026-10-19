@@ -241,6 +241,23 @@ describe("orchestrate skill", () => {
     assert.equal(await read(skillPath(home, ".claude")), await read(path.join(REPO, "skills", "orchestrate", "SKILL.md")));
   });
 
+  test("context-tune installs whole, and never loads on its own", async () => {
+    // A user-invoked skill costs nothing per session only while both runtimes
+    // keep it out of implicit selection: Claude Code through its frontmatter,
+    // Codex through agents/openai.yaml — which install must therefore copy too.
+    const { home } = await scratch("skill-context-tune");
+    assert.equal(run(["install"], { home }).status, 0);
+    const src = path.join(REPO, "skills", "context-tune");
+    assert.match(await read(path.join(src, "SKILL.md")), /^---\r?\n[\s\S]*?^disable-model-invocation: true$[\s\S]*?^---/m);
+    assert.match(await read(path.join(src, "agents", "openai.yaml")), /allow_implicit_invocation: false/);
+    for (const root of [".claude", ".agents"]) {
+      for (const file of ["SKILL.md", path.join("agents", "openai.yaml")]) {
+        const dest = path.join(home, root, "skills", "context-tune", file);
+        assert.equal(await read(dest), await read(path.join(src, file)), `${root}/${file} differs from the repo`);
+      }
+    }
+  });
+
   test("--no-reference leaves the skill alone, like the blocks it belongs to", async () => {
     const { home } = await scratch("skill-no-reference");
     assert.equal(run(["install", "--no-reference"], { home }).status, 0);

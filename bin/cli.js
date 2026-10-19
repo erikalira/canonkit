@@ -394,6 +394,7 @@ async function copyKeepingLocal(ctx, fromDir, dest, files) {
   for (const file of files) {
     const from = path.join(fromDir, file);
     const to = path.join(dest, file);
+    await ctx.mkdir(path.dirname(to));
     if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
       await ctx.copy(to, `${to}.local.bak`);
       ctx.log(`  ${file} differed — previous copy kept as ${file}.local.bak`);
@@ -473,8 +474,22 @@ async function syncReference(ctx) {
  * always-loaded line per rule and points at the skill for the rationale, so the
  * rule never disappears when the skill is not loaded. Claude Code discovers
  * them under ~/.claude/skills; Codex under $HOME/.agents/skills (checked
- * against OpenAI's skills documentation, "Build skills", user scope).
+ * against OpenAI's skills documentation, "Build skills", user scope). Every file
+ * in a skill's directory goes, not only SKILL.md: Codex reads its invocation
+ * policy from agents/openai.yaml beside it.
  */
+// Relative paths of every file below dir. Walked by hand: readdir's recursive
+// option needs Node 18.17, and engines accepts any 18.
+async function filesUnder(dir, prefix = "") {
+  const out = [];
+  for (const e of await readdir(path.join(dir, prefix), { withFileTypes: true })) {
+    const rel = path.join(prefix, e.name);
+    if (e.isDirectory()) out.push(...(await filesUnder(dir, rel)));
+    else if (e.isFile()) out.push(rel);
+  }
+  return out.sort();
+}
+
 async function installSkills(ctx) {
   if (!existsSync(SKILLS_DIR)) return;
   const names = (await readdir(SKILLS_DIR, { withFileTypes: true }))
@@ -486,7 +501,7 @@ async function installSkills(ctx) {
   const roots = [path.join(os.homedir(), ".claude", "skills"), path.join(os.homedir(), ".agents", "skills")];
   for (const root of roots) {
     for (const name of names) {
-      await copyKeepingLocal(ctx, path.join(SKILLS_DIR, name), path.join(root, name), ["SKILL.md"]);
+      await copyKeepingLocal(ctx, path.join(SKILLS_DIR, name), path.join(root, name), await filesUnder(path.join(SKILLS_DIR, name)));
     }
     ctx.log(`Installed ${names.length} skill${names.length === 1 ? "" : "s"} (${names.join(", ")}) -> ${root}`);
   }

@@ -169,6 +169,15 @@ voltas. Num despacho em background (o padrão), o `PostToolUse` chega no
 lançamento, sem números, e o `agent_end` é gravado no `SubagentStop`. Se o
 transcript não puder ser lido, `tokens` fica `null` — nunca estimado.
 
+Dois limites conferidos num transcript real (2026-10-19). **A saída (`output`) é
+um piso**: o transcript repete, em várias linhas da mesma chamada, a contagem do
+início do streaming, e para muitas chamadas a contagem final nunca é gravada. O
+hook guarda o maior valor visto por chamada; entrada e cache são completos. **Em
+background, o relatório volta pela ferramenta `SubagentHandback`**, não como última
+mensagem de texto, então `report_chars` mede a `message` do último
+`SubagentHandback` do transcript e só cai para `last_assistant_message` quando não
+há nenhum.
+
 O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
 `node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
 da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
@@ -212,9 +221,9 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
 | Comando | O que faz |
 | --- | --- |
-| `install` | core no usuário + hooks + dashboard + blocos de referência globais + skill `orchestrate` |
+| `install` | core no usuário + hooks + dashboard + blocos de referência globais + skills `orchestrate` e `context-tune` |
 | `install --no-reference` | só os agentes, os hooks e o dashboard |
-| `reference` | só os blocos globais e a skill `orchestrate` |
+| `reference` | só os blocos globais e as skills |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |
 | `list` | o roster e o que está instalado onde |
@@ -280,7 +289,21 @@ linha sempre carregada por regra, apontando para a skill, então a regra não so
 quando a skill não é carregada. A skill é instalada em `~/.claude/skills/orchestrate/`
 (Claude Code) e em `~/.agents/skills/orchestrate/` (Codex lê skills de
 `$HOME/.agents/skills`, conforme a documentação oficial de skills da OpenAI). Uma cópia
-divergente é preservada como `SKILL.md.local.bak` antes de ser sobrescrita.
+divergente é preservada como `<arquivo>.local.bak` antes de ser sobrescrita. O
+instalador copia todos os arquivos da pasta da skill, não só o `SKILL.md`.
+
+A skill `context-tune` é de outro tipo: **só roda quando você chama**
+(`/context-tune` no Claude Code, `$context-tune` no Codex). Ela mede a saída dos
+comandos que os agentes rodam no projeto (testes, build, lint), separa sinal de
+ruído (códigos de cor, banners, dicas, reporters verbosos) e silencia o ruído onde
+a configuração fica salva no projeto: `env` em `.claude/settings.json` /
+`[shell_environment_policy.set]` em `.codex/config.toml`, a config da própria
+ferramenta e, por último, um script para agentes. No fim, mede de novo e mostra o
+antes e depois. Roda uma vez por projeto, em vez de virar uma regra no `AGENTS.md`
+que toda sessão carrega. Por isso ela não pesa nada por sessão: o Claude Code não
+põe no contexto a descrição de uma skill com `disable-model-invocation: true`, e o
+Codex não a escolhe sozinho por causa de `allow_implicit_invocation: false` em
+`agents/openai.yaml`.
 
 O `AGENTS.md` é neutro de runtime e é a única definição do time. O bloco de
 roteamento guarda só o que é mecânica do Claude Code (hooks e o que eles

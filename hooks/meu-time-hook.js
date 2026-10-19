@@ -82,20 +82,43 @@ function readEvents(withRotated = false) {
 // assistant entry carrying its own usage, and a dispatch is identified by
 // tool_use_id — the only id both PreToolUse and PostToolUse carry. Only numbers
 // and metadata are logged: never the prompt, never the result.
+//
+// output is a lower bound (checked 2026-10-19, Claude Code 2.1.300): a call split
+// over several entries mostly repeats the count from the start of its stream (6,
+// 8, 16 tokens), and for many calls the final count is never written. The largest
+// value seen per call is kept; input and cache numbers are complete.
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const safeId = (v) => (typeof v === 'string' && /^[\w-]{1,64}$/.test(v) ? v : '');
 
-function transcriptUsage(file) {
+function scanTranscript(file) {
   let text;
-  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return null; }
+  try { text = fs.readFileSync(file, 'utf8'); } catch (_) { return { tokens: null, handback: null }; }
   const calls = new Map(); // keyed by message id: a call split over entries counts once
+  let handback = null;
   for (const line of text.split('\n')) {
     if (!line.includes('"assistant"')) continue; // skip parsing the bulk of the file
     let e;
     try { e = JSON.parse(line); } catch (_) { continue; }
     const m = e && e.type === 'assistant' && e.message;
-    if (m && m.usage && typeof m.usage === 'object') calls.set(m.id || e.requestId || e.uuid, m.usage);
+    if (!m) continue;
+    if (m.usage && typeof m.usage === 'object') {
+      const key = m.id || e.requestId || e.uuid;
+      const prev = calls.get(key);
+      const output = Math.max(num(prev && prev.output_tokens), num(m.usage.output_tokens));
+      calls.set(key, { ...m.usage, output_tokens: output });
+    }
+    for (const b of Array.isArray(m.content) ? m.content : []) {
+      if (b && b.type === 'tool_use' && b.name === 'SubagentHandback' && b.input && typeof b.input.message === 'string') {
+        handback = b.input.message.length;
+      }
+    }
   }
+  return { tokens: usageTotals(calls), handback };
+}
+
+const transcriptUsage = (file) => scanTranscript(file).tokens;
+
+function usageTotals(calls) {
   if (!calls.size) return null;
   const t = { api_calls: calls.size, input: 0, output: 0, cache_read: 0, cache_creation: 0 };
   for (const u of calls.values()) {
@@ -110,8 +133,11 @@ function transcriptUsage(file) {
 
 // The report a dispatch hands back is re-read by the caller on every later turn,
 // so its size is a cost of its own, apart from the tokens the subagent spent.
-// Foreground: tool_response.content (text blocks). Background: SubagentStop's
-// last_assistant_message. Only the length is logged, never the text.
+// Foreground: tool_response.content (text blocks). Background: the message of the
+// subagent's last SubagentHandback call, read from its transcript — the runtime
+// returns the report through that tool, and last_assistant_message then holds a
+// short closing line or nothing (seen 2026-10-19); it stays the fallback for a
+// transcript without one. Only the length is logged, never the text.
 function reportChars(v) {
   if (typeof v === 'string') return v.length;
   if (!Array.isArray(v)) return null;
@@ -356,6 +382,7 @@ function main() {
       const launch = evs.filter((e) => e.event === 'agent_launch' && e.agent_id === agentId).pop();
       if (launch) {
         const start = evs.filter((e) => e.event === 'agent_start' && e.id === launch.id).pop() || {};
+        const scan = scanTranscript(input.agent_transcript_path);
         log({
           event: 'agent_end',
           id: launch.id,
@@ -368,8 +395,8 @@ function main() {
           mode: 'background',
           duration_ms: start.ts ? Date.now() - start.ts : null,
           tool_uses: null,
-          tokens: transcriptUsage(input.agent_transcript_path),
-          report_chars: reportChars(input.last_assistant_message),
+          tokens: scan.tokens,
+          report_chars: scan.handback ?? reportChars(input.last_assistant_message),
           project,
         });
       }

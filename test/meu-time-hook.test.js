@@ -272,6 +272,44 @@ describe("dispatch metrics", () => {
     assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
   });
 
+  test("a background report handed back through SubagentHandback is measured from the transcript", async () => {
+    // As the runtime writes it on 2026-10-19: the report travels in a
+    // SubagentHandback call, the last assistant text is a short closing line, and
+    // a split call repeats its stream-start output count before the final one.
+    const S = "METRICS-HANDBACK";
+    const dir = path.join(HOME, "projects", "p", S, "subagents");
+    const entry = (id, output, content) => JSON.stringify({
+      type: "assistant", message: { id, content,
+        usage: { input_tokens: 1, output_tokens: output, cache_read_input_tokens: 100, cache_creation_input_tokens: 0 } },
+    });
+    const REPORT = RESULT.repeat(10);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "agent-ahb1.jsonl"), [
+      entry("msg_1", 8, [{ type: "text", text: "thinking out loud" }]),
+      entry("msg_1", 8, [{ type: "tool_use", name: "Bash", input: { command: "ls" } }]),
+      entry("msg_1", 844, [{ type: "tool_use", name: "Bash", input: { command: "ls" } }]),
+      entry("msg_2", 6, [{ type: "text", text: "Done." }]),
+      entry("msg_2", 6, [{ type: "tool_use", name: "SubagentHandback", input: { message: REPORT } }]),
+    ].join("\n") + "\n");
+
+    decide({ ...pre("Agent", { ...ti, run_in_background: true }, S), tool_use_id: "toolu_hb" });
+    runHook({
+      hook_event_name: "PostToolUse", session_id: S, tool_name: "Agent", tool_use_id: "toolu_hb",
+      tool_input: { ...ti, run_in_background: true },
+      tool_response: { status: "async_launched", agentId: "ahb1", resolvedModel: "claude-haiku-5-5" },
+    });
+    runHook({
+      hook_event_name: "SubagentStop", session_id: S, agent_id: "ahb1", stop_hook_active: false,
+      agent_transcript_path: path.join(dir, "agent-ahb1.jsonl"), last_assistant_message: "Done.",
+    });
+
+    const end = (await logged(S)).filter((e) => e.event === "agent_end").at(-1);
+    assert.equal(end.report_chars, REPORT.length, "the handed-back report, not the closing line");
+    assert.equal(end.tokens.api_calls, 2);
+    assert.equal(end.tokens.output, 850, "the largest count per call, not the last entry's");
+    assert.ok(!JSON.stringify(await logged(S)).includes(RESULT), "report text reached the log");
+  });
+
   test("a foreground SubagentStop writes no agent_end of its own (PostToolUse does)", async () => {
     const S = "METRICS-FG-STOP";
     runHook({ hook_event_name: "SubagentStop", session_id: S, agent_id: "afg9", stop_hook_active: false });
