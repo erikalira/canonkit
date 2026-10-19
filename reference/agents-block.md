@@ -129,6 +129,9 @@ another name, and local rules go outside this block's markers.
 When a request does not depend on what is in context (another change or area,
 or the previous task is done), or bundles independent jobs, say so in one line
 and suggest a new session per job. If the next session needs state, first write
-a short handoff (tasks.md, an ops file, or memory) and give its path. Not a
-block: if the user wants to continue, continue. In Claude Code a hook reminds at
-~100k/150k/200k tokens.
+a short handoff (tasks.md, an ops file, or memory) and give its path. End the
+suggestion with the **opening prompt for the new session**, ready to paste, in
+the user's language: one fenced block that names the goal, points at the handoff
+path, and says what to do first — so starting over costs one paste, not a
+rewrite. Not a block: if the user wants to continue, continue. In Claude Code a
+hook reminds at ~100k/150k/200k tokens.

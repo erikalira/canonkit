@@ -201,7 +201,7 @@ function contextReminder(input) {
   if (reached === 0) return null;
 
   log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(input.cwd || process.cwd()) });
-  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff (rule 'New session when the subject changes').`;
+  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff, and end with the new session's opening prompt in a fenced block, ready to paste (rule 'New session when the subject changes').`;
 }
 
 // Agents that count as an independent reviewer for the definition-of-done gate.
