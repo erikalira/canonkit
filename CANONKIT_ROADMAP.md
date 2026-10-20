@@ -4,7 +4,7 @@
 **Stack atual:** CanonKit + OpenSpec + Graphify  
 **Objetivo:** reduzir custo/contexto, aumentar previsibilidade do roteamento e qualidade dos agentes, sem adicionar novas camadas antes de existir evidência de que elas são necessárias.
 
-**Estado de implementação:** Fases 1, 2, 3, 4 e 5 concluídas. A Fase 2 preserva
+**Estado de implementação:** Fases 1, 2, 3, 4, 5 e 6 concluídas. A Fase 2 preserva
 `agent` / `model` / `effort`, acrescenta expectativas opcionais de dispatch e
 mantém os checks anteriores. A Fase 3 expande o quality eval de 7 para 33 casos:
 todos os 10 core têm cenário positivo, adversarial e LOW sem burocracia, com
@@ -15,7 +15,11 @@ aceite, revisões e drift resolvidos. Três casos de routing cobrem LOW/MEDIUM/H
 A Fase 5 aplica a opção A: check de Git antes da evidência estrutural, refresh
 para mudanças relevantes e aviso/fallback para arquivos atuais quando a freshness
 não puder ser assegurada. Quatro casos de routing cobrem os principais desvios.
-Próxima fase: **Fase 6 — Reavaliar o trust boundary dos hooks do Graphify**.
+A Fase 6 torna hooks e merge driver opt-in via `--with-git-hooks`; o default
+executa apenas `update .`, preserva automação existente e avisa sobre a migração.
+Preflights e testes herméticos cobrem os dois modos; decisão, avaliação upstream
+e migração estão na [ADR 0002](docs/adr/0002-graphify-git-hooks-opt-in.md).
+Próxima fase: **Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob**.
 Os casos de roteamento com modelo real continuam sendo uma medição manual paga;
 o mesmo vale para os novos casos de qualidade. Os testes herméticos validam o
 contrato dos evals, sem demonstrar comportamento dos modelos.
@@ -490,6 +494,11 @@ Nenhuma decisão estrutural deve usar Graphify stale sem um aviso explícito.
 ---
 
 ## Fase 6 — Reavaliar o trust boundary dos hooks do Graphify
+
+**Estado:** concluída em 2026-10-20. `npm test`: 182 aprovados, 1 ignorado por
+limitação de symlink no Windows, nenhuma falha. `npm run validate`, checks de
+sintaxe e `git diff --check` aprovados. Os testes usam Git real e binários de
+ferramentas simulados; a avaliação upstream foi por inspeção de fonte.
 
 ### Problema
 

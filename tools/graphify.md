@@ -10,14 +10,11 @@ preflight: git-hooks
 env:
   - GRAPHIFY_NO_AUTO_REFRESH=1
 setup:
-  - hook install
   - update .
 touches:
-  - .git/hooks/post-commit and .git/hooks/post-checkout (new files; existing hooks are never touched)
-  - .git/config (merge.graphify driver) and .gitattributes
   - graphify-out/ (graph.json, GRAPH_REPORT.md)
 notes:
-  - the hooks and the merge driver import graphify from the repository root first; a committed graphify/ or graphify.py would run on commit, checkout and merge — do not enable this where you check out untrusted branches.
+  - Git hooks and merge driver are opt-in via --with-git-hooks; existing automation is preserved. Hooks import from the repository root before review — trust every branch before opting in.
   - canonkit sets GRAPHIFY_NO_AUTO_REFRESH=1 for its own runs only; set it in your own environment too, or graphify (from agents, hooks, your shell) rewrites the user-level skills it installed after each upgrade.
 undo:
   - graphify hook uninstall

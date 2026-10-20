@@ -324,11 +324,12 @@ marcadores é preservado, e o script se recusa a rodar dentro do próprio
 ### Ferramentas, por projeto
 
 Duas ferramentas de terceiros complementam o time: **graphify** (grafo do código,
-atualizado por hooks git) e **openspec** (specs e critérios de aceite em
+atualizado sob demanda por padrão) e **openspec** (specs e critérios de aceite em
 `openspec/`). Rodado **de dentro do projeto**:
 
 ```bash
 npx canonkit tool add openspec      # ou graphify
+npx canonkit tool add graphify --with-git-hooks  # opt-in: confie em toda branch
 npx canonkit tool add graphify --dry-run
 npx canonkit tool remove graphify
 npx canonkit tool list
@@ -359,7 +360,7 @@ binário presente, o
    atualiza), os comandos exatos e os arquivos que serão tocados;
 2. pergunta `y/N` (`--yes` pula; sem terminal e sem `--yes`, não roda);
 3. roda o setup da própria ferramenta (`openspec init --tools claude,codex`;
-   `graphify hook install` e `graphify update .`);
+   `graphify update .`; com `--with-git-hooks`, antes roda `graphify hook install`);
 4. por último, e só se o setup deu certo, escreve o bloco "Project tools" no
    `AGENTS.md` do projeto (marcadores `agent-team-config:complements:*`).
 
@@ -393,11 +394,28 @@ do projeto. PRD, plano ou spec paralelos não substituem esse estado.
 O contrato foi conferido no [schema da versão fixada](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/schemas/spec-driven/schema.yaml)
 e no [workflow de archive](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/src/core/templates/workflows/archive-change.ts).
 
-**graphify.** O setup grava `post-commit` e `post-checkout` em `.git/hooks/`, o
-merge driver em `.git/config` e `.gitattributes`. Ele **não roda** se já existe
+**graphify.** Por padrão, o setup roda apenas `graphify update .`: não instala
+hooks Git nem merge driver. `--yes` pula a confirmação, sem habilitá-los.
+`--with-git-hooks` é aceito somente em `tool add graphify` e habilita explicitamente
+`post-commit` e `post-checkout` em `.git/hooks/`, o merge driver em `.git/config`
+e `.gitattributes`, com aviso do risco antes da confirmação. Nesse modo ele **não roda** se já existe
 `post-commit` ou `post-checkout` que não seja do graphify, ou se `core.hooksPath`
 está definido; nesse caso imprime como encadear à mão e sai com 1. Um `--dry-run`
-do graphify não executa essa checagem, então não mostra essa recusa.
+do graphify não executa essa checagem, então não mostra essa recusa. Nos dois
+modos, continua exigindo Git, a raiz do repositório e os checks de arquivos que
+poderiam substituir o pacote ou o interpretador dos hooks.
+
+**Migração de clones existentes:** atualizar o CanonKit ou repetir `tool add graphify`
+sem a flag preserva os hooks, o merge driver e os atributos já configurados.
+O comando detecta automação existente e avisa que continua habilitada; não a
+desativa silenciosamente. Para manter/reinstalar o comportamento anterior, use
+`npx canonkit tool add graphify --with-git-hooks` após avaliar o risco. Para passar
+a atualizações manuais, revise e execute `graphify hook uninstall` (remove os
+blocos marcados e o merge driver), confira `graphify hook status`,
+`git config --get-regexp '^merge\.graphify\.'` e o diff de `.gitattributes`,
+preservando hooks do projeto. Em hook managers, confira também o encadeamento
+manual. `tool remove` continua removendo apenas a entrada no `AGENTS.md`.
+Decisão e avaliação upstream: [ADR 0002](docs/adr/0002-graphify-git-hooks-opt-in.md).
 
 Antes de usar relatório ou query como evidência estrutural, confira
 `git status --porcelain --untracked-files=normal` no projeto: o check inclui
@@ -412,7 +430,7 @@ arquivos atuais. Esta é uma orientação no bloco do projeto (opção A do road
 sem novo comando de status ou monitoramento automático. Os quatro casos
 `graphify-*` calibram esses planos com o judge existente; não executam refresh real.
 
-> **Habilite o graphify só em repositórios onde você confia em toda branch que faz
+> **Habilite os hooks/merge driver do graphify só onde você confia em toda branch que faz
 > checkout.** Os hooks e o merge driver iniciam o Python na raiz do repositório
 > (`-c` / `-m graphify`), e o Python procura ali primeiro: um `graphify/` ou
 > `graphify.py` commitado rodaria em commit, checkout ou merge, antes de qualquer
@@ -436,7 +454,7 @@ sem novo comando de status ou monitoramento automático. Os quatro casos
   isso. Um graphify rodado fora do canonkit (seu shell, os hooks, agentes rodando
   `graphify query`) ainda faz isso, a menos que `GRAPHIFY_NO_AUTO_REFRESH=1` esteja
   no seu próprio ambiente.
-- Hooks git são **por clone**: cada clone precisa rodar `tool add graphify`.
+- Hooks git são **por clone**: novos clones só os recebem com `tool add graphify --with-git-hooks`.
 - `graphify-out/` precisa estar no `.gitignore` ou ser versionado de propósito.
   Neste repo `GRAPH_REPORT.md` é versionado e fica sujo a cada commit.
 - O canonkit nunca instala o hook de Claude do graphify. Se você o instalar por
