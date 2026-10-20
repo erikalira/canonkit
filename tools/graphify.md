@@ -22,6 +22,6 @@ notes:
 undo:
   - graphify hook uninstall
 ---
-Read graphify-out/GRAPH_REPORT.md before sweeping files to answer a structural question; `graphify query "<question>"` for the rest.
-The git hooks rebuild it on commit and checkout; after edits not yet committed, run `graphify update .` before trusting it.
-The graph is evidence, not a decision: module boundaries stay Archie's call.
+Before structural report/query use, run `git status --porcelain --untracked-files=normal`; if dirty changes affect the question (or the graph is known stale for it), run `graphify update .` successfully first.
+If the check/refresh fails, is unavailable or freshness remains unknown, explicitly warn that the graph may be stale and verify against current files; clean status alone does not prove freshness.
+Read graphify-out/GRAPH_REPORT.md or use `graphify query "<question>"` before broad file scans; the graph is evidence, while module boundaries stay Archie's call.

@@ -16,6 +16,45 @@
   },
   "cases": [
     {
+      "id": "graphify-dirty-current",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied Git/graph state; do not execute commands or edit files. A tracked caller has staged changes, src/utils/format.js has unstaged edits, and a new untracked adapter calls it. All affect the question: which callers use the helper in the current working tree? The graph predates these edits; graphify update is available. Give the check, refresh and report/query sequence before using the graph as current structural evidence. No architecture change is requested.",
+      "expect": {
+        "none": true,
+        "says": "git status[^\\n]*(?:--porcelain|--short)[\\s\\S]*graphify update \\.[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md)"
+      }
+    },
+    {
+      "id": "graphify-refresh-failed",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied state; do not execute commands or edit files. Relevant uncommitted helper/caller changes are absent from the old graph. The attempted graphify update . exited nonzero and no current graph was produced. Explain how to answer the current caller question, what evidence to use and what to tell the user. No architecture decision is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:stale|outdated|freshness[^\\n]{0,25}(?:unknown|unverified)))(?=[\\s\\S]*(?:current files|working[- ]tree|source files|source code))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:the )?graph (?:is|remains) (?:fresh|current|up[- ]to[- ]date)|(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:trust|rely on) (?:the )?(?:old |cached )?graph"
+      }
+    },
+    {
+      "id": "graphify-dirty-unrelated",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied state; do not execute commands or edit files. Git status shows only an unrelated README spelling correction. The graph is verified current for the unchanged source paths relevant to the question: which module imports src/utils/format.js? There are no staged or untracked source changes. Explain the minimum graph lookup plan and whether this unrelated dirty entry requires a rebuild. No module boundary change is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:unrelated|unaffected|unchanged|irrelevant|does not affect))(?=[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:run\\s+|execute\\s+)?`?graphify update\\s+\\."
+      }
+    },
+    {
+      "id": "graphify-clean-stale",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied Git/graph state; do not execute commands or edit files. Git status is clean, but the existing graph's built_at_commit points to an older commit than HEAD, and the intervening commit changed the helper's callers. Explain how to answer a current structural caller question without claiming this old graph is current. No architecture change is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:stale|outdated|not current|freshness[^\\n]{0,25}unknown))(?=[\\s\\S]*(?:graphify update \\.[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md)|current files|source files|working[- ]tree))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:the )?graph (?:is|remains) (?:fresh|current|up[- ]to[- ]date)|(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:trust|rely on) (?:the )?(?:old |cached )?graph"
+      }
+    },
+    {
       "id": "openspec-low-inline",
       "risk": "LOW",
       "prompt": "Planning exercise using this supplied OpenSpec state, without editing files: the existing openspec/changes/docs-typo change tracks a spelling correction in a local usage note. No behavior, contract or schema change; the configured workflow already handles documentation-only changes. Give the smallest plan, where progress belongs, and whether owners need dispatching. Do not create another change or a parallel plan.",

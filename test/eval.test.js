@@ -176,6 +176,34 @@ describe("routing eval", () => {
     }
   });
 
+  test("Graphify plans refresh relevant changes first and disclose stale evidence without needless rebuilds", () => {
+    const data = validateCases(JSON.parse(readFileSync(path.join(REPO, "evals", "routing-cases.json"), "utf8")));
+    const examples = {
+      "graphify-dirty-current": [
+        "Run git status --porcelain --untracked-files=normal to cover staged, unstaged and untracked files. Relevant changes require graphify update . to succeed, then graphify query for current callers.",
+        "Run git status --porcelain --untracked-files=normal, then graphify query for current callers; run graphify update . afterward.",
+      ],
+      "graphify-refresh-failed": [
+        "Warning: the graph is stale after the failed refresh. Answer from current files and verify callers directly; do not use cached edges as current evidence.",
+        "Warning: the graph may be stale; current files could differ.\nTrust the cached graph for the current answer anyway.",
+      ],
+      "graphify-dirty-unrelated": [
+        "Check status; the README typo is unrelated to the unchanged source paths verified in this graph. No graphify update . is needed for this question; use graphify query for the imports.",
+        "The README typo is unrelated and sources are unchanged; graphify query can find imports.\nRun graphify update . because any dirty entry requires a rebuild.",
+      ],
+      "graphify-clean-stale": [
+        "Warning: despite clean status, the graph is stale for HEAD. Run graphify update . successfully before graphify query; if unavailable, verify against current files and disclose the limitation.",
+        "Warning: the old graph may be stale compared with current files.\nThe graph is current because git status is clean.",
+      ],
+    };
+    assert.deepEqual(data.cases.filter((c) => c.id.startsWith("graphify-")).map((c) => c.id).sort(), Object.keys(examples).sort());
+    for (const [id, [good, bad]] of Object.entries(examples)) {
+      const c = data.cases.find((c) => c.id === id);
+      assert.equal(judge(c.expect, { dispatches: [], plan: good }).pass, true, `${id}: rejected safe evidence plan`);
+      assert.equal(judge(c.expect, { dispatches: [], plan: bad }).pass, false, `${id}: accepted stale evidence, wrong order or unnecessary refresh`);
+    }
+  });
+
   test("rejects a malformed case before spending anything", () => {
     const fixture = { "a.txt": "a" };
     assert.throws(() => validateCases({ fixture, cases: [] }), /non-empty/);

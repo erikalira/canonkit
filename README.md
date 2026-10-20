@@ -399,6 +399,19 @@ merge driver em `.git/config` e `.gitattributes`. Ele **não roda** se já exist
 está definido; nesse caso imprime como encadear à mão e sai com 1. Um `--dry-run`
 do graphify não executa essa checagem, então não mostra essa recusa.
 
+Antes de usar relatório ou query como evidência estrutural, confira
+`git status --porcelain --untracked-files=normal` no projeto: o check inclui
+index, alterações não staged e arquivos não rastreados. Se a consulta depender
+dessas mudanças, execute `graphify update .` com sucesso antes de consultar o
+grafo. Uma alteração comprovadamente alheia à pergunta não exige rebuild por si
+só. Se o grafo for conhecido como stale para a pergunta, atualize-o mesmo com
+status limpo: ausência de mudanças locais não prova que ele corresponde ao HEAD.
+Se o check ou refresh falhar, estiver indisponível ou a freshness continuar
+desconhecida, avise explicitamente que o grafo pode estar stale e confira os
+arquivos atuais. Esta é uma orientação no bloco do projeto (opção A do roadmap),
+sem novo comando de status ou monitoramento automático. Os quatro casos
+`graphify-*` calibram esses planos com o judge existente; não executam refresh real.
+
 > **Habilite o graphify só em repositórios onde você confia em toda branch que faz
 > checkout.** Os hooks e o merge driver iniciam o Python na raiz do repositório
 > (`-c` / `-m graphify`), e o Python procura ali primeiro: um `graphify/` ou

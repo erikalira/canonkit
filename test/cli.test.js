@@ -950,7 +950,12 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.equal(r.status, 0, r.out);
     assert.deepEqual(await calls(), [["graphify", "--version"], ["graphify", "hook", "install"], ["graphify", "update", "."]]);
     assert.doesNotMatch(r.out, /!!/);
-    assert.match(await read(path.join(project, "AGENTS.md")), /\*\*graphify\*\* — /);
+    const agentsMd = await read(path.join(project, "AGENTS.md"));
+    assert.match(agentsMd, /\*\*graphify\*\* — /);
+    // Freshness guidance must reach the consuming project, within the 3-line budget.
+    const rules = (await readTools()).get("graphify").rules;
+    for (const rule of rules) assert.ok(agentsMd.includes(rule));
+    assert.match(agentsMd, /git status --porcelain --untracked-files=normal/);
   });
 
   test("graphify does not install over an existing hook", { skip: !gitDir }, async () => {
