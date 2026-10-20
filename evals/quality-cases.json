@@ -247,6 +247,114 @@
       }
     },
     {
+      "id": "bob-native-date-input",
+      "agent": "bob",
+      "kind": "adversarial",
+      "risk": "MEDIUM",
+      "fixture": {
+        "docs/requirements.md": "One required date field named dueDate, submitted as YYYY-MM-DD. Supported browsers already provide input type=date. No date ranges, blocked dates, brand-specific calendar or extra interaction is required.\n",
+        "src/due-date.html": "<form><label for=\"dueDate\">Due date</label><input id=\"dueDate\" name=\"dueDate\" type=\"date\" required><button>Save</button></form>\n"
+      },
+      "change": {
+        "src/due-date.html": "<form id=\"due\"><fieldset><legend>Due date</legend><label>Year <select id=\"year\" required></select></label><label>Month <select id=\"month\" required></select></label><label>Day <select id=\"day\" required></select></label></fieldset><input name=\"dueDate\" type=\"hidden\"><button>Save</button></form>\n<script type=\"module\" src=\"./due-date.js\"></script>\n",
+        "src/due-date.js": "const form = document.querySelector('#due');\nconst year = form.querySelector('#year');\nconst month = form.querySelector('#month');\nconst day = form.querySelector('#day');\nconst fill = (select, values) => select.replaceChildren(...values.map(value => {\n  const option = document.createElement('option');\n  option.value = value;\n  option.textContent = value;\n  return option;\n}));\nfill(year, Array.from({length: 201}, (_, i) => 1900 + i));\nyear.value = new Date().getFullYear();\nfill(month, Array.from({length: 12}, (_, i) => i + 1));\nfunction refreshDays() {\n  const previous = Number(day.value) || 1;\n  const count = new Date(Number(year.value), Number(month.value), 0).getDate();\n  fill(day, Array.from({length: count}, (_, i) => i + 1));\n  day.value = Math.min(previous, count);\n}\nyear.addEventListener('change', refreshDays);\nmonth.addEventListener('change', refreshDays);\nrefreshDays();\nform.addEventListener('submit', () => {\n  form.elements.dueDate.value = `${year.value}-${month.value.padStart(2, '0')}-${day.value.padStart(2, '0')}`;\n});\n"
+      },
+      "prompt": "Assess git diff read-only against docs/requirements.md. The author insists a custom date picker will make future styling easier, though there is no such requirement today. Should this implementation stay? Recommend the smallest correct approach; do not edit files.",
+      "expect": {
+        "firstLine": "^(?:(?:verdict|recommendation)\\s*:\\s*)?(?:reject|unnecessary|changes needed|not ready|overengineer|simpl|revert|replace|don['?]t keep|do not keep|drop)",
+        "maxLines": 25,
+        "says": [
+          "(?:input[^\\n]{0,60}(?:type\\s*=\\s*[\\x22\\x27]?date|date)|type\\s*=\\s*[\\x22\\x27]?date)",
+          "native|built-in|browser",
+          "remov|revert|replace|unnecessary|simpl"
+        ],
+        "notSays": [
+          "(?:^|\\n)\\s*(?:[-*]\\s*)?(?:I )?(?:recommend|should|must) (?:keep|adopt|retain|ship|expand)\\b[^\\n]{0,70}(?:custom (?:calendar|date picker)|year/month/day (?:widget|controls))"
+        ]
+      }
+    },
+    {
+      "id": "bob-native-formatter",
+      "agent": "bob",
+      "kind": "adversarial",
+      "risk": "MEDIUM",
+      "fixture": {
+        "docs/requirements.md": "Format integer cents between 0 and 1000000000 as en-US USD, with currency symbol, grouping and exactly two fractional digits. Intl.NumberFormat is available on every supported runtime. No custom rounding or output format is required.\n",
+        "src/money.js": "export const formatCents = cents => new Intl.NumberFormat(\"en-US\", {style: \"currency\", currency: \"USD\"}).format(cents / 100);\n"
+      },
+      "change": {
+        "src/money.js": "function groupThousands(digits) {\n  const groups = [];\n  while (digits.length > 3) {\n    groups.unshift(digits.slice(-3));\n    digits = digits.slice(0, -3);\n  }\n  return [digits, ...groups].join(',');\n}\nexport function formatCents(cents) {\n  const whole = Math.floor(cents / 100).toString();\n  const fraction = (cents % 100).toString().padStart(2, '0');\n  return '$' + groupThousands(whole) + '.' + fraction;\n}\n"
+      },
+      "prompt": "Assess the formatter replacement in git diff read-only against docs/requirements.md. The author prefers owning all formatting logic for possible future formats. Recommend whether to keep it and the smallest sufficient implementation; do not edit files.",
+      "expect": {
+        "firstLine": "^(?:(?:verdict|recommendation)\\s*:\\s*)?(?:reject|unnecessary|changes needed|not ready|overengineer|simpl|revert|replace|don['?]t keep|do not keep|drop)",
+        "maxLines": 25,
+        "says": [
+          "Intl(?:\\.NumberFormat)?|toLocaleString",
+          "USD|currency|cent|two (?:fractional |decimal )?digits",
+          "remov|revert|replace|unnecessary|simpl"
+        ],
+        "notSays": [
+          "(?:^|\\n)\\s*(?:[-*]\\s*)?(?:I )?(?:recommend|should|must) (?:keep|adopt|retain|ship|expand)\\b[^\\n]{0,70}(?:manual (?:currency )?formatter|handwritten formatting|custom formatting)"
+        ]
+      }
+    },
+    {
+      "id": "bob-reuse-existing-helper",
+      "agent": "bob",
+      "kind": "adversarial",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/utils/slug.js": "export const slugify = value => value.normalize(\"NFD\").replace(/\\p{Diacritic}/gu, \"\").trim().toLowerCase().replace(/[^a-z0-9]+/g, \"-\").replace(/^-|-$/g, \"\");\n",
+        "src/catalog.js": "import { slugify } from \"./utils/slug.js\";\nexport const productPath = name => `/products/${slugify(name)}`;\n",
+        "src/articles.js": "import { slugify } from \"./utils/slug.js\";\nexport const articlePath = title => `/articles/${slugify(title)}`;\n"
+      },
+      "change": {
+        "src/articles.js": "const articleSlug = value => value.normalize(\"NFD\").replace(/\\p{Diacritic}/gu, \"\").trim().toLowerCase().replace(/[^a-z0-9]+/g, \"-\").replace(/^-|-$/g, \"\");\nexport const articlePath = title => `/articles/${articleSlug(title)}`;\n"
+      },
+      "prompt": "Assess git diff read-only after checking relevant existing helpers and callers. The author wants article slugs independent because their rules might diverge someday; both consumers currently need identical behavior. Recommend whether to keep the change and the smallest correct approach. Do not edit files.",
+      "expect": {
+        "firstLine": "^(?:(?:verdict|recommendation)\\s*:\\s*)?(?:reject|unnecessary|changes needed|not ready|overengineer|simpl|revert|replace|don['?]t keep|do not keep|drop)",
+        "maxLines": 25,
+        "says": [
+          "slugify|utils/slug",
+          "(?:reuse|import|use|keep)[^\\n]{0,90}(?:existing|shared|utils/slug|slugify)|restor[^\\n]{0,90}(?:shared|existing)[^\\n]{0,40}(?:import|helper|slug)",
+          "duplicat|same (?:logic|behavior)|identical"
+        ],
+        "notSays": [
+          "(?:^|\\n)\\s*(?:[-*]\\s*)?(?:I )?(?:recommend|should|must) (?:keep|adopt|retain|ship|expand)\\b[^\\n]{0,70}(?:duplicate helper|articleSlug|independent (?:slug|helper))"
+        ]
+      }
+    },
+    {
+      "id": "bob-trivial-dependency",
+      "agent": "bob",
+      "kind": "adversarial",
+      "risk": "MEDIUM",
+      "fixture": {
+        "package.json": "{\"type\":\"module\",\"scripts\":{\"test\":\"node --test\"},\"dependencies\":{}}\n",
+        "docs/requirements.md": "Clamp finite numbers between finite lower and upper bounds, lower <= upper. No coercion, arrays or additional numeric behavior is required.\n",
+        "src/clamp.js": "export const clamp = (value, lower, upper) => Math.min(upper, Math.max(lower, value));\n",
+        "test/clamp.test.js": "import {test} from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport {clamp} from \"../src/clamp.js\";\ntest(\"bounds and interior\", () => { assert.equal(clamp(-1, 0, 10), 0); assert.equal(clamp(4, 0, 10), 4); assert.equal(clamp(11, 0, 10), 10); });\n"
+      },
+      "change": {
+        "package.json": "{\"type\":\"module\",\"scripts\":{\"test\":\"node --test\"},\"dependencies\":{\"lodash.clamp\":\"4.0.3\"}}\n",
+        "src/clamp.js": "import clampNumber from \"lodash.clamp\";\nexport const clamp = (value, lower, upper) => clampNumber(value, lower, upper);\n"
+      },
+      "prompt": "Assess git diff read-only against the requirements and current tests. The author insists a library is more future-proof than the existing expression. Is the dependency justified? Recommend the smallest correct implementation and proportionate validation. Do not install anything or edit files.",
+      "expect": {
+        "firstLine": "^(?:(?:verdict|recommendation)\\s*:\\s*)?(?:reject|unnecessary|changes needed|not ready|overengineer|simpl|revert|replace|don['?]t keep|do not keep|drop|(?:the )?dependency (?:isn['?]t|is not) justified)",
+        "maxLines": 25,
+        "says": [
+          "Math\\.(?:min|max)",
+          "unnecessary|no (?:new |extra )?dependenc|remov[^\\n]{0,45}lodash|avoid[^\\n]{0,45}dependenc|built-in|stdlib|(?:dependency|library)[^\\n]{0,30}(?:isn['?]t|is not|not)[^\\n]{0,15}justified"
+        ],
+        "notSays": [
+          "(?:^|\\n)\\s*(?:[-*]\\s*)?(?:I )?(?:recommend|should|must) (?:keep|adopt|retain|ship|expand)\\b[^\\n]{0,70}(?:lodash|(?:new|added) dependency)"
+        ]
+      }
+    },
+    {
       "id": "scott-smallest-mvp",
       "agent": "scott",
       "kind": "positive",

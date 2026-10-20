@@ -681,7 +681,8 @@ o diff em plan mode. Os casos incluem defeitos em código, testes, propostas de
 escopo, evidências de performance, planos operacionais, documentação e configuração
 do time, além de controles sem defeito para detectar bloqueio inventado em LOW.
 
-O corpus tem **33 casos para os 10 agentes core** (7 originais e 26 novos).
+O corpus tem **37 casos para os 10 agentes core** (7 originais, 26 da Fase 3
+e 4 da Fase 7).
 Cada core tem `kind: positive` (achado realista), `adversarial` (pressão para
 aceitar comportamento incorreto) e `low` (mudança benigna sem burocracia).
 `kind` é metadado de cobertura; os checks continuam sendo os mesmos. Bob cobre
@@ -689,6 +690,17 @@ root cause, callers, failure path, abstração de uso único e teste escondido;
 Scott, evidência e menor MVP; Perry, medição, build, floor e crescimento com input;
 Pipe, rollback, observabilidade e autorização; Spencer, drift e decisões duráveis;
 Virgo, fonte canônica, escopo e validações. Specialists aguardam uso em projetos reais.
+
+A Fase 7 acrescenta ao Bob os casos `bob-native-date-input`,
+`bob-native-formatter`, `bob-reuse-existing-helper` e `bob-trivial-dependency`.
+O cenário de factory com uma implementação reutiliza `bob-single-use-abstraction`.
+São propostas sob pressão de necessidades futuras: o relatório deve rejeitar o
+excesso e indicar a alternativa suficiente hoje. Há calibração com respostas
+úteis e recomendações erradas que citam as palavras certas. Isso mede revisão
+read-only, não uma implementação efetiva da solução.
+Na baseline real da Fase 7, os cinco cenários passaram em 15/15 execuções com o
+Bob atual; a “solution ladder” não foi adicionada. Modelo, calibração, custo e
+limites estão em [CANONKIT_ROADMAP.md](CANONKIT_ROADMAP.md#fase-7--testar-a-solution-ladder-antes-de-adicioná-la-ao-bob).
 
 ```bash
 npm run eval:quality -- --dry-run

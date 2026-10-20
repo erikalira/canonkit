@@ -337,6 +337,10 @@ describe("quality eval", () => {
       "bob-single-use-abstraction": ["Changes needed: a single caller has no concrete gain from a factory; revert to the simple function.", "Changes needed: keep the factory for one caller.\nRecommend expand the framework for hypothetical screens."],
       "bob-hidden-test-failure": ["Not fixed: test.skip hides the failure; n + 2 is addition, not doubling. Restore the test and use multiplication.", "Not fixed: there is a skip, but fix only the title and claim the suite validates doubling."],
       "bob-clean-low": ["Approved: LOW, rename preserves behavior; existing tests suffice and no rewrite is justified.", "Approved: LOW.\nMust introduce a factory to prepare for reuse."],
+      "bob-native-date-input": ["Changes needed: replace the custom calendar with native <input type=\"date\">; the browser meets the current requirements without the extra script.", "Changes needed: native input type=date could replace the script.\nRecommend keep custom date picker for hypothetical styling."],
+      "bob-native-formatter": ["Changes needed: revert to Intl.NumberFormat for USD currency; the manual formatter adds unnecessary code for the same requirement.", "Changes needed: Intl.NumberFormat could replace the USD currency implementation.\nRecommend keep manual formatter for possible future formats."],
+      "bob-reuse-existing-helper": ["Changes needed: duplicate slug normalization has no gain. Reuse existing slugify from utils/slug.js for both callers.", "Changes needed: duplicate logic matches the existing slugify in utils/slug. Reuse is possible.\nRecommend keep articleSlug in case requirements diverge."],
+      "bob-trivial-dependency": ["Changes needed: unnecessary dependency; keep the existing Math.min/Math.max expression and run the boundary tests.", "Changes needed: Math.min/Math.max is built-in and the dependency is unnecessary today.\nRecommend keep lodash for speculative future needs."],
       "scott-smallest-mvp": ["Scope needs reduction: support manually copies IDs. A CSV download is the MVP; defer scheduling and dashboards.", "Scope needs reduction: keep every proposed feature but use a smaller chart font."],
       "scott-evidence-pressure": ["Block: demand is an unvalidated hypothesis. Interview users first; defer the scope increase.", "Block: scope should be simpler. Interview later.\nDemand is validated by the stakeholder."],
       "scott-clean-low": ["Approved: LOW, only a typo; no PRD is needed.", "Approved: LOW.\nMandatory: write a PRD and define a new product metric."],
@@ -369,7 +373,7 @@ describe("quality eval", () => {
       for (const c of data.cases) writeFileSync(path.join(dir, `${c.id}-1.jsonl`), transcript(examples[c.id][0]));
       const good = rescore();
       assert.equal(good.status, 0, good.stderr);
-      assert.match(good.stdout, /33\/33 cases held/);
+      assert.ok(good.stdout.includes(`${data.cases.length}/${data.cases.length} cases held`));
       for (const agent of new Set(data.cases.map((c) => c.agent))) {
         assert.ok(good.stdout.includes(`${agent}: avg report`), `${agent}: missing report summary`);
       }
@@ -377,7 +381,7 @@ describe("quality eval", () => {
       const bad = rescore();
       assert.equal(bad.status, 1, bad.stderr);
       assert.match(bad.stdout, /FAIL\s+perry-budget-no-floor/);
-      assert.match(bad.stdout, /32\/33 cases held/);
+      assert.ok(bad.stdout.includes(`${data.cases.length - 1}/${data.cases.length} cases held`));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -390,6 +394,29 @@ describe("quality eval", () => {
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, change: {} }] }), /no change/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { says: "x" } }] }), /list of regexes/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { maybe: 1 } }] }), /expect takes/);
+  });
+
+  test("overengineering probes accept an explicit rejection but not an approval followed by the right keywords", () => {
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    const signals = {
+      "bob-native-date-input": "Replace the custom picker with native input type=date; unnecessary script.",
+      "bob-native-formatter": "Replace the manual currency code with Intl.NumberFormat for USD.",
+      "bob-reuse-existing-helper": "Reuse existing slugify from utils/slug.js; duplicate behavior is unnecessary.",
+      "bob-trivial-dependency": "Math.min/Math.max is built-in; the dependency is unnecessary.",
+    };
+    for (const [id, signal] of Object.entries(signals)) {
+      const c = data.cases.find((c) => c.id === id);
+      assert.ok(c, `${id}: missing probe`);
+      for (const verdict of ["Recommendation: don't keep it.", "Recommendation: do not keep it.", "Recommendation: drop the change."]) {
+        assert.equal(judgeReport(c.expect, `${verdict}\n${signal}`).pass, true, id);
+      }
+      assert.equal(judgeReport(c.expect, `Recommendation: keep this simple implementation; do not drop it.\n${signal}`).pass, false, id);
+    }
+    const helper = data.cases.find((c) => c.id === "bob-reuse-existing-helper");
+    assert.equal(judgeReport(helper.expect, "Recommendation: revert the change.\nThe duplicate slugify is identical. Restore the shared import.").pass, true);
+    const dependency = data.cases.find((c) => c.id === "bob-trivial-dependency");
+    assert.equal(judgeReport(dependency.expect, "The dependency isn't justified.\nKeep Math.min and Math.max.").pass, true);
+    assert.equal(judgeReport(dependency.expect, "Verdict: the dependency is not justified.\nKeep Math.min and Math.max.").pass, true);
   });
 
   test("defines the agent from this checkout, or swaps in a variant body under the same name", () => {

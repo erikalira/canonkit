@@ -4,7 +4,7 @@
 **Stack atual:** CanonKit + OpenSpec + Graphify  
 **Objetivo:** reduzir custo/contexto, aumentar previsibilidade do roteamento e qualidade dos agentes, sem adicionar novas camadas antes de existir evidência de que elas são necessárias.
 
-**Estado de implementação:** Fases 1, 2, 3, 4, 5 e 6 concluídas. A Fase 2 preserva
+**Estado de implementação:** Fases 1, 2, 3, 4, 5, 6 e 7 concluídas. A Fase 2 preserva
 `agent` / `model` / `effort`, acrescenta expectativas opcionais de dispatch e
 mantém os checks anteriores. A Fase 3 expande o quality eval de 7 para 33 casos:
 todos os 10 core têm cenário positivo, adversarial e LOW sem burocracia, com
@@ -19,7 +19,11 @@ A Fase 6 torna hooks e merge driver opt-in via `--with-git-hooks`; o default
 executa apenas `update .`, preserva automação existente e avisa sobre a migração.
 Preflights e testes herméticos cobrem os dois modos; decisão, avaliação upstream
 e migração estão na [ADR 0002](docs/adr/0002-graphify-git-hooks-opt-in.md).
-Próxima fase: **Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob**.
+A Fase 7 adiciona quatro quality evals e reutiliza o caso existente de factory:
+os cinco cenários passaram em 15/15 execuções reais do Bob atual, após calibrar
+vereditos equivalentes e corrigir o intervalo do fixture monetário. Nenhuma nova
+instrução ou variante foi necessária; o corpus agora tem 37 casos.
+Próxima fase: **Fase 8 — Gate quantitativo para Caveman / Shunt**.
 Os casos de roteamento com modelo real continuam sendo uma medição manual paga;
 o mesmo vale para os novos casos de qualidade. Os testes herméticos validam o
 contrato dos evals, sem demonstrar comportamento dos modelos.
@@ -549,6 +553,53 @@ O default do CanonKit não deve executar automaticamente código de branches nã
 # P2 — melhorias condicionais
 
 ## Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob
+
+**Estado:** concluída em 2026-10-20, sem acrescentar a instrução ao Bob.
+Validação: `npm test` com 183 aprovados, 1 ignorado por limitação de symlink no
+Windows e nenhuma falha; `npm run validate`, sintaxe e `git diff --check` aprovados.
+
+### Resultado medido
+
+Baseline com o corpo de `agents/bob.md` do commit `0d96f26`, sem alterações,
+Claude Code `2.1.302`, modelo do frontmatter `sonnet` resolvido pela CLI como
+`claude-sonnet-5-5`. Três execuções por caso, `--budget 0.6`, plan mode e blocos
+globais instalados, conforme o runner existente. Resultado após `--rescore`
+com a calibração final do judge:
+
+| Cenário | Caso | Execuções aprovadas |
+|---|---|---|
+| Date picker customizado vs campo nativo | `bob-native-date-input` | 3/3 |
+| Formatter manual vs API nativa | `bob-native-formatter` | 3/3 |
+| Helper duplicado vs existente | `bob-reuse-existing-helper` | 3/3 |
+| Dependência nova para operação trivial | `bob-trivial-dependency` | 3/3 |
+| Factory com uma implementação | `bob-single-use-abstraction` (reutilizado) | 3/3 |
+
+O judge foi calibrado para aceitar rejeições equivalentes como “don't keep”,
+“drop the change”, “dependency isn't justified” e restaurar o import compartilhado;
+os testes continuam rejeitando aprovações que apenas citam as palavras certas.
+O teto de 25 linhas foi preservado. A primeira versão do fixture monetário pedia
+todos os centavos inteiros seguros, criando uma questão de precisão além do
+objetivo do cenário; foi limitada a 0–1.000.000.000 centavos e medida novamente.
+As três execuções preliminares foram preservadas separadamente (uma excedeu o
+teto de linhas), sem entrar nos 15 resultados do fixture final.
+
+Transcripts locais ignorados pelo Git: `.tmp/phase7/baseline/` e
+`.tmp/phase7/preliminary-formatter/`. Custo reportado pela CLI: US$ 1,346236
+na baseline final e US$ 0,247466 na preliminar, total de US$ 1,593702.
+Para reproduzir, executar o primeiro comando abaixo para cada ID da tabela.
+O segundo reavalia os transcripts salvos sem chamada paga:
+
+```bash
+node scripts/eval-quality.mjs --only bob-native-date-input --runs 3 --budget 0.6 --save .tmp/phase7/baseline
+node scripts/eval-quality.mjs --only bob-native-date-input --rescore .tmp/phase7/baseline
+```
+
+**Decisão:** os cinco cenários sustentaram a solução mínima com o Bob atual.
+Não houve falha de overengineering que justifique instrução permanente nem A/B
+com `--variant`. Corpo do Bob e runners preservados. A medição é de revisão
+read-only sob estes prompts, não prova implementação, correção universal ou
+comportamento em outros modelos. Os outros casos da Fase 3 não foram medidos
+novamente com modelo real nesta fase.
 
 A maior parte da filosofia do Ponytail já existe em Bob/Archie/Scott.
 
