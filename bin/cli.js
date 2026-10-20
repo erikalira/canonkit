@@ -16,11 +16,13 @@
  * No dependencies, by design — an installer that runs before you trust the
  * repo should not ask you to trust a dependency tree first.
  */
-import { readdir, readFile, writeFile, mkdir, copyFile, rm } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { readdir, readFile, writeFile, mkdir, copyFile, rm, rename } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
+import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -28,6 +30,7 @@ const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
 const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
+const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 
 // Every event each hook must be registered under, with the matcher it needs
 // there (null: no matcher). Checked per event, not per file: a hook wired to
@@ -588,20 +591,13 @@ async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = 
     projected ? projected.has(a.name) : existsSync(path.join(agentsDir, `${a.name}.md`)),
   );
   const target = path.join(project, "AGENTS.md");
-  const [start, end] = PROJECT_SPECIALISTS;
   const raw = existsSync(target) ? await readFile(target, "utf8") : "";
-  // Compare and edit in LF, write back in the file's own line ending (see usesCrlf).
-  const crlf = usesCrlf(raw);
-  const original = toLf(raw);
-  const pattern = new RegExp(`\\n*${esc(start)}[\\s\\S]*?${esc(end)}\\n*`);
-  const inPlace = new RegExp(`${esc(start)}[\\s\\S]*?${esc(end)}`);
-  const had = pattern.test(original);
 
   if (!installed.length) {
     // No specialists left: drop the block entirely rather than leave an empty one.
+    const { text, had } = replaceProjectBlock(raw, PROJECT_SPECIALISTS, null);
     if (!had) return ctx.log("No specialist block in AGENTS.md");
-    const stripped = original.replace(pattern, "\n").trim();
-    await ctx.write(target, toEol(stripped ? `${stripped}\n` : "", crlf));
+    await ctx.writeAtomic(target, text);
     return ctx.log("Removed specialist block from AGENTS.md");
   }
 
@@ -609,8 +605,7 @@ async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = 
   const entries = installed
     .map((a) => `- **${a.name}** (${label[a.authority]}) — ${summary.get(a.name) ?? "specialist."}`)
     .join("\n");
-  const managed = `${start}
-# Project subagents
+  const body = `# Project subagents
 
 Besides the core team (see ~/AGENTS.md), this project installs the specialists below.
 Use the Agent tool to delegate to them when the request clearly fits their role.
@@ -619,19 +614,52 @@ ${entries}
 
 A specialist is in play when its domain is, not for completeness.
 Installed by canonkit: \`npx canonkit add|remove <name>\` changes this list, and
-the files in .claude/agents/ are copies the next add overwrites.
-${end}`;
+the files in .claude/agents/ are copies the next add overwrites.`;
 
-  // Rewrite the block where it stands: whatever surrounds it is the user's, and
-  // re-running with the same specialists must leave the file byte-identical.
+  const { text, had } = replaceProjectBlock(raw, PROJECT_SPECIALISTS, body);
+  if (text === raw) return ctx.log("already current: AGENTS.md");
+  await ctx.writeAtomic(target, text);
+  ctx.log(`${had ? "Updated" : "Added"} specialist block in AGENTS.md`);
+}
+
+/**
+ * Rewrite, add or drop one managed block in a project file the user owns, and
+ * nothing else. Two blocks share a project's AGENTS.md (specialists, tools), so
+ * the rules live here once: the block is rewritten where it stands, a new one is
+ * appended after a blank line, a null body removes it with the blank lines
+ * around it, and the file keeps its own line ending (see usesCrlf). Re-running
+ * with the same body must leave the file byte-identical.
+ */
+function replaceProjectBlock(raw, markers, body) {
+  const [start, end] = markers;
+  const crlf = usesCrlf(raw);
+  const original = toLf(raw);
+  const inPlace = new RegExp(`${esc(start)}[\\s\\S]*?${esc(end)}`);
+  const had = inPlace.test(original);
+
+  if (body === null) {
+    if (!had) return { text: raw, had };
+    // What was on each side stays a separate paragraph: the blank line that
+    // appending put before the block is the one that goes, not the user's.
+    const m = inPlace.exec(original);
+    const before = original.slice(0, m.index).replace(/\n+$/, "");
+    const after = original.slice(m.index + m[0].length).replace(/^\n+/, "");
+    const stripped = (before && after ? `${before}\n\n${after}` : before || after).trim();
+    return { text: toEol(stripped ? `${stripped}\n` : "", crlf), had };
+  }
+
+  const managed = `${start}\n${body.trim()}\n${end}`;
   const lf = had
     ? original.replace(inPlace, () => managed)
     : (original.trim() ? `${original.replace(/\s+$/, "")}\n\n` : "") + managed + "\n";
-  const text = toEol(lf, crlf);
+  return { text: toEol(lf, crlf), had };
+}
 
-  if (text === raw) return ctx.log("already current: AGENTS.md");
-  await ctx.write(target, text);
-  ctx.log(`${had ? "Updated" : "Added"} specialist block in AGENTS.md`);
+/** The text between a block's markers, or null when the file has no such block. */
+function readProjectBlock(raw, markers) {
+  const [start, end] = markers;
+  const m = new RegExp(`${esc(start)}([\\s\\S]*?)${esc(end)}`).exec(toLf(raw));
+  return m ? m[1] : null;
 }
 
 async function list(ctx) {
@@ -650,6 +678,470 @@ async function list(ctx) {
   for (const a of specialists(agents)) {
     ctx.log(`  ${a.name.padEnd(10)} ${String(a.model).padEnd(7)} ${mark(projectDest, a.name)}`);
   }
+
+  ctx.log("");
+  ctx.log("Optional tools (graphify, openspec): canonkit tool list");
+}
+
+/* ------------------------------------------------------------------- tools */
+
+/**
+ * Optional third-party tools a project can turn on: `canonkit tool add <name>`.
+ * canonkit only integrates them — it never installs one. A missing binary gets
+ * the pinned install command printed and nothing else; a present one gets its
+ * own setup run (after the person confirms) and an entry in the project's tools
+ * block, so agents learn the tool's rules from the same AGENTS.md as the team.
+ *
+ * The registry is tools/<name>.md, frontmatter plus the block's rule lines, the
+ * same shape as agents/. The pin lives only in the frontmatter.
+ */
+const PROJECT_TOOLS = [
+  "<!-- agent-team-config:complements:start -->",
+  "<!-- agent-team-config:complements:end -->",
+];
+
+const PIN = /^\d+\.\d+\.\d+$/;
+// A setup step may never write a CLAUDE.md (Claude Code would stop reading the
+// project's AGENTS.md) or call a model. Those are graphify's `<platform> install`
+// and `extract`; `hook install` is the one install subcommand allowed.
+const forbiddenStep = (args) => args.includes("extract") || (args.includes("install") && args.join(" ") !== "hook install");
+
+async function readTools() {
+  if (!existsSync(TOOLS_DIR)) return new Map();
+  const files = (await readdir(TOOLS_DIR)).filter((f) => f.endsWith(".md")).sort();
+  const tools = new Map();
+  for (const file of files) {
+    const tool = parseTool(file, await readOwned(path.join(TOOLS_DIR, file)));
+    tools.set(tool.name, tool);
+  }
+  return tools;
+}
+
+/**
+ * Parse one registry file (newline-normalized). Lists are `key:` followed by
+ * `  - item` lines; setup items are argument lists split on whitespace, every
+ * argument a literal (exec.js SAFE_ARG) — nothing in them comes from a project.
+ */
+function parseTool(file, text) {
+  const where = `tools/${file}`;
+  const name = path.basename(file, ".md");
+  const end = text.indexOf("\n---", 4);
+  if (!text.startsWith("---\n") || end === -1) throw new Error(`${where}: no frontmatter`);
+
+  const front = {};
+  let list = null;
+  for (const line of text.slice(4, end).split("\n")) {
+    const item = /^\s+-\s+(.*)$/.exec(line);
+    if (item && list) {
+      list.push(item[1].trim());
+      continue;
+    }
+    const m = /^([a-z]+):\s*(.*)$/.exec(line);
+    if (!m) continue;
+    if (m[2].trim() === "") front[m[1]] = list = [];
+    else {
+      front[m[1]] = m[2].trim();
+      list = null;
+    }
+  }
+
+  const lists = ["install", "setup", "touches", "notes", "undo", "env"];
+  for (const key of lists) {
+    if (front[key] !== undefined && !Array.isArray(front[key])) throw new Error(`${where}: ${key} must be a list`);
+  }
+  if (front.name !== name) throw new Error(`${where}: frontmatter name is '${front.name}' — must match the filename`);
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(front.bin ?? "")) throw new Error(`${where}: bin must be a bare command name`);
+  // An exact version, not a range: the printed install command is what a person
+  // copies, and a range there installs whatever was published this morning.
+  if (!PIN.test(front.pin ?? "")) throw new Error(`${where}: pin '${front.pin ?? "missing"}' — must be an exact x.y.z`);
+  if (!front.install?.length || !front.install.some((l) => l.includes("{pin}"))) {
+    throw new Error(`${where}: install must print the pinned command ({pin})`);
+  }
+  if (!front.setup?.length) throw new Error(`${where}: setup is empty`);
+
+  const setup = front.setup.map((step) => step.split(/\s+/));
+  for (const args of setup) {
+    for (const a of args) {
+      if (!SAFE_ARG.test(a)) throw new Error(`${where}: setup argument ${JSON.stringify(a)} is not a plain literal`);
+    }
+    if (forbiddenStep(args)) throw new Error(`${where}: setup step '${args.join(" ")}' is not allowed`);
+  }
+
+  const rules = text
+    .slice(end + 4)
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  // Fixed environment for every run of the tool, literal like its arguments:
+  // the way to switch off a behaviour that reaches outside the project.
+  for (const kv of front.env ?? []) {
+    if (!/^[A-Z_][A-Z0-9_]*=[A-Za-z0-9_.,:-]*$/.test(kv)) throw new Error(`${where}: env entry ${JSON.stringify(kv)} is not KEY=literal`);
+    // Variables that decide which program or module is loaded would undo what
+    // exec.js does about PATH (PYTHONPATH=. loads the project's code).
+    if (/^(PATH|PATHEXT|COMSPEC|PYTHON\w*|NODE_\w*|NPM_CONFIG_\w*|LD_\w*|DYLD_\w*)=/i.test(kv)) {
+      throw new Error(`${where}: env entry ${kv.split("=")[0]} changes what gets loaded — not allowed`);
+    }
+  }
+  if (!rules.length || rules.length > 3) throw new Error(`${where}: the block takes 1 to 3 rule lines, found ${rules.length}`);
+  if (rules.some((l) => l.includes(front.pin))) throw new Error(`${where}: the pin lives only in the frontmatter`);
+
+  return {
+    name,
+    bin: front.bin,
+    pin: front.pin,
+    requires: front.requires ?? "",
+    install: front.install.map((l) => l.replaceAll("{pin}", front.pin)),
+    preflight: front.preflight ?? null,
+    setup,
+    touches: front.touches ?? [],
+    notes: front.notes ?? [],
+    undo: front.undo ?? [],
+    env: Object.fromEntries((front.env ?? []).map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
+    rules,
+  };
+}
+
+/**
+ * The project the command acts on: the real path of cwd, which every spawned
+ * setup step runs in. Refused in this repo, like `add` — the tools block would
+ * land in the source of truth's own AGENTS.md.
+ */
+function toolProject() {
+  const project = realpathSync.native(process.cwd());
+  const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
+  if (same(project, realpathSync.native(PACKAGE_ROOT))) {
+    throw new Error(
+      "Refusing: this is agent-team-config itself, the source of truth.\n" +
+        "Run this from the project that should use the tool.",
+    );
+  }
+  return project;
+}
+
+async function getTool(name) {
+  const tools = await readTools();
+  if (!tools.has(name)) throw new Error(`Not a canonkit tool: ${name}\nTools: ${[...tools.keys()].join(" ")}`);
+  return { tools, tool: tools.get(name) };
+}
+
+/** Tools active in a project: the entries of its own block, not what is on disk. */
+function activeTools(raw, tools) {
+  const inner = readProjectBlock(raw, PROJECT_TOOLS);
+  if (inner === null) return new Set();
+  const names = [...inner.matchAll(/^- \*\*([a-z0-9_-]+)\*\*/gm)].map((m) => m[1]);
+  return new Set(names.filter((n) => tools.has(n)));
+}
+
+function toolsBlockBody(tools, active) {
+  const entries = [...tools.values()]
+    .filter((t) => active.has(t.name))
+    .map((t) => [`- **${t.name}** — ${t.rules[0]}`, ...t.rules.slice(1).map((r) => `  ${r}`)].join("\n"))
+    .join("\n");
+  return `# Project tools
+
+This project uses the optional tools below. Each is a third-party program the
+project installed; canonkit wrote only this block.
+
+${entries}
+
+Managed by canonkit: \`npx canonkit tool add|remove <name>\` changes this list.`;
+}
+
+async function writeToolsBlock(ctx, project, tools, active) {
+  const target = path.join(project, "AGENTS.md");
+  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  const { text, had } = replaceProjectBlock(raw, PROJECT_TOOLS, active.size ? toolsBlockBody(tools, active) : null);
+  if (text === raw) return ctx.log(active.size || !had ? "already current: AGENTS.md" : "No tools block in AGENTS.md");
+  await ctx.writeAtomic(target, text);
+  ctx.log(!active.size ? "Removed tools block from AGENTS.md" : `${had ? "Updated" : "Added"} tools block in AGENTS.md`);
+}
+
+const CLAUDE_MD = ["CLAUDE.md", path.join(".claude", "CLAUDE.md")];
+
+/**
+ * graphify's hooks go into the repository's hooks directory. A hook already
+ * there is the project's, and a core.hooksPath (husky, a shared global path) is a
+ * directory canonkit does not get to write into; either way it stops and says
+ * how to chain graphify by hand. A hook that already carries graphify's marker
+ * block was chained already, and `graphify hook install` only rewrites its block.
+ */
+const GRAPHIFY_HOOKS = { "post-commit": "# graphify-hook-start", "post-checkout": "# graphify-checkout-hook-start" };
+
+function gitHooksPreflight(project) {
+  const fail = (lines) => ({ ok: false, message: lines.join("\n") });
+  const git = resolveBin("git", { cwd: project });
+  if (!git) return fail(["graphify needs git, and git is not on PATH."]);
+  const out = (args) => runBin(git, args, { cwd: project, capture: true, timeout: 30 * 1000 });
+
+  const top = out(["rev-parse", "--show-toplevel"]);
+  if (top.status !== 0) return fail([`Not a git repository: ${project}`, "graphify's setup installs git hooks; run git init first."]);
+  const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
+  const root = realpathSync.native(path.resolve(top.stdout.trim()));
+  if (!same(root, project)) return fail([`Run this from the repository root: ${root}`]);
+
+  // graphify's hooks and merge driver start Python with `-c` / `-m graphify`
+  // from the worktree root, which Python searches first: a graphify package
+  // committed to the repo would run on every commit, checkout and merge — a
+  // branch from anyone, before review. The hooks also run the interpreter named
+  // in graphify-out/.graphify_python, so that file must not come from the repo.
+  const shadow = ["graphify", "graphify.py"].filter((f) => existsSync(path.join(project, f)));
+  if (shadow.length) {
+    return fail([
+      `${shadow.join(" and ")} at the repository root would be imported by graphify's hooks instead of the installed graphify.`,
+      "canonkit does not install them here.",
+    ]);
+  }
+  const tracked = out(["ls-files", "--", "graphify-out/.graphify_python"]);
+  if (tracked.status !== 0) return fail([`git ls-files failed: ${tracked.stderr.trim() || tracked.error}`]);
+  if (tracked.stdout.trim()) {
+    return fail(["graphify-out/.graphify_python is committed, and graphify's hooks run the interpreter it names. Remove it from git first."]);
+  }
+
+  const chain = [
+    "To chain graphify yourself: read the existing hook, then run `graphify hook install`",
+    "(it appends a marked block to an existing hook file) or call graphify from your hook",
+    "manager. Then re-run `npx canonkit tool add graphify`.",
+  ];
+  const hooksPath = out(["config", "core.hooksPath"]);
+  if (hooksPath.status === 0 && hooksPath.stdout.trim()) {
+    return fail([`core.hooksPath is set (${hooksPath.stdout.trim()}): git hooks are managed elsewhere, so canonkit installs none.`, ...chain]);
+  }
+  if (hooksPath.status !== 1 && hooksPath.status !== 0) return fail([`git config core.hooksPath failed: ${hooksPath.stderr.trim() || hooksPath.error}`]);
+
+  const dir = out(["rev-parse", "--git-path", "hooks"]);
+  if (dir.status !== 0) return fail([`git rev-parse --git-path hooks failed: ${dir.stderr.trim() || dir.error}`]);
+  const hooksDir = path.resolve(project, dir.stdout.trim());
+
+  for (const [hook, marker] of Object.entries(GRAPHIFY_HOOKS)) {
+    const file = path.join(hooksDir, hook);
+    if (existsSync(file) && !readFileSync(file, "utf8").includes(marker)) {
+      return fail([`${path.relative(project, file)} already exists and is not graphify's; canonkit never overwrites a git hook.`, ...chain]);
+    }
+  }
+  return { ok: true, hooksDir, before: hookSnapshot(hooksDir) };
+}
+
+/** A hook's text without graphify's marked block, whitespace folded. */
+function outsideBlock(text, marker) {
+  const block = new RegExp(`${esc(marker)}[\\s\\S]*?${esc(marker.replace(/-start$/, "-end"))}`);
+  return toLf(text).replace(block, "").replace(/\s+/g, " ").trim();
+}
+
+/** Every hook file (samples aside) with its contents, to compare after setup. */
+function hookSnapshot(dir) {
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => !f.endsWith(".sample")).sort() : [];
+  return new Map(files.filter((f) => statSync(path.join(dir, f)).isFile()).map((f) => [f, readFileSync(path.join(dir, f), "utf8")]));
+}
+
+/**
+ * After setup: every hook that appeared is one graphify owns, carrying its
+ * marker, and no other hook that was already there changed.
+ */
+function graphifyHooksProblems(check) {
+  const problems = [];
+  for (const [f, text] of hookSnapshot(check.hooksDir)) {
+    if (!check.before.has(f) && !GRAPHIFY_HOOKS[f]) problems.push(`unexpected new git hook: ${f}`);
+    if (check.before.has(f) && !GRAPHIFY_HOOKS[f] && check.before.get(f) !== text) problems.push(`git hook changed: ${f}`);
+    // A hook chained by hand before: graphify may rewrite its own block, and
+    // nothing else in the file.
+    if (check.before.has(f) && GRAPHIFY_HOOKS[f] && outsideBlock(check.before.get(f), GRAPHIFY_HOOKS[f]) !== outsideBlock(text, GRAPHIFY_HOOKS[f])) {
+      problems.push(`git hook changed outside graphify's block: ${f}`);
+    }
+  }
+  for (const [hook, marker] of Object.entries(GRAPHIFY_HOOKS)) {
+    const file = path.join(check.hooksDir, hook);
+    if (!existsSync(file) || !readFileSync(file, "utf8").includes(marker)) problems.push(`${hook} does not carry graphify's hook block`);
+  }
+  return problems;
+}
+
+// The registry's fixed variables over the caller's environment, for every run
+// of the tool, --version included: graphify rewrites the user-level skills it
+// once installed on any command, and GRAPHIFY_NO_AUTO_REFRESH is its off switch.
+const toolEnv = (tool) => ({ ...process.env, ...tool.env });
+
+function loud(lines) {
+  const bar = "!".repeat(72);
+  console.error(["", bar, ...lines.map((l) => `!! ${l}`), bar, ""].join("\n"));
+}
+
+function warnNewClaudeMd(project, existedBefore) {
+  const appeared = CLAUDE_MD.filter((f, i) => !existedBefore[i] && existsSync(path.join(project, f)));
+  if (!appeared.length) return;
+  loud([
+    `${appeared.join(" and ")} appeared during setup. canonkit never creates one.`,
+    "With a CLAUDE.md in the project, Claude Code stops reading AGENTS.md — the team's",
+    "and this tool's rules included. Move what it holds into AGENTS.md and delete it.",
+  ]);
+}
+
+async function confirm(yes) {
+  if (yes) return true;
+  if (!process.stdin.isTTY) {
+    console.error("Not running: there is no terminal to confirm on. Read the above, then re-run with --yes.");
+    return false;
+  }
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const answer = await new Promise((resolve) => rl.question("Proceed? [y/N] ", resolve));
+  rl.close();
+  return /^y(es)?$/i.test(answer.trim());
+}
+
+function printMissing(tool, project) {
+  const inside = projectOnlyHit(tool.bin, { cwd: project });
+  console.error(
+    [
+      inside
+        ? `${tool.bin} was found only inside the project (${inside}); canonkit runs binaries from outside it only.`
+        : `${tool.bin} is not on PATH.`,
+      "canonkit only integrates tools you installed; it installs nothing.",
+      `Install the pinned version (${tool.requires}):`,
+      ...tool.install.map((l) => `  ${l}`),
+      `then re-run: npx canonkit tool add ${tool.name}`,
+    ].join("\n"),
+  );
+}
+
+/**
+ * One function, in this order, because each step is a reason not to take the
+ * next: preflight (binary, version, the tool's own checks) → confirmation →
+ * the tool's setup → canonkit's block. The block goes last because a setup step
+ * may rewrite AGENTS.md (openspec init can), and it is not written at all when
+ * setup fails — an entry for a tool whose setup did not finish teaches agents a
+ * workflow the project does not have.
+ */
+async function toolAdd(ctx, name, { yes = false } = {}) {
+  const { tools, tool } = await getTool(name);
+  const project = toolProject();
+
+  const abs = resolveBin(tool.bin, { cwd: project });
+  if (!abs) {
+    printMissing(tool, project);
+    return 1;
+  }
+
+  let version = null;
+  let hooks = null;
+  if (!ctx.dryRun) {
+    version = binVersion(abs, { project, env: toolEnv(tool) });
+    if (tool.preflight === "git-hooks") {
+      hooks = gitHooksPreflight(project);
+      if (!hooks.ok) {
+        console.error(hooks.message);
+        return 1;
+      }
+    }
+  }
+
+  ctx.log(`${tool.name}: setup in ${project}`);
+  ctx.log(`  binary:  ${abs}`);
+  if (ctx.dryRun) ctx.log("  version: not checked (a dry run executes nothing, --version included)");
+  else if (!version) ctx.log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
+  else if (version !== tool.pin) {
+    ctx.log(`  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`);
+    for (const l of tool.install) ctx.log(`             ${l}`);
+  } else ctx.log(`  version: ${version} (the pinned one)`);
+  if (tool.preflight === "git-hooks" && ctx.dryRun) ctx.log("  checks:  git hooks and core.hooksPath (not run in a dry run)");
+  tool.setup.forEach((args, i) => ctx.log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
+  tool.touches.forEach((t, i) => ctx.log(`  ${i ? "        " : "touches:"} ${t}`));
+  ctx.log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
+  for (const [k, v] of Object.entries(tool.env)) ctx.log(`  env:     ${k}=${v}`);
+  for (const n of tool.notes) ctx.log(`  note:    ${n}`);
+
+  if (ctx.dryRun) {
+    const raw = existsSync(path.join(project, "AGENTS.md")) ? await readFile(path.join(project, "AGENTS.md"), "utf8") : "";
+    const active = activeTools(raw, tools);
+    ctx.log(active.has(name) ? "tools block in AGENTS.md already lists it" : "would add it to the tools block in AGENTS.md");
+    return 0;
+  }
+
+  if (!(await confirm(yes))) return 1;
+
+  const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
+  for (const [i, args] of tool.setup.entries()) {
+    ctx.log(`> ${display(abs, args)}`);
+    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool) });
+    if (r.error || r.status !== 0) {
+      console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
+      if (i > 0) {
+        console.error(`Already done: ${tool.setup.slice(0, i).map((a) => `${tool.bin} ${a.join(" ")}`).join(", ")}.`);
+        if (tool.undo.length) console.error(`To undo it: ${tool.undo.join("; ")}`);
+      }
+      warnNewClaudeMd(project, claudeBefore);
+      return 1;
+    }
+  }
+
+  if (hooks) {
+    const problems = graphifyHooksProblems(hooks);
+    if (problems.length) loud(["graphify's hooks are not what canonkit expected — check before committing:", ...problems]);
+  }
+  warnNewClaudeMd(project, claudeBefore);
+
+  // Read again: the setup above may have rewritten AGENTS.md.
+  const target = path.join(project, "AGENTS.md");
+  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  const active = activeTools(raw, tools);
+  active.add(name);
+  await writeToolsBlock(ctx, project, tools, active);
+  return 0;
+}
+
+/**
+ * Take the tool out of the block (the last one takes the block with it). Undoing
+ * the setup is printed, never run, and nothing the tool wrote is touched:
+ * openspec/ holds the project's specs and graphify-out/ may be versioned.
+ */
+async function toolRemove(ctx, name) {
+  const { tools, tool } = await getTool(name);
+  const project = toolProject();
+  const target = path.join(project, "AGENTS.md");
+  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  const active = activeTools(raw, tools);
+
+  if (!active.has(name)) {
+    ctx.log(`Not active in this project: ${name}`);
+    return 0;
+  }
+  active.delete(name);
+  await writeToolsBlock(ctx, project, tools, active);
+
+  ctx.log(`Files ${tool.name} wrote are left as they are:`);
+  for (const t of tool.touches) ctx.log(`  ${t}`);
+  if (tool.undo.length) {
+    ctx.log("To undo its setup, yourself:");
+    for (const u of tool.undo) ctx.log(`  ${u}`);
+  }
+  return 0;
+}
+
+async function toolList(ctx) {
+  const tools = await readTools();
+  const project = realpathSync.native(process.cwd());
+  const target = path.join(project, "AGENTS.md");
+  const active = activeTools(existsSync(target) ? await readFile(target, "utf8") : "", tools);
+
+  ctx.log(`Optional tools (this project: ${project})`);
+  for (const t of tools.values()) {
+    const abs = resolveBin(t.bin, { cwd: project });
+    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t) }) ?? "?"}`;
+    ctx.log(`  ${t.name.padEnd(10)} pin ${t.pin.padEnd(9)} ${installed.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
+  }
+  ctx.log("");
+  ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
+}
+
+async function toolCommand(ctx, [sub, ...names], flags) {
+  if (sub === "list" && !names.length) {
+    await toolList(ctx);
+    return 0;
+  }
+  if ((sub === "add" || sub === "remove") && names.length === 1) {
+    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes") }) : toolRemove(ctx, names[0]);
+  }
+  console.error("Usage: canonkit tool add|remove <name> | canonkit tool list\n");
+  console.error(usage());
+  return 1;
 }
 
 /* -------------------------------------------------------------------- main */
@@ -663,14 +1155,20 @@ Usage:
   canonkit add <name>...              add domain specialists to this project
   canonkit remove <name>...           remove domain specialists from this project
   canonkit list                       show the roster and what is installed
+  canonkit tool add <tool> [--yes]    run an installed tool's setup here (graphify, openspec)
+  canonkit tool remove <tool>         take a tool out of this project's AGENTS.md
+  canonkit tool list                  show the tools, their pins, and which are active here
 
 Options:
-  --dry-run       report what would change without writing anything
+  --dry-run       report what would change without writing (or running) anything
+  --yes           tool add: skip the confirmation prompt
   -h, --help      show this
   -v, --version   show the package version
 
 Core agents install to ~/.agents and ~/.claude/agents. Specialists install to
-the current project's .claude/agents/ and are registered in its AGENTS.md.`;
+the current project's .claude/agents/ and are registered in its AGENTS.md.
+Tools are never installed by canonkit: a missing one gets its pinned install
+command printed.`;
 }
 
 /**
@@ -686,6 +1184,24 @@ function context(dryRun) {
       if (dryRun) return;
       await mkdir(path.dirname(p), { recursive: true });
       await writeFile(p, text);
+    },
+    // For a file the user owns (a project's AGENTS.md): an interrupted write
+    // leaves the old file or the new one, never half of the user's instructions.
+    writeAtomic: async (target, text) => {
+      if (dryRun) return;
+      // Write through a symlink (AGENTS.md -> CLAUDE.md is a common setup):
+      // renaming onto the link itself would replace it with a plain file and
+      // let the two drift apart.
+      const p = existsSync(target) ? realpathSync(target) : target;
+      await mkdir(path.dirname(p), { recursive: true });
+      const tmp = `${p}.canonkit-${process.pid}.tmp`;
+      try {
+        await writeFile(tmp, text);
+        await rename(tmp, p);
+      } catch (err) {
+        await rm(tmp, { force: true });
+        throw err;
+      }
     },
     mkdir: async (p) => {
       if (!dryRun) await mkdir(p, { recursive: true });
@@ -707,7 +1223,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -752,6 +1268,8 @@ async function main(argv) {
     case "list":
       await list(ctx);
       return 0;
+    case "tool":
+      return toolCommand(ctx, rest, flags);
     default:
       console.error(`Unknown command: ${command}\n`);
       console.error(usage());
@@ -775,4 +1293,15 @@ if (invokedDirectly) {
     });
 }
 
-export { applyBlock, readAgents, parseAgent, summaries, codexAgent, CODEX_MODELS };
+export {
+  applyBlock,
+  readAgents,
+  parseAgent,
+  summaries,
+  codexAgent,
+  CODEX_MODELS,
+  replaceProjectBlock,
+  readProjectBlock,
+  readTools,
+  parseTool,
+};
