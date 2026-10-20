@@ -1,11 +1,11 @@
 ---
 name: orchestrate
-description: Use when planning or dispatching subagents (naming the model and effort for each dispatch, fanning out in parallel, isolating agents that write code), or when closing a MEDIUM/HIGH change that involved more than one discipline (Integration Review before the decision is closed).
+description: Use when planning or dispatching subagents (model and effort, parallel work, isolated writers), coordinating an existing OpenSpec change, or closing a MEDIUM/HIGH change involving multiple disciplines (Integration Review).
 ---
 
 # Orchestrate
 
-Three orchestration rules whose short form lives in `~/AGENTS.md`. This is the rationale and the procedure.
+Orchestration rules whose short form lives in `~/AGENTS.md` and the project's tool block. This is the rationale and the procedure.
 
 ## Naming the model and effort
 
@@ -27,6 +27,50 @@ Two agents *writing code* at the same time each get an isolated worktree (Claude
 Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) —
 never concurrent file-editing agents in one tree, where each overwrites the
 other's edits and invalidates the other's test run.
+
+## OpenSpec change lifecycle
+
+Use this bridge where the project already uses OpenSpec: **OpenSpec = durable
+state; CanonKit = governance; Graphify = code evidence.**
+
+1. Resolve the selected change, planning root and configured schema before work.
+   Read its existing artifacts and applicable main specs. The usual locations
+   are `openspec/changes/<change>/` and `openspec/specs/`; use the paths returned
+   by OpenSpec for a custom schema or planning store. Do not initialize a second
+   change or impose OpenSpec on a project that does not use it.
+2. Classify risk using the roster: **LOW** stays inline when possible, updating
+   only relevant existing artifacts; **MEDIUM** brings in owners of named risks;
+   **HIGH** uses the roster's mandatory owners and an independent review after
+   the last edit. A change directory does not make every owner mandatory.
+3. Give each handoff the change path, relevant acceptance criteria, decisions,
+   pending tasks and validation evidence. Use the existing schema's artifacts;
+   for the default `spec-driven` schema, responsibilities map as follows:
+
+   | Owner | Handoff and durable location |
+   |---|---|
+   | Scott | Define what must be true: scope in `proposal.md`, acceptance behavior in the change's specs. |
+   | Archie, when needed | Resolve structural choices and record decisions, rationale and trade-offs in `design.md`. |
+   | Bob | Implement the approved criteria and design; keep progress and validation evidence in `tasks.md`. |
+   | Quinn, when review is needed | Validate behavior against the criteria; link findings and test evidence from the existing tasks. |
+   | Spencer | Check implementation against the change and documentation; identify unrecorded drift and declared deltas awaiting main-spec sync. |
+
+   Other owners participate for their named risks under the roster's rules.
+   Do not duplicate these artifacts with a Scott PRD, standalone Bob plan,
+   parallel Spencer spec or ADR repeating the design. Link an existing distinct
+   document when needed; do not copy its decision into another source of truth.
+4. Before closing, verify acceptance criteria and applicable tests, satisfy the
+   required reviews and gates, and make tasks reflect work actually completed.
+   For MEDIUM/HIGH, Spencer checks documentary drift, distinguishing it from
+   declared deltas awaiting sync in step 5. Run the Integration Review below
+   when multiple disciplines participated. Keep decisions, review outcomes and
+   evidence in the existing change. Missing evidence, unresolved blockers,
+   failed validation or unrecorded drift keeps it open; do not tick unfinished
+   tasks to make it look complete.
+5. Use the project's OpenSpec workflow to update/sync applicable spec deltas and
+   verify the main specs, then archive when requested and authorized, respecting
+   that workflow's prompts. Never archive while sync is running or failed, or
+   report closure just because an archive command succeeded. If archive is not
+   requested, report implementation readiness and the pending archive explicitly.
 
 ## Integration Review
 

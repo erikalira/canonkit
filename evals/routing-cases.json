@@ -16,6 +16,37 @@
   },
   "cases": [
     {
+      "id": "openspec-low-inline",
+      "risk": "LOW",
+      "prompt": "Planning exercise using this supplied OpenSpec state, without editing files: the existing openspec/changes/docs-typo change tracks a spelling correction in a local usage note. No behavior, contract or schema change; the configured workflow already handles documentation-only changes. Give the smallest plan, where progress belongs, and whether owners need dispatching. Do not create another change or a parallel plan.",
+      "expect": {
+        "none": true,
+        "says": "openspec/changes/docs-typo",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:create|write|add)\\b[^\\n]{0,50}\\b(?:separate|parallel)\\s+(?:PRD|plan|spec)"
+      }
+    },
+    {
+      "id": "openspec-medium-handoff",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise using supplied OpenSpec state, without editing files: selected change openspec/changes/group-results has a custom schema. intent.md already defines scope and acceptance, approach.md holds technical decisions, work.md tracks progress and evidence, and specs/grouping/spec.md defines proposed behavior. The internal UI grouping change risks breaking keyboard focus (MEDIUM). There is no auth, public contract, migration or new service. Plan the handoffs, where durable decisions belong, validation and documentary closure. The schema's existing artifacts are the source of truth.",
+      "expect": {
+        "includes": ["pixie", "spencer"],
+        "avoids": ["gard", "pipe", "archie"],
+        "says": "(?=[\\s\\S]*openspec/changes/group-results)(?=[\\s\\S]*approach\\.md)(?=[\\s\\S]*work\\.md)",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:create|write|add)\\b[^\\n]{0,50}\\b(?:separate|parallel)\\s+(?:PRD|plan|spec)"
+      }
+    },
+    {
+      "id": "openspec-high-closure",
+      "risk": "HIGH",
+      "prompt": "Planning exercise using supplied OpenSpec state, without editing files: openspec/changes/user-field renames userId to accountId in a public response (HIGH). proposal.md and delta specs contain acceptance criteria, design.md has the contract decision, and tasks.md still has unchecked validation and documentation tasks. Tests fail after the latest code edit; the independent review predates that edit, and main specs still describe userId. Someone wants to archive immediately because implementation is mostly done. Plan who must participate, where decisions and evidence go, and the conditions for closure, spec sync and archive. There is no auth, migration or new service.",
+      "expect": {
+        "includes": ["archie", "quinn", "spencer"],
+        "says": "(?=[\\s\\S]*openspec/changes/user-field)(?=[\\s\\S]*design\\.md)(?=[\\s\\S]*(?:after[^.\\n]{0,60}(?:last|latest)[^.\\n]{0,25}edit|post[- ]edit))(?=[\\s\\S]*(?:(?:keep|leave|remain|stay|still|do not|cannot|not ready)[^.\\n]{0,90}(?:open|archive|clos)|(?:archive|clos)[^.\\n]{0,60}(?:blocked|pending|not ready)))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:archive|close)\\s+(?:now|immediately|without[^\\n]{0,35}review)"
+      }
+    },
+    {
       "id": "dispatch-structural-up",
       "risk": "HIGH",
       "prompt": "Before planning the userId to accountId public API rename in src/api/users.js, dispatch Archie now for a read-only assessment of compatibility and the irreversible rollout decision. Use opus with effort high for that structural decision. Do not just name a future review in the plan; attempt the dispatch now. If a hook denies it, report that and stop.",

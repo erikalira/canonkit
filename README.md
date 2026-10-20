@@ -381,6 +381,18 @@ openspec no nível do usuário (`openspec/config.json` em `%APPDATA%` ou
 suas continuam enviando, a menos que você defina uma dessas variáveis. Versão importa: um openspec antigo
 (1.4.1) com `--tools codex` escreveu prompts em `~/.codex/prompts`.
 
+O OpenSpec guarda o estado durável; o CanonKit aplica risco, ownership, gates e
+revisões; o Graphify fornece evidência do código. A ponte de handoff e fechamento
+fica em [OpenSpec change lifecycle](skills/orchestrate/SKILL.md#openspec-change-lifecycle):
+reutilize o change, o planning root e os artefatos do schema selecionado. Scott
+define o aceite, Archie registra decisões estruturais quando necessário, Bob
+implementa, Quinn valida comportamento quando a revisão é necessária e Spencer
+verifica drift antes do fechamento MEDIUM/HIGH. A conclusão depende de evidência
+e revisões atuais, seguida de sync aplicável verificado e archive autorizado no workflow
+do projeto. PRD, plano ou spec paralelos não substituem esse estado.
+O contrato foi conferido no [schema da versão fixada](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/schemas/spec-driven/schema.yaml)
+e no [workflow de archive](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/src/core/templates/workflows/archive-change.ts).
+
 **graphify.** O setup grava `post-commit` e `post-checkout` em `.git/hooks/`, o
 merge driver em `.git/config` e `.gitattributes`. Ele **não roda** se já existe
 `post-commit` ou `post-checkout` que não seja do graphify, ou se `core.hooksPath`
@@ -587,6 +599,10 @@ need for Gard" não contam. Os casos cobrem
 trabalho LOW que deve ficar inline, as superfícies HIGH (auth, migração, contrato
 público, budget) e um specialist ausente que precisa ser declarado sem dono, não
 inventado.
+
+Os casos `openspec-*` usam estado fornecido no prompt para cobrir LOW inline,
+handoff MEDIUM com schema customizado e fechamento HIGH bloqueado por testes,
+revisão antiga e sync pendente. Reutilizam o mesmo judge; não executam sync ou archive.
 
 O check opcional `dispatch` mede a configuração pedida numa chamada real de
 `Agent` ou `Task`: por exemplo,

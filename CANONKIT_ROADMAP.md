@@ -4,12 +4,15 @@
 **Stack atual:** CanonKit + OpenSpec + Graphify  
 **Objetivo:** reduzir custo/contexto, aumentar previsibilidade do roteamento e qualidade dos agentes, sem adicionar novas camadas antes de existir evidência de que elas são necessárias.
 
-**Estado de implementação:** Fases 1, 2 e 3 concluídas. A Fase 2 preserva
+**Estado de implementação:** Fases 1, 2, 3 e 4 concluídas. A Fase 2 preserva
 `agent` / `model` / `effort`, acrescenta expectativas opcionais de dispatch e
 mantém os checks anteriores. A Fase 3 expande o quality eval de 7 para 33 casos:
 todos os 10 core têm cenário positivo, adversarial e LOW sem burocracia, com
 calibração de respostas e rescore hermético. Runner e corpos dos agentes preservados.
-Próxima fase: **Fase 4 — OpenSpec como artefato durável do change lifecycle**.
+A Fase 4 liga o bloco OpenSpec à skill `orchestrate`: estado durável no change
+existente, owners conforme o risco, handoffs sem duplicação e fechamento após
+aceite, revisões e drift resolvidos. Três casos de routing cobrem LOW/MEDIUM/HIGH.
+Próxima fase: **Fase 5 — Freshness explícita do Graphify**.
 Os casos de roteamento com modelo real continuam sendo uma medição manual paga;
 o mesmo vale para os novos casos de qualidade. Os testes herméticos validam o
 contrato dos evals, sem demonstrar comportamento dos modelos.

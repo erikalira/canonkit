@@ -824,6 +824,11 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     const agentsMd = await read(path.join(project, "AGENTS.md"));
     assert.match(agentsMd, /agent-team-config:complements:start/);
     assert.match(agentsMd, /\*\*openspec\*\* — /);
+    // The lifecycle entry point must survive the actual project-tool install.
+    const rules = (await readTools()).get("openspec").rules;
+    for (const rule of rules) assert.ok(agentsMd.includes(rule));
+    assert.match(agentsMd, /orchestrate skill's OpenSpec change lifecycle/);
+    assert.deepEqual((await readdir(project)).sort(), ["AGENTS.md", "openspec"], "integration must not create a parallel plan or spec");
     // The confirmation names what will run, from where, and what it touches.
     assert.match(r.out, /binary: +\S*openspec/);
     assert.match(r.out, /runs: +.*openspec\S* init --tools claude,codex/);

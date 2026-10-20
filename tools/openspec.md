@@ -19,5 +19,6 @@ notes:
 undo:
   - remove the openspec skills and commands it wrote under .claude/ and .agents/, if you no longer want them
 ---
-Specs and acceptance criteria live in openspec/ (changes/ for proposals, specs/ for what is true now), not in a parallel doc.
-Scott owns what a change must achieve; Spencer owns whether the spec still matches the code.
+OpenSpec holds durable change state (normally openspec/changes/ and openspec/specs/); CanonKit governs risk, owners and reviews; Graphify supplies code evidence.
+Keep scope, acceptance criteria, decisions and progress in the selected change's existing artifacts, not a parallel PRD, implementation plan or spec.
+Use the orchestrate skill's OpenSpec change lifecycle: LOW stays inline; MEDIUM/HIGH require acceptance, applicable reviews and Spencer's drift check before sync/archive.

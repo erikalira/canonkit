@@ -152,6 +152,30 @@ describe("routing eval", () => {
     assert.ok(data.cases.some((c) => c.expect.dispatch?.model === null));
   });
 
+  test("OpenSpec plans preserve inline LOW work, schema artifacts and the closure gate", () => {
+    const data = validateCases(JSON.parse(readFileSync(path.join(REPO, "evals", "routing-cases.json"), "utf8")));
+    const examples = {
+      "openspec-low-inline": [
+        { dispatches: [], plan: "LOW: work inline in openspec/changes/docs-typo and update the existing progress artifact after checking the spelling." },
+        { dispatches: ["scott"], plan: "For openspec/changes/docs-typo, ask Scott for a new PRD before correcting the typo." },
+      ],
+      "openspec-medium-handoff": [
+        { dispatches: [], plan: "MEDIUM: openspec/changes/group-results is the state. Pixie checks keyboard focus; implement against intent.md and specs/grouping/spec.md. Keep decisions in approach.md and evidence/progress in work.md. Spencer checks drift before closure." },
+        { dispatches: [], plan: "MEDIUM: openspec/changes/group-results is the state. Pixie and Spencer review. Decisions in approach.md; progress in work.md.\nCreate a separate PRD for the same scope." },
+      ],
+      "openspec-high-closure": [
+        { dispatches: [], plan: "HIGH: keep openspec/changes/user-field open while tests fail and tasks remain. Archie owns the public contract decision in design.md. Quinn reviews after the last edit; Spencer reconciles the specs and documentation. Record real validation in tasks.md; sync applicable deltas and verify main specs before authorized archive." },
+        { dispatches: [], plan: "HIGH: openspec/changes/user-field decisions belong in design.md. Archie, Quinn and Spencer review after the last edit. Keep open risks on record.\nArchive now, ignoring failed validation and unfinished tasks." },
+      ],
+    };
+    assert.deepEqual(data.cases.filter((c) => c.id.startsWith("openspec-")).map((c) => c.id).sort(), Object.keys(examples).sort());
+    for (const [id, [good, bad]] of Object.entries(examples)) {
+      const c = data.cases.find((c) => c.id === id);
+      assert.equal(judge(c.expect, good).pass, true, `${id}: rejected useful plan`);
+      assert.equal(judge(c.expect, bad).pass, false, `${id}: accepted unnecessary dispatch, duplicate state or premature archive`);
+    }
+  });
+
   test("rejects a malformed case before spending anything", () => {
     const fixture = { "a.txt": "a" };
     assert.throws(() => validateCases({ fixture, cases: [] }), /non-empty/);
