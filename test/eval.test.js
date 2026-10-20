@@ -22,6 +22,54 @@ describe("routing eval", () => {
       "not json",
     ].join("\n");
     assert.deepEqual(dispatches(stream), ["gard", "archie"]);
+    assert.deepEqual(parseRun(stream).dispatches, [
+      { agent: "gard", model: null, effort: null },
+      { agent: "archie", model: null, effort: null },
+    ]);
+  });
+
+  test("preserves requested model and effort without guessing omitted fields", () => {
+    const stream = line([
+      { type: "tool_use", name: "Agent", input: { subagent_type: "Gard", model: "sonnet", effort: "medium" } },
+      { type: "tool_use", name: "Task", input: { subagent_type: "archie", model: "opus" } },
+      { type: "tool_use", name: "Agent", input: { effort: "high" } },
+    ]);
+    assert.deepEqual(parseRun(stream).dispatches, [
+      { agent: "gard", model: "sonnet", effort: "medium" },
+      { agent: "archie", model: "opus", effort: null },
+      { agent: "general-purpose", model: null, effort: "high" },
+    ]);
+    assert.deepEqual(dispatches(stream), ["gard", "archie", "general-purpose"]);
+  });
+
+  test("distinguishes the right owner from the right dispatch configuration", () => {
+    const expect = { includes: ["gard"], dispatch: { agent: "gard", model: "sonnet", effort: "medium" } };
+    const run = (model, effort) => parseRun(line([
+      { type: "tool_use", name: "Agent", input: { subagent_type: "Gard", model, effort } },
+    ]));
+    assert.equal(judge(expect, run("sonnet", "medium")).pass, true);
+    for (const [model, effort, field] of [["opus", "medium", "model"], ["sonnet", "low", "effort"], ["haiku", "low", "model"], ["sonnet", undefined, "effort"]]) {
+      const actual = run(model, effort);
+      assert.equal(judge({ includes: ["gard"] }, actual).pass, true);
+      assert.match(judge(expect, actual).problems.join(), new RegExp(`gard ${field}: expected`));
+    }
+    assert.equal(judge(expect, { dispatches: [], plan: "Dispatch Gard / sonnet / medium." }).pass, false);
+    const retry = run("sonnet", "medium");
+    retry.dispatches.unshift({ agent: "gard", model: "haiku", effort: "low" });
+    assert.equal(judge(expect, retry).pass, false, "a correct retry cannot hide a wrong-level dispatch");
+  });
+
+  test("optional fields allow omitted runtime inputs, while null requires no override", () => {
+    const run = parseRun(line([{ type: "tool_use", name: "Task", input: { subagent_type: "gard", model: "sonnet" } }]));
+    assert.equal(judge({ dispatch: { agent: "gard", model: "sonnet" } }, run).pass, true);
+    assert.equal(judge({ dispatch: { agent: "gard", effort: null } }, run).pass, true);
+    assert.equal(judge({ dispatch: { agent: "gard", model: null } }, run).pass, false);
+    const inherited = parseRun(line([{ type: "tool_use", name: "Agent", input: { subagent_type: "gard" } }]));
+    assert.equal(judge({ dispatch: { agent: "gard", model: null, effort: null } }, inherited).pass, true);
+    assert.equal(judge({ none: true }, inherited).pass, false, "a cheap or inherited dispatch is still a dispatch");
+    assert.equal(judge({ excludes: ["gard"] }, inherited).pass, false);
+    assert.equal(judge({ includesAny: ["gard", "quinn"] }, inherited).pass, true);
+    assert.equal(judge({ avoids: ["gard"] }, inherited).pass, false);
   });
 
   test("judges each expectation kind", () => {
@@ -98,6 +146,9 @@ describe("routing eval", () => {
     assert.ok(risks.has("LOW") && risks.has("HIGH"));
     assert.ok(data.cases.some((c) => c.expect.none), "no case checks that LOW work stays inline");
     assert.ok(data.cases.some((c) => c.expect.excludes?.includes("dana")), "no case checks an absent specialist");
+    assert.ok(data.cases.some((c) => c.expect.dispatch?.model === "opus" && c.expect.dispatch?.effort === "high"));
+    assert.ok(data.cases.some((c) => c.expect.dispatch?.model === "haiku" && c.expect.dispatch?.effort === "low"));
+    assert.ok(data.cases.some((c) => c.expect.dispatch?.model === null));
   });
 
   test("rejects a malformed case before spending anything", () => {
@@ -106,6 +157,18 @@ describe("routing eval", () => {
     assert.throws(() => validateCases({ fixture, cases: [{ id: "x", prompt: "p", risk: "LOW", expect: { maybe: 1 } }] }), /expect takes/);
     assert.throws(() => validateCases({ fixture, cases: [{ id: "x", prompt: "p", risk: "SOME", expect: { none: true } }] }), /risk/);
     assert.throws(() => validateCases({ fixture, cases: [{ id: "x", prompt: "p", risk: "LOW", expect: { includes: ["zed"] } }] }), /not an agent/);
+    const check = (dispatch) => validateCases({ fixture, cases: [{ id: "x", prompt: "p", risk: "LOW", expect: { dispatch } }] });
+    assert.doesNotThrow(() => check({ agent: "gard", model: "sonnet" }));
+    assert.doesNotThrow(() => check({ agent: "gard", model: null, effort: null }));
+    for (const d of [null, [], "gard", {}, { agent: "gard", typo: "sonnet" }]) {
+      assert.throws(() => check(d), /dispatch takes/);
+    }
+    assert.throws(() => check({ agent: "zed" }), /not an agent/);
+    for (const field of ["model", "effort"]) {
+      for (const value of [42, false, {}, [], "", " "]) {
+        assert.throws(() => check({ agent: "gard", [field]: value }), /non-empty string or null/);
+      }
+    }
   });
 
   test("--dry-run prints the plan and calls nothing", () => {
@@ -113,6 +176,40 @@ describe("routing eval", () => {
     assert.equal(res.status, 0, res.stderr);
     assert.match(res.stdout, /high-auth/);
     assert.match(res.stdout, /Nothing was called/);
+  });
+
+  test("--rescore displays configuration and fails a wrong level with the correct owner", () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-routing-rescore-"));
+    try {
+      const data = JSON.parse(readFileSync(path.join(REPO, "evals", "routing-cases.json"), "utf8"));
+      const kase = data.cases.find((c) => c.id === "dispatch-structural-up");
+      const transcript = (model) => line([
+        { type: "tool_use", name: "Agent", input: { subagent_type: "archie", model, effort: "high" } },
+        { type: "text", text: "Archie will assess the contract." },
+      ]);
+      const rescore = () => spawnSync(process.execPath, [path.join(REPO, "scripts", "eval-routing.mjs"), "--rescore", dir, "--only", kase.id], { encoding: "utf8" });
+      const file = path.join(dir, `${kase.id}-1.jsonl`);
+      writeFileSync(file, transcript("haiku"));
+      const bad = rescore();
+      assert.equal(bad.status, 1, bad.stderr);
+      assert.match(bad.stdout, /archie \(model=haiku, effort=high\)/);
+      assert.match(bad.stdout, /model: expected opus, got haiku/);
+      writeFileSync(file, transcript("opus"));
+      const good = rescore();
+      assert.equal(good.status, 0, good.stderr);
+      assert.match(good.stdout, /PASS.*dispatch-structural-up/);
+      assert.match(good.stdout, /1\/1 cases held/);
+      // Old transcripts remain scoreable without a configuration expectation.
+      writeFileSync(path.join(dir, "high-auth-1.jsonl"), line([
+        { type: "tool_use", name: "Task", input: { subagent_type: "gard" } },
+        { type: "text", text: "Gard reviews auth." },
+      ]));
+      const old = spawnSync(process.execPath, [path.join(REPO, "scripts", "eval-routing.mjs"), "--rescore", dir, "--only", "high-auth"], { encoding: "utf8" });
+      assert.equal(old.status, 0, old.stderr);
+      assert.match(old.stdout, /gard \(model=inherited, effort=inherited\)/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

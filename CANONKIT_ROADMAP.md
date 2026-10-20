@@ -4,6 +4,12 @@
 **Stack atual:** CanonKit + OpenSpec + Graphify  
 **Objetivo:** reduzir custo/contexto, aumentar previsibilidade do roteamento e qualidade dos agentes, sem adicionar novas camadas antes de existir evidência de que elas são necessárias.
 
+**Estado de implementação:** Fases 1 e 2 concluídas. A Fase 2 preserva
+`agent` / `model` / `effort`, acrescenta expectativas opcionais de dispatch e
+mantém os checks anteriores. Próxima fase: **Fase 3 — Expandir quality evals**.
+Os casos de roteamento com modelo real continuam sendo uma medição manual paga;
+os testes herméticos validam parser, judge, compatibilidade e rescore.
+
 ---
 
 ## 1. Princípios do roadmap

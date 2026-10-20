@@ -588,6 +588,20 @@ trabalho LOW que deve ficar inline, as superfícies HIGH (auth, migração, cont
 público, budget) e um specialist ausente que precisa ser declarado sem dono, não
 inventado.
 
+O check opcional `dispatch` mede a configuração pedida numa chamada real de
+`Agent` ou `Task`: por exemplo,
+`"dispatch": {"agent": "gard", "model": "sonnet", "effort": "medium"}`.
+Todas as chamadas ao agente indicado precisam corresponder; citar a configuração
+no plano não passa esse check. Campos omitidos na expectativa não são avaliados;
+`null` exige ausência de override, preservando os defaults da definição do agente.
+Isso permite avaliar runtimes que não enviam `effort` sem inventar esse campo:
+deixe-o fora da expectativa. Se exigir `"effort": "high"` e ele não vier, o caso
+falha. O parser e o resumo guardam os overrides, com `null` / `inherited` para
+ausência; não inferem o modelo ou effort efetivamente executado, pois o hook
+nega o despacho antes da execução. Casos novos cobrem decisão estrutural (up),
+verificação mecânica solicitada (down), ad-hoc sem overrides e LOW sem delegação.
+`--rescore` aplica os mesmos checks aos transcripts salvos, inclusive antigos.
+
 Antes e depois desta versão (2026-10-17, mesmo juiz, 3 execuções por caso, modelo
 padrão da sessão):
 

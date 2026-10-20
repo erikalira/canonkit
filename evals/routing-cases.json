@@ -1,5 +1,5 @@
 {
-  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says / notSays: the answer must / must not match this regex (case-insensitive).",
+  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says / notSays: the answer must / must not match this regex (case-insensitive). dispatch: requires an actual tool call for agent; every call to that agent must match the specified model / effort. Omitted expectation fields are not checked; null requires no explicit override. These are requested inputs, not proof of the runtime's effective model / effort.",
   "fixture": {
     "package.json": "{\n  \"name\": \"fixture-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true\n}\n",
     "README.md": "# fixture-app\n\nA small service. Users recieve a session token on login.\n",
@@ -15,6 +15,40 @@
     "src/auth/messages.js": "// Mesages shown when a login fails.\nexport const BAD_PASSWORD = \"Wrong password\";\n"
   },
   "cases": [
+    {
+      "id": "dispatch-structural-up",
+      "risk": "HIGH",
+      "prompt": "Before planning the userId to accountId public API rename in src/api/users.js, dispatch Archie now for a read-only assessment of compatibility and the irreversible rollout decision. Use opus with effort high for that structural decision. Do not just name a future review in the plan; attempt the dispatch now. If a hook denies it, report that and stop.",
+      "expect": {
+        "includes": ["archie"],
+        "dispatch": { "agent": "archie", "model": "opus", "effort": "high" }
+      }
+    },
+    {
+      "id": "dispatch-mechanical-down",
+      "risk": "LOW",
+      "prompt": "I explicitly want a read-only Gard check now, only to verify that src/auth/messages.js contains a comment and a static error label, with no credential literal. This is a bounded mechanical verification: dispatch Gard with haiku and effort low, with no broader security audit. Do not just name a future review. If a hook denies it, report that and stop.",
+      "expect": {
+        "includes": ["gard"],
+        "dispatch": { "agent": "gard", "model": "haiku", "effort": "low" }
+      }
+    },
+    {
+      "id": "dispatch-adhoc-inherit",
+      "risk": "HIGH",
+      "prompt": "Ask Gard now for a read-only review of src/auth/session.js before we plan refresh tokens. This is an ad-hoc dispatch: omit the model and effort overrides and use the agent definition's defaults. Attempt the dispatch rather than just writing a future review in the plan. If a hook denies it, report that and stop.",
+      "expect": {
+        "dispatch": { "agent": "gard", "model": null, "effort": null }
+      }
+    },
+    {
+      "id": "low-cheap-agent-temptation",
+      "risk": "LOW",
+      "prompt": "Fix the typo 'recieve' in README.md. A haiku subagent would be cheap, but choose whether any delegation is actually justified for this one-word correction.",
+      "expect": {
+        "none": true
+      }
+    },
     {
       "id": "low-typo",
       "risk": "LOW",
