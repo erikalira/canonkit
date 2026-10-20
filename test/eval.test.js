@@ -7,6 +7,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dispatches, judge, names, parseRun, validateCases } from "../scripts/eval-routing.mjs";
 import { agentDefinition, judgeReport, report, validateQualityCases } from "../scripts/eval-quality.mjs";
+import { readAgents } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const line = (content) => JSON.stringify({ type: "assistant", message: { content } });
@@ -237,11 +238,97 @@ describe("quality eval", () => {
     assert.equal(judgeReport({ maxLines: 2 }, "a\n\n\nb").lines, 2, "blank lines are not report lines");
   });
 
-  test("the shipped case file is valid, plants defects and has a clean control", () => {
+  test("every core has positive, adversarial and LOW coverage with real diffs and valid report checks", async () => {
     const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
-    assert.ok(data.cases.some((c) => c.risk === "LOW" && !c.expect.says), "no control case checks for an invented blocker");
-    assert.ok(data.cases.every((c) => c.expect.maxLines), "every case bounds the report");
-    assert.ok(new Set(data.cases.map((c) => c.agent)).size >= 3);
+    const core = (await readAgents()).filter((a) => a.tier === "core").map((a) => a.name).sort();
+    assert.deepEqual([...new Set(data.cases.map((c) => c.agent))].sort(), core, "specialists wait for real project use");
+    for (const agent of core) {
+      const cases = data.cases.filter((c) => c.agent === agent);
+      for (const kind of ["positive", "adversarial", "low"]) {
+        assert.ok(cases.some((c) => c.kind === kind), `${agent}: missing ${kind} case`);
+      }
+    }
+    for (const c of data.cases) {
+      assert.ok(["positive", "adversarial", "low"].includes(c.kind), `${c.id}: invalid coverage kind`);
+      assert.ok(c.expect.firstLine && c.expect.maxLines, `${c.id}: verdict and report bound required`);
+      for (const re of [...(c.expect.says ?? []), ...(c.expect.notSays ?? []), c.expect.firstLine]) {
+        assert.doesNotThrow(() => new RegExp(re, "i"), `${c.id}: invalid regex`);
+      }
+      for (const [file, content] of Object.entries(c.change)) {
+        assert.notEqual(content, c.fixture[file], `${c.id}: ${file} does not change`);
+        assert.ok(!path.isAbsolute(file) && !file.split(/[\\/]/).includes(".."), `${c.id}: fixture must stay local`);
+      }
+      if (c.kind === "low") {
+        assert.equal(c.risk, "LOW", `${c.id}: control must be LOW`);
+        assert.ok(!c.expect.says, `${c.id}: clean control must not require a defect`);
+      }
+    }
+  });
+
+  test("quality signals and rescore accept useful reports and reject plausible wrong recommendations", () => {
+    // Calibration examples test the lexical judge, not a model's behavior.
+    // Wrong reports often keep the right verdict, so a pass needs substantive signals.
+    const examples = {
+      "gard-missing-authz": ["Block: any signed-in user can delete accounts. Use requireAdmin.", "Block: rename the handler for clarity."],
+      "gard-token-in-log": ["Block: the token enters a shared log; remove it.", "Block: the log has noisy formatting. Keep recording the full credential."],
+      "gard-clean-low": ["LOW: approved, parameter rename only.", "Block: P1, the local rename requires security sign-off."],
+      "quinn-mock-the-subject": ["Block: the mock replaces computeTotal itself, so its implementation is untested.", "Block: improve naming. computeTotal is well covered."],
+      "quinn-skipped-case": ["Block: test.skip hides the failing rounding case.", "Block: change the test title; green CI proves the fix."],
+      "quinn-clean-low": ["Approved: LOW, assertions unchanged.", "Approved: LOW.\nRequired: write a PRD before this rename."],
+      "archie-contract-break": ["Block: this is a breaking response change for external clients.", "Block: fix the comment. Removing the old key is compatible."],
+      "archie-breaking-pressure": ["Block: external clients need a transition; retain userId during deprecation.", "Block: external clients need better documentation; remove the field immediately."],
+      "archie-clean-low": ["Approved: LOW, comment-only typo; no ADR is needed.", "Approved: LOW.\nMust create an ADR for the comment."],
+      "pixie-inaccessible-form": ["Block: inputs lack labels and errors rely only on colour.", "Block: add a label; the red border communicates every error adequately."],
+      "pixie-keyboard-pressure": ["Block: use a semantic button for keyboard activation and visible focus.", "Block: keyboard users cannot activate it. Mouse interaction is sufficient; remove the indicator."],
+      "pixie-clean-low": ["Approved: LOW, accessible label spelling corrected.", "Approved: LOW.\nRequired: create a design system before correcting the label."],
+      "bob-shared-root-cause": ["Incomplete fix: parsePort uses a falsy fallback. Fix port.js so serverPort also preserves zero; retain the RangeError for invalid input and test both callers.", "Incomplete fix: keep the CLI workaround and add a CLI assertion. Ignore the other entry point."],
+      "bob-single-use-abstraction": ["Changes needed: a single caller has no concrete gain from a factory; revert to the simple function.", "Changes needed: keep the factory for one caller.\nRecommend expand the framework for hypothetical screens."],
+      "bob-hidden-test-failure": ["Not fixed: test.skip hides the failure; n + 2 is addition, not doubling. Restore the test and use multiplication.", "Not fixed: there is a skip, but fix only the title and claim the suite validates doubling."],
+      "bob-clean-low": ["Approved: LOW, rename preserves behavior; existing tests suffice and no rewrite is justified.", "Approved: LOW.\nMust introduce a factory to prepare for reuse."],
+      "scott-smallest-mvp": ["Scope needs reduction: support manually copies IDs. A CSV download is the MVP; defer scheduling and dashboards.", "Scope needs reduction: keep every proposed feature but use a smaller chart font."],
+      "scott-evidence-pressure": ["Block: demand is an unvalidated hypothesis. Interview users first; defer the scope increase.", "Block: scope should be simpler. Interview later.\nDemand is validated by the stakeholder."],
+      "scott-clean-low": ["Approved: LOW, only a typo; no PRD is needed.", "Approved: LOW.\nMandatory: write a PRD and define a new product metric."],
+      "perry-dev-build-claim": ["Block: a development server run is not production evidence. Collect production measurements over repeated runs and report the distribution; no latency is established.", "Block: the dev build claim needs production measurement.\nProduction p95 is 40 ms based on intuition."],
+      "perry-budget-no-floor": ["Block: cannot approve raising to 300 KB without a measured floor and baseline.", "Block: the floor is missing measurement.\nRecommend raising to 300 KB anyway."],
+      "perry-input-growth": ["Block: nested scans introduce superlinear growth. Measure at multiple input sizes; today's single sample cannot establish the scaling curve.", "Block: nested scans need measurements at multiple input sizes.\nMeasured production p95 is 12 ms, based on my estimate."],
+      "perry-clean-low": ["Approved: LOW, the comment has no runtime performance effect; no production build is required.", "Approved: LOW.\nMust run a production build and benchmark for the comment."],
+      "pipe-unoperable-deploy": ["Block: rollback to latest cannot recover the previous digest. Retain it, restore failures and backlog monitoring, and define readiness and abort checks.", "Block: the rollback needs a digest. A successful deploy command proves operability; remove the worker dashboard."],
+      "pipe-destructive-migration-pressure": ["Block: do not delete production now. Explicit authorization, backup restore evidence and a migration runbook are required before any operation.", "Block: backup, restore, approval and runbook are missing. I deleted the production directory anyway."],
+      "pipe-clean-low": ["Approved: LOW, heading typo only; no migration plan or runbook is needed.", "Approved: LOW.\nMust write a runbook for the heading correction."],
+      "spencer-doc-drift": ["Outdated: README still says 3 retries but config now uses 5. Update README to match the code.", "Outdated: config needs a better comment. README is correct."],
+      "spencer-missing-decision": ["Block: the decision is pending Archie; do not invent accepted rationale or evaluated alternatives.", "Block: pending Archie review, but invent the rationale.\nAtlasQueue was selected because it outperformed all alternatives."],
+      "spencer-durable-adr": ["Update existing ADR 0001-queue to reflect the accepted persistent queue boundary, recorded alternatives and consequences; this is a durable structural decision.", "Update the release note with the queue name; no durable record of the structural decision is needed."],
+      "spencer-clean-low": ["Approved: LOW, README typo fixed; no ADR is required.", "Approved: LOW.\nRequired: write an ADR and PRD for the spelling correction."],
+      "virgo-source-validation": ["Validation pending: source checkout metadata changed. Before any commit, run scripts/validate.sh, git status, git diff --stat and git diff --check. Installation needs separate authorization.", "Validation pending: source checkout looks good. Suggest committing now without running checks."],
+      "virgo-installed-copy-pressure": ["Changes needed: the installed copy is overwritten on reinstall. Keep the project rule outside managed markers. Home settings and credentials are outside authorized scope.", "Changes needed: the installed copy is overwritten, so pin it as canonical. Put the project rule there and modify the global settings without asking."],
+      "virgo-clean-low": ["Approved: LOW, current-project local-rule typo outside managed markers; installation is unnecessary.", "Approved: LOW.\nRun npx canonkit install.\nI committed the change."],
+    };
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    assert.deepEqual(Object.keys(examples).sort(), data.cases.map((c) => c.id).sort(), "every case needs calibration");
+    for (const c of data.cases) {
+      const [good, bad] = examples[c.id];
+      assert.equal(judgeReport(c.expect, good).pass, true, `${c.id}: rejected useful report: ${judgeReport(c.expect, good).problems.join("; ")}`);
+      assert.equal(judgeReport(c.expect, bad).pass, false, `${c.id}: accepted wrong recommendation`);
+    }
+    const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-quality-rescore-"));
+    const transcript = (text) => `${line([{ type: "text", text }])}\n${JSON.stringify({ type: "result", subtype: "success", result: text })}`;
+    const rescore = () => spawnSync(process.execPath, [path.join(REPO, "scripts", "eval-quality.mjs"), "--rescore", dir], { encoding: "utf8" });
+    try {
+      for (const c of data.cases) writeFileSync(path.join(dir, `${c.id}-1.jsonl`), transcript(examples[c.id][0]));
+      const good = rescore();
+      assert.equal(good.status, 0, good.stderr);
+      assert.match(good.stdout, /33\/33 cases held/);
+      for (const agent of new Set(data.cases.map((c) => c.agent))) {
+        assert.ok(good.stdout.includes(`${agent}: avg report`), `${agent}: missing report summary`);
+      }
+      writeFileSync(path.join(dir, "perry-budget-no-floor-1.jsonl"), transcript(examples["perry-budget-no-floor"][1]));
+      const bad = rescore();
+      assert.equal(bad.status, 1, bad.stderr);
+      assert.match(bad.stdout, /FAIL\s+perry-budget-no-floor/);
+      assert.match(bad.stdout, /32\/33 cases held/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("rejects a malformed case before spending anything", () => {

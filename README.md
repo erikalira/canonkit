@@ -628,12 +628,20 @@ versões: o modelo planeja o revisor para depois da edição, como a regra manda
 ### Eval de qualidade
 
 O eval de roteamento nunca roda o corpo de um agente: o despacho é negado. Este
-roda só o corpo. Cada caso de `evals/quality-cases.json` grava um fixture, commita,
-e grava por cima uma mudança com um defeito plantado (rota admin sem checagem de
-papel, token em log, teste que mocka o próprio alvo, caso pulado para o suite
-ficar verde, contrato público quebrado, formulário sem label); o agente revisa o
-diff em plan mode. Um caso de controle sem defeito cobre a falha oposta: bloqueio
-inventado numa mudança LOW.
+roda só o corpo. Cada caso de `evals/quality-cases.json` grava um fixture, commita
+nesse repositório temporário e grava por cima a mudança proposta; o agente revisa
+o diff em plan mode. Os casos incluem defeitos em código, testes, propostas de
+escopo, evidências de performance, planos operacionais, documentação e configuração
+do time, além de controles sem defeito para detectar bloqueio inventado em LOW.
+
+O corpus tem **33 casos para os 10 agentes core** (7 originais e 26 novos).
+Cada core tem `kind: positive` (achado realista), `adversarial` (pressão para
+aceitar comportamento incorreto) e `low` (mudança benigna sem burocracia).
+`kind` é metadado de cobertura; os checks continuam sendo os mesmos. Bob cobre
+root cause, callers, failure path, abstração de uso único e teste escondido;
+Scott, evidência e menor MVP; Perry, medição, build, floor e crescimento com input;
+Pipe, rollback, observabilidade e autorização; Spencer, drift e decisões duráveis;
+Virgo, fonte canônica, escopo e validações. Specialists aguardam uso em projetos reais.
 
 ```bash
 npm run eval:quality -- --dry-run
@@ -645,12 +653,20 @@ npm run eval:quality -- --variant gard=out/gard-lean.md --runs 3   # A/B de corp
   instalado: dá para medir um corpo antes de publicá-lo. `--variant` troca só o
   corpo, mantendo nome, descrição e modelo — a pergunta que ele responde é se um
   corpo mais curto acha o mesmo tanto.
-- Cada caso exige o defeito (`says`), o veredito na primeira linha (`firstLine`) e
-  um teto de linhas (`maxLines`); o resumo dá a média de linhas por agente.
+- Casos com achado exigem sinais do problema (`says`); todos exigem veredito na
+  primeira linha (`firstLine`) e teto de linhas (`maxLines`). `notSays` rejeita
+  sinais de recomendações incorretas; o resumo dá a média de linhas por agente.
 - Os blocos globais são os instalados, como numa sessão real. Gasta crédito: roda
   à mão, não no `npm test`.
+- Os testes herméticos verificam cobertura por core, regexes, respostas corretas
+  e incorretas e o fluxo de `--rescore` com transcripts sintéticos. Isso valida o
+  contrato lexical do eval; não prova raciocínio, leitura de callers, execução
+  de comandos ou comportamento do modelo. A medição real continua manual, com
+  `--runs 3` e `--save`, antes de atribuir resultados aos agentes. Os corpos e o
+  runner não foram alterados nesta expansão.
 
-Corpos enxutos (2026-10-18, 3 execuções por caso, modelo do frontmatter): Gard,
+Baseline anterior à expansão, com os 7 casos originais (2026-10-18, 3 execuções
+por caso, modelo do frontmatter): Gard,
 Quinn, Archie e Pixie perderam a persona, a Mission genérica e as regras que só
 repetiam o comportamento padrão — corpo 21–31% menor. Listas de veto, checklists e
 conhecimento de domínio ficaram.
