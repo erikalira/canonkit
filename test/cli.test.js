@@ -9,13 +9,13 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, readFile, writeFile, readdir } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat } from "node:fs/promises";
+import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { applyBlock, readAgents, parseAgent, summaries } from "../bin/cli.js";
+import { applyBlock, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -610,5 +610,519 @@ describe("applyBlock", () => {
     const body = "# t\n\ncost: $1 (a|b) [x] \\d+ ^anchor$\n";
     const { text } = applyBlock("", body, markers);
     assert.match(text, /cost: \$1 \(a\|b\) \[x\] \\d\+ \^anchor\$/);
+  });
+});
+
+/* ---------------------------------------------------------- project blocks */
+
+describe("replaceProjectBlock", () => {
+  const markers = ["<!-- y:start -->", "<!-- y:end -->"];
+
+  test("appends, rewrites in place, and removes with the blank lines around it", () => {
+    const base = "# mine\n\nlocal\n";
+    const added = replaceProjectBlock(base, markers, "# B\n\nv1");
+    assert.equal(added.had, false);
+    assert.equal(added.text, "# mine\n\nlocal\n\n<!-- y:start -->\n# B\n\nv1\n<!-- y:end -->\n");
+
+    const tail = added.text + "\n## after\n";
+    const updated = replaceProjectBlock(tail, markers, "# B\n\nv2");
+    assert.equal(updated.text, tail.replace("v1", "v2"));
+    assert.equal(replaceProjectBlock(updated.text, markers, "# B\n\nv2").text, updated.text);
+
+    assert.equal(replaceProjectBlock(added.text, markers, null).text, base);
+    assert.deepEqual(replaceProjectBlock(base, markers, null), { text: base, had: false });
+  });
+
+  test("keeps a CRLF file CRLF, and reads the block back", () => {
+    const base = "# mine\r\n\r\nlocal\r\n";
+    const { text } = replaceProjectBlock(base, markers, "# B\n\nv1");
+    assert.doesNotMatch(text, /(^|[^\r])\n/);
+    assert.equal(readProjectBlock(text, markers), "\n# B\n\nv1\n");
+    assert.equal(replaceProjectBlock(text, markers, null).text, base);
+    assert.equal(readProjectBlock(base, markers), null);
+  });
+
+  test("removing a block between two paragraphs keeps them two paragraphs", () => {
+    const text = "Para one.\n\n<!-- y:start -->\n# B\n<!-- y:end -->\n\nPara two.\n";
+    assert.equal(replaceProjectBlock(text, markers, null).text, "Para one.\n\nPara two.\n");
+  });
+
+  test("add then remove is a round trip whichever block came first", () => {
+    const other = ["<!-- z:start -->", "<!-- z:end -->"];
+    const body = (m) => (m === markers ? "# Y" : "# Z");
+    for (const [first, second] of [[markers, other], [other, markers]]) {
+      const both = replaceProjectBlock(replaceProjectBlock("# p\n", first, body(first)).text, second, body(second)).text;
+      for (const [removed, kept] of [[first, second], [second, first]]) {
+        const only = replaceProjectBlock("# p\n", kept, body(kept)).text;
+        assert.equal(replaceProjectBlock(both, removed, null).text, only);
+      }
+    }
+  });
+
+  test("two blocks in one file do not disturb each other", () => {
+    const other = ["<!-- z:start -->", "<!-- z:end -->"];
+    const one = replaceProjectBlock("# p\n", markers, "# Y").text;
+    const both = replaceProjectBlock(one, other, "# Z").text;
+    assert.equal(replaceProjectBlock(both, other, null).text, one);
+    assert.equal(replaceProjectBlock(both, markers, "# Y").text, both);
+  });
+});
+
+/* ------------------------------------------------------------------- tools */
+
+describe("tool registry", () => {
+  test("every tool parses, pins an exact version and prints it in the install command", async () => {
+    const tools = await readTools();
+    assert.deepEqual([...tools.keys()], ["graphify", "openspec"]);
+    for (const t of tools.values()) {
+      assert.match(t.pin, /^\d+\.\d+\.\d+$/);
+      assert.ok(t.install.some((l) => l.includes(t.pin)), `${t.name}: install does not carry the pin`);
+      assert.ok(t.rules.length >= 1 && t.rules.length <= 3);
+      // Never an unpinned or ephemeral runner.
+      for (const l of t.install) assert.doesNotMatch(l, /@latest|\buvx\b|\bpipx\b|\buv\b/);
+    }
+    const g = tools.get("graphify");
+    // graphifyy, two y's: `graphify` on PyPI is a different package.
+    assert.ok(g.install.some((l) => l.includes(`graphifyy==${g.pin}`)));
+    assert.doesNotMatch(g.install.join("\n"), /\bgraphify==/);
+    assert.deepEqual(g.setup, [["hook", "install"], ["update", "."]]);
+    assert.deepEqual(tools.get("openspec").setup, [["init", "--tools", "claude,codex"]]);
+  });
+
+  test("refuses a range pin, a forbidden step, a non-literal argument and a long block", () => {
+    const file = ({ pin = "1.2.3", setup = "  - init", body = "one rule" } = {}) =>
+      `---\nname: t\nbin: t\npin: ${pin}\ninstall:\n  - get t@{pin}\nsetup:\n${setup}\n---\n${body}\n`;
+    assert.ok(parseTool("t.md", file()));
+    assert.throws(() => parseTool("t.md", file({ pin: "^1.2.3" })), /exact/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - claude install" })), /not allowed/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - codex install" })), /not allowed/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - extract ." })), /not allowed/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - init $(whoami)" })), /plain literal/);
+    assert.throws(() => parseTool("t.md", file({ body: "a\nb\nc\nd" })), /1 to 3/);
+    assert.throws(() => parseTool("t.md", file({ body: "uses 1.2.3" })), /pin lives only/);
+    // Fixed env is literal, and never a variable that changes what gets loaded.
+    const withEnv = (kv) => file().replace("setup:", `env:\n  - ${kv}\nsetup:`);
+    assert.deepEqual(parseTool("t.md", withEnv("NO_TRACK=1")).env, { NO_TRACK: "1" });
+    assert.throws(() => parseTool("t.md", withEnv("X=$(id)")), /KEY=literal/);
+    for (const kv of ["PATH=/x", "PYTHONPATH=.", "NODE_OPTIONS=--require", "LD_PRELOAD=x", "DYLD_INSERT_LIBRARIES=x", "ComSpec=x"]) {
+      assert.throws(() => parseTool("t.md", withEnv(kv.toUpperCase() === kv ? kv : kv)), /KEY=literal|changes what gets loaded/, kv);
+    }
+  });
+
+  test("the published package ships the registry", async () => {
+    const pkg = JSON.parse(await read(path.join(REPO, "package.json")));
+    assert.ok(pkg.files.includes("tools"));
+  });
+});
+
+describe("tool add/remove", () => {
+  const WIN = process.platform === "win32";
+  const SEP = WIN ? ";" : ":";
+  const PINS = {};
+  const re = (s) => s.replace(/\./g, "\\.");
+  before(async () => {
+    for (const [n, t] of await readTools()) PINS[n] = t.pin;
+  });
+
+  // git stays on PATH for graphify's preflight; nothing else from the real PATH
+  // does, so a real graphify/openspec installed on this machine is never reached.
+  const gitDir = (() => {
+    const r = spawnSync(WIN ? "where" : "which", ["git"], { encoding: "utf8" });
+    return r.status === 0 ? path.dirname(r.stdout.split(/\r?\n/)[0].trim()) : null;
+  })();
+
+  const STUB = `const fs = require("fs"), path = require("path");
+const bin = process.argv[2];
+const argv = process.argv.slice(3);
+fs.appendFileSync(process.env.STUB_LOG, JSON.stringify([bin, ...argv]) + "\\n");
+fs.appendFileSync(process.env.STUB_LOG + ".env", JSON.stringify([bin, process.env.GRAPHIFY_NO_AUTO_REFRESH ?? null]) + "\\n");
+fs.appendFileSync(process.env.STUB_LOG + ".cwd", JSON.stringify([bin, argv[0] ?? null, process.cwd()]) + "\\n");
+if (argv[0] === "--version") { console.log(bin + " " + (process.env.STUB_VERSION || "0.0.1")); process.exit(0); }
+if (process.env.STUB_FAIL === argv.join(" ")) process.exit(3);
+if (process.env.STUB_CLAUDE) fs.writeFileSync("CLAUDE.md", "# made by the tool\\n");
+if (process.env.STUB_REWRITE && fs.existsSync("AGENTS.md")) fs.appendFileSync("AGENTS.md", "tool line\\n");
+if (bin === "graphify" && argv.join(" ") === "hook install") {
+  const hooks = path.join(".git", "hooks");
+  fs.mkdirSync(hooks, { recursive: true });
+  if (process.env.STUB_TOUCH_HOOK) fs.appendFileSync(path.join(hooks, "pre-push"), "touched\\n");
+  // Like graphify: an existing hook gets its marked block replaced, nothing else
+  // (STUB_WIPE_HOOK breaks that rule, to prove canonkit notices).
+  for (const [hook, tag] of [["post-commit", "hook"], ["post-checkout", "checkout-hook"]]) {
+    const file = path.join(hooks, hook);
+    const block = "# graphify-" + tag + "-start\\nnew\\n# graphify-" + tag + "-end\\n";
+    const old = fs.existsSync(file) && !process.env.STUB_WIPE_HOOK ? fs.readFileSync(file, "utf8") : "#!/bin/sh\\n";
+    const re = new RegExp("# graphify-" + tag + "-start[\\\\s\\\\S]*?# graphify-" + tag + "-end\\n?");
+    fs.writeFileSync(file, re.test(old) ? old.replace(re, block) : old + block);
+  }
+  if (process.env.STUB_EXTRA_HOOK) fs.writeFileSync(path.join(hooks, "pre-push"), "#!/bin/sh\\n");
+}
+if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursive: true });
+`;
+
+  /** A shim on PATH named like the tool: a .cmd on Windows (what npm installs), sh elsewhere. */
+  async function shim(dir, name, js) {
+    await mkdir(dir, { recursive: true });
+    if (WIN) {
+      await writeFile(path.join(dir, `${name}.cmd`), `@"${process.execPath}" "${js}" ${name} %*\r\n`);
+    } else {
+      const file = path.join(dir, name);
+      await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" ${name} "$@"\n`);
+      await chmod(file, 0o755);
+    }
+  }
+
+  async function setup(name, { git = false } = {}) {
+    const { root, home, project } = await scratch(`tool-${name}`);
+    const bin = path.join(root, "bin");
+    await mkdir(bin);
+    await writeFile(path.join(bin, "stub.cjs"), STUB);
+    for (const t of ["graphify", "openspec"]) await shim(bin, t, path.join(bin, "stub.cjs"));
+    const log = path.join(root, "argv.log");
+    const gitconfig = path.join(root, "gitconfig");
+    await writeFile(gitconfig, "");
+    const env = (extra = {}, PATH = [bin, gitDir].filter(Boolean).join(SEP)) => {
+      const base = Object.fromEntries(Object.entries(process.env).filter(([k]) => k.toUpperCase() !== "PATH"));
+      // The git config of the machine running the tests (a global core.hooksPath,
+      // say) must not decide what these tests see.
+      return { ...base, PATH, STUB_LOG: log, GIT_CONFIG_GLOBAL: gitconfig, GIT_CONFIG_NOSYSTEM: "1", ...extra };
+    };
+    if (git) spawnSync("git", ["init", "-q", project], { env: env() });
+    const tool = (args, extra, PATH) => {
+      const r = spawnSync(process.execPath, [CLI, "tool", ...args], {
+        cwd: project,
+        encoding: "utf8",
+        env: { ...env(extra, PATH), HOME: home, USERPROFILE: home },
+      });
+      return { ...r, out: (r.stdout ?? "") + (r.stderr ?? "") };
+    };
+    const calls = async () =>
+      existsSync(log) ? (await read(log)).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
+    return { root, home, project, bin, tool, calls, env };
+  }
+
+  test("runs the registry's setup with exactly its arguments and writes no CLAUDE.md", async () => {
+    const { project, tool, calls } = await setup("openspec-args");
+    const r = tool(["add", "openspec", "--yes"], { STUB_VERSION: PINS.openspec });
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(await calls(), [["openspec", "--version"], ["openspec", "init", "--tools", "claude,codex"]]);
+    assert.equal(existsSync(path.join(project, "CLAUDE.md")), false);
+    assert.equal(existsSync(path.join(project, ".claude", "CLAUDE.md")), false);
+    const agentsMd = await read(path.join(project, "AGENTS.md"));
+    assert.match(agentsMd, /agent-team-config:complements:start/);
+    assert.match(agentsMd, /\*\*openspec\*\* — /);
+    // The confirmation names what will run, from where, and what it touches.
+    assert.match(r.out, /binary: +\S*openspec/);
+    assert.match(r.out, /runs: +.*openspec\S* init --tools claude,codex/);
+    assert.match(r.out, /touches:/);
+  });
+
+  test("--version runs from the binary's own directory, the setup from the project", async () => {
+    const { root, project, bin, tool } = await setup("version-cwd");
+    assert.equal(tool(["add", "openspec", "--yes"], { STUB_VERSION: PINS.openspec }).status, 0);
+    assert.equal(tool(["list"]).status, 0);
+    const runs = (await read(path.join(root, "argv.log.cwd"))).trim().split("\n").map((l) => JSON.parse(l));
+    // realpath on both sides: macOS tmpdir is /var but cwd is /private/var, and
+    // Windows may hand back a short (8.3) or differently cased path.
+    const real = (p) => realpathSync.native(p);
+    const probes = runs.filter(([, first]) => first === "--version");
+    // add's, then list's — one per registry tool.
+    assert.equal(probes.filter(([b]) => b === "openspec").length, 2, JSON.stringify(runs));
+    for (const [, , cwd] of probes) assert.equal(real(cwd), real(bin));
+    // The contrast keeps the check honest: once confirmed, the setup does run in the project.
+    const setupRun = runs.find(([, first]) => first === "init");
+    assert.ok(setupRun, JSON.stringify(runs));
+    assert.equal(real(setupRun[2]), real(project));
+  });
+
+  test("without a terminal and without --yes, nothing runs past --version", async () => {
+    const { project, tool, calls } = await setup("no-tty");
+    const r = tool(["add", "openspec"]);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /--yes/);
+    assert.deepEqual(await calls(), [["openspec", "--version"]]);
+    assert.equal(existsSync(path.join(project, "AGENTS.md")), false);
+  });
+
+  test("--dry-run spawns nothing, not even --version", async () => {
+    const { project, tool, calls } = await setup("dry");
+    await writeFile(path.join(project, "AGENTS.md"), "# p\n");
+    const r = tool(["add", "openspec", "--dry-run", "--yes"]);
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(await calls(), []);
+    assert.equal(await read(path.join(project, "AGENTS.md")), "# p\n");
+    assert.match(r.out, /would add it/);
+  });
+
+  test("a missing binary prints the pinned install command, exits 1, writes nothing", async () => {
+    const { root, project, tool } = await setup("missing");
+    const empty = path.join(root, "empty");
+    await mkdir(empty);
+    const o = tool(["add", "openspec", "--yes"], {}, empty);
+    assert.equal(o.status, 1);
+    assert.match(o.out, new RegExp(`@fission-ai/openspec@${re(PINS.openspec)}`));
+    const g = tool(["add", "graphify", "--yes"], {}, empty);
+    assert.equal(g.status, 1);
+    assert.match(g.out, new RegExp(`graphifyy==${re(PINS.graphify)}`));
+    assert.match(g.out, /two y/);
+    assert.deepEqual(await readdir(project), []);
+  });
+
+  test("a failed setup step stops before the block is written", async () => {
+    const { project, tool } = await setup("fail");
+    await writeFile(path.join(project, "AGENTS.md"), "# p\n");
+    const r = tool(["add", "openspec", "--yes"], { STUB_FAIL: "init --tools claude,codex" });
+    assert.equal(r.status, 1);
+    assert.match(r.out, /exit 3/);
+    assert.equal(await read(path.join(project, "AGENTS.md")), "# p\n");
+  });
+
+  test("a CLAUDE.md that appears during setup gets a loud warning", async () => {
+    const { tool } = await setup("claude-md");
+    const r = tool(["add", "openspec", "--yes"], { STUB_CLAUDE: "1" });
+    assert.match(r.stderr, /!!.*CLAUDE\.md appeared during setup/);
+  });
+
+  test("the block is written after setup, onto whatever setup left in AGENTS.md", async () => {
+    const { project, tool } = await setup("rewrite");
+    await writeFile(path.join(project, "AGENTS.md"), "# p\n");
+    assert.equal(tool(["add", "openspec", "--yes"], { STUB_REWRITE: "1" }).status, 0);
+    const agentsMd = await read(path.join(project, "AGENTS.md"));
+    assert.match(agentsMd, /^# p\ntool line\n\n<!-- agent-team-config:complements:start -->/);
+  });
+
+  for (const [label, eol] of [["LF", "\n"], ["CRLF", "\r\n"]]) {
+    test(`add and remove twice leave a ${label} AGENTS.md byte-identical, specialists intact`, { skip: !gitDir }, async () => {
+      const { home, project, tool } = await setup(`idem-${label}`, { git: true });
+      const target = path.join(project, "AGENTS.md");
+      await writeFile(target, ["# projeto", "", "instrucoes locais", ""].join(eol));
+      assert.equal(run(["add", "maya"], { home, cwd: project }).status, 0);
+      const before = await read(target);
+
+      for (const name of ["openspec", "graphify"]) {
+        const r = tool(["add", name, "--yes"]);
+        assert.equal(r.status, 0, r.out);
+      }
+      const both = await read(target);
+      assert.match(both, /\*\*maya\*\*/);
+      assert.match(both, /\*\*graphify\*\*[\s\S]*\*\*openspec\*\*/);
+      if (eol === "\r\n") assert.doesNotMatch(both, /(^|[^\r])\n/);
+
+      for (let i = 0; i < 2; i++) {
+        for (const name of ["openspec", "graphify"]) {
+          const r = tool(["add", name, "--yes"]);
+          assert.equal(r.status, 0, r.out);
+          assert.equal(await read(target), both, `add ${name} run ${i + 1} changed the file`);
+        }
+      }
+
+      assert.equal(tool(["remove", "graphify"]).status, 0);
+      assert.doesNotMatch(await read(target), /\*\*graphify\*\*/);
+      for (let i = 0; i < 2; i++) assert.equal(tool(["remove", "openspec"]).status, 0);
+      // The last tool takes the block with it, and the file is back to what it was.
+      assert.equal(await read(target), before);
+      // remove never touches what the tool wrote.
+      assert.ok(existsSync(path.join(project, "openspec")));
+    });
+  }
+
+  test("graphify runs its preflight, then exactly hook install and update .", { skip: !gitDir }, async () => {
+    const { project, tool, calls } = await setup("graphify-ok", { git: true });
+    const r = tool(["add", "graphify", "--yes"], { STUB_VERSION: PINS.graphify });
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(await calls(), [["graphify", "--version"], ["graphify", "hook", "install"], ["graphify", "update", "."]]);
+    assert.doesNotMatch(r.out, /!!/);
+    assert.match(await read(path.join(project, "AGENTS.md")), /\*\*graphify\*\* — /);
+  });
+
+  test("graphify does not install over an existing hook", { skip: !gitDir }, async () => {
+    const { project, tool, calls } = await setup("graphify-hook", { git: true });
+    const hook = path.join(project, ".git", "hooks", "post-commit");
+    await writeFile(hook, "#!/bin/sh\necho mine\n");
+    const r = tool(["add", "graphify", "--yes"]);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /never overwrites a git hook/);
+    assert.match(r.out, /graphify hook install/);
+    assert.deepEqual(await calls(), [["graphify", "--version"]]);
+    assert.equal(await read(hook), "#!/bin/sh\necho mine\n");
+    assert.equal(existsSync(path.join(project, "AGENTS.md")), false);
+  });
+
+  test("every graphify run, --version and list included, has its user-skill rewrite switched off", { skip: !gitDir }, async () => {
+    const { root, tool } = await setup("graphify-env", { git: true });
+    assert.equal(tool(["add", "graphify", "--yes"]).status, 0);
+    assert.equal(tool(["list"]).status, 0);
+    const runs = (await read(path.join(root, "argv.log.env"))).trim().split("\n").map((l) => JSON.parse(l));
+    const graphify = runs.filter(([b]) => b === "graphify");
+    assert.equal(graphify.length, 4); // --version, hook install, update ., list's --version
+    assert.ok(graphify.every(([, v]) => v === "1"), JSON.stringify(graphify));
+    // A registry value, not a global one: openspec's runs do not get it.
+    assert.ok(runs.filter(([b]) => b === "openspec").every(([, v]) => v === null));
+  });
+
+  test("graphify accepts a hook that already carries its own block, keeping the user's lines", { skip: !gitDir }, async () => {
+    const { project, tool } = await setup("graphify-chained", { git: true });
+    const hook = path.join(project, ".git", "hooks", "post-commit");
+    await writeFile(hook, "#!/bin/sh\necho mine\n# graphify-hook-start\nold\n# graphify-hook-end\n");
+    const r = tool(["add", "graphify", "--yes"], { STUB_VERSION: PINS.graphify });
+    assert.equal(r.status, 0, r.out);
+    assert.doesNotMatch(r.stderr, /!!/);
+    const after = await read(hook);
+    assert.match(after, /echo mine/);
+    assert.match(after, /# graphify-hook-start\nnew\n/);
+  });
+
+  test("a chained hook whose own lines graphify wiped is reported loudly", { skip: !gitDir }, async () => {
+    const { project, tool } = await setup("graphify-wiped", { git: true });
+    await writeFile(path.join(project, ".git", "hooks", "post-commit"), "#!/bin/sh\necho mine\n# graphify-hook-start\nold\n# graphify-hook-end\n");
+    const r = tool(["add", "graphify", "--yes"], { STUB_WIPE_HOOK: "1" });
+    assert.match(r.stderr, /git hook changed outside graphify's block: post-commit/);
+  });
+
+  test("graphify refuses a repo whose own files its hooks would import or run", { skip: !gitDir }, async () => {
+    for (const [label, plant] of [
+      ["package", (p) => mkdir(path.join(p, "graphify"))],
+      ["module", (p) => writeFile(path.join(p, "graphify.py"), "")],
+    ]) {
+      const { project, tool, calls } = await setup(`graphify-shadow-${label}`, { git: true });
+      await plant(project);
+      const r = tool(["add", "graphify", "--yes"]);
+      assert.equal(r.status, 1, label);
+      assert.match(r.out, /would be imported by graphify's hooks/);
+      assert.deepEqual(await calls(), [["graphify", "--version"]]);
+    }
+
+    const { project, tool, env } = await setup("graphify-pinned-python", { git: true });
+    await mkdir(path.join(project, "graphify-out"));
+    await writeFile(path.join(project, "graphify-out", ".graphify_python"), "/tmp/evil\n");
+    spawnSync("git", ["-C", project, "add", "-f", "graphify-out/.graphify_python"], { env: env() });
+    const r = tool(["add", "graphify", "--yes"]);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /\.graphify_python is committed/);
+  });
+
+  test("a binary found only inside the project is named as such, not as missing", async () => {
+    const { root, project, tool } = await setup("inside-only");
+    const venv = path.join(project, ".venv", "bin");
+    await shim(venv, "graphify", path.join(root, "bin", "stub.cjs"));
+    const r = tool(["add", "graphify", "--yes"], {}, venv);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /found only inside the project/);
+    assert.match(r.out, /graphifyy==/);
+  });
+
+  test("a change graphify makes to a hook that was already there is reported loudly", { skip: !gitDir }, async () => {
+    const { project, tool } = await setup("graphify-touch", { git: true });
+    await writeFile(path.join(project, ".git", "hooks", "pre-push"), "#!/bin/sh\n");
+    const r = tool(["add", "graphify", "--yes"], { STUB_TOUCH_HOOK: "1" });
+    assert.match(r.stderr, /git hook changed: pre-push/);
+  });
+
+  test("a step failing after an earlier one succeeded says what was done and how to undo it", { skip: !gitDir }, async () => {
+    const { project, tool } = await setup("graphify-partial", { git: true });
+    const r = tool(["add", "graphify", "--yes"], { STUB_FAIL: "update ." });
+    assert.equal(r.status, 1);
+    assert.match(r.out, /canonkit did not change AGENTS\.md/);
+    assert.match(r.out, /Already done: graphify hook install/);
+    assert.match(r.out, /To undo it: graphify hook uninstall/);
+    assert.equal(existsSync(path.join(project, "AGENTS.md")), false);
+  });
+
+  test("a graphify dry run spawns nothing, git included", async () => {
+    const { root, project, bin, tool, calls } = await setup("graphify-dry");
+    // A git that logs like the tools do: if the preflight ran, it would show.
+    const fakeGit = path.join(root, "fake-git");
+    await shim(fakeGit, "git", path.join(bin, "stub.cjs"));
+    const r = tool(["add", "graphify", "--dry-run"], {}, [bin, fakeGit].join(SEP));
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual(await calls(), []);
+    assert.deepEqual(await readdir(project), []);
+  });
+
+  test("an AGENTS.md that is a symlink is written through, not replaced", async (t) => {
+    const { project, tool } = await setup("symlinked");
+    const shared = path.join(project, "shared.md");
+    await writeFile(shared, "# shared\n");
+    try {
+      await symlink("shared.md", path.join(project, "AGENTS.md"), "file");
+    } catch {
+      t.skip("this machine cannot create file symlinks");
+      return;
+    }
+    assert.equal(tool(["add", "openspec", "--yes"]).status, 0);
+    assert.ok((await lstat(path.join(project, "AGENTS.md"))).isSymbolicLink());
+    assert.match(await read(shared), /\*\*openspec\*\*/);
+  });
+
+  test("tools added before a specialist come out without leaving a trace", async () => {
+    const { home, project, tool } = await setup("order");
+    const target = path.join(project, "AGENTS.md");
+    await writeFile(target, "# p\n");
+    assert.equal(run(["add", "maya"], { home, cwd: project }).status, 0);
+    const onlySpecialist = await read(target);
+    assert.equal(run(["remove", "maya"], { home, cwd: project }).status, 0);
+
+    assert.equal(tool(["add", "openspec", "--yes"]).status, 0);
+    assert.equal(run(["add", "maya"], { home, cwd: project }).status, 0);
+    assert.equal(tool(["remove", "openspec"]).status, 0);
+    // Same bytes as if the tool had never been added.
+    assert.equal(await read(target), onlySpecialist);
+  });
+
+  test("graphify does not install when core.hooksPath is set", { skip: !gitDir }, async () => {
+    const { project, tool, calls, env } = await setup("graphify-hookspath", { git: true });
+    spawnSync("git", ["-C", project, "config", "core.hooksPath", ".husky"], { env: env() });
+    const r = tool(["add", "graphify", "--yes"]);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /core\.hooksPath is set/);
+    assert.deepEqual(await calls(), [["graphify", "--version"]]);
+  });
+
+  test("a hook graphify did not announce is reported loudly", { skip: !gitDir }, async () => {
+    const { tool } = await setup("graphify-extra", { git: true });
+    const r = tool(["add", "graphify", "--yes"], { STUB_EXTRA_HOOK: "1" });
+    assert.match(r.stderr, /unexpected new git hook: pre-push/);
+  });
+
+  test("a binary planted in the project is not the one run", async () => {
+    const { root, project, bin, tool, calls } = await setup("planted");
+    const planted = path.join(root, "planted.cjs");
+    await writeFile(planted, `require("fs").writeFileSync(${JSON.stringify(path.join(root, "PLANTED"))}, "ran");\n`);
+    await shim(project, "openspec", planted);
+    const r = tool(["add", "openspec", "--yes"], {}, [project, ".", "", bin].join(SEP));
+    assert.equal(r.status, 0, r.out);
+    assert.equal(existsSync(path.join(root, "PLANTED")), false);
+    assert.equal((await calls()).length, 2);
+  });
+
+  test("an installed version off the pin is a warning, never an update", async () => {
+    const { tool, calls } = await setup("off-pin");
+    const r = tool(["add", "openspec", "--yes"], { STUB_VERSION: "0.0.1" });
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, new RegExp(`0\\.0\\.1 — canonkit pins ${re(PINS.openspec)}`));
+    assert.equal((await calls()).length, 2);
+  });
+
+  test("list shows each pin, the version on PATH, and what is active here", async () => {
+    const { tool } = await setup("list");
+    assert.equal(tool(["add", "openspec", "--yes"], { STUB_VERSION: "9.9.9" }).status, 0);
+    const r = tool(["list"], { STUB_VERSION: "9.9.9" });
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, new RegExp(`openspec +pin ${re(PINS.openspec)} +installed 9\\.9\\.9 +active`));
+    assert.match(r.out, /graphify +pin \S+ +installed 9\.9\.9 +-/);
+  });
+
+  test("refuses an unknown tool, a bad shape, and the source of truth", async () => {
+    const { home, tool } = await setup("refuse");
+    assert.match(tool(["add", "nothing", "--yes"]).out, /Not a canonkit tool/);
+    assert.equal(tool(["add"]).status, 1);
+    assert.equal(tool(["add", "openspec", "graphify"]).status, 1);
+    const self = run(["tool", "add", "openspec", "--yes"], { home, cwd: REPO });
+    assert.equal(self.status, 1);
+    assert.match(self.out, /source of truth/);
+  });
+
+  test("canonkit list points at tool list", async () => {
+    const { home, project } = await scratch("list-pointer");
+    assert.match(run(["list"], { home, cwd: project }).out, /canonkit tool list/);
   });
 });

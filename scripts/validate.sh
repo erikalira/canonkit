@@ -463,14 +463,14 @@ if command -v node >/dev/null 2>&1; then
     if node --check "$f" 2>/dev/null; then pass "$f parses"; else fail "$f: syntax error"; fi
   done
 
-  # The installer reads agents/, reference/, hooks/, dashboard/ and skills/ at runtime. Leaving any of
+  # The installer reads agents/, reference/, hooks/, dashboard/, skills/ and tools/ at runtime. Leaving any of
   # them out of the published tarball is the one packaging mistake that cannot be
   # caught by running the CLI from a clone, because a clone always has them.
   node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills"]) {
+for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "tools"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");

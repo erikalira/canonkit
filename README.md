@@ -226,9 +226,13 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 | `reference` | só os blocos globais e as skills |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |
-| `list` | o roster e o que está instalado onde |
+| `list` | o roster e o que está instalado onde (e aponta para `tool list`) |
+| `tool add <graphify\|openspec>` | roda o setup da ferramenta neste projeto e registra no `AGENTS.md` |
+| `tool remove <nome>` | tira a ferramenta do `AGENTS.md` |
+| `tool list` | pin, versão instalada e se está ativa neste projeto |
 
-`--dry-run` funciona em todos: relata o que mudaria sem escrever nada.
+`--dry-run` funciona em todos: relata o que mudaria sem escrever nada. `--yes`
+só existe em `tool add`.
 
 ### Specialists, por projeto
 
@@ -265,6 +269,106 @@ escolher um agente e não descrição de um.
 Removendo o último specialist, o bloco inteiro sai do `AGENTS.md`. Tudo fora dos
 marcadores é preservado, e o script se recusa a rodar dentro do próprio
 `agent-team-config` ou a instalar um agente core.
+
+### Ferramentas, por projeto
+
+Duas ferramentas de terceiros complementam o time: **graphify** (grafo do código,
+atualizado por hooks git) e **openspec** (specs e critérios de aceite em
+`openspec/`). Rodado **de dentro do projeto**:
+
+```bash
+npx canonkit tool add openspec      # ou graphify
+npx canonkit tool add graphify --dry-run
+npx canonkit tool remove graphify
+npx canonkit tool list
+```
+
+O canonkit **só integra, nunca instala**. Se o binário não está no `PATH`, ele
+imprime o comando de instalação com a versão exata e sai com 1, sem escrever nada.
+Instale você mesmo, nestas versões:
+
+```bash
+npm install --global --ignore-scripts @fission-ai/openspec@1.14.0
+python -I -m pip install --user --only-binary :all: graphifyy==0.9.76
+```
+
+> **graphifyy tem dois y.** `graphify` com um y no PyPI é outro pacote.
+
+O binário só é procurado no `PATH`, e o canonkit ignora toda entrada relativa,
+inexistente ou dentro do projeto (por `realpath`, então links para dentro contam). Um binário achado só dentro do projeto (um `.venv` ativado, `node_modules/.bin`) recebe uma mensagem dizendo exatamente isso, não "não está no PATH".
+Isso inclui `<projeto>/node_modules/.bin`, que o `npx canonkit` põe na frente: uma
+instalação local do openspec nunca é usada, e é por isso que o comando impresso é o
+global. O processo filho recebe o mesmo `PATH` filtrado e, no Windows,
+`NoDefaultCurrentDirectoryInExePath=1`, para que um binário plantado no projeto
+(um `node.exe`, por exemplo) não seja executado pelo shim da ferramenta. Com o
+binário presente, o
+`tool add`:
+
+1. mostra o caminho absoluto, a versão (com aviso se for diferente da pin — nunca
+   atualiza), os comandos exatos e os arquivos que serão tocados;
+2. pergunta `y/N` (`--yes` pula; sem terminal e sem `--yes`, não roda);
+3. roda o setup da própria ferramenta (`openspec init --tools claude,codex`;
+   `graphify hook install` e `graphify update .`);
+4. por último, e só se o setup deu certo, escreve o bloco "Project tools" no
+   `AGENTS.md` do projeto (marcadores `agent-team-config:complements:*`).
+
+`--dry-run` não executa nada, nem `--version`. O canonkit nunca cria `CLAUDE.md`
+no projeto — com um, o Claude Code deixa de ler o `AGENTS.md` — e avisa alto se o
+setup da ferramenta criar um. Por isso `graphify claude install`, qualquer
+`graphify <plataforma> install` e `graphify extract` (chama um LLM) são recusados.
+O motivo está em [`docs/adr/0001-tool-namespace-integrate-only.md`](docs/adr/0001-tool-namespace-integrate-only.md).
+
+`tool remove` tira a entrada do bloco (a última remove o bloco) e imprime como
+desfazer o setup. Não toca em `openspec/` nem em `graphify-out/`. Rodar `add` ou
+`remove` duas vezes deixa o `AGENTS.md` igual.
+
+**openspec.** O `init` da 1.14.0 escreve `openspec/`, `.claude/skills/openspec-*`,
+`.claude/commands/opsx/`, `.agents/skills/openspec-*` e a configuração do próprio
+openspec no nível do usuário (`openspec/config.json` em `%APPDATA%` ou
+`$XDG_CONFIG_HOME`). Ele envia telemetria anônima por padrão: o canonkit define
+`OPENSPEC_TELEMETRY=0` e `DO_NOT_TRACK=1` só nas execuções que ele mesmo faz; as
+suas continuam enviando, a menos que você defina uma dessas variáveis. Versão importa: um openspec antigo
+(1.4.1) com `--tools codex` escreveu prompts em `~/.codex/prompts`.
+
+**graphify.** O setup grava `post-commit` e `post-checkout` em `.git/hooks/`, o
+merge driver em `.git/config` e `.gitattributes`. Ele **não roda** se já existe
+`post-commit` ou `post-checkout` que não seja do graphify, ou se `core.hooksPath`
+está definido; nesse caso imprime como encadear à mão e sai com 1. Um `--dry-run`
+do graphify não executa essa checagem, então não mostra essa recusa.
+
+> **Habilite o graphify só em repositórios onde você confia em toda branch que faz
+> checkout.** Os hooks e o merge driver iniciam o Python na raiz do repositório
+> (`-c` / `-m graphify`), e o Python procura ali primeiro: um `graphify/` ou
+> `graphify.py` commitado rodaria em commit, checkout ou merge, antes de qualquer
+> revisão. Os hooks também executam o interpretador nomeado em
+> `graphify-out/.graphify_python`. O canonkit só confere isso **uma vez, no
+> `tool add`** (recusa se `graphify/` ou `graphify.py` existe na raiz, ou se esse
+> arquivo está versionado) e avisa na confirmação. Depois, uma branch pode trazer um
+> `graphify.py`, um módulo que o graphify importa (`networkx.py`, por exemplo) ou um
+> `.pyc`/`.pyd`/`.so` sem fonte, e o próximo checkout, commit ou merge o executa sem
+> sinal algum. Só o graphify corrige (iniciar o Python com `-I`/`-P`); reportar
+> ao upstream está em aberto.
+
+- O rebuild pós-commit e o merge driver (que roda o graphify a cada merge) são
+  código de terceiros **fora do gate** do canonkit: o `git commit` é confirmado, o
+  que o hook faz depois não (veja o aviso acima sobre o que o Python importa).
+- O graphify reescreve as cópias de skill que ele instalou antes no nível do
+  usuário (por exemplo `~/.claude/skills/graphify`) quando o selo de uma skill é
+  mais antigo que o pacote instalado: uma vez por upgrade do graphify, em qualquer
+  comando (`--version` inclusive), não a cada execução. Em toda execução feita por ele, o canonkit
+  passa `GRAPHIFY_NO_AUTO_REFRESH=1`, a opção documentada do graphify para evitar
+  isso. Um graphify rodado fora do canonkit (seu shell, os hooks, agentes rodando
+  `graphify query`) ainda faz isso, a menos que `GRAPHIFY_NO_AUTO_REFRESH=1` esteja
+  no seu próprio ambiente.
+- Hooks git são **por clone**: cada clone precisa rodar `tool add graphify`.
+- `graphify-out/` precisa estar no `.gitignore` ou ser versionado de propósito.
+  Neste repo `GRAPH_REPORT.md` é versionado e fica sujo a cada commit.
+- O canonkit nunca instala o hook de Claude do graphify. Se você o instalar por
+  conta própria, ele e o hook do canonkit disparam em `PreToolUse` sem ordem
+  garantida; não conte com um rodar antes do outro.
+
+Subir uma pin é uma mudança MEDIUM, revisada pelo Gard. Quem publicou o pacote
+`graphifyy` tem atestado de Trusted Publishing que bate com o repositório declarado; o que ficou em aberto está na ADR.
 
 ### Arquivos de referência globais
 
