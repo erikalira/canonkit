@@ -47,6 +47,8 @@
   th { color: var(--faint); font-size: 11px; font-weight: 400; text-transform: uppercase; letter-spacing: .1em; }
   td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
   td.dim { color: var(--dim); }
+  select { color: var(--txt); background: var(--panel); border: 1px solid var(--line); padding: 6px; max-width: 100%; }
+  #context-total { margin: 10px 0; }
 </style>
 
 <header>
@@ -71,6 +73,13 @@
 <div class="label">By agent</div>
 <div class="wrap" id="by-agent"><span class="empty">no finished dispatches yet</span></div>
 
+<h2 class="label">Context contributors</h2>
+<div class="note">Measured payload text in the retained log (including rotation), not tokens or exact context growth. Formatting, images, unsupported results and tool failures are excluded. Agents uses measured report sizes; older events may have no measurements.</div>
+<label for="context-session">Session</label>
+<select id="context-session" disabled><option value="">No measured sessions</option></select>
+<p id="context-total" class="note"></p>
+<div class="wrap" id="context-contributors"><span class="empty">no measured results yet</span></div>
+
 <div class="label">Timeline</div>
 <div class="feed" id="feed"></div>
 
@@ -90,6 +99,7 @@
   const s_agents = $('s-agents'), s_gates = $('s-gates'), s_prompts = $('s-prompts');
   const activeEl = $('active'), feedEl = $('feed'), byModel = $('by-model'), byAgent = $('by-agent');
   const pulse = $('pulse'), updated = $('updated');
+  const contextSession = $('context-session'), contextTotal = $('context-total'), contributorsEl = $('context-contributors');
   const meta = (slug) => AGENTS[(slug || '').split('-')[0]] || { name: slug || 'agent', c: '#7c8088' };
   const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   const esc = (s) => (s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
@@ -128,6 +138,32 @@
     byModel.innerHTML = table(ds, (d) => [modelOf(d), effortOf(d)], ['model', 'effort']);
     byAgent.innerHTML = table(ds, (d) => [meta(d.agent).name], ['agent']);
   }
+
+  let contextData = [];
+  function renderContext(sessions) {
+    contextData = sessions;
+    const selected = contextSession.value;
+    // DOM option creation avoids interpolating session IDs into attributes.
+    contextSession.replaceChildren();
+    for (const s of sessions) {
+      const option = document.createElement('option');
+      option.value = s.session; option.textContent = s.session;
+      contextSession.append(option);
+    }
+    contextSession.disabled = !sessions.length;
+    contextSession.value = sessions.some((s) => s.session === selected) ? selected : sessions.at(-1)?.session || '';
+    const s = sessions.find((s) => s.session === contextSession.value);
+    if (!s) {
+      contextTotal.textContent = '';
+      contributorsEl.innerHTML = '<span class="empty">no measured results yet</span>';
+      return;
+    }
+    contextTotal.textContent = `${tok(s.total_chars)} chars measured in this session`;
+    contributorsEl.innerHTML = `<table><thead><tr><th scope="col">tool</th>${['chars', 'share', 'calls / reports', 'avg chars', 'max chars'].map((h) => `<th scope="col" class="n">${h}</th>`).join('')}</tr></thead><tbody>${s.contributors.map((g) =>
+      `<tr><th scope="row">${esc(g.tool)}</th><td class="n">${tok(g.chars)}</td><td class="n">${(g.share * 100).toFixed(1)}%</td><td class="n">${g.calls}</td><td class="n">${tok(g.avg_chars)}</td><td class="n">${tok(g.max_chars)}</td></tr>`
+    ).join('')}</tbody></table>`;
+  }
+  contextSession.addEventListener('change', () => renderContext(contextData));
 
   function render(events) {
     let agents = 0, gates = 0, prompts = 0;
@@ -172,6 +208,8 @@
       render(await r.json());
       const d = await fetch('/dispatches.json', { cache: 'no-store' });
       renderDispatches(await d.json());
+      const c = await fetch('/context.json', { cache: 'no-store' });
+      renderContext(await c.json());
       updated.textContent = 'updated ' + clock(Date.now());
       pulse.style.background = '#57c46b';
     } catch (_) { pulse.style.background = '#e2574e'; updated.textContent = 'disconnected'; }

@@ -416,8 +416,22 @@ describe("hooks", () => {
 
     const { out } = run(["install", "--no-reference"], { home });
     assert.ok(out.includes("under: PostToolUse"), out);
-    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task"'), out);
+    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task|Read|Grep|Glob|Bash|PowerShell"'), out);
     assert.ok(!out.includes('"Stop": ['), "an event that is wired must not be reported");
+  });
+
+  test("reports an old Agent|Task matcher without rewriting settings", async () => {
+    const { home } = await scratch("hook-old-matcher");
+    await wire(home, EVENTS);
+    const settings = path.join(home, ".claude", "settings.json");
+    const data = JSON.parse(await read(settings));
+    data.hooks.PostToolUse[0].matcher = "Agent|Task";
+    await writeFile(settings, JSON.stringify(data));
+    const before = await read(settings);
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(out.includes("under: PostToolUse"), out);
+    assert.ok(out.includes("update its matcher instead of adding a duplicate"), out);
+    assert.equal(await read(settings), before);
   });
 
   test("survives a settings.json that is not valid JSON", async () => {

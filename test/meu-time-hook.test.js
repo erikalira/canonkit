@@ -50,11 +50,11 @@ function decide(input) {
 }
 
 /** Runs the hook and returns the raw process result. */
-function runHook(input) {
+function runHook(input, env = {}) {
   return spawnSync(process.execPath, [HOOK], {
     input: typeof input === "string" ? input : JSON.stringify(input),
     encoding: "utf8",
-    env: { ...process.env, HOME, USERPROFILE: HOME },
+    env: { ...process.env, HOME, USERPROFILE: HOME, ...env },
   });
 }
 
@@ -64,6 +64,115 @@ const logged = async (session) =>
 
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
+
+describe("main-thread context contributors", () => {
+  // Synthetic sensitive markers must never reach the activity JSONL, even via
+  // cwd, file metadata, unexpected fields or tool_input.
+  const secret = "PRIVATE-RESULT-" + FAKE_AWS_KEY;
+  const privatePath = "C:\\private-customer\\" + secret + "\\source.js";
+  const post = (tool, response, session, extra = {}) => ({
+    hook_event_name: "PostToolUse", session_id: session, tool_name: tool,
+    cwd: privatePath, transcript_path: privatePath,
+    tool_input: { command: secret, file_path: privatePath, prompt: secret },
+    tool_response: response, ...extra,
+  });
+  const check = async (tool, response, chars, lines, suffix = tool) => {
+    const session = `VOLUME-${suffix}`;
+    const r = runHook(post(tool, response, session));
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "");
+    assert.equal(r.stderr, "");
+    const events = await logged(session);
+    assert.equal(events.length, 1, "one result, no redundant start/end events");
+    const e = events[0];
+    assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "tool", "ts"]);
+    assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", tool, chars, lines });
+    const jsonl = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    assert.ok(!jsonl.includes(secret), "sensitive input/result content persisted");
+    assert.ok(!jsonl.includes("private-customer"), "private path persisted");
+  };
+
+  test("Read measures only returned text, not the full file or its path", async () => {
+    const content = secret + "\r\nsecond\rthird\n";
+    await check("Read", { type: "text", file: { filePath: privatePath, content, numLines: 999, totalLines: 9999 } }, content.length, 3);
+  });
+  test("Grep content and count modes measure content, including empty content", async () => {
+    await check("Grep", { mode: "content", content: secret, filenames: [privatePath], numFiles: 1 }, secret.length, 1);
+    await check("Grep", { mode: "count", content: "", filenames: [], numFiles: 0 }, 0, 0, "Grep-count");
+  });
+  test("Grep file modes measure the newline-separated filenames without storing them", async () => {
+    for (const mode of [undefined, "files_with_matches"]) {
+      await check("Grep", { mode, filenames: [privatePath, secret], numFiles: 2 }, privatePath.length + 1 + secret.length, 2, `Grep-files-${mode}`);
+    }
+  });
+  test("Glob measures returned filenames and ignores metadata", async () => {
+    await check("Glob", { filenames: [privatePath, secret], numFiles: 2, durationMs: 15, truncated: true }, privatePath.length + 1 + secret.length, 2);
+  });
+  for (const tool of ["Bash", "PowerShell"]) {
+    test(`${tool} sums stdout/stderr without commands, status or output paths`, async () => {
+      await check(tool, { stdout: secret + "\n", stderr: "warning", interrupted: false, persistedOutputPath: privatePath, status: secret }, secret.length + 8, 2);
+    });
+  }
+  test("all five tools record valid empty output as zero", async () => {
+    for (const [tool, response] of Object.entries({
+      Read: { type: "text", file: { content: "" } },
+      Grep: { mode: "content", content: "" }, Glob: { filenames: [] },
+      Bash: { stdout: "", stderr: "", interrupted: false },
+      PowerShell: { stdout: "", stderr: "", interrupted: false },
+    })) await check(tool, response, 0, 0, `${tool}-empty`);
+  });
+  test("large output produces a small quantitative event and no content copy", async () => {
+    const content = (secret + "\n").repeat(90000);
+    await check("Read", { type: "text", file: { content } }, content.length, 90000, "large");
+    assert.ok(JSON.stringify(await logged("VOLUME-large")).length < 200);
+  });
+  test("UTF-16 chars match report_chars; a final terminator adds no empty line", async () => {
+    await check("Read", { type: "text", file: { content: "a😀\r\n" } }, 5, 1, "unicode");
+    await check("Read", { type: "text", file: { content: "\n" } }, 1, 1, "newline");
+  });
+  test("subagent tools are excluded; agent_type alone is allowed on the main thread", async () => {
+    const session = "VOLUME-main-only";
+    for (const agent_id of ["worker-1", "", null]) {
+      assert.equal(runHook(post("Glob", { filenames: [secret] }, session, { agent_id })).status, 0);
+    }
+    assert.deepEqual(await logged(session), []);
+    runHook(post("Glob", { filenames: [] }, session, { agent_type: "bob" }));
+    assert.equal((await logged(session)).length, 1);
+  });
+  test("unexpected, binary and absent payloads stay silent and unmeasured", async () => {
+    const session = "VOLUME-unknown";
+    const cases = [
+      ["Read", undefined], ["Read", null], ["Read", secret], ["Read", []],
+      ["Read", { type: "image", file: { base64: secret } }],
+      ["Read", { type: "text", file: { content: { secret } } }],
+      ["Grep", { mode: "future", content: secret }], ["Grep", { mode: "content" }],
+      ["Glob", { filenames: [privatePath, {}] }], ["Glob", { filenames: secret }],
+      ["Bash", { output: secret }], ["Bash", { stdout: secret }],
+      ["PowerShell", { stdout: secret, stderr: "", isImage: true }],
+      ["Other", { stdout: secret, stderr: "" }],
+    ];
+    for (const [tool, response] of cases) {
+      const r = runHook(post(tool, response, session));
+      assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+    }
+    for (const raw of ["null", "[]", "{ broken", "42"]) assert.equal(runHook(raw).status, 0);
+    assert.deepEqual(await logged(session), []);
+  });
+  test("unsafe or absent session identifiers are never logged", async () => {
+    const before = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    for (const session of [privatePath, {}, null, ""]) runHook(post("Glob", { filenames: [] }, session));
+    assert.equal(await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8"), before);
+  });
+  test("internal filesystem failures stay fail-open with no stdout/stderr", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "meutime-unwritable-"));
+    try {
+      await writeFile(path.join(home, ".claude"), "not a directory");
+      const r = runHook(post("Bash", { stdout: secret, stderr: "" }, "VOLUME-fail-open"), { HOME: home, USERPROFILE: home });
+      assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+      assert.deepEqual(await readFile(path.join(home, ".claude"), "utf8"), "not a directory");
+    } finally { await rm(home, { recursive: true, force: true }); }
+  });
+});
 
 describe("every shell is a shell", () => {
   // The side door this closed: on Windows the harness's primary shell tool is

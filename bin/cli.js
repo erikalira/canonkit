@@ -39,7 +39,7 @@ const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 const HOOK_EVENTS = {
   "meu-time-hook.js": {
     PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task",
-    PostToolUse: "Agent|Task",
+    PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
     UserPromptSubmit: null,
     Stop: null,
@@ -436,7 +436,19 @@ async function reportHookWiring(ctx, dest, files) {
       continue;
     }
     for (const [event, matcher] of Object.entries(events)) {
-      if (!JSON.stringify(hooks[event] ?? []).includes(file)) missing.push([file, event, matcher]);
+      const entries = hooks[event] ?? [];
+      const referenced = JSON.stringify(entries).includes(file);
+      // An existing Agent|Task registration still runs dispatch metrics, but
+      // silently misses main-thread volume. Report replacement wiring, never
+      // edit settings.json or recommend a second overlapping registration.
+      const covered = event !== "PostToolUse" || matcher.split("|").every((tool) =>
+        Array.isArray(entries) && entries.some((entry) => {
+          if (!JSON.stringify(entry.hooks ?? []).includes(file)) return false;
+          if (!entry.matcher || entry.matcher === "*") return true;
+          try { return new RegExp(entry.matcher).test(tool); } catch { return false; }
+        }),
+      );
+      if (!referenced || !covered) missing.push([file, event, matcher]);
     }
   }
   if (!missing.length) return;
@@ -444,9 +456,10 @@ async function reportHookWiring(ctx, dest, files) {
   ctx.log("");
   for (const file of new Set(missing.map(([f]) => f))) {
     const events = missing.filter(([f, e]) => f === file && e).map(([, e]) => e);
-    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json${events.length ? ` under: ${events.join(", ")}` : ""}`);
+    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json with required coverage${events.length ? ` under: ${events.join(", ")}` : ""}`);
   }
   ctx.log("  A hook the runtime never calls fails silently. Add under \"hooks\" in settings.json:");
+  ctx.log("  If an entry already exists, update its matcher instead of adding a duplicate hook.");
   for (const [file, event, matcher] of missing) {
     const cmd = path.join(dest, file).split(path.sep).join("/");
     const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${cmd}" }] }`;

@@ -147,7 +147,7 @@ divergir da do repo, ela é preservada como `meu-time-hook.js.local.bak` antes d
 ser sobrescrita.
 
 O registro é conferido **por evento**: `PreToolUse`, `PostToolUse` (matcher
-`Agent|Task`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
+`Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
 deles funciona pela metade — os gates disparam, então ninguém procura as métricas
 de despacho que nunca são gravadas.
 
@@ -182,6 +182,57 @@ O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
 `node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
 da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
 de despachos, tokens médios, tamanho médio do relatório e duração média.
+
+### Context contributors (Fase 1)
+
+O mesmo `PostToolUse` registra uma única linha `tool_result` por resultado textual
+reconhecido de `Read`, `Grep`, `Glob`, `Bash` e `PowerShell` no **main thread**:
+
+```json
+{"ts": 1234567890000, "session": "synthetic-session", "event": "tool_result", "tool": "Read", "chars": 1200, "lines": 40}
+```
+
+Só esses campos são persistidos: nenhum conteúdo, input, prompt, comando, path,
+basename de projeto ou status arbitrário. `session` passa pelo validador de IDs
+existente; sessão ausente/inválida não gera medição. `chars` usa unidades UTF-16
+(como `report_chars`); `lines` conta linhas textuais, com CRLF contado uma vez,
+sem linha extra por terminador final, e saída vazia é zero. Nos shells, os números
+são a soma de stdout e stderr, contados separadamente. Falha de coleta/gravação
+continua silenciosa e fail-open. Gates e métricas de despacho seguem iguais.
+
+O contrato foi conferido no `sdk-tools.d.ts` de
+[`@anthropic-ai/claude-agent-sdk@0.3.300`](https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.300/sdk-tools.d.ts)
+e nos schemas locais do Claude Code 2.1.302 (PowerShell e identificação do main
+thread). `Read` usa `file.content` quando `type` é `text`; `Grep` usa `content`
+nos modos `content`/`count`, ou `filenames` no modo de arquivos; `Glob` usa
+`filenames` unidos por newline; os shells usam `stdout`/`stderr`. Um `agent_id`
+presente exclui a chamada; `agent_type` sozinho também existe no main thread
+com `--agent` e não o exclui. Runtimes antigos sem essa identificação de
+subagentes não têm separação garantida.
+
+**Limites:** [PostToolUse](https://code.claude.com/docs/en/hooks#posttooluse)
+expõe saída estruturada, anterior à formatação final do tool result: o volume é
+do texto no payload, **não** tokens ou crescimento exato do contexto. Não inclui
+prefixos de linha, banners, imagens, outros formatos de Read ou resultados de
+schema desconhecido. Esses casos ficam sem medição, em vez de zero inventado.
+Saídas truncadas/persistidas/em background medem só o texto disponível naquele
+payload, sem abrir arquivos de output. Não há exit code garantido; não se infere
+sucesso/falha de stderr. Falhas de tool que só geram `PostToolUseFailure` ficam
+fora desta fase.
+
+A seção **Context contributors** permite escolher uma sessão e mostra total,
+participação no volume medido, chamadas, média e maior resultado por ferramenta.
+“Agents” reutiliza `agent_end.report_chars`, mantendo o último relatório cumulativo
+por sessão/despacho. Eventos antigos sem medida continuam aceitos e não viram zero.
+O denominador é apenas o volume medido nos dois arquivos retidos (`events.jsonl`
+e `.1`), não a sessão inteira se dados anteriores já foram descartados. Não se
+inventa uma categoria “Other” para volume desconhecido.
+
+Para coletar em uma instalação existente, reinstale a partir deste checkout e
+atualize **a entrada existente** de `PostToolUse` para o matcher acima, evitando
+hooks duplicados. O instalador avisa se encontrar o matcher antigo `Agent|Task`,
+mas continua sem escrever no `settings.json`. Editar as cópias instaladas não
+substitui a alteração da fonte neste repo.
 
 ### Codex
 
