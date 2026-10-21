@@ -932,15 +932,68 @@ describe("config lookup", () => {
     assert.deepEqual(where(bare, repo), { root: repo, file: path.join(repo, ".claude", "canonkit.json"), exclude: 1 });
   });
 
-  test("a nested config applies whole, no merge, relative to its own folder", async () => {
-    const repo = await project({ highRisk: { include: ["src/payments/**"] } });
+  // The nearest file applies whole; the project file's additive lists apply as
+  // well (Archie A1, Gard P2): a nested folder can only add gates, never shed the
+  // project's. Its own exclude still silences only its own heuristics.
+  test("a nested config applies whole, relative to its own folder", async () => {
+    const repo = await project({ highRisk: { include: ["src/payments/**"], exclude: ["a/**"] } });
     const demo = path.join(repo, "examples", "demo");
     await cfgAt(demo, { highRisk: { exclude: ["src/domain/contracts/**"] } });
-    const { root, include, rel } = hook().projectConfig(demo, repo);
+    const { root, include, exclude, rel } = hook().projectConfig(demo, repo);
     assert.equal(path.resolve(root), demo);
-    assert.equal(include.length, 0, "the project's include does not carry into the nested folder");
+    assert.equal(include.length, 0, "the project's include is not pushed into the nested one");
+    assert.equal(exclude.length, 1);
     assert.equal(rel(demo + "/src/domain/contracts/x.ts"), "src/domain/contracts/x.ts");
     assert.equal(inProject(demo, "Edit", { file_path: demo + "/src/domain/contracts/x.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "allow");
+  });
+
+  test("under a nested config, the project's include and perfBudgets apply too, relative to the project", async () => {
+    const repo = await project({ highRisk: { include: ["src/payments/**"] }, perfBudgets: ["ops/limits.yml"] });
+    const demo = path.join(repo, "examples", "demo");
+    await cfgAt(demo, {});
+    const env = { CLAUDE_PROJECT_DIR: repo };
+    const at = (fp) => inProject(demo, "Edit", { file_path: fp, new_string: "x" }, "CONFIG", env);
+    assert.equal(at(repo + "/src/payments/charge.ts"), "ask");
+    assert.equal(at(repo + "/ops/limits.yml"), "ask", "perfBudgets");
+    assert.equal(at(demo + "/src/payments/charge.ts"), "allow", "the project's globs are anchored at the project");
+    assert.equal(inProject(demo, "Bash", { command: "echo x > ../../src/payments/charge.ts" }, "CONFIG", env), "ask", "shell writes too");
+    const { project: p } = hook().projectConfig(demo, repo);
+    assert.equal(path.resolve(p.root), repo);
+    assert.equal(path.resolve(p.file), path.join(repo, ".claude", "canonkit.json"));
+    assert.deepEqual([p.include.length, p.exclude.length, p.perf.length], [1, 0, 1]);
+    assert.equal(p.rel(repo + "/src/payments/charge.ts"), "src/payments/charge.ts");
+  });
+
+  test("the nested exclude never cancels the project's include", async () => {
+    const repo = await project({ highRisk: { include: ["examples/demo/src/domain/contracts/**"] } });
+    const demo = path.join(repo, "examples", "demo");
+    await cfgAt(demo, { highRisk: { exclude: ["src/domain/contracts/**"] } });
+    assert.equal(inProject(demo, "Edit", { file_path: demo + "/src/domain/contracts/x.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask");
+  });
+
+  test("the project's exclude never reaches a nested folder, and its ignored entries are kept", async () => {
+    const repo = await project({ highRisk: { exclude: ["examples/demo/src/domain/contracts/**", "**"] } });
+    const demo = path.join(repo, "examples", "demo");
+    await cfgAt(demo, {});
+    assert.equal(inProject(demo, "Edit", { file_path: demo + "/src/domain/contracts/x.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask");
+    const { project: p } = hook().projectConfig(demo, repo);
+    assert.deepEqual(p.exclude, []);
+    assert.ok(p.ignored.some((i) => i.where === "highRisk.exclude[1]"), JSON.stringify(p.ignored));
+  });
+
+  test("cfg.project is null unless the nearest config sits strictly below a project dir with its own file", async () => {
+    const repo = await project({ highRisk: { include: ["src/payments/**"] } });
+    const sub = path.join(repo, "src");
+    await mkdir(sub, { recursive: true });
+    assert.equal(hook().projectConfig(sub, repo).project, null, "the nearest file is the project's own");
+    assert.equal(hook().projectConfig(repo, repo).project, null);
+    const bare = await project();
+    const nested = path.join(bare, "pkg");
+    await cfgAt(nested, {});
+    assert.equal(hook().projectConfig(nested, bare).project, null, "the project dir has no file");
+    const own = await project({});
+    assert.equal(hook().projectConfig(own, repo).project, null, "cwd outside the project dir");
+    assert.equal(hook().projectConfig(nested).project, null, "no project dir at all");
   });
 
   test("no config anywhere: the root is the project dir, not cwd", async () => {
@@ -1249,6 +1302,174 @@ describe("definition-of-done gate", () => {
   });
   test("the re-entry guard never blocks twice in one turn", () => {
     assert.equal(stop({ stop_hook_active: true }), "allow");
+  });
+});
+
+describe("definition-of-done gate: reviewer probes and resumed reviewers", () => {
+  // Subagents share the parent's session id. A reviewer that probes the hook in a
+  // scratch folder opens gates the parent then could never clear: its own
+  // dispatch predates them. And a reviewer resumed by SendMessage after the last
+  // edit is a review after the last edit (Gard G3/G4, Archie A3).
+  const LOG = () => path.join(HOME, ".claude", "canonkit-activity", "events.jsonl");
+  let repo;
+  let n = 0;
+  before(async () => { repo = await project(); });
+  const session = () => `PROBE-${++n}`;
+  const stopIn = (s) => decide({ hook_event_name: "Stop", session_id: s });
+  const gatedEdit = (s, file, who = {}) =>
+    decide({ ...pre("Edit", { file_path: file, new_string: "x" }, s), cwd: repo, ...who }, { CLAUDE_PROJECT_DIR: repo });
+  const sub = (type) => ({ agent_id: `a${type}0001`, agent_type: type });
+  const outside = () => path.join(HOME, "probe-scratch", "src", "auth", "login.ts");
+  const inside = () => repo + "/src/auth/login.ts";
+  const seed = (s, obj) => appendFile(LOG(), JSON.stringify({ session: s, ...obj }) + "\n");
+  const send = (s, tool_input) => decide(pre("SendMessage", tool_input, s));
+  const gates = async (s) => (await logged(s)).filter((e) => e.event === "gate");
+
+  test("a reviewer's probe outside the project is skipped", async () => {
+    const s = session();
+    assert.equal(gatedEdit(s, outside(), sub("gard")), "ask", "the probe is still gated");
+    const [g] = await gates(s);
+    assert.deepEqual([g.agent_id, g.agent_type, g.in_project], ["agard0001", "gard", false]);
+    assert.equal(stopIn(s), "allow");
+  });
+
+  test("a reviewer's shell write outside the project is skipped too; inside, it counts", async () => {
+    const shell = (s, target) => decide(
+      { ...pre("Bash", { command: `echo x > "${target}"` }, s), cwd: repo, ...sub("gard") }, { CLAUDE_PROJECT_DIR: repo });
+    const out = session();
+    assert.equal(shell(out, outside().replace(/\\/g, "/")), "ask");
+    assert.equal((await gates(out))[0].in_project, false);
+    assert.equal(stopIn(out), "allow");
+    const inn = session();
+    shell(inn, "src/auth/login.ts");
+    assert.equal(stopIn(inn), "block");
+  });
+
+  test("a reviewer's edit inside the project counts", async () => {
+    const s = session();
+    gatedEdit(s, inside(), sub("quinn"));
+    assert.equal((await gates(s))[0].in_project, true);
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a non-reviewer subagent's edit outside the project counts", () => {
+    const s = session();
+    gatedEdit(s, outside(), sub("bob"));
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a main thread started with --agent gard is not a subagent: its edit counts", async () => {
+    const s = session();
+    gatedEdit(s, outside(), { agent_type: "gard" });
+    const [g] = await gates(s);
+    assert.equal(g.agent_type, undefined, "agent_type is logged for subagents only");
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a gate logged without in_project counts", async () => {
+    const s = session();
+    await seed(s, { ts: Date.now(), event: "gate", kind: "high-risk-surface", file: "x", agent_id: "a1", agent_type: "gard" });
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a path under ~/.claude is never skipped", () => {
+    const s = session();
+    assert.equal(gatedEdit(s, path.join(HOME, ".claude", "credentials.json"), sub("gard")), "ask");
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("gardener is not Gard", async () => {
+    const s = session();
+    gatedEdit(s, outside(), sub("gardener"));
+    assert.equal(stopIn(s), "block", "its probe is not a reviewer's");
+    await seed(s, { ts: Date.now() + 60000, event: "agent_start", agent: "gardener" });
+    assert.equal(stopIn(s), "block", "its dispatch is not a review");
+  });
+
+  test("a reviewer resumed by name after the last gate clears it", async () => {
+    const s = session();
+    await seed(s, { ts: 1, event: "agent_start", id: "tu-g", agent: "gard", name: "sec" });
+    gatedEdit(s, inside());
+    assert.equal(stopIn(s), "block");
+    assert.equal(send(s, { to: "sec [a1b2c3]", message: "Re-check after the last edit." }), "allow");
+    assert.equal(stopIn(s), "allow");
+  });
+
+  test("a reviewer resumed by agent id, through its launch or its end, clears it", async () => {
+    // The end line names a non-reviewer: only its start's agent may decide.
+    for (const [link, extra] of [["agent_launch", {}], ["agent_end", { agent: "bob" }]]) {
+      const s = session();
+      await seed(s, { ts: 1, event: "agent_start", id: `tu-${link}`, agent: "quinn" });
+      await seed(s, { ts: 2, event: link, id: `tu-${link}`, agent_id: `aid-${link}`, ...extra });
+      gatedEdit(s, inside());
+      send(s, { to: `aid-${link}`, message: "again" });
+      assert.equal(stopIn(s), "allow", link);
+    }
+  });
+
+  test("the latest start with a name decides who it is", async () => {
+    for (const [first, last, expected] of [["gard", "bob", "block"], ["bob", "gard", "allow"]]) {
+      const s = session();
+      await seed(s, { ts: 1, event: "agent_start", id: "t1", agent: first, name: "rev" });
+      await seed(s, { ts: 2, event: "agent_start", id: "t2", agent: last, name: "rev" });
+      gatedEdit(s, inside());
+      send(s, { to: "rev", message: "again" });
+      assert.equal(stopIn(s), expected, `${first} then ${last}`);
+    }
+  });
+
+  test("resuming a non-reviewer, or one whose name is a reviewer's, does not count", async () => {
+    for (const [agent, name] of [["bob", "impl"], ["bob", "gard"]]) {
+      const s = session();
+      await seed(s, { ts: 1, event: "agent_start", id: "t1", agent, name });
+      gatedEdit(s, inside());
+      send(s, { to: name, message: "again" });
+      assert.equal(stopIn(s), "block", `${agent} named ${name}`);
+    }
+  });
+
+  test("an unknown target, main, or another session's agent does not count", async () => {
+    const s = session();
+    await seed(`${s}-OTHER`, { ts: 1, event: "agent_start", id: "t1", agent: "gard", name: "sec" });
+    gatedEdit(s, inside());
+    for (const to of ["nobody", "main", "sec"]) send(s, { to, message: "again" });
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a resume before the last gate does not count", async () => {
+    const s = session();
+    await seed(s, { ts: 1, event: "agent_start", id: "t1", agent: "gard", name: "sec" });
+    send(s, { to: "sec", message: "look" });
+    gatedEdit(s, inside());
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("a resume with no message does not count", async () => {
+    const s = session();
+    await seed(s, { ts: 1, event: "agent_start", id: "t1", agent: "gard", name: "sec" });
+    gatedEdit(s, inside());
+    for (const message of ["", "   ", { type: "shutdown_request" }, undefined]) send(s, { to: "sec", message });
+    assert.equal(stopIn(s), "block");
+  });
+
+  test("SendMessage is always allowed and logs who and whether, never what", async () => {
+    const s = session();
+    const r = runHook(pre("SendMessage", { to: "sec", message: "CONTENT-" + "x".repeat(10), summary: "SUMMARY-TEXT" }, s));
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, "");
+    const evs = await logged(s);
+    assert.equal(evs.length, 1);
+    assert.deepEqual([evs[0].event, evs[0].to, evs[0].has_message], ["agent_resume", "sec", true]);
+    assert.ok(!JSON.stringify(evs).includes("CONTENT-") && !JSON.stringify(evs).includes("SUMMARY-TEXT"));
+  });
+
+  test("agent_start logs the agent's name; names, targets and tasks are capped", async () => {
+    const s = session();
+    decide(pre("Agent", { subagent_type: "gard", name: "n".repeat(5000), description: "d".repeat(5000) }, s));
+    send(s, { to: "t".repeat(5000), message: "m" });
+    const [start, resume] = await logged(s);
+    assert.match(start.name, /^n+$/);
+    for (const v of [start.name, start.task, resume.to]) assert.ok(v.length > 0 && v.length <= 200, String(v.length));
   });
 });
 

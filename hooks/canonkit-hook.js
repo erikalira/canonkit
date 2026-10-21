@@ -2,7 +2,8 @@
 /**
  * canonkit — mechanical enforcement + process-observability hook.
  *
- * Wired (in ~/.claude/settings.json) to PreToolUse, PostToolUse (agents + context tools),
+ * Wired (in ~/.claude/settings.json; `canonkit install --wire-hooks`) to PreToolUse
+ * (edits, shells, Agent/Task, SendMessage), PostToolUse (agents + context tools),
  * SubagentStop, UserPromptSubmit, Stop. Three jobs:
  *   1. ENFORCEMENT — turn the team's soft HIGH-risk gates into mechanical ones:
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
@@ -16,8 +17,10 @@
  *   2. OBSERVABILITY — append a structured event line that the dashboard reads.
  *   3. DEFINITION-OF-DONE — on Stop, if this session touched a gated surface
  *      (HIGH-risk, a secret, or a performance budget) without an independent
- *      reviewer (Quinn/Gard/Archie/Perry/...) being dispatched AFTER that gate,
- *      block the stop ONCE with a reminder (no self-merge on HIGH risk).
+ *      reviewer (Quinn/Gard/Archie/Perry/...) being dispatched — or resumed with
+ *      SendMessage — AFTER that gate, block the stop ONCE with a reminder (no
+ *      self-merge on HIGH risk). A reviewer subagent's own gates outside the
+ *      project are its probes, not the session's edits, and do not count.
  *
  * EVERY SHELL IS A SHELL. This runs on Windows, where the harness's primary shell
  * tool is PowerShell, not Bash. A gate wired only to Bash is a gate with a side
@@ -97,6 +100,9 @@ function readEvents(withRotated = false) {
 // value seen per call is kept; input and cache numbers are complete.
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const safeId = (v) => (typeof v === 'string' && /^[\w-]{1,64}$/.test(v) ? v : '');
+// Free text the model chose (a task description, an agent's name, a message
+// target): kept short, so one long string cannot bloat the log the Stop gate reads.
+const cap = (v) => (typeof v === 'string' ? v.slice(0, 200) : '');
 
 function scanTranscript(file) {
   let text;
@@ -279,7 +285,63 @@ function contextReminder(input) {
 // perry is here because he owns performance budgets: the rule says only Perry
 // loosens one, and until now the gate that enforces "reviewed by someone" had
 // no idea he existed, so the one person who could sign off could not.
-const REVIEWER = /^(quinn|gard|archie|perry|ws-contract|multiplayer-isolation|next-perf-reviewer)/;
+// Bounded: `gard-strict` is Gard, `gardener` is not.
+const REVIEWER = /^(quinn|gard|archie|perry|ws-contract|multiplayer-isolation|next-perf-reviewer)(?:-|$)/;
+
+// ---- WHO OPENED A GATE ----
+// Subagents share the parent's session id, so a reviewer probing this hook in a
+// scratch folder opened gates its own dispatch predated: the parent could never
+// clear them. Each gate therefore records who opened it and whether on the
+// project, and the Stop gate skips a reviewer subagent's gates outside it.
+// agent_type only with agent_id: a main thread started with --agent carries
+// agent_type too, and it is not a subagent.
+let WHO = {};
+
+// The real path of p, or of its nearest existing ancestor with the rest
+// appended: the file a gate fires on often does not exist yet.
+function realish(p) {
+  const rest = [];
+  for (let dir = p; ;) {
+    try { return path.join(fs.realpathSync.native(dir), ...rest); } catch (_) {}
+    const up = path.dirname(dir);
+    if (up === dir) return p;
+    rest.unshift(path.basename(dir));
+    dir = up;
+  }
+}
+
+// Inside CLAUDE_PROJECT_DIR (cwd without one), by real path. A path under
+// ~/.claude counts as inside: the hooks and settings there gate every project,
+// so a probe on them is never only a probe. Any failure counts as inside too.
+function onProject(fp, cwd) {
+  try {
+    const real = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
+    const file = real(path.resolve(normalizePath(cwd), normalizePath(fp)));
+    return isWithin(file, real(process.env.CLAUDE_PROJECT_DIR || cwd)) ||
+      isWithin(file, real(path.join(os.homedir(), '.claude')));
+  } catch (_) { return true; }
+}
+
+function logGate(fields, files, cwd) {
+  const extra = { ...WHO };
+  if (files) extra.in_project = files.some((f) => onProject(f, cwd));
+  log({ event: 'gate', ...fields, ...extra });
+}
+
+// The agent_start a SendMessage target names in this session: by name (the
+// latest start with it wins, whatever its type), else by agent id through the
+// launch or end line that carries it. The reviewer test runs on that start's
+// agent, never on the name, which the caller chose freely.
+function resumedStart(evs, resume) {
+  const to = String(resume.to || '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+  if (!to) return null;
+  const before = evs.filter((e) => (e.ts || 0) <= (resume.ts || 0));
+  const starts = before.filter((e) => e.event === 'agent_start');
+  const named = starts.filter((e) => e.name === to).pop();
+  if (named) return named;
+  const link = before.filter((e) => (e.event === 'agent_launch' || e.event === 'agent_end') && e.agent_id === to).pop();
+  return (link && link.id && starts.filter((e) => e.id === link.id).pop()) || null;
+}
 
 function ask(reason) {
   process.stdout.write(JSON.stringify({
@@ -424,10 +486,15 @@ const TEST_PATH = /(\.test\.|\.spec\.|(^|\/)(__tests__|__mocks__|fixtures?|mocks
 const isNoise = (rel) => !isAbsolutePath(rel) && NOISE_PATH.test(rel);
 const isTestFile = (rel) => !isAbsolutePath(rel) && TEST_PATH.test(rel);
 
-function highRisk(rel, cfg) {
+// The project file's additive lists, under a nested config (cfg.project): its
+// globs are anchored at the project, so they are tested on the path relative to
+// it, never pushed into the nested config's own lists.
+const projectAdds = (cfg, key, fp) => !!(cfg.project && fp) && cfg.project[key].some((m) => m(cfg.project.rel(fp)));
+
+function highRisk(rel, cfg, fp) {
   if (!rel) return false;
   if (CONFIG_PATH.test(rel)) return true;
-  if (cfg.include.some((m) => m(rel))) return true;
+  if (cfg.include.some((m) => m(rel)) || projectAdds(cfg, 'include', fp)) return true;
   if (isNoise(rel) || isTestFile(rel)) return false;
   if (SECRET_PATH.test(rel) || HIGH_RISK_STRONG.test(rel) || namesAuth(rel)) return true;
   if (MIGRATION.test(rel) && !PROSE_OR_STYLE.test(rel)) return true;
@@ -518,9 +585,9 @@ const PERF_BUDGET_DEFAULTS = [
 // The defaults skip prose and generated folders: docs/performance-budget.md is
 // about a budget, node_modules/x/lighthouserc.json is somebody else's. A
 // project's own perfBudgets entries are taken at their word.
-function isPerfBudget(rel, cfg) {
+function isPerfBudget(rel, cfg, fp) {
   if (!rel) return false;
-  if (cfg.perf.some((m) => m(rel))) return true;
+  if (cfg.perf.some((m) => m(rel)) || projectAdds(cfg, 'perf', fp)) return true;
   return !isNoise(rel) && !/\.mdx?$/i.test(rel) && PERF_BUDGET_DEFAULTS.some((m) => m(rel));
 }
 
@@ -531,8 +598,12 @@ function isPerfBudget(rel, cfg) {
 // gate it) and otherwise below home (~/.claude is the user's, not a project's);
 // failing that, at CLAUDE_PROJECT_DIR. cwd first, because a worktree session's
 // project dir is the main checkout, where the worktree's anchored globs would
-// never match. The nearest file applies whole, no merge: a nested one
-// (submodule, example) replaces the project's while cwd is inside it.
+// never match. The nearest file applies whole: a nested one (submodule,
+// example) replaces the project's while cwd is inside it — except that the
+// project file's additive lists (`highRisk.include`, `perfBudgets`) apply as
+// well when the nearest file sits strictly below CLAUDE_PROJECT_DIR and the
+// project dir has its own (cfg.project). A nested folder can add gates, never
+// shed the project's; the project's exclude never reaches it.
 // "Inside" is by path segment on the normalized paths; a symlinked cwd that
 // does not resolve inside the project dir gets the unbounded walk (accepted).
 // Paths are matched relative to the folder the file is in. Only a regular file
@@ -632,8 +703,23 @@ function globList(v, where, ignored, isExclude = false) {
   return out;
 }
 
+// `project`: the project file under a nested config, loadConfig's shape with
+// `exclude: []` (no `project` of its own), or null.
 function projectConfig(cwd, projectDir = process.env.CLAUDE_PROJECT_DIR) {
   const { root, file } = locateConfig(cwd, projectDir);
+  const cfg = { ...loadConfig(root, file, cwd), project: null };
+  if (!file || !projectDir) return cfg;
+  const proj = path.resolve(normalizePath(projectDir));
+  const p = normalizePath(proj), r = normalizePath(path.resolve(root));
+  const projFile = path.join(proj, '.claude', 'canonkit.json');
+  const isHome = samePath(p, normalizePath(path.resolve(os.homedir())));
+  if (!isHome && !samePath(r, p) && isWithin(r, p) && fs.existsSync(projFile)) {
+    cfg.project = { ...loadConfig(proj, projFile, cwd), exclude: [] };
+  }
+  return cfg;
+}
+
+function loadConfig(root, file, cwd) {
   const ignored = [];
   let raw = {};
   const text = file ? readConfigText(file, ignored) : null;
@@ -702,6 +788,8 @@ function main() {
   const cwd = input.cwd || process.cwd();
   const project = path.basename(cwd);
   SESSION = input.session_id || '';
+  const agentId = safeId(input.agent_id);
+  WHO = agentId ? { agent_id: agentId, agent_type: cap(input.agent_type) } : {};
 
   // ---- DEFINITION-OF-DONE gate (Stop) ----
   if (eventName === 'Stop') {
@@ -716,19 +804,30 @@ function main() {
     // costs the budget — which is exactly how a performance gate dies without
     // anyone deciding to kill it.
     const GATED = /high-risk-surface|secret-block|secret-ask|perf-budget/;
-    const gates = evs.filter((e) => e.event === 'gate' && GATED.test(e.kind || ''));
+    // A reviewer subagent's own probe outside the project is not the session's
+    // work. Only an explicit in_project false skips: a gate logged before the
+    // field existed, or by the main thread, counts.
+    const probe = (e) => !!e.agent_id && REVIEWER.test(e.agent_type || '') && e.in_project === false;
+    const gates = evs.filter((e) => e.event === 'gate' && GATED.test(e.kind || '') && !probe(e));
     // The reviewer has to post-date the last gated edit. Session-wide credit let a
     // Gard dispatch from the morning clear an unrelated lighthouserc edit made in
     // the afternoon: "somebody was reviewed at some point today" is not review.
+    // A reviewer resumed with a message after it counts as well. Residual: the
+    // hook sees the SendMessage before it runs, so a failed one still credits.
     const lastGate = gates.reduce((max, e) => Math.max(max, e.ts || 0), 0);
+    const after = (e) => (e.ts || 0) > lastGate;
     const reviewed = evs.some(
-      (e) => e.event === 'agent_start' && REVIEWER.test(e.agent || '') && (e.ts || 0) > lastGate
-    );
+      (e) => e.event === 'agent_start' && REVIEWER.test(e.agent || '') && after(e)
+    ) || evs.some((e) => {
+      if (e.event !== 'agent_resume' || e.has_message !== true || !after(e)) return false;
+      const start = resumedStart(evs, e);
+      return !!start && REVIEWER.test(start.agent || '');
+    });
     if (gates.length && !reviewed) {
       const files = [...new Set(gates.map((e) => e.file).filter(Boolean))].join(', ') || 'a HIGH-risk surface';
       process.stdout.write(JSON.stringify({
         decision: 'block',
-        reason: `Definition-of-done gate: this session edited gated surfaces (${files}) and no independent reviewer was dispatched after the last of those edits. Per the no-self-merge rule, dispatch Quinn (acceptance criteria), Gard (security), Archie (contract) or Perry (performance budgets) to confirm before declaring done — OR state explicitly why review isn't needed (e.g. trivial, user-authorized). This fires once per turn.`,
+        reason: `Definition-of-done gate: this session edited gated surfaces (${files}) and no independent reviewer was dispatched (or resumed with SendMessage) after the last of those edits. Per the no-self-merge rule, dispatch Quinn (acceptance criteria), Gard (security), Archie (contract) or Perry (performance budgets) to confirm before declaring done — OR state explicitly why review isn't needed (e.g. trivial, user-authorized). This fires once per turn.`,
       }));
       process.exit(0);
     }
@@ -748,7 +847,6 @@ function main() {
     process.exit(0);
   }
   if (eventName === 'SubagentStop') {
-    const agentId = safeId(input.agent_id);
     // Logged on the first stop only: a stop hook that continues the agent fires
     // this event again, and two agent_stop lines read as two agents finishing.
     if (!input.stop_hook_active) log({ event: 'agent_stop', agent_id: agentId, project });
@@ -798,16 +896,16 @@ function main() {
     if (tool === 'Agent' || tool === 'Task') {
       const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
       const id = input.tool_use_id || '';
-      const agentId = safeId(r.agentId);
+      const launched = safeId(r.agentId);
       if (r.status === 'async_launched') {
-        log({ event: 'agent_launch', id, agent_id: agentId, resolved_model: r.resolvedModel || '', project });
+        log({ event: 'agent_launch', id, agent_id: launched, resolved_model: r.resolvedModel || '', project });
       } else {
         log({
           event: 'agent_end',
           id,
-          agent_id: agentId,
+          agent_id: launched,
           agent: ti.subagent_type || 'unknown',
-          task: ti.description || '',
+          task: cap(ti.description),
           model: ti.model || '',
           effort: ti.effort || '',
           resolved_model: r.resolvedModel || '',
@@ -815,7 +913,7 @@ function main() {
           status: typeof r.status === 'string' ? r.status : '',
           duration_ms: num(r.totalDurationMs) || num(input.duration_ms) || null,
           tool_uses: typeof r.totalToolUseCount === 'number' ? r.totalToolUseCount : null,
-          tokens: agentId ? transcriptUsage(subagentTranscript(input.transcript_path, agentId)) : null,
+          tokens: launched ? transcriptUsage(subagentTranscript(input.transcript_path, launched)) : null,
           report_chars: reportChars(r.content),
           project,
         });
@@ -830,7 +928,9 @@ function main() {
       // and PostToolUse share.
       id: input.tool_use_id || '',
       agent: ti.subagent_type || 'unknown',
-      task: ti.description || '',
+      task: cap(ti.description),
+      // What a later SendMessage addresses it by (the Stop gate's resume credit).
+      name: cap(ti.name),
       // The rule says every planned dispatch names its model and effort. Logging
       // both is what makes that checkable after the fact instead of an intention
       // nobody can audit; empty means the dispatch inherited the default.
@@ -840,12 +940,19 @@ function main() {
     });
     process.exit(0); // dispatching a subagent is always allowed
   }
+  if (tool === 'SendMessage') {
+    // Resuming an agent is always allowed. Who it went to and whether it carried
+    // a message, never what the message said.
+    const message = ti.message;
+    log({ event: 'agent_resume', to: cap(ti.to), has_message: typeof message === 'string' && message.trim() !== '', project });
+    process.exit(0);
+  }
 
   // ---- ENFORCEMENT: shells (Bash on POSIX, PowerShell on Windows) ----
   if (tool === 'Bash' || tool === 'PowerShell') {
     const cmd = String(ti.command || '');
     if (/\bgit\s+(commit|push)\b/.test(cmd)) {
-      log({ event: 'gate', kind: 'git', detail: cmd.slice(0, 80), project, tool });
+      logGate({ kind: 'git', detail: cmd.slice(0, 80), project, tool });
       ask('canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
     }
     const targets = shellWriteTargets(cmd);
@@ -853,7 +960,7 @@ function main() {
       // Before the project config is read: nothing in it may cost the deny.
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
-          log({ event: 'gate', kind: 'secret-block', file: targets[0], project, tool });
+          logGate({ kind: 'secret-block', file: targets[0], project, tool }, targets, cwd);
           deny('canonkit gate (Gard): this command writes a high-confidence secret (private key / cloud key) to a file. Blocked. Move it to an env var / secret store.');
         }
       }
@@ -862,21 +969,21 @@ function main() {
       // Waived only when every target is a test file: one test target among
       // several must not carry a credential into the others.
       if (SOFT_SECRET.test(cmd) && !rels.every(isTestFile)) {
-        log({ event: 'gate', kind: 'secret-ask', file: targets[0], project, tool });
+        logGate({ kind: 'secret-ask', file: targets[0], project, tool }, targets, cwd);
         ask('canonkit gate (Gard): this command writes what looks like a hardcoded credential to a file. Confirm this is intentional and not a real secret.');
       }
-      const perf = targets.find((_, i) => isPerfBudget(rels[i], cfg));
+      const perf = targets.find((t, i) => isPerfBudget(rels[i], cfg, t));
       if (perf) {
-        log({ event: 'gate', kind: 'perf-budget', file: perf, project, tool });
+        logGate({ kind: 'perf-budget', file: perf, project, tool }, [perf], cwd);
         ask(`canonkit gate (Perry): this command writes "${path.basename(perf)}", which carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
       }
       targets.forEach((t, i) => {
-        const verdict = highRisk(rels[i], cfg);
+        const verdict = highRisk(rels[i], cfg, t);
         if (verdict === true) {
-          log({ event: 'gate', kind: 'high-risk-surface', file: t, project, tool });
+          logGate({ kind: 'high-risk-surface', file: t, project, tool }, [t], cwd);
           ask(`canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
         }
-        if (verdict) log({ event: 'gate', kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool });
+        if (verdict) logGate({ kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool }, [t], cwd);
       });
     }
     process.exit(0);
@@ -893,27 +1000,27 @@ function main() {
     // Before the project config is read: nothing in it may cost the deny.
     for (const re of HARD_SECRET) {
       if (re.test(content)) {
-        log({ event: 'gate', kind: 'secret-block', file: fp, project, tool });
+        logGate({ kind: 'secret-block', file: fp, project, tool }, [fp], cwd);
         deny('canonkit gate (Gard): a high-confidence secret (private key / cloud key) was detected in this write. Blocked. Move it to an env var / secret store.');
       }
     }
     const cfg = projectConfig(cwd);
     const rel = cfg.rel(fp);
     if (SOFT_SECRET.test(content) && !isTestFile(rel)) {
-      log({ event: 'gate', kind: 'secret-ask', file: fp, project, tool });
+      logGate({ kind: 'secret-ask', file: fp, project, tool }, [fp], cwd);
       ask('canonkit gate (Gard): looks like a hardcoded credential. Confirm this is intentional and not a real secret.');
     }
-    if (isPerfBudget(rel, cfg)) {
-      log({ event: 'gate', kind: 'perf-budget', file: fp, project, tool });
+    if (isPerfBudget(rel, cfg, fp)) {
+      logGate({ kind: 'perf-budget', file: fp, project, tool }, [fp], cwd);
       ask(`canonkit gate (Perry): "${path.basename(fp)}" carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
     }
-    const verdict = highRisk(rel, cfg);
+    const verdict = highRisk(rel, cfg, fp);
     if (verdict === true) {
-      log({ event: 'gate', kind: 'high-risk-surface', file: fp, project, tool });
+      logGate({ kind: 'high-risk-surface', file: fp, project, tool }, [fp], cwd);
       ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
     }
     // Not a gate: the dashboard shows what a project's config kept quiet.
-    if (verdict) log({ event: 'gate', kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool });
+    if (verdict) logGate({ kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool }, [fp], cwd);
     process.exit(0);
   }
 

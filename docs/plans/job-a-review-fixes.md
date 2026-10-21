@@ -166,19 +166,61 @@ accepts the perf default list.** Nothing blocks a commit.
   `file`/`root`. Known P3: the catch-all samples miss `*.js`, `src/**`
   (reach = ambiguous words + token names).
 
-## Release notes (draft, for the version bump)
+## Release notes (draft, for the version bump — jobs A + B)
+
+Job B items come from docs/plans/job-b-doctor-wire-hooks.md.
 
 - **Breaking:** the hook is `canonkit-hook.js` and its log is
   `~/.claude/canonkit-activity/`. `install` moves or merges the old log and
-  leaves `meu-time-hook.js` as a forwarder (never removed). Legacy handling
-  sunsets in 2.0.
+  leaves `meu-time-hook.js` as a forwarder; only `install --wire-hooks` removes
+  it, and only when it is the unedited forwarder and no settings file it can see
+  (`~/.claude/settings{,.local}.json`, and `.claude/settings{,.local}.json` of cwd
+  and CLAUDE_PROJECT_DIR) still runs it. A project elsewhere that still runs it
+  then runs nothing; `canonkit doctor` there FAILs and names the file. Legacy
+  handling sunsets in 2.0.
+- **Action needed after upgrading:** the PreToolUse matcher now includes
+  `SendMessage`. An existing install keeps gating, but `doctor` FAILs `hook
+  wiring` (and `install` reports it) until the matcher is widened —
+  `npx canonkit install --wire-hooks` does it.
+- **New:** `install --wire-hooks` registers the hook under every event with its
+  matcher in `~/.claude/settings.json`: dated backup
+  (`settings.json.canonkit-<timestamp>.bak`) only when bytes change, atomic
+  write keeping the file's mode, every other key and hook kept, an old
+  `meu-time-hook.js` command rewritten in place, duplicates removed, a hook that
+  shared an entry with the user's own hooks moved to its own entry (their
+  matcher untouched). It refuses, writing nothing, a settings.json that is not
+  JSON, not an object, or has a `hooks`/event of the wrong shape. A command that
+  only wraps the hook (anything but `node <path>/<hook>.js`, shell syntax in the
+  path included) is left and reported by key path; the hook's own entry is still
+  written, so under that event it runs twice until the wrapper is removed — the
+  output says so. Backups carry the same values as settings.json (`env`
+  included): keep them out of a dotfiles repo. `settings.local.json` is never
+  written. Without the flag, install still only prints the wiring.
+  `--wire-hooks` is valid only with `install`. To undo it, restore the
+  `settings.json.canonkit-<timestamp>.bak` it wrote.
+- **New:** `canonkit doctor` — read-only, one line per check (`OK|WARN|FAIL`:
+  agents, reference, hook file, hook syntax, hook wiring, log, forwarder,
+  config), exit 1 on any FAIL. The config line shows the resolved `file`, `root`,
+  the project file applied under a nested config, and every ignored entry.
+- **Stop gate:** a reviewer resumed with `SendMessage` (with a message) after the
+  last gated edit counts as review — resolved by the agent's `name` or agent id
+  in the same session, and only if the resumed agent is a reviewer. A reviewer
+  subagent's own gates outside the project (its probes) no longer block the
+  parent; gates under `~/.claude` always count. Reviewer names are bounded
+  (`gardener` is not Gard). Gate events now log `agent_id`, `agent_type` (subagents
+  only) and `in_project`; `agent_start` logs `name`; SendMessage logs
+  `agent_resume` with the target and whether a message was sent, never its text.
+  Known residual: a SendMessage that then fails still credits.
 - **New default gate (MEDIUM):** key and credential files are secret paths —
   `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`/`id_ed25519`/`id_ecdsa`/`id_dsa`,
   `kubeconfig`, `.kube/config`, `.pgpass`, `*.tfvars`, `*.tfstate`.
 - **New:** `.claude/canonkit.json` (`version`, `highRisk.include/exclude`,
   `perfBudgets`), looked up from cwd upward, stopping at CLAUDE_PROJECT_DIR
   when cwd is inside it (else below home), then CLAUDE_PROJECT_DIR; the
-  nearest file applies whole, no merge.
+  nearest file applies whole — and when it sits strictly below
+  CLAUDE_PROJECT_DIR, the project file's `highRisk.include` and `perfBudgets`
+  apply as well, anchored at the project (a nested folder can add gates, never
+  shed the project's; the project's `exclude` never reaches it).
   `exclude` cannot silence secrets, STRONG terms or migrations; catch-alls are
   rejected, judged together with the excludes before them.
 - **Calibrated:** ambiguous words (sessions, contracts, permissions, gateway,
@@ -191,12 +233,19 @@ accepts the perf default list.** Nothing blocks a commit.
   skip `.md`/`.mdx` and generated folders.
 - **Fixed:** glob matching is linear (a hostile config could time the hook out,
   and a timed-out hook fails open); every path is normalized before any check.
+- **Fixed:** atomic writes (project `AGENTS.md`, settings.json) keep the target's
+  mode; a 0600 file no longer comes back 0644 on POSIX.
+- **Before release (Gard P1, Quinn C1):** from real payloads, (a) a subagent's
+  PreToolUse carries `agent_type` equal to its `subagent_type` (else the probe
+  skip never fires — safe, but inert); (b) the main thread, `--agent gard`
+  included, never carries `agent_id` (else its own out-of-project gated edits
+  would escape the Stop gate). Run `npm test` on Linux and record the mode test
+  passing (macOS too if possible: `realish` across /var → /private/var).
 
 ## Backlog (not job A)
 
-- Stop gate counts gate events from reviewer subagents' own probes (they share the
-  session id) — skip gate events whose PreToolUse carries `agent_id` of a reviewer,
-  or only count main-thread gates. Seen this session.
-- Job B: `--wire-hooks` must rewrite the old command and delete the forwarder;
-  doctor WARNs on a remaining forwarder and prints the resolved config + `ignored`.
+- ~~Stop gate counts gate events from reviewer subagents' own probes~~ — done in
+  job B (docs/plans/job-b-doctor-wire-hooks.md).
+- ~~Job B: `--wire-hooks` rewrites the old command and deletes the forwarder;
+  doctor WARNs on a remaining forwarder and prints the resolved config~~ — done.
 - Shell write targets miss `cp`, `mv`, `sed -i`, `node -e`, quoted paths with spaces.

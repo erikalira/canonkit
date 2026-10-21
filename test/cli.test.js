@@ -9,7 +9,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat, rename } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -632,6 +632,505 @@ describe("hooks", () => {
     run(["install", "--no-reference", "--dry-run"], { home });
     assert.ok(!existsSync(hookPath(home)));
     assert.ok(!existsSync(path.join(home, ".claude", "canonkit-dashboard")));
+  });
+
+  test("without --wire-hooks, install points at doctor and the flag", async () => {
+    const { home } = await scratch("hook-print-only");
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(!existsSync(path.join(home, ".claude", "settings.json")), "print-only must not create settings.json");
+    assert.match(out, /--wire-hooks/);
+    assert.match(out.trim().split("\n").pop(), /npx canonkit doctor/);
+  });
+
+  test("a PreToolUse matcher that misses a tool is reported, like PostToolUse", async () => {
+    // SendMessage joined the matcher for the Stop gate's resume credit: an entry
+    // wired before it still gates edits, so nothing else would show the gap.
+    const { home } = await scratch("hook-pre-coverage");
+    await wire(home, EVENTS);
+    const settings = path.join(home, ".claude", "settings.json");
+    const data = JSON.parse(await read(settings));
+    data.hooks.PreToolUse[0].matcher = "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task";
+    await writeFile(settings, JSON.stringify(data));
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(out.includes("under: PreToolUse"), out);
+    assert.ok(!out.includes("under: PreToolUse, PostToolUse"), out);
+  });
+});
+
+/* ------------------------------------------------------------ wire-hooks */
+
+// The harness sets CLAUDE_PROJECT_DIR for every command it runs, this suite
+// included: a test that means one passes it explicitly.
+function runIn(args, { home, cwd, env = {} }) {
+  const e = { ...process.env, HOME: home, USERPROFILE: home, ...env };
+  if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
+  const result = spawnSync(process.execPath, [CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: e });
+  return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
+}
+
+const REQUIRED = {
+  PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
+  PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
+  SubagentStop: null,
+  UserPromptSubmit: null,
+  Stop: null,
+};
+const claudeDir = (home, ...p) => path.join(home, ".claude", ...p);
+const settingsOf = async (home, f = "settings.json") => JSON.parse(await read(claudeDir(home, f)));
+const commandsIn = (entries = []) => entries.flatMap((e) => (e.hooks ?? []).map((h) => h.command));
+const ours = (cmd) => /canonkit-hook\.js|meu-time-hook\.js/.test(cmd ?? "");
+const backups = async (home) => (await readdir(claudeDir(home))).filter((f) => /^settings\.json\.canonkit-.*\.bak$/.test(f));
+const FORWARDER = (home) => claudeDir(home, "hooks", "meu-time-hook.js");
+const legacyEntry = (matcher) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] });
+
+describe("install --wire-hooks", () => {
+  test("writes every event with its matcher into a settings.json that did not exist", async () => {
+    const { home } = await scratch("wire-fresh");
+    const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.equal(status, 0, out);
+    const { hooks } = await settingsOf(home);
+    for (const [event, matcher] of Object.entries(REQUIRED)) {
+      const entries = hooks[event].filter((e) => commandsIn([e]).some(ours));
+      assert.equal(entries.length, 1, `${event}: exactly one entry runs the hook`);
+      assert.equal(entries[0].matcher, matcher ?? undefined, `${event} matcher`);
+      // Quoted and forward-slashed: a home with a space in it, and JSON, both survive.
+      assert.match(entries[0].hooks[0].command, /^node "[^"\\]*\/\.claude\/hooks\/canonkit-hook\.js"$/);
+    }
+    assert.deepEqual(await backups(home), [], "nothing to back up");
+  });
+
+  test("keeps every other key and hook, and backs up the original bytes first", async () => {
+    const { home } = await scratch("wire-keep");
+    await mkdir(claudeDir(home), { recursive: true });
+    const theirs = { type: "command", command: "node ~/my-own-hook.js" };
+    const original = JSON.stringify({
+      permissions: { allow: ["Bash(npm test)"], deny: ["Read(.env)"] },
+      env: { FOO: "1" },
+      model: "opus",
+      hooks: { Notification: [{ hooks: [theirs] }], Stop: [{ hooks: [theirs] }] },
+    });
+    await writeFile(claudeDir(home, "settings.json"), original);
+    const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.equal(status, 0, out);
+    const after = await settingsOf(home);
+    assert.deepEqual(after.permissions, { allow: ["Bash(npm test)"], deny: ["Read(.env)"] });
+    assert.deepEqual(after.env, { FOO: "1" });
+    assert.equal(after.model, "opus");
+    assert.deepEqual(after.hooks.Notification, [{ hooks: [theirs] }]);
+    assert.ok(commandsIn(after.hooks.Stop).includes(theirs.command), "the user's own Stop hook stays");
+    const [bak] = await backups(home);
+    assert.ok(bak, "a backup is written before the change");
+    assert.equal(await read(claudeDir(home, bak)), original);
+  });
+
+  test("rewrites a meu-time command in place instead of adding a second hook", async () => {
+    const { home } = await scratch("wire-legacy");
+    await mkdir(claudeDir(home), { recursive: true });
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({
+      hooks: { PreToolUse: [legacyEntry(REQUIRED.PreToolUse)], Stop: [legacyEntry(), legacyEntry()] },
+    }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { hooks } = await settingsOf(home);
+    const text = JSON.stringify(hooks);
+    assert.doesNotMatch(text, /meu-time-hook/);
+    for (const event of Object.keys(REQUIRED)) {
+      assert.equal(commandsIn(hooks[event]).filter(ours).length, 1, `${event}: one hook, not two`);
+    }
+  });
+
+  test("a second run changes nothing and writes no second backup", async () => {
+    const { home } = await scratch("wire-idempotent");
+    await mkdir(claudeDir(home), { recursive: true });
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({ model: "opus" }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const once = await read(claudeDir(home, "settings.json"));
+    const again = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.equal(await read(claudeDir(home, "settings.json")), once);
+    assert.equal((await backups(home)).length, 1);
+    assert.doesNotMatch(again.out, /not referenced/);
+  });
+
+  test("an entry of its own with an old matcher is widened in place", async () => {
+    const { home } = await scratch("wire-old-matcher");
+    await mkdir(claudeDir(home), { recursive: true });
+    const cmd = { type: "command", command: "node ~/.claude/hooks/canonkit-hook.js" };
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Edit|Write|Bash|Agent|Task", hooks: [cmd] }], PostToolUse: [{ matcher: "Agent|Task", hooks: [cmd] }] },
+    }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { hooks } = await settingsOf(home);
+    assert.equal(hooks.PreToolUse.length, 1);
+    assert.equal(hooks.PreToolUse[0].matcher, REQUIRED.PreToolUse);
+    assert.equal(hooks.PostToolUse.length, 1);
+    assert.equal(hooks.PostToolUse[0].matcher, REQUIRED.PostToolUse);
+  });
+
+  test("an entry shared with the user's hooks keeps its matcher; the hook moves to its own entry", async () => {
+    // Widening a shared matcher would run the user's other hook on tools they
+    // never chose.
+    const { home } = await scratch("wire-shared");
+    await mkdir(claudeDir(home), { recursive: true });
+    const theirs = { type: "command", command: "node ~/fmt.js" };
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({
+      hooks: { PreToolUse: [{ matcher: "Edit|Write", hooks: [theirs, { type: "command", command: "node ~/.claude/hooks/canonkit-hook.js" }] }] },
+    }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { hooks } = await settingsOf(home);
+    const shared = hooks.PreToolUse.find((e) => commandsIn([e]).includes(theirs.command));
+    assert.equal(shared.matcher, "Edit|Write");
+    assert.deepEqual(commandsIn([shared]), [theirs.command]);
+    const own = hooks.PreToolUse.filter((e) => commandsIn([e]).some(ours));
+    assert.equal(own.length, 1);
+    assert.equal(own[0].matcher, REQUIRED.PreToolUse);
+  });
+
+  for (const [name, body] of [
+    ["is not valid JSON", "{ not json"],
+    ["is not an object", "[]"],
+    ["has a hooks that is not an object", '{"hooks": []}'],
+    ["has an event that is not an array", '{"hooks": {"Stop": {}}}'],
+  ]) {
+    test(`refuses a settings.json that ${name}, writing nothing`, async () => {
+      const { home } = await scratch(`wire-refuse-${name.replace(/\W+/g, "-")}`);
+      await mkdir(claudeDir(home), { recursive: true });
+      await writeFile(claudeDir(home, "settings.json"), body);
+      const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.equal(status, 1, out);
+      assert.match(out, /settings\.json/);
+      assert.equal(await read(claudeDir(home, "settings.json")), body);
+      assert.deepEqual(await backups(home), []);
+    });
+  }
+
+  test("--dry-run writes no settings.json and no backup", async () => {
+    const { home } = await scratch("wire-dry");
+    await mkdir(claudeDir(home), { recursive: true });
+    await writeFile(claudeDir(home, "settings.json"), "{}");
+    const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home });
+    assert.match(out, /would wire/);
+    assert.equal(await read(claudeDir(home, "settings.json")), "{}");
+    assert.deepEqual(await backups(home), []);
+  });
+
+  test("a command that only wraps the hook is left and reported by key path, never by value", async () => {
+    // Rewriting a wrapper would drop whatever it does around the hook.
+    const { home } = await scratch("wire-wrapper");
+    await mkdir(claudeDir(home), { recursive: true });
+    const wrapper = "bash -c 'node ~/.claude/hooks/meu-time-hook.js 2>>/tmp/hook.err'";
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({
+      env: { API_TOKEN: "do-not-print-me" },
+      hooks: { Stop: [{ hooks: [{ type: "command", command: wrapper }] }] },
+    }));
+    const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.equal(status, 0, out);
+    const { hooks } = await settingsOf(home);
+    assert.ok(commandsIn(hooks.Stop).includes(wrapper), "the wrapper stays");
+    assert.equal(commandsIn(hooks.Stop).filter((c) => /^node "/.test(c)).length, 1, "and the hook is wired beside it");
+    assert.match(out, /hooks\.Stop\[0\]\.hooks\[0\]/);
+    assert.match(out, /runs twice/, "the wrapper and the new entry both run the hook until the wrapper goes");
+    assert.ok(!out.includes(wrapper) && !out.includes("hook.err"), out);
+    assert.ok(!out.includes("do-not-print-me"), out);
+  });
+
+  test("a command with shell syntax in its path is a wrapper, not the exact shape", async () => {
+    const { home } = await scratch("wire-shell-syntax");
+    await mkdir(claudeDir(home), { recursive: true });
+    const odd = ["node x;curl|sh;/canonkit-hook.js", 'node "$(whoami)/canonkit-hook.js"', "node `pwd`/canonkit-hook.js"];
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({
+      hooks: { Notification: odd.map((command) => ({ hooks: [{ type: "command", command }] })) },
+    }));
+    const { out } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.deepEqual(commandsIn((await settingsOf(home)).hooks.Notification), odd);
+    for (let i = 0; i < odd.length; i++) assert.match(out, new RegExp(`hooks\\.Notification\\[${i}\\]\\.hooks\\[0\\]`));
+  });
+
+  test("two of its hooks in one entry become one", async () => {
+    const { home } = await scratch("wire-dup-in-entry");
+    await mkdir(claudeDir(home), { recursive: true });
+    const cmd = { type: "command", command: "node ~/.claude/hooks/canonkit-hook.js" };
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({ hooks: { Stop: [{ hooks: [cmd, { ...cmd }] }] } }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    assert.equal(commandsIn((await settingsOf(home)).hooks.Stop).length, 1);
+  });
+
+  test("a meu-time command under an event canonkit does not use is rewritten too", async () => {
+    // Left alone, it would keep the forwarder alive forever.
+    const { home } = await scratch("wire-other-event");
+    await mkdir(claudeDir(home), { recursive: true });
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({ hooks: { Notification: [legacyEntry()] } }));
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { hooks } = await settingsOf(home);
+    assert.equal(hooks.Notification.length, 1);
+    assert.match(hooks.Notification[0].hooks[0].command, /canonkit-hook\.js"$/);
+  });
+
+  test("keeps the file's mode, the backup's too", { skip: process.platform === "win32" && "POSIX modes" }, async () => {
+    const { home } = await scratch("wire-mode");
+    await mkdir(claudeDir(home), { recursive: true });
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify({ model: "opus" }));
+    await chmod(claudeDir(home, "settings.json"), 0o600);
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { stat } = await import("node:fs/promises");
+    assert.equal((await stat(claudeDir(home, "settings.json"))).mode & 0o777, 0o600);
+    const [bak] = await backups(home);
+    assert.equal((await stat(claudeDir(home, bak))).mode & 0o777, 0o600);
+  });
+
+  test("is refused outside install", async () => {
+    const { home } = await scratch("wire-wrong-command");
+    const { status, out } = runIn(["list", "--wire-hooks"], { home });
+    assert.equal(status, 1);
+    assert.match(out, /--wire-hooks is only valid for: canonkit install/);
+  });
+
+  describe("the meu-time forwarder", () => {
+    const seed = async (home, settings = {}) => {
+      await mkdir(claudeDir(home, "hooks"), { recursive: true });
+      await writeFile(FORWARDER(home), "// the pre-rename hook\n");
+      for (const [f, v] of Object.entries(settings)) await writeFile(f.startsWith(home) ? f : claudeDir(home, f), JSON.stringify(v));
+    };
+
+    test("is removed once the settings it can see no longer run it", async () => {
+      const { home } = await scratch("forwarder-gone");
+      await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
+      const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.equal(status, 0, out);
+      assert.ok(!existsSync(FORWARDER(home)), "the forwarder must go");
+      assert.ok(existsSync(FORWARDER(home) + ".local.bak"), "a pre-forwarder copy stays backed up");
+      // Other projects' settings cannot be seen from here: say what that means.
+      assert.match(out, /removed .*meu-time-hook\.js/);
+      assert.match(out, /a project's \.claude\/settings\.json that still runs it now runs nothing/);
+      assert.match(out, /canonkit doctor/);
+    });
+
+    test("stays while settings.local.json still runs it, which is named", async () => {
+      const { home } = await scratch("forwarder-local");
+      await seed(home, { "settings.local.json": { hooks: { Stop: [legacyEntry()] } } });
+      const { out } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.ok(existsSync(FORWARDER(home)));
+      assert.match(await read(FORWARDER(home)), /canonkit-forwarder/);
+      assert.match(out, /settings\.local\.json still runs meu-time-hook\.js/);
+      assert.match(await read(claudeDir(home, "settings.local.json")), /meu-time-hook/, "settings.local.json is never written");
+    });
+
+    for (const [where, envOf] of [
+      ["the cwd project's", () => ({})],
+      ["CLAUDE_PROJECT_DIR's", (project) => ({ CLAUDE_PROJECT_DIR: project })],
+    ]) {
+      test(`stays while ${where} .claude/settings.json still runs it`, async () => {
+        const { home, project } = await scratch(`forwarder-project-${where.length}`);
+        await seed(home);
+        await mkdir(path.join(project, ".claude"), { recursive: true });
+        await writeFile(path.join(project, ".claude", "settings.json"), JSON.stringify({ hooks: { Stop: [legacyEntry()] } }));
+        const env = envOf(project);
+        const cwd = env.CLAUDE_PROJECT_DIR ? home : project;
+        const { out } = runIn(["install", "--no-reference", "--wire-hooks"], { home, cwd, env });
+        assert.ok(existsSync(FORWARDER(home)), out);
+        assert.ok(out.includes(path.join(project, ".claude", "settings.json").split(path.sep).join("/")), out);
+      });
+    }
+
+    test("--dry-run keeps it", async () => {
+      const { home } = await scratch("forwarder-dry");
+      await seed(home);
+      const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home });
+      assert.equal(await read(FORWARDER(home)), "// the pre-rename hook\n");
+      assert.doesNotMatch(out, /\bremoved .*meu-time-hook\.js/, "a dry run never claims the deletion");
+    });
+
+    test("--dry-run judges the settings it would write, and says it would remove it", async () => {
+      const { home } = await scratch("forwarder-dry-planned");
+      await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
+      const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home });
+      assert.match(out, /would remove .*meu-time-hook\.js/);
+      assert.ok(existsSync(FORWARDER(home)));
+    });
+
+    test("stays while a settings file runs it without the .js (node resolves it)", async () => {
+      const { home } = await scratch("forwarder-no-ext");
+      await seed(home, { "settings.local.json": { hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook" }] }] } } });
+      runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.ok(existsSync(FORWARDER(home)));
+    });
+
+    test("a forwarder edited by hand is neither refreshed nor removed, and is named", async () => {
+      const { home } = await scratch("forwarder-edited");
+      await mkdir(claudeDir(home, "hooks"), { recursive: true });
+      const mine = "// canonkit-forwarder, plus my own logging\nconsole.error('hook');\nrequire('./canonkit-hook.js').run();\n";
+      await writeFile(FORWARDER(home), mine);
+      const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.equal(status, 0, out);
+      assert.equal(await read(FORWARDER(home)), mine);
+      assert.match(out, /kept .*meu-time-hook\.js: .*edited/);
+    });
+
+    test("stays while a wrapper in settings.json still runs it", async () => {
+      const { home } = await scratch("forwarder-wrapper");
+      await seed(home, { "settings.json": { hooks: { Stop: [{ hooks: [{ type: "command", command: "sh -c 'node ~/.claude/hooks/meu-time-hook.js'" }] }] } } });
+      const { out } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
+      assert.ok(existsSync(FORWARDER(home)), out);
+      assert.match(out, /settings\.json still runs meu-time-hook\.js/);
+    });
+  });
+});
+
+/* ---------------------------------------------------------------- doctor */
+
+describe("doctor", () => {
+  const doctor = (o) => runIn(["doctor"], o);
+  const line = (out, re) => out.split("\n").find((l) => re.test(l)) ?? "";
+  const ready = async (name) => {
+    const s = await scratch(name);
+    runIn(["install", "--wire-hooks"], { home: s.home });
+    return s;
+  };
+  // Every file under a folder with its bytes: doctor must leave it exactly so.
+  const snapshot = async (dir) => {
+    const out = {};
+    for (const e of await readdir(dir, { withFileTypes: true, recursive: true })) {
+      const p = path.join(e.parentPath ?? e.path, e.name);
+      if (e.isFile()) out[path.relative(dir, p)] = await read(p);
+    }
+    return out;
+  };
+
+  test("a full install wired by --wire-hooks passes every check, one line each", async () => {
+    const { home, project } = await ready("doctor-ok");
+    const { out, status } = doctor({ home, cwd: project });
+    assert.equal(status, 0, out);
+    assert.doesNotMatch(out, /^FAIL/m, out);
+    for (const check of ["agents", "reference", "hook file", "hook syntax", "hook wiring", "log", "config"]) {
+      assert.match(line(out, new RegExp(`^(OK|WARN) +${check}\\b`)), /\S/, `no line for ${check}:\n${out}`);
+    }
+  });
+
+  test("is read-only", async () => {
+    const { home, project } = await ready("doctor-readonly");
+    const before = await snapshot(home);
+    doctor({ home, cwd: project });
+    assert.deepEqual(await snapshot(home), before);
+  });
+
+  test("an unwired hook FAILs, naming the events, and exits 1", async () => {
+    const { home } = await scratch("doctor-unwired");
+    runIn(["install"], { home });
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(line(out, /^FAIL +hook wiring/), /PreToolUse.*Stop|--wire-hooks/);
+  });
+
+  test("an old PreToolUse matcher without SendMessage is incomplete wiring", async () => {
+    const { home } = await ready("doctor-no-sendmessage");
+    const s = await settingsOf(home);
+    for (const e of s.hooks.PreToolUse) if (commandsIn([e]).some(ours)) e.matcher = e.matcher.replace("|SendMessage", "");
+    await writeFile(claudeDir(home, "settings.json"), JSON.stringify(s));
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(line(out, /^FAIL +hook wiring/), /PreToolUse/);
+  });
+
+  test("hooks wired only in settings.local.json count: the runtime merges it", async () => {
+    const { home } = await ready("doctor-local");
+    await rename(claudeDir(home, "settings.json"), claudeDir(home, "settings.local.json"));
+    const { out, status } = doctor({ home });
+    assert.equal(status, 0, out);
+    assert.match(out, /^OK +hook wiring/m);
+  });
+
+  test("a log folder that cannot be one FAILs", async () => {
+    const { home } = await ready("doctor-log");
+    await writeFile(claudeDir(home, "canonkit-activity"), "not a folder");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(out, /^FAIL +log/m);
+  });
+
+  test("missing reference blocks FAIL", async () => {
+    const { home } = await scratch("doctor-noref");
+    runIn(["install", "--no-reference", "--wire-hooks"], { home });
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(line(out, /^FAIL +reference/), /AGENTS\.md|CLAUDE\.md/);
+  });
+
+  test("an agent that differs between the two install folders FAILs", async () => {
+    const { home } = await ready("doctor-agent-drift");
+    await writeFile(path.join(home, ".agents", "gard.md"), "---\nname: gard\n---\nedited\n");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(line(out, /^FAIL +agents/), /gard/);
+  });
+
+  test("a hook that does not parse FAILs the syntax check", async () => {
+    const { home } = await ready("doctor-syntax");
+    await writeFile(claudeDir(home, "hooks", "canonkit-hook.js"), "function (\n");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(out, /^FAIL +hook syntax/m);
+    assert.match(out, /^WARN +hook file/m, "a hook that differs from this package is named");
+  });
+
+  test("an invalid settings.json FAILs instead of crashing", async () => {
+    const { home } = await ready("doctor-bad-settings");
+    await writeFile(claudeDir(home, "settings.json"), "{ nope");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 1);
+    assert.match(line(out, /^FAIL +hook wiring/), /not valid JSON/);
+  });
+
+  test("a forwarder left on disk WARNs, without failing", async () => {
+    const { home } = await ready("doctor-forwarder");
+    await writeFile(FORWARDER(home), "// canonkit-forwarder\nrequire('./canonkit-hook.js').run();\n");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 0, out);
+    assert.match(line(out, /^WARN +forwarder/), /meu-time-hook\.js.*--wire-hooks/);
+  });
+
+  test("settings that run meu-time-hook.js with no file there FAIL: every gate is off", async () => {
+    const { home, project } = await ready("doctor-dangling");
+    await mkdir(path.join(project, ".claude"), { recursive: true });
+    const projSettings = path.join(project, ".claude", "settings.json");
+    await writeFile(projSettings, JSON.stringify({ hooks: { Stop: [legacyEntry()] } }));
+    const { out, status } = doctor({ home, cwd: project });
+    assert.equal(status, 1);
+    assert.ok(line(out, /^FAIL +forwarder/).includes(projSettings.split(path.sep).join("/")), out);
+  });
+
+  test("prints the resolved config: file, root and what was ignored", async () => {
+    const { home, project } = await ready("doctor-config");
+    await mkdir(path.join(project, ".claude"), { recursive: true });
+    await writeFile(path.join(project, ".claude", "canonkit.json"), JSON.stringify({ highRisk: { exclude: ["**"] }, colour: 1 }));
+    const { out, status } = doctor({ home, cwd: project, env: { CLAUDE_PROJECT_DIR: project } });
+    assert.equal(status, 0, out);
+    const slash = (p) => p.split(path.sep).join("/");
+    const cfg = out.slice(out.search(/^(OK|WARN) +config/m));
+    assert.match(cfg, /^WARN +config/, "an ignored entry is worth a WARN");
+    assert.ok(cfg.includes(`file ${slash(path.join(project, ".claude", "canonkit.json"))}`), cfg);
+    assert.ok(cfg.includes(`root ${slash(project)}`), cfg);
+    assert.match(cfg, /ignored highRisk\.exclude\[0\]: a catch-all/);
+    assert.match(cfg, /ignored colour: unknown key/);
+  });
+
+  test("under a nested config, names the project file whose additive lists also apply", async () => {
+    const { home, project } = await ready("doctor-nested");
+    await mkdir(path.join(project, ".claude"), { recursive: true });
+    await writeFile(path.join(project, ".claude", "canonkit.json"), JSON.stringify({ highRisk: { include: ["src/payments/**"] }, perfBudgets: ["ops/limits.yml"] }));
+    const demo = path.join(project, "examples", "demo");
+    await mkdir(path.join(demo, ".claude"), { recursive: true });
+    await writeFile(path.join(demo, ".claude", "canonkit.json"), "{}");
+    const { out, status } = doctor({ home, cwd: demo, env: { CLAUDE_PROJECT_DIR: project } });
+    assert.equal(status, 0, out);
+    const slash = (p) => p.split(path.sep).join("/");
+    const cfg = out.slice(out.search(/^(OK|WARN) +config/m));
+    assert.ok(cfg.includes(`file ${slash(path.join(demo, ".claude", "canonkit.json"))}`), cfg);
+    assert.ok(cfg.includes(`project ${slash(path.join(project, ".claude", "canonkit.json"))}`), cfg);
+    assert.match(cfg, /1 include, 1 perfBudgets/);
+  });
+
+  test("no config: says so, with the root paths are taken from", async () => {
+    const { home, project } = await ready("doctor-no-config");
+    const { out } = doctor({ home, cwd: project, env: { CLAUDE_PROJECT_DIR: project } });
+    assert.match(line(out, /^OK +config/), /file none.*defaults/);
   });
 });
 

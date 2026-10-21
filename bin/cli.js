@@ -16,8 +16,10 @@
  * No dependencies, by design — an installer that runs before you trust the
  * repo should not ask you to trust a dependency tree first.
  */
-import { readdir, readFile, writeFile, mkdir, copyFile, rm, rename } from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import { readdir, readFile, writeFile, mkdir, copyFile, rm, rename, chmod } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync, accessSync, constants as fsc } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
 import { createInterface } from "node:readline";
@@ -36,9 +38,12 @@ const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 // there (null: no matcher). Checked per event, not per file: a hook wired to
 // some of its events half-works, which hides better than not working — the gates
 // fire, so nobody goes looking for the dispatch metrics that are never written.
+// SendMessage is there for the Stop gate: a reviewer resumed after the last
+// gated edit is a review after it.
+const HOOK = "canonkit-hook.js";
 const HOOK_EVENTS = {
-  "canonkit-hook.js": {
-    PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task",
+  [HOOK]: {
+    PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
     PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
     UserPromptSubmit: null,
@@ -276,7 +281,11 @@ async function syncBlock(blockPath, targetPath, markers, ctx) {
 
 async function install(ctx, options = {}) {
   const reference = options.reference !== false;
+  const wire = options.wireHooks === true;
   const agents = await readAgents();
+  // Before anything is written: a settings.json --wire-hooks would have to
+  // guess about stops the whole install, so a refusal leaves no half-install.
+  if (wire) await readSettingsForWiring(settingsPath());
 
   // Both paths are read by Claude Code; keeping them identical avoids the drift
   // that a generated destination invites.
@@ -302,8 +311,8 @@ async function install(ctx, options = {}) {
   }
 
   await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
-  await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"));
-  await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"));
+  const planned = await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"), { wire });
+  await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"), { wire, planned });
   await installDashboard(ctx, path.join(os.homedir(), ".claude", "canonkit-dashboard"));
 
   if (reference) {
@@ -314,6 +323,7 @@ async function install(ctx, options = {}) {
   ctx.log("");
   ctx.log("Core installed. Domain specialists are per project:");
   ctx.log("  cd <project> && npx canonkit add <name>");
+  ctx.log("Check the install (agents, blocks, hook wiring, config): npx canonkit doctor");
 }
 
 /**
@@ -362,16 +372,18 @@ async function installCodex(ctx, agents, dest) {
  * place, in one copy on one machine — the same "single list repeated nowhere"
  * problem the agents had, in its worse form, because nothing validated it.
  */
-async function installHooks(ctx, dest) {
+async function installHooks(ctx, dest, { wire = false } = {}) {
   const files = existsSync(HOOKS_DIR)
     ? (await readdir(HOOKS_DIR)).filter((f) => f.endsWith(".js")).sort()
     : [];
-  if (!files.length) return;
+  if (!files.length) return null;
 
   await copyKeepingLocal(ctx, HOOKS_DIR, dest, files);
   ctx.log(`Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`);
 
+  if (wire) return wireHooks(ctx, dest);
   await reportHookWiring(ctx, dest, files);
+  return null;
 }
 
 /**
@@ -398,8 +410,10 @@ async function installDashboard(ctx, dest) {
  * project's .claude/settings.json, which cannot even be found from here — and
  * deleting the file would turn every gate there off with no sign: the runtime
  * reports a hook that cannot start as a non-blocking error and carries on. So the
- * file always becomes a forwarder, never disappears. Its previous contents are
- * kept as .local.bak — there is no shipped copy left to tell an edit from.
+ * file becomes a forwarder, and only `--wire-hooks` — which the user asked for,
+ * and which has just rewired settings.json — removes it, and only when nothing
+ * it can see still runs it (retireForwarder). Its previous contents are kept as
+ * .local.bak — there is no shipped copy left to tell an edit from.
  * Legacy handling sunsets in 2.0.
  */
 const LEGACY = { hook: "meu-time-hook.js", log: "meu-time-activity", dashboard: "meu-time-dashboard" };
@@ -411,12 +425,23 @@ const HOOK_FORWARDER = `#!/usr/bin/env node
 // canonkit-hook.js, then delete this file.
 require('./canonkit-hook.js').run();
 `;
+// What install leaves at meu-time-hook.js: the current forwarder, unless the file
+// already is one and still calls run() — then it was edited by hand, works, and
+// stays as it is. One that only require()s is an older forwarder, refreshed: the
+// hook no longer runs on a bare require(). When HOOK_FORWARDER's text changes,
+// its old text goes into SHIPPED_FORWARDERS, or every copy already installed
+// would read as edited by hand: never refreshed, never removed.
+const SHIPPED_FORWARDERS = [];
+const forwarderFor = (current) =>
+  current.includes(FORWARDER_MARK) && current.includes(".run()") && !SHIPPED_FORWARDERS.includes(current)
+    ? current
+    : HOOK_FORWARDER;
 // The hook rotates its log at 2 MB. A merged log is split so the live file starts
 // well under that: otherwise the first append rotates all of it out of the file
 // the Stop gate reads, current session included.
 const LOG_TAIL_BYTES = 1024 * 1024;
 
-async function upgradeFromMeuTime(ctx, claudeDir) {
+async function upgradeFromMeuTime(ctx, claudeDir, { wire = false, planned = null } = {}) {
   const notes = [];
 
   const oldLog = path.join(claudeDir, LEGACY.log);
@@ -444,9 +469,15 @@ async function upgradeFromMeuTime(ctx, claudeDir) {
       await ctx.copy(oldHook, `${oldHook}.local.bak`);
       notes.push(`previous ${LEGACY.hook} kept as ${LEGACY.hook}.local.bak`);
     }
-    // An older forwarder is refreshed too: the hook no longer runs on a bare require().
-    if (current !== HOOK_FORWARDER) await ctx.write(oldHook, HOOK_FORWARDER);
-    if (settingsMention(claudeDir, LEGACY.hook)) {
+    const next = forwarderFor(current);
+    if (next !== current) await ctx.write(oldHook, next);
+    if (wire) {
+      const retire = retireForwarder(ctx, claudeDir, oldHook, next, planned);
+      if (retire.remove) await ctx.remove(oldHook);
+      notes.push(...retire.notes);
+    } else if (next !== HOOK_FORWARDER) {
+      notes.push(`${LEGACY.hook} carries the forwarder mark but was edited by hand; left as is.`);
+    } else if (settingsMention(claudeDir, LEGACY.hook)) {
       notes.push(`settings.json still runs ${LEGACY.hook}: it now forwards to canonkit-hook.js, so the gates`);
       notes.push(`  keep firing. Replace that command with canonkit-hook.js (wiring above), then delete ${LEGACY.hook}.`);
     } else {
@@ -523,6 +554,73 @@ async function mergeLegacyLog(ctx, oldLog, newLog) {
   return [`merged ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity (history kept) and removed it`];
 }
 
+/**
+ * Every settings file this machine can be seen to run hooks from: the user's
+ * own two, and the project's two for cwd and CLAUDE_PROJECT_DIR. Other projects'
+ * cannot be found from here — which is why removing the forwarder says so.
+ * Raw bytes, not parsed: a file that is not valid JSON can still run the hook.
+ * `override` stands in for a file's planned bytes (a dry run writes nothing).
+ */
+const pathKey = (p) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+
+function legacyRunners(claudeDir, override = {}) {
+  const dirs = [claudeDir, ...[process.cwd(), process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.join(d, ".claude"))];
+  const seen = new Set();
+  const running = [];
+  const unreadable = [];
+  for (const file of dirs.flatMap((d) => ["settings.json", "settings.local.json"].map((f) => path.join(d, f)))) {
+    if (seen.has(pathKey(file))) continue;
+    seen.add(pathKey(file));
+    let bytes;
+    try {
+      bytes = pathKey(file) in override ? Buffer.from(override[pathKey(file)]) : readFileSync(file);
+    } catch (err) {
+      if (err.code !== "ENOENT" && err.code !== "ENOTDIR") unreadable.push(file);
+      continue;
+    }
+    // Without the extension: `node .../meu-time-hook` runs the same file.
+    if (bytes.includes(LEGACY.hook.replace(/\.js$/, ""))) running.push(file);
+  }
+  return { running, unreadable };
+}
+
+const slash = (p) => p.split(path.sep).join("/");
+const tilde = (p) => {
+  const home = slash(os.homedir());
+  const s = slash(p);
+  return s.toLowerCase().startsWith(home.toLowerCase() + "/") ? `~${s.slice(home.length)}` : s;
+};
+
+/**
+ * Under --wire-hooks, after settings.json was rewired: the forwarder goes only
+ * when it is exactly the one install writes (an edited one is the user's), and
+ * no settings file in sight still runs it — one that cannot be read counts as
+ * running it. Returns the notes, and whether the caller removes the file.
+ */
+function retireForwarder(ctx, claudeDir, file, content, planned) {
+  const shown = tilde(file);
+  const keep = (notes) => ({ remove: false, notes });
+  if (content !== HOOK_FORWARDER) {
+    return keep([`kept ${shown}: it was edited by hand (not the forwarder install writes). Delete it yourself once no settings.json runs it.`]);
+  }
+  const { running, unreadable } = legacyRunners(claudeDir, planned ? { [pathKey(planned.file)]: planned.text } : {});
+  if (running.length || unreadable.length) {
+    return keep([
+      ...running.map((f) => `kept ${shown}: ${slash(f)} still runs ${LEGACY.hook}. Point it at ${HOOK}, then re-run.`),
+      ...unreadable.map((f) => `kept ${shown}: could not read ${slash(f)}, which may still run it.`),
+    ]);
+  }
+  if (ctx.dryRun) return keep([`would remove ${shown}: no settings file in sight runs it any more.`]);
+  return {
+    remove: true,
+    notes: [
+      `removed ${shown}: no settings file in sight runs it any more. Other projects cannot be seen from here:`,
+      `  a project's .claude/settings.json that still runs it now runs nothing — no gate fires there;`,
+      `  \`npx canonkit doctor\` run in that project FAILs and names the file.`,
+    ],
+  };
+}
+
 // Raw text, not parsed: a settings file that is not valid JSON can still run the hook.
 function settingsMention(claudeDir, name) {
   return ["settings.json", "settings.local.json"].some((f) => {
@@ -549,14 +647,43 @@ async function copyKeepingLocal(ctx, fromDir, dest, files) {
   }
 }
 
+/* ------------------------------------------------------------ hook wiring */
+
+const settingsPath = () => path.join(os.homedir(), ".claude", "settings.json");
+const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
+
+/**
+ * The events a hook is not registered under with the coverage it needs. An
+ * entry missing a tool of its matcher half-works — an Agent|Task PostToolUse
+ * still writes dispatch metrics and silently misses main-thread volume; a
+ * PreToolUse without SendMessage still gates edits and never credits a resumed
+ * reviewer — so coverage is checked tool by tool. The matcher is read anchored:
+ * misreading `Edit|Write` as covering MultiEdit would be a false pass, and a
+ * false FAIL costs one --wire-hooks run. Shared by install's print-only report,
+ * --wire-hooks and doctor.
+ */
+function wiringGaps(hooks, file) {
+  const covers = (entry, tool) => {
+    if (!entry.matcher || entry.matcher === "*") return true;
+    try { return new RegExp(`^(?:${entry.matcher})$`).test(tool); } catch { return false; }
+  };
+  const gaps = [];
+  for (const [event, matcher] of Object.entries(HOOK_EVENTS[file])) {
+    const own = (Array.isArray(hooks[event]) ? hooks[event] : [])
+      .filter((e) => isObject(e) && JSON.stringify(e.hooks ?? []).includes(file));
+    const covered = own.length > 0 && (!matcher || matcher.split("|").every((tool) => own.some((e) => covers(e, tool))));
+    if (!covered) gaps.push([event, matcher]);
+  }
+  return gaps;
+}
+
 /**
  * A hook on disk that no event references does nothing and reports nothing —
- * the failure mode is a gate everyone believes is running. settings.json is the
- * user's file, holding permissions, env and model choices this installer has no
- * business rewriting, so the wiring is reported and never applied.
+ * the failure mode is a gate everyone believes is running. Without --wire-hooks
+ * the wiring is printed, never applied.
  */
 async function reportHookWiring(ctx, dest, files) {
-  const settings = path.join(os.homedir(), ".claude", "settings.json");
+  const settings = settingsPath();
 
   let parsed = {};
   if (existsSync(settings)) {
@@ -568,30 +695,15 @@ async function reportHookWiring(ctx, dest, files) {
     }
   }
 
-  const hooks = parsed.hooks ?? {};
+  const hooks = isObject(parsed.hooks) ? parsed.hooks : {};
   const missing = []; // [file, event, matcher]
   for (const file of files) {
-    const events = HOOK_EVENTS[file];
-    if (!events) {
+    if (HOOK_EVENTS[file]) {
+      for (const [event, matcher] of wiringGaps(hooks, file)) missing.push([file, event, matcher]);
+    } else if (!JSON.stringify(hooks).includes(file)) {
       // A hook this map does not describe: the most that can be said is whether
       // anything references it at all.
-      if (!JSON.stringify(hooks).includes(file)) missing.push([file, null, null]);
-      continue;
-    }
-    for (const [event, matcher] of Object.entries(events)) {
-      const entries = hooks[event] ?? [];
-      const referenced = JSON.stringify(entries).includes(file);
-      // An existing Agent|Task registration still runs dispatch metrics, but
-      // silently misses main-thread volume. Report replacement wiring, never
-      // edit settings.json or recommend a second overlapping registration.
-      const covered = event !== "PostToolUse" || matcher.split("|").every((tool) =>
-        Array.isArray(entries) && entries.some((entry) => {
-          if (!JSON.stringify(entry.hooks ?? []).includes(file)) return false;
-          if (!entry.matcher || entry.matcher === "*") return true;
-          try { return new RegExp(entry.matcher).test(tool); } catch { return false; }
-        }),
-      );
-      if (!referenced || !covered) missing.push([file, event, matcher]);
+      missing.push([file, null, null]);
     }
   }
   if (!missing.length) return;
@@ -601,13 +713,169 @@ async function reportHookWiring(ctx, dest, files) {
     const events = missing.filter(([f, e]) => f === file && e).map(([, e]) => e);
     ctx.log(`  ${file} is not referenced by ~/.claude/settings.json with required coverage${events.length ? ` under: ${events.join(", ")}` : ""}`);
   }
-  ctx.log("  A hook the runtime never calls fails silently. Add under \"hooks\" in settings.json:");
+  ctx.log("  A hook the runtime never calls fails silently. Let install write it (backup first):");
+  ctx.log("    npx canonkit install --wire-hooks");
+  ctx.log("  or add under \"hooks\" in settings.json yourself:");
   ctx.log("  If an entry already exists, update its matcher instead of adding a duplicate hook.");
   for (const [file, event, matcher] of missing) {
-    const cmd = path.join(dest, file).split(path.sep).join("/");
-    const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${cmd}" }] }`;
+    const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${slash(path.join(dest, file))}" }] }`;
     ctx.log(event ? `    "${event}": [${entry}]` : `    ${entry}`);
   }
+}
+
+/**
+ * settings.json for --wire-hooks, or a refusal. settings.json carries the user's
+ * permissions, env and model; anything this would have to guess about — not
+ * JSON, not an object, a `hooks` or an event of the wrong shape — stops the
+ * install before it writes anything. Messages name key paths, never values.
+ */
+async function readSettingsForWiring(file) {
+  if (!existsSync(file)) return { text: null, data: {} };
+  const text = await readFile(file, "utf8");
+  const refuse = (why) =>
+    new Error(`Refusing --wire-hooks: ~/.claude/settings.json ${why}. Nothing was written; fix it, then re-run.`);
+  let data;
+  try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse("is not valid JSON"); }
+  if (!isObject(data)) throw refuse("is not a JSON object");
+  if (data.hooks !== undefined) {
+    if (!isObject(data.hooks)) throw refuse('has a "hooks" that is not an object');
+    for (const [event, entries] of Object.entries(data.hooks)) {
+      if (!Array.isArray(entries)) throw refuse(`has hooks.${event}, which is not an array`);
+    }
+  }
+  return { text, data };
+}
+
+// Exactly `node <path>/canonkit-hook.js` or the pre-rename name, the path quoted
+// or not. Anything else that mentions the file wraps it (a redirect, a shell, a
+// timeout): rewriting it would drop what it does around the hook, so it is left
+// and reported.
+// The path takes no shell syntax (`;|&$` and backticks, parentheses,
+// redirects): `node x;curl|sh;/canonkit-hook.js` is a wrapper, not the shape.
+const EXACT_HOOK_COMMAND =
+  /^\s*node\s+(?:"(?:[^"$`]*[\\/])?(?:meu-time-hook|canonkit-hook)\.js"|'(?:[^']*[\\/])?(?:meu-time-hook|canonkit-hook)\.js'|(?:[^\s"';|&$`()<>]*[\\/])?(?:meu-time-hook|canonkit-hook)\.js)\s*$/;
+const isOurHook = (h) => isObject(h) && h.type === "command" && typeof h.command === "string" && EXACT_HOOK_COMMAND.test(h.command);
+const mentionsHook = (h) => isObject(h) && typeof h.command === "string" && /(?:meu-time-hook|canonkit-hook)\.js/.test(h.command);
+
+/**
+ * The settings with the hook wired, and what changed, by key path. Per required
+ * event: one entry of its own runs the hook, with the canonical command; an old
+ * matcher on it is widened in place; duplicates go; a hook sharing an entry with
+ * the user's own hooks moves out to its own entry, leaving the user's matcher as
+ * it was (widening it would run their hook on tools they never chose). Under any
+ * other event an exact pre-rename command is only renamed. Nothing else moves.
+ */
+function wireSettings(data, command) {
+  const out = structuredClone(data);
+  out.hooks ??= {};
+  const hooks = out.hooks;
+  const changes = [];
+  const wrappers = [];
+  const entriesOf = (entry) => (isObject(entry) && Array.isArray(entry.hooks) ? entry.hooks : []);
+  const canonical = (h) => ({ ...h, type: "command", command });
+
+  for (const [event, entries] of Object.entries(hooks)) {
+    entries.forEach((entry, i) => entriesOf(entry).forEach((h, j) => {
+      if (mentionsHook(h) && !isOurHook(h)) wrappers.push(`hooks.${event}[${i}].hooks[${j}]`);
+    }));
+  }
+
+  const required = HOOK_EVENTS[HOOK];
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (event in required) continue;
+    hooks[event] = entries.map((entry) => {
+      const list = entriesOf(entry);
+      if (!list.some((h) => isOurHook(h) && h.command !== command)) return entry;
+      changes.push(`hooks.${event}: command now runs ${HOOK}`);
+      return { ...entry, hooks: list.map((h) => (isOurHook(h) ? canonical(h) : h)) };
+    });
+  }
+
+  for (const [event, matcher] of Object.entries(required)) {
+    const note = (what) => changes.push(`hooks.${event}: ${what}`);
+    let own = null;
+    const next = [];
+    for (const entry of hooks[event] ?? []) {
+      const list = entriesOf(entry);
+      const mine = list.filter(isOurHook);
+      if (!mine.length) {
+        next.push(entry);
+        continue;
+      }
+      const theirs = list.filter((h) => !isOurHook(h));
+      if (theirs.length) {
+        next.push({ ...entry, hooks: theirs });
+        note("moved out of an entry shared with other hooks (their matcher unchanged)");
+        continue;
+      }
+      if (own) {
+        note("duplicate removed");
+        continue;
+      }
+      own = { ...entry, hooks: [canonical(mine[0])] };
+      if (mine.length > 1) note("duplicate removed");
+      if (mine[0].command !== command) note(`command now runs ${HOOK}`);
+      if (wiringGaps({ [event]: [own] }, HOOK).some(([e]) => e === event)) {
+        own.matcher = matcher;
+        note("matcher widened");
+      }
+      next.push(own);
+    }
+    if (!own) {
+      next.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
+      note("added");
+    }
+    hooks[event] = next;
+  }
+  return { data: out, changes: [...new Set(changes)], wrappers };
+}
+
+/**
+ * The file's own formatting where it can be kept: its indentation, line ending
+ * and BOM. A rewrite is still a rewrite of the whole file, which is why it only
+ * happens when the parsed settings actually change.
+ */
+function serializeSettings(data, original) {
+  const indent = (original && /\n([ \t]+)"/.exec(original)?.[1]) || "  ";
+  const text = JSON.stringify(data, null, indent) + "\n";
+  return (original?.startsWith("﻿") ? "﻿" : "") + toEol(text, original ? usesCrlf(original) : false);
+}
+
+/**
+ * install --wire-hooks: the hook registered under every event with its matcher,
+ * in ~/.claude/settings.json only (settings.local.json is never written). The
+ * original bytes are backed up first, only when they change, and the file is
+ * replaced atomically keeping its mode. Returns the planned file for a dry run.
+ */
+async function wireHooks(ctx, dest) {
+  const file = settingsPath();
+  const { text, data } = await readSettingsForWiring(file);
+  const command = `node "${slash(path.join(dest, HOOK))}"`;
+  const { data: wired, changes, wrappers } = wireSettings(data, command);
+  const after = serializeSettings(wired, text);
+
+  ctx.log("");
+  // Its own entry is still written beside a wrapper: wired is not left to a
+  // command canonkit cannot read. Until the wrapper goes, the hook runs twice.
+  for (const w of wrappers) {
+    ctx.log(`  ${w}: a command that wraps the hook — left as is. If it runs it under an event wired below,`);
+    ctx.log(`    the hook runs twice there (every gate asks twice): remove the wrapper or point it elsewhere.`);
+  }
+  if (JSON.stringify(wired) === JSON.stringify(data)) {
+    ctx.log(`  ${HOOK} is already wired in ~/.claude/settings.json.`);
+    return null;
+  }
+  if (ctx.dryRun) {
+    ctx.log(`would wire ${HOOK} into ~/.claude/settings.json (backup first):`);
+  } else {
+    const bak = text === null ? null : await ctx.backup(file);
+    await ctx.writeAtomic(file, after);
+    ctx.log(`Wired ${HOOK} into ~/.claude/settings.json${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
+    // The copy holds whatever settings.json holds, env tokens included.
+    if (bak) ctx.log(`  The backup carries the same values as settings.json (env included): keep it out of a dotfiles repo.`);
+  }
+  for (const c of changes) ctx.log(`  ${c}`);
+  return ctx.dryRun ? { file, text: after } : null;
 }
 
 async function syncReference(ctx) {
@@ -837,6 +1105,149 @@ async function list(ctx) {
 
   ctx.log("");
   ctx.log("Optional tools (graphify, openspec): canonkit tool list");
+}
+
+/* ------------------------------------------------------------------ doctor */
+
+/**
+ * Is the install doing what the routing block says it does? Every gate fails
+ * open by design, so a broken install looks exactly like a quiet one; this is
+ * where it shows. One line per check, `OK|WARN|FAIL <check>: <detail>`, for a
+ * person to read — the exit code (1 on any FAIL) is the contract.
+ *
+ * Read-only: it writes nothing, not even a probe file for the log check, and it
+ * runs no code from ~/.claude — the config is resolved with this package's own
+ * hook module, and the installed hook is only syntax-checked.
+ */
+async function doctor() {
+  const home = os.homedir();
+  const claudeDir = path.join(home, ".claude");
+  const results = [];
+  const add = (status, check, detail, more = []) => results.push({ status, check, detail, more });
+  const text = (p) => { try { return toLf(readFileSync(p, "utf8")); } catch { return null; } };
+
+  // agents: every core agent in both folders Claude Code reads, identical.
+  const agents = core(await readAgents());
+  const dirs = [path.join(home, ".agents"), path.join(claudeDir, "agents")];
+  const missing = [], differ = [], stale = [];
+  for (const a of agents) {
+    const [x, y] = dirs.map((d) => text(path.join(d, `${a.name}.md`)));
+    if (x === null || y === null) missing.push(a.name);
+    else if (x !== y) differ.push(a.name);
+    else if (x !== (await readOwned(a.file))) stale.push(a.name);
+  }
+  if (missing.length || differ.length) {
+    add("FAIL", "agents", [
+      missing.length && `missing from ~/.agents or ~/.claude/agents: ${missing.join(", ")}`,
+      differ.length && `differ between ~/.agents and ~/.claude/agents: ${differ.join(", ")}`,
+    ].filter(Boolean).join("; ") + " — run npx canonkit install");
+  } else if (stale.length) {
+    add("WARN", "agents", `differ from this package's: ${stale.join(", ")} — run npx canonkit install`);
+  } else {
+    add("OK", "agents", `${agents.length} core agents in ~/.agents and ~/.claude/agents, identical`);
+  }
+
+  // reference: the managed blocks the team's rules live in.
+  const blocks = [[path.join(home, "AGENTS.md"), ROSTER], [path.join(claudeDir, "CLAUDE.md"), ROUTING]];
+  const noBlock = blocks.filter(([f, [start, end]]) => !(text(f)?.includes(start) && text(f)?.includes(end))).map(([f]) => tilde(f));
+  if (noBlock.length) add("FAIL", "reference", `no managed block in ${noBlock.join(", ")} — run npx canonkit reference`);
+  else add("OK", "reference", "managed blocks in ~/AGENTS.md and ~/.claude/CLAUDE.md");
+
+  // hook file and syntax: on disk, this package's, and parseable — a hook that
+  // does not parse fails open, which turns every gate off with no sign.
+  const hookFile = path.join(claudeDir, "hooks", HOOK);
+  const hookText = text(hookFile);
+  if (hookText === null) {
+    add("FAIL", "hook file", `${tilde(hookFile)} is not on disk — run npx canonkit install`);
+    add("FAIL", "hook syntax", "nothing to check: the hook is not on disk");
+  } else {
+    if (hookText !== (await readOwned(path.join(HOOKS_DIR, HOOK)))) {
+      add("WARN", "hook file", `${tilde(hookFile)} differs from this package's — run npx canonkit install (a local edit is kept as .local.bak)`);
+    } else {
+      add("OK", "hook file", `${tilde(hookFile)}, same as this package's`);
+    }
+    const check = spawnSync(process.execPath, ["--check", hookFile], { encoding: "utf8" });
+    if (check.status === 0) add("OK", "hook syntax", "node --check passes");
+    else add("FAIL", "hook syntax", `node --check fails: ${(/^\w*Error\b.*$/m.exec(check.stderr ?? "") ?? [String(check.stderr ?? check.error).trim().split("\n")[0]])[0]}`);
+  }
+
+  // hook wiring: registered per event with its matcher. settings.local.json is
+  // read as well: the runtime merges it, so a hook wired there runs.
+  const hooks = {};
+  const bad = [];
+  let anySettings = false;
+  for (const f of ["settings.json", "settings.local.json"]) {
+    const raw = text(path.join(claudeDir, f));
+    if (raw === null) continue;
+    anySettings = true;
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/^﻿/, "")); } catch { bad.push(f); continue; }
+    for (const [event, entries] of Object.entries(isObject(parsed?.hooks) ? parsed.hooks : {})) {
+      if (Array.isArray(entries)) hooks[event] = [...(hooks[event] ?? []), ...entries];
+    }
+  }
+  const gaps = wiringGaps(hooks, HOOK);
+  if (bad.length) {
+    add("FAIL", "hook wiring", `${bad.map((f) => `~/.claude/${f}`).join(", ")} is not valid JSON: the runtime cannot read its hooks`);
+  } else if (!anySettings) {
+    add("FAIL", "hook wiring", "~/.claude/settings.json does not exist: no event runs the hook — run npx canonkit install --wire-hooks");
+  } else if (gaps.length) {
+    add("FAIL", "hook wiring", `not registered with the required matcher under: ${gaps.map(([e]) => e).join(", ")} — run npx canonkit install --wire-hooks`);
+  } else {
+    add("OK", "hook wiring", `registered with its matcher under ${Object.keys(HOOK_EVENTS[HOOK]).join(", ")}`);
+  }
+
+  // log: where every gate and dispatch is recorded; the Stop gate reads it. Checked
+  // without writing: the folder, or the nearest existing parent the hook creates it in.
+  const logDir = path.join(claudeDir, "canonkit-activity");
+  let probe = logDir;
+  while (!existsSync(probe) && path.dirname(probe) !== probe) probe = path.dirname(probe);
+  try {
+    if (!statSync(probe).isDirectory()) throw new Error("not a folder");
+    accessSync(probe, fsc.W_OK);
+    add("OK", "log", probe === logDir ? `${tilde(logDir)} is writable` : `${tilde(logDir)} will be created on the first event`);
+  } catch (err) {
+    add("FAIL", "log", `cannot write ${tilde(probe)} (${err.code ?? err.message}): no gate is recorded, so the Stop gate never fires`);
+  }
+
+  // forwarder: the pre-rename file, and any settings in sight still running it.
+  const forwarder = path.join(claudeDir, "hooks", LEGACY.hook);
+  const { running, unreadable } = legacyRunners(claudeDir);
+  const runBy = running.map(slash).join(", ");
+  const unread = unreadable.length ? `; could not read ${unreadable.map(slash).join(", ")}` : "";
+  if (existsSync(forwarder)) {
+    add("WARN", "forwarder", `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json and removes it once nothing in sight runs it`);
+  } else if (running.length) {
+    add("FAIL", "forwarder", `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`);
+  } else if (unreadable.length) {
+    add("WARN", "forwarder", `no ${LEGACY.hook} left${unread}`);
+  } else {
+    add("OK", "forwarder", `no ${LEGACY.hook} left, and no settings in sight run it`);
+  }
+
+  // config: what the gates resolve to from here, by this package's hook module.
+  const { projectConfig } = createRequire(import.meta.url)(path.join(HOOKS_DIR, HOOK));
+  const cfg = projectConfig(process.cwd());
+  const found = cfg.file && existsSync(cfg.file);
+  const parts = [`file ${found ? slash(cfg.file) : "none (defaults)"}`, `root ${slash(cfg.root)}`];
+  if (found) parts.push(`${cfg.include.length} include, ${cfg.exclude.length} exclude, ${cfg.perf.length} perfBudgets`);
+  if (cfg.project) {
+    parts.push(`project ${slash(cfg.project.file)} also applies ${cfg.project.include.length} include, ${cfg.project.perf.length} perfBudgets`);
+  }
+  const ignored = [
+    ...cfg.ignored.map((i) => `ignored ${i.where}: ${i.why}`),
+    ...(cfg.project?.ignored ?? []).map((i) => `ignored in the project file ${i.where}: ${i.why}`),
+  ];
+  add(ignored.length ? "WARN" : "OK", "config", parts.join(", "), ignored);
+
+  for (const r of results) {
+    console.log(`${r.status.padEnd(4)} ${r.check}: ${r.detail}`);
+    for (const m of r.more) console.log(`       ${m}`);
+  }
+  const failed = results.filter((r) => r.status === "FAIL").length;
+  console.log("");
+  console.log(failed ? `${failed} check${failed === 1 ? "" : "s"} failed.` : "No check failed.");
+  return failed ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------- tools */
@@ -1336,6 +1747,8 @@ function usage() {
 
 Usage:
   canonkit install [--no-reference]   install the core team at user level
+           [--wire-hooks]             also register the hook in ~/.claude/settings.json
+  canonkit doctor                     check the install; exits 1 on any FAIL
   canonkit reference                  sync only the global reference blocks
   canonkit add <name>...              add domain specialists to this project
   canonkit remove <name>...           remove domain specialists from this project
@@ -1346,6 +1759,9 @@ Usage:
 
 Options:
   --dry-run       report what would change without writing (or running) anything
+  --wire-hooks    install: write the hook's entries into ~/.claude/settings.json
+                  (dated backup first, every other key kept, settings.local.json
+                  never written) and remove the meu-time forwarder once unused
   --yes           tool add: skip the confirmation prompt
   --with-git-hooks tool add graphify: opt in to automatic Git hooks and merge driver
   -h, --help      show this
@@ -1371,8 +1787,8 @@ function context(dryRun) {
       await mkdir(path.dirname(p), { recursive: true });
       await writeFile(p, text);
     },
-    // For a file the user owns (a project's AGENTS.md): an interrupted write
-    // leaves the old file or the new one, never half of the user's instructions.
+    // For a file the user owns (a project's AGENTS.md, settings.json): an
+    // interrupted write leaves the old file or the new one, never half of it.
     writeAtomic: async (target, text) => {
       if (dryRun) return;
       // Write through a symlink (AGENTS.md -> CLAUDE.md is a common setup):
@@ -1381,8 +1797,14 @@ function context(dryRun) {
       const p = existsSync(target) ? realpathSync(target) : target;
       await mkdir(path.dirname(p), { recursive: true });
       const tmp = `${p}.canonkit-${process.pid}.tmp`;
+      // The new file keeps the old one's mode: a settings.json kept at 0600
+      // must not come back 0644. The temp file is private until then.
+      let mode = null;
+      try { mode = statSync(p).mode & 0o7777; } catch { /* a new file: default mode */ }
       try {
-        await writeFile(tmp, text);
+        await writeFile(tmp, text, mode === null ? undefined : { mode: 0o600 });
+        // Best effort: where chmod is refused the file stays 0600, tighter, not looser.
+        if (mode !== null) await chmod(tmp, mode).catch(() => {});
         await rename(tmp, p);
       } catch (err) {
         await rm(tmp, { force: true });
@@ -1394,6 +1816,21 @@ function context(dryRun) {
     },
     copy: async (from, to) => {
       if (!dryRun) await copyFile(from, to);
+    },
+    // A dated copy beside the file that never replaces an earlier one; copyFile
+    // keeps the mode. Returns its path (null in a dry run).
+    backup: async (p) => {
+      if (dryRun) return null;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      for (let n = 0; ; n++) {
+        const bak = `${p}.canonkit-${stamp}${n ? `-${n}` : ""}.bak`;
+        try {
+          await copyFile(p, bak, fsc.COPYFILE_EXCL);
+          return bak;
+        } catch (err) {
+          if (err.code !== "EEXIST") throw err;
+        }
+      }
     },
     remove: async (p) => {
       if (!dryRun) await rm(p, { force: true });
@@ -1415,7 +1852,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -1444,11 +1881,17 @@ async function main(argv) {
     console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
     return 1;
   }
+  if (flags.includes("--wire-hooks") && command !== "install") {
+    console.error("--wire-hooks is only valid for: canonkit install");
+    return 1;
+  }
 
   switch (command) {
     case "install":
-      await install(ctx, { reference: !flags.includes("--no-reference") });
+      await install(ctx, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks") });
       return 0;
+    case "doctor":
+      return doctor();
     case "reference":
       await syncReference(ctx);
       return 0;

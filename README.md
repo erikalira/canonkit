@@ -129,10 +129,18 @@ O bloco de roteamento promete gates `[ENFORCED]`: confirmação em `git commit`,
 bloqueio de segredos, e o gate de definition-of-done no `Stop`. Esses gates só
 existem enquanto `~/.claude/hooks/canonkit-hook.js` está no disco **e** é
 referenciado pelo `settings.json`. O `install` copia o arquivo; o registro no
-`settings.json` ele apenas **reporta**, com o JSON pronto para colar.
+`settings.json`, por padrão, ele apenas **reporta**, com o JSON pronto para colar.
+
+`npx canonkit install --wire-hooks` registra o hook em `~/.claude/settings.json`
+(backup datado `settings.json.canonkit-<timestamp>.bak`, só quando algo muda;
+nada além das entradas do hook é alterado; `settings.local.json` nunca é
+escrito). Para desfazer, restaure o `.bak`. Ele guarda os mesmos valores do
+`settings.json`, `env` incluído: mantenha-o fora de um repositório de dotfiles.
+`npx canonkit doctor` verifica a instalação (agentes, blocos, hook, registro,
+log, forwarder, config), só lê, e sai com 1 se algum check der `FAIL`.
 
 A divisão é deliberada. O `settings.json` é seu — carrega permissões, env e
-escolha de modelo que este instalador não tem por que reescrever. Já um hook no
+escolha de modelo que este instalador não reescreve sem você pedir. Já um hook no
 disco que nenhum evento referencia não faz nada e não reclama, que é o pior modo
 de falha possível para um gate: todo mundo segue acreditando que ele roda.
 
@@ -161,10 +169,18 @@ ajustável por projeto em `.claude/canonkit.json`:
 parando em `CLAUDE_PROJECT_DIR` quando o cwd está dentro dele (uma config acima
 do repositório não vale para ele) e, fora disso, abaixo do home
 (`~/.claude/canonkit.json` não é config de projeto); se nenhuma tiver o arquivo,
-em `CLAUDE_PROJECT_DIR`. Vale o arquivo mais próximo, inteiro, sem mesclar: um
-aninhado (submódulo, exemplo) substitui o do projeto enquanto o cwd está nele. O cwd vem primeiro porque, num
-worktree, o diretório do projeto é o checkout principal, onde os globs ancorados
-do worktree nunca casariam. Os globs casam com o caminho relativo à pasta onde o
+em `CLAUDE_PROJECT_DIR`. Vale o arquivo mais próximo, inteiro: um aninhado
+(submódulo, exemplo) substitui o do projeto enquanto o cwd está nele — com uma
+exceção que só acrescenta gates: quando o arquivo mais próximo fica abaixo de
+`CLAUDE_PROJECT_DIR` e o projeto tem o seu, as listas aditivas do projeto
+(`highRisk.include`, `perfBudgets`) valem também, casadas com o caminho relativo
+ao projeto. O `exclude` do projeto nunca chega à pasta aninhada, e o `exclude`
+do aninhado nunca cancela o `include` do projeto. Num worktree com config
+própria vale a mesma regra: o `include` do projeto continua somando gates, mas
+globs ancorados (com `/`) são casados contra o caminho relativo ao checkout
+principal e não casam dentro do worktree; só globs sem `/` os alcançam. O cwd
+vem primeiro na busca justamente porque, num worktree, `CLAUDE_PROJECT_DIR` é o
+checkout principal, onde os globs ancorados do worktree nunca casariam. Os globs casam com o caminho relativo à pasta onde o
 arquivo está. Só é lido um arquivo comum de até 64 KiB, e só as 100 primeiras
 entradas de cada lista: um hook que trava ou estoura memória falha aberto.
 `version` é opcional e só `1` é lido: outra versão = padrões. Chaves

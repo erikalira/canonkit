@@ -25,5 +25,6 @@ backs it, independently of my judgment.
   and the size of the report it returned (`~/.claude/canonkit-activity/events.jsonl`), so a plan
   that names them is checkable against what ran.
 - `[ENFORCED]` **No self-merge on HIGH risk.** A Stop hook blocks the turn once if a gated surface
-  was edited and no independent reviewer was dispatched **after that edit**. Who counts as a reviewer
+  was edited and no independent reviewer was dispatched, or resumed with a message, **after that
+  edit**; a reviewer subagent's own probes outside the project do not count as edits. Who counts as a reviewer
   and how to answer the gate: "No self-merge on HIGH risk" in `~/AGENTS.md`.
