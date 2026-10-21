@@ -96,7 +96,7 @@ leave no file behind — test snapshots HOME).
 - Then implement, `npm test` + `npm run validate`, update the release-notes draft
   in job-a-review-fixes.md, dispatch Gard + Quinn (+ Archie on the shape).
 
-**2026-10-21, implemented (uncommitted).** Missing tests written and seen failing
+**2026-10-21, implemented (committed in 1f28afc).** Missing tests written and seen failing
 (46 fail), then all green: `npm test` 319 pass / 0 fail / 3 skipped (platform),
 `npm run validate` all checks passed. Release-notes draft updated.
 Implementation choices beyond the decisions above:
