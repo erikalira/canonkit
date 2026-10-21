@@ -15,14 +15,18 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HOOK = path.join(REPO, "hooks", "canonkit-hook.js");
+// Importing the hook must not run it: doctor and these tests read its exports.
+const hook = () => createRequire(import.meta.url)(HOOK);
+const WIN = process.platform === "win32";
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
 const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
@@ -37,12 +41,25 @@ after(async () => {
   await rm(HOME, { recursive: true, force: true });
 });
 
+// The harness sets CLAUDE_PROJECT_DIR for hooks, and would for this suite if it
+// runs inside a session: every test picks its project explicitly instead.
+function hookEnv(env = {}) {
+  const e = { ...process.env, HOME, USERPROFILE: HOME, ...env };
+  if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
+  return e;
+}
+
+// The hook runs from the fake HOME, and projects live under it: the config
+// lookup stops at home, so a real canonkit.json above the repo or in the
+// developer's home can never leak into a result.
 /** Runs the hook and reduces its stdout to the decision it expresses. */
-function decide(input) {
+function decide(input, env = {}) {
   const r = spawnSync(process.execPath, [HOOK], {
     input: JSON.stringify(input),
     encoding: "utf8",
-    env: { ...process.env, HOME, USERPROFILE: HOME },
+    env: hookEnv(env),
+    cwd: HOME,
+    timeout: 10000,
   });
   const out = (r.stdout || "").trim();
   if (!out) return "allow";
@@ -55,9 +72,25 @@ function runHook(input, env = {}) {
   return spawnSync(process.execPath, [HOOK], {
     input: typeof input === "string" ? input : JSON.stringify(input),
     encoding: "utf8",
-    env: { ...process.env, HOME, USERPROFILE: HOME, ...env },
+    env: hookEnv(env),
+    cwd: HOME,
   });
 }
+
+// A throwaway project with an optional .claude/canonkit.json, under the fake
+// HOME (removed with it).
+async function project(config) {
+  const dir = await mkdtemp(path.join(HOME, "project-"));
+  await mkdir(path.join(dir, ".claude"), { recursive: true });
+  if (config !== undefined) {
+    await writeFile(path.join(dir, ".claude", "canonkit.json"), typeof config === "string" ? config : JSON.stringify(config));
+  }
+  return dir;
+}
+const inProject = (cwd, tool, tool_input, session = "CONFIG", env) => decide({ ...pre(tool, tool_input, session), cwd }, env);
+// Concatenated, not path.join: join would resolve the `..` and `//` under test.
+const edit = (cwd, rel, new_string = "x") =>
+  inProject(cwd, "Edit", { file_path: cwd + "/" + rel, new_string });
 
 const logged = async (session) =>
   (await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"))
@@ -356,17 +389,54 @@ describe("performance budgets", () => {
       "budget.json",
       "lighthouse-budget.json",
       "perf-budget.json",
+      "perf_budget.yml",
       "config/performance-budgets.yml",
       "load/k6/thresholds.js",
+      ".bundlewatch.config.json",
+      "bundlewatch.config.js",
+      "app.budgets.json",
+      "perfBudget.json", // camelCase budget files, which *perf*budget* used to catch
+      "config/performanceBudgets.yml",
+      "perfBudget-prod.json", // camelCase with a suffix (Perry)
+      "perfBudget_ci.json",
+      "config/performanceBudget-mobile.yml",
+      "config/performanceBudget_ci.yml",
     ]) {
       assert.equal(edit(fp), "ask", fp);
     }
   });
 
+  test("budget.json at any depth asks: an accepted over-match (Perry)", () => {
+    // Narrowing it to a lighthouse/perf ancestor would miss Lighthouse's own
+    // default location; a finance budget.json costing one confirmation is the trade.
+    assert.equal(edit("src/finance/budget.json"), "ask");
+  });
+
+  test("perfBudget-<anything> asks: an accepted over-match (Perry)", () => {
+    // perfBudget-prod.json is a budget; perfBudget-formatter.ts costing one
+    // confirmation is the trade. Without a separator it is not one.
+    assert.equal(edit("src/perfBudget-formatter.ts"), "ask");
+    assert.equal(edit("src/perfBudgetFormatter.ts"), "allow");
+  });
+
   test("ordinary files that mention a budget are not budgets", () => {
-    for (const fp of ["src/finance/budget.ts", "docs/performance.md", "load/k6/script.js"]) {
+    for (const fp of [
+      "src/finance/budget.ts",
+      "docs/performance.md",
+      "load/k6/script.js",
+      "src/superfluous-budget.ts", // "superfluous" contains "perf"
+      "src/perfBudgetFormatter.ts",
+      "docs/performance-budget.md", // prose about a budget is not the budget
+      "node_modules/pkg/lighthouserc.json",
+      "dist/budget.json",
+    ]) {
       assert.equal(edit(fp), "allow", fp);
     }
+  });
+
+  test("an explicit perfBudgets entry gates prose and noise too", async () => {
+    const cwd = await project({ perfBudgets: ["docs/perf/*.md"] });
+    assert.equal(inProject(cwd, "Edit", { file_path: cwd + "/docs/perf/budget-policy.md", new_string: "x" }), "ask");
   });
 
   test("a perf-budget gate is logged under its own kind", async () => {
@@ -379,20 +449,6 @@ describe("performance budgets", () => {
 describe("project config (.claude/canonkit.json)", () => {
   // The file is read from the project the session runs in (input.cwd). It
   // tunes path heuristics only: what is written is always checked.
-  const projects = [];
-  after(() => Promise.all(projects.map((p) => rm(p, { recursive: true, force: true }))));
-
-  async function project(config) {
-    const dir = await mkdtemp(path.join(os.tmpdir(), "canonkit-project-"));
-    projects.push(dir);
-    await mkdir(path.join(dir, ".claude"), { recursive: true });
-    await writeFile(path.join(dir, ".claude", "canonkit.json"), typeof config === "string" ? config : JSON.stringify(config));
-    return dir;
-  }
-  const inProject = (cwd, tool, tool_input, session = "CONFIG") => decide({ ...pre(tool, tool_input, session), cwd });
-  const edit = (cwd, rel, new_string = "x") =>
-    inProject(cwd, "Edit", { file_path: path.join(cwd, rel), new_string });
-
   test("exclude silences a path heuristic, for absolute and relative paths", async () => {
     const cwd = await project({ highRisk: { exclude: ["src/domain/contracts/**"] } });
     assert.equal(edit(cwd, "src/domain/contracts/contract.service.ts"), "allow");
@@ -457,6 +513,485 @@ describe("project config (.claude/canonkit.json)", () => {
   test("no config file: defaults", () => {
     assert.equal(decide({ ...pre("Edit", { file_path: "server/sessions/store.ts", new_string: "x" }), cwd: os.tmpdir() }), "ask");
   });
+
+  test("a version other than 1 is not guessed at: defaults, and the reason is kept", async () => {
+    const ok = await project({ version: 1, highRisk: { exclude: ["src/domain/contracts/**"] } });
+    assert.equal(edit(ok, "src/domain/contracts/x.ts"), "allow");
+    const future = await project({ version: 2, highRisk: { exclude: ["src/domain/contracts/**"] } });
+    assert.equal(edit(future, "src/domain/contracts/x.ts"), "ask");
+    assert.ok(hook().projectConfig(future, "").ignored.some((i) => i.where === "version"));
+  });
+
+  test("unknown keys are ignored, and reported for doctor", async () => {
+    const cwd = await project({ highrisk: { exclude: ["**"] }, perfBudgets: ["perf/x.yml"] });
+    assert.equal(edit(cwd, "perf/x.yml"), "ask", "the known key still applies");
+    assert.deepEqual(hook().projectConfig(cwd, "").ignored.map((i) => i.where), ["highrisk"]);
+  });
+
+  test("a malformed config yields the defaults plus the reasons it was ignored", async () => {
+    const { projectConfig } = hook();
+    const broken = projectConfig(await project("{ not json"), "");
+    assert.equal(broken.exclude.length, 0);
+    assert.equal(broken.ignored.length, 1);
+    const shaped = projectConfig(await project({ highRisk: { include: "src/**", exclude: [42, "", "x".repeat(500), "ok/**"] } }), "");
+    assert.deepEqual(shaped.exclude.map((m) => m.glob), ["ok/**"]);
+    assert.deepEqual(shaped.ignored.map((i) => i.where), ["highRisk.include", "highRisk.exclude[0]", "highRisk.exclude[1]", "highRisk.exclude[2]"]);
+    assert.ok(shaped.ignored.every((i) => typeof i.why === "string" && i.why));
+  });
+});
+
+describe("a repo-committed exclude cannot switch the HIGH-risk gate off (decision b)", () => {
+  // A clone never passes the edit gate on .claude/canonkit.json: whatever the
+  // repo committed applies from the first session. So exclude may quiet the
+  // ambiguous words, never the surfaces the HIGH-risk routing exists for.
+  test("catch-all excludes are rejected, and reported", async () => {
+    for (const g of ["**", "*", "**/*", "/**", "./**", "**/", "*/**", "?*", "**/**", "*.*", "**/*.*", "*.?*"]) {
+      const cwd = await project({ highRisk: { exclude: [g] } });
+      assert.equal(edit(cwd, "server/sessions/store.ts"), "ask", g);
+      const { exclude, ignored } = hook().projectConfig(cwd, "");
+      assert.equal(exclude.length, 0, g);
+      assert.match(ignored[0].why, /catch-all/, g);
+    }
+  });
+
+  test("excludes are judged together: a catch-all spread over several globs is rejected", async () => {
+    // Each of these names one extension; together they cover most code.
+    const cwd = await project({ highRisk: { exclude: ["*.ts", "*.go", "*.rb", "*.py"] } });
+    const { exclude, ignored } = hook().projectConfig(cwd, "");
+    assert.equal(exclude.length, 2, "the globs before the one that tips the union over stand");
+    assert.deepEqual(ignored.map((i) => i.where), ["highRisk.exclude[2]", "highRisk.exclude[3]"]);
+    for (const i of ignored) assert.match(i.why, /with the excludes before it/);
+    assert.equal(edit(cwd, "lib/sessions/store.rb"), "ask");
+    assert.equal(edit(cwd, "lib/sessions/store.ts"), "allow", "an earlier glob still applies");
+  });
+
+  test("a narrow glob that tips the union is reported as tipping it, not as a catch-all", async () => {
+    const cwd = await project({ highRisk: { exclude: ["*.ts", "*.go", "*.rb", "docs/**", "src/domain/**"] } });
+    const { exclude, ignored } = hook().projectConfig(cwd, "");
+    assert.equal(exclude.length, 3, "*.ts, *.go and src/domain/** stand");
+    const docs = ignored.find((i) => i.where === "highRisk.exclude[3]");
+    assert.match(docs.why, /with the excludes before it/);
+  });
+
+  test("several narrow excludes are not a catch-all", async () => {
+    const cwd = await project({ highRisk: { exclude: ["src/domain/contracts/**", "docs/**", "web/components/**", "*.stories.tsx"] } });
+    const { exclude, ignored } = hook().projectConfig(cwd, "");
+    assert.equal(exclude.length, 4);
+    assert.deepEqual(ignored, []);
+  });
+
+  test("auth and migrations stay gated whatever exclude says", async () => {
+    const cwd = await project({ highRisk: { exclude: ["src/**", "db/**", "*.sql", "*.ts"] } });
+    for (const rel of ["src/auth/x.ts", "src/lib/oauth.ts", "db/migrations/001_init.sql", "src/migrations/2024_users.ts", "prisma/schema.prisma"]) {
+      assert.equal(edit(cwd, rel), "ask", rel);
+    }
+    assert.equal(edit(cwd, "src/lib/session/store.ts"), "allow", "an ambiguous word is still excludable");
+  });
+
+  test("an exclude that silences a gate leaves a trace the Stop gate ignores", async () => {
+    const cwd = await project({ highRisk: { exclude: ["src/domain/contracts/**"] } });
+    inProject(cwd, "Edit", { file_path: cwd + "/src/domain/contracts/x.ts", new_string: "x" }, "EXCLUDED");
+    const [e] = await logged("EXCLUDED");
+    assert.deepEqual({ event: e.event, kind: e.kind, glob: e.glob }, { event: "gate", kind: "excluded-by-config", glob: "src/domain/contracts/**" });
+    assert.equal(decide({ hook_event_name: "Stop", session_id: "EXCLUDED" }), "allow");
+  });
+
+  test("author is not auth (no escape hatch is left for a false positive on a strong term)", () => {
+    for (const fp of ["src/components/AuthorCard.tsx", "src/authors/list.ts", "blog/authored-by.ts", "src/authorship.ts"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "allow", fp);
+    }
+    // Only the word author: a camelCase `Or` starts a new word, and
+    // authority is where Spring keeps its granted roles.
+    for (const fp of ["src/authorize.ts", "src/authorization/policy.ts", "src/lib/authorise.py",
+      "src/security/authority.ts", "src/security/authorities.ts", "src/AuthorityRepository.java",
+      "src/authOrRedirect.ts", "src/requireAuthOrThrow.ts", "src/authOrchestrator.ts", "src/useAuthOrGuest.ts"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "ask", fp);
+    }
+  });
+
+  test("AUTHORS files and authoring folders are the word author too", () => {
+    for (const fp of ["AUTHORS", "AUTHORS.md", "docs/AUTHORS.txt", "AUTHOR", "src/authoring/editor.ts", "src/AuthoringPanel.tsx"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "allow", fp);
+    }
+    // Uppercase is the whole word only: an uppercase auth word is still auth.
+    for (const fp of ["src/AUTHORITY.ts", "config/AUTHORIZATION.yml", "src/AUTH_OR_GUEST.ts", "src/AUTHORIZED_ROLES.ts"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "ask", fp);
+    }
+  });
+
+  test("migration prose is not a migration; migration code always is", async () => {
+    // Migrations are beyond exclude, so a guide about one would ask forever.
+    for (const fp of ["docs/migration-guide.md", "MIGRATION.md", "docs/plans/data-migration.md"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "allow", fp);
+    }
+    const cwd = await project({ highRisk: { exclude: ["db/**"] } });
+    assert.equal(edit(cwd, "db/migrations/001_init.sql"), "ask");
+  });
+});
+
+describe("glob matching stays linear (a hook that times out fails open)", () => {
+  // The runtime treats a hook that times out as a non-blocking error, so a glob
+  // that backtracks turns every gate off, the secret deny included, and a
+  // cloned repo's config is enough to trigger it.
+  const HOSTILE = ["*a".repeat(20) + "b", "**?".repeat(10) + "#", "**/a".repeat(30) + "/**/b", "a*".repeat(60) + "/**"];
+  const LONG = ["a".repeat(180), "a/".repeat(120) + "c", "a/".repeat(60) + "a".repeat(120)];
+
+  test("hostile globs finish in < 50 ms on long paths", () => {
+    const { globMatcher } = hook();
+    for (const g of HOSTILE) {
+      const m = globMatcher(g);
+      for (const p of LONG) {
+        const t = performance.now();
+        m(p);
+        assert.ok(performance.now() - t < 50, `${g.slice(0, 12)}… on a ${p.length}-char path`);
+      }
+    }
+  });
+
+  test("a hostile config still lets every gate answer", async () => {
+    const cwd = await project({ highRisk: { include: HOSTILE, exclude: HOSTILE }, perfBudgets: HOSTILE });
+    const deep = "a/".repeat(120) + "auth.ts";
+    assert.equal(edit(cwd, deep), "ask");
+    assert.equal(edit(cwd, "a".repeat(180) + ".ts", FAKE_PEM), "deny");
+  });
+
+  test("an oversized or special config file cannot cost the secret deny", async () => {
+    // A crashed or stalled hook fails open just like a timed-out one.
+    const big = await project(JSON.stringify({ perfBudgets: Array(400000).fill(1) }));
+    let t = performance.now();
+    assert.equal(edit(big, "src/config.ts", FAKE_PEM), "deny");
+    assert.equal(edit(big, "server/sessions/store.ts"), "ask");
+    const cfg = hook().projectConfig(big, "");
+    assert.ok(performance.now() - t < 5000);
+    assert.deepEqual(cfg.ignored.map((i) => i.where), [".claude/canonkit.json"]);
+    assert.match(cfg.ignored[0].why, /larger than/);
+
+    // Just under the size cap: entries past MAX_GLOBS are one ignored line, not one each.
+    const many = await project(JSON.stringify({ perfBudgets: Array(20000).fill(1) }));
+    t = performance.now();
+    const m = hook().projectConfig(many, "");
+    assert.ok(performance.now() - t < 200);
+    assert.equal(m.ignored.length, 101, "100 bad entries + one 'truncated'");
+    assert.match(m.ignored.at(-1).why, /more than 100/);
+  });
+
+  test("a config that is not a regular file is not read", { skip: WIN && "no /dev/zero on Windows" }, async () => {
+    const dir = await project();
+    const { symlink } = await import("node:fs/promises");
+    await symlink("/dev/zero", path.join(dir, ".claude", "canonkit.json"));
+    assert.equal(edit(dir, "src/config.ts", FAKE_PEM), "deny");
+    assert.match(hook().projectConfig(dir, "").ignored[0].why, /not a regular file/);
+  });
+
+  test("dialect: * stays in a segment, ** crosses, trailing / is dir/**, case-insensitive, no [] or !", () => {
+    const { globMatcher: g } = hook();
+    const yes = (glob, p) => assert.ok(g(glob)(p), `${glob} should match ${p}`);
+    const no = (glob, p) => assert.ok(!g(glob)(p), `${glob} should not match ${p}`);
+    yes("src/*.ts", "src/a.ts"); no("src/*.ts", "src/x/a.ts");
+    yes("src/**/a.ts", "src/a.ts"); yes("src/**/a.ts", "src/x/y/a.ts");
+    yes("src/legacy/", "src/legacy/x/y.ts"); no("src/legacy/", "src/legacy-v2/x.ts");
+    yes("*.service.ts", "deep/dir/A.Service.TS");
+    yes("a?c", "abc"); no("src/a?c", "src/a/c");
+    yes("**/k6/**/*threshold*", "load/k6/thresholds.js"); no("**/k6/**/*threshold*", "load/k6/script.js");
+    no("src/a**b", "src/a/x/b"); yes("src/a**b", "src/axxb"); // ** inside a segment is a plain *
+    yes("[ab].ts", "[ab].ts"); no("[ab].ts", "a.ts");
+    yes("!x.ts", "!x.ts"); no("!x.ts", "y.ts");
+  });
+});
+
+describe("every check sees one normalized path", () => {
+  // Each bypass below allowed a write the gates exist to stop.
+  test("`..` cannot walk out of an excluded folder into a gated one", async () => {
+    const cwd = await project({ highRisk: { exclude: ["src/legacy/**"] } });
+    for (const rel of ["src/legacy/../auth/x.ts", "src/legacy/../server/sessions/store.ts"]) {
+      assert.equal(edit(cwd, rel), "ask", rel);
+      assert.equal(inProject(cwd, "Edit", { file_path: rel, new_string: "x" }), "ask", rel);
+      assert.equal(inProject(cwd, "Bash", { command: `echo x > ${rel}` }), "ask", rel);
+    }
+  });
+
+  test("`..` cannot borrow a presentational, noise or test folder", () => {
+    for (const fp of ["src/components/../server/permissions.ts", "node_modules/../.env", "build/../.env", "src/__tests__/../auth.ts"]) {
+      assert.equal(decide(pre("Edit", { file_path: fp, new_string: "x" })), "ask", fp);
+    }
+    assert.equal(decide(pre("Bash", { command: "echo x > node_modules/../.env" })), "ask");
+    assert.equal(decide(pre("Edit", { file_path: "src/x.test.ts/../config.ts", new_string: 'const password = "hunter2000"' })), "ask");
+  });
+
+  test("the config file cannot be reached by another spelling", async () => {
+    const cwd = await project({});
+    for (const rel of [".claude/./canonkit.json", ".claude//canonkit.json", ".claude/canonkit.json::$DATA", "x/../.claude/canonkit.json", ".CLAUDE/Canonkit.JSON"]) {
+      assert.equal(edit(cwd, rel, "{}"), "ask", rel);
+    }
+    assert.equal(inProject(cwd, "Bash", { command: "echo {} > .claude//canonkit.json" }), "ask");
+  });
+
+  test("Windows-only spellings of the same file", { skip: !WIN && "NTFS/Win32 path rules" }, async () => {
+    const cwd = await project({});
+    for (const rel of [".claude/canonkit.json:stream", ".claude/canonkit.json.", ".claude/canonkit.json ", ".claude::$INDEX_ALLOCATION/canonkit.json"]) {
+      assert.equal(edit(cwd, rel, "{}"), "ask", JSON.stringify(rel));
+    }
+  });
+
+  test("include matches however the path is spelled", async () => {
+    const cwd = await project({ highRisk: { include: ["src/payments/**"] } });
+    for (const p of ["./src/./payments/a.ts", "src//payments/a.ts", "src\\payments\\a.ts", "src/x/../payments/a.ts"]) {
+      assert.equal(inProject(cwd, "Edit", { file_path: p, new_string: "x" }), "ask", p);
+    }
+    assert.equal(inProject(cwd, "Bash", { command: "echo x > ./src/./payments/a.ts" }), "ask");
+  });
+
+  test("MSYS paths (Git Bash on Windows) are the same files", { skip: !WIN && "MSYS is Windows-only" }, async () => {
+    const cwd = await project({ highRisk: { include: ["src/payments/**"] } });
+    const msys = cwd.replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase()).replace(/\\/g, "/");
+    assert.equal(inProject(cwd, "Edit", { file_path: msys + "/src/payments/a.ts", new_string: "x" }), "ask");
+    assert.equal(inProject(cwd, "Bash", { command: `echo x > ${msys}/src/payments/a.ts` }), "ask");
+    const { normalizePath } = hook();
+    assert.equal(normalizePath("/c/Users/x/../y/a.ts"), "C:/Users/y/a.ts");
+    assert.equal(normalizePath("/cygdrive/d/repo/a.ts"), "D:/repo/a.ts");
+  });
+
+  test("`..` stops at a drive root, and long-path prefixes are the same file", { skip: !WIN && "drive paths" }, async () => {
+    const cwd = await project({ highRisk: { include: ["src/payments/**"] }, perfBudgets: ["config/budgets.yml"] });
+    const noDrive = cwd.replace(/\\/g, "/").slice(2); // /Users/.../project-x
+    const msys = "/" + cwd[0].toLowerCase() + "/.." + noDrive;
+    for (const p of [`C:/..${noDrive}/src/payments/a.ts`.replace(/^C/, cwd[0]), `${msys}/src/payments/a.ts`, `\\\\?\\${cwd}\\src\\payments\\a.ts`]) {
+      assert.equal(inProject(cwd, "Edit", { file_path: p, new_string: "x" }), "ask", p);
+    }
+    assert.equal(inProject(cwd, "Bash", { command: `echo x > ${msys}/src/payments/a.ts` }), "ask");
+    assert.equal(inProject(cwd, "Edit", { file_path: `${msys}/config/budgets.yml`, new_string: "x" }), "ask");
+  });
+
+  test("normalizePath: one form for every spelling", () => {
+    const { normalizePath: n } = hook();
+    assert.equal(n("C:/a/../.."), "C:/");
+    assert.equal(n("/ab/../../b"), "/b"); // not /a/: in Git Bash that is drive A
+    assert.equal(n("./src/./a//b.ts"), "src/a/b.ts");
+    assert.equal(n("src\\a\\..\\b.ts"), "src/b.ts");
+    assert.equal(n("a/b/../../../c.ts"), "../c.ts");
+    assert.equal(n(".claude/canonkit.json::$DATA"), ".claude/canonkit.json");
+    assert.equal(n("C:\\repo\\x.ts"), "C:/repo/x.ts");
+  });
+});
+
+describe("noise and secret paths", () => {
+  const edit0 = (fp) => decide(pre("Edit", { file_path: fp, new_string: "x" }));
+
+  test("noise folders are whole segments, not substrings", () => {
+    for (const fp of ["src/distribution/auth/x.ts", "src/buildings/auth/x.ts", "src/coverage-report/auth.ts", "src/rebuild/auth.ts"]) {
+      assert.equal(edit0(fp), "ask", fp);
+    }
+    for (const fp of ["dist/auth/x.js", "node_modules/pkg/auth.js", "build/auth.js", "app/.next/server/auth.js", "coverage/auth.ts.html"]) {
+      assert.equal(edit0(fp), "allow", fp);
+    }
+  });
+
+  test("key and credential files are secret paths (a new default gate)", async () => {
+    const files = ["certs/server.pem", "tls/server.key", "certs/client.p12", "certs/client.pfx", "home/.ssh/id_rsa",
+      "id_ed25519", ".ssh/id_ecdsa", "kubeconfig", "home/.kube/config", ".pgpass", "infra/prod.tfvars", "infra/terraform.tfstate"];
+    for (const fp of files) assert.equal(edit0(fp), "ask", fp);
+    const cwd = await project({ highRisk: { exclude: ["certs/**", "infra/**", "*.pem", "kubeconfig"] } });
+    for (const rel of ["certs/server.pem", "infra/prod.tfvars", "kubeconfig"]) assert.equal(edit(cwd, rel), "ask", rel);
+  });
+
+  test("their public or ordinary neighbours are not", () => {
+    for (const fp of ["home/.ssh/id_rsa.pub", "src/keyboard.ts", "src/monkey.ts", "src/api.key.ts", "infra/main.tf"]) {
+      assert.equal(edit0(fp), "allow", fp);
+    }
+  });
+});
+
+describe("config lookup", () => {
+  test("a session in a subfolder finds the project's config, and paths are relative to it", async () => {
+    const root = await project({ highRisk: { exclude: ["src/domain/contracts/**"] } });
+    const sub = path.join(root, "packages", "web");
+    await mkdir(sub, { recursive: true });
+    assert.equal(inProject(sub, "Edit", { file_path: root + "/src/domain/contracts/x.ts", new_string: "x" }), "allow");
+    assert.equal(inProject(sub, "Bash", { command: "echo x > ../../src/domain/contracts/x.ts" }), "allow");
+    assert.equal(inProject(sub, "Bash", { command: "echo x > src/domain/contracts/x.ts" }), "ask", "relative to the session, not the root");
+  });
+
+  test("CLAUDE_PROJECT_DIR names the project when no config is found from cwd", async () => {
+    const root = await project({ highRisk: { exclude: ["src/domain/contracts/**"] } });
+    const elsewhere = await project();
+    const fp = root + "/src/domain/contracts/x.ts";
+    assert.equal(inProject(elsewhere, "Edit", { file_path: fp, new_string: "x" }), "ask");
+    assert.equal(inProject(elsewhere, "Edit", { file_path: fp, new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: root }), "allow");
+  });
+
+  test("a worktree session uses the worktree's config even with CLAUDE_PROJECT_DIR on the main checkout", async () => {
+    // Parallel writers get a worktree; relative to the main checkout their
+    // anchored include globs would never match.
+    const config = { highRisk: { include: ["src/payments/**"] } };
+    const root = await project(config);
+    const wt = path.join(root, ".claude", "worktrees", "w1");
+    await mkdir(path.join(wt, ".claude"), { recursive: true });
+    await writeFile(path.join(wt, ".claude", "canonkit.json"), JSON.stringify(config));
+    assert.equal(inProject(wt, "Edit", { file_path: wt + "/src/payments/a.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: root }), "ask");
+  });
+
+  // Bounded at CLAUDE_PROJECT_DIR when cwd is inside it (Archie, round 3): a
+  // config in a folder above the repo would change gating from outside it and
+  // move the root every relative path is taken from.
+  const where = (cwd, projectDir) => {
+    const { root, file, exclude } = hook().projectConfig(cwd, projectDir);
+    return { root: path.resolve(root), file: file && path.resolve(file), exclude: exclude.length };
+  };
+  const cfgAt = async (dir, config = { highRisk: { exclude: ["src/domain/contracts/**"] } }) => {
+    await mkdir(path.join(dir, ".claude"), { recursive: true });
+    await writeFile(path.join(dir, ".claude", "canonkit.json"), JSON.stringify(config));
+  };
+
+  test("a config above the project dir is ignored when cwd is inside it", async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer);
+    const repo = path.join(outer, "repo");
+    const sub = path.join(repo, "packages", "web");
+    await mkdir(sub, { recursive: true });
+    assert.deepEqual(where(sub, repo), { root: repo, file: path.join(repo, ".claude", "canonkit.json"), exclude: 0 });
+    assert.equal(inProject(sub, "Edit", { file_path: repo + "/src/domain/contracts/x.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask");
+  });
+
+  test("the project dir's own config is checked before the walk stops", async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer, {});
+    const repo = path.join(outer, "repo");
+    await cfgAt(repo);
+    const sub = path.join(repo, "src");
+    await mkdir(sub, { recursive: true });
+    assert.deepEqual(where(sub, repo), { root: repo, file: path.join(repo, ".claude", "canonkit.json"), exclude: 1 });
+  });
+
+  test("cwd at the project dir itself is bounded there", async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer);
+    const repo = path.join(outer, "repo");
+    await mkdir(repo, { recursive: true });
+    assert.deepEqual(where(repo, repo + path.sep), { root: repo, file: path.join(repo, ".claude", "canonkit.json"), exclude: 0 });
+  });
+
+  test("a project file outside a nested config's folder fails closed, whatever its ancestors are named", async () => {
+    // Outside the nested root a path stays absolute, and a `build/` above the
+    // project read as a noise folder let even .env through (Gard, round 3).
+    const base = await mkdtemp(path.join(HOME, "outer-"));
+    const repo = path.join(base, "build", "fixtures", "Proj");
+    const sub = path.join(repo, "vendor", "sub");
+    await cfgAt(repo, {});
+    await cfgAt(sub, {});
+    for (const rel of [".env", "src/auth/login.ts", "src/secret.ts", "db/migrations/001.sql"]) {
+      assert.equal(inProject(sub, "Edit", { file_path: repo + "/" + rel, new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask", rel);
+    }
+    assert.equal(inProject(sub, "Edit", { file_path: repo + "/perf-budget.json", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask", "perf defaults too");
+    assert.equal(inProject(repo, "Edit", { file_path: repo + "/src/auth/login.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "ask");
+  });
+
+  test("an absolute in-project test or noise path is still skipped", async () => {
+    // Edit always hands an absolute path; it is the relative form, inside the
+    // config's folder, that the noise and test skips read (Quinn, round 3).
+    const cwd = await project({});
+    const soft = "password = '" + "hunter2hunter2" + "'";
+    const forms = [cwd];
+    if (WIN) forms.push(cwd.replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase()).replace(/\\/g, "/"));
+    for (const base of forms) {
+      for (const rel of ["src/auth.test.ts", "node_modules/p/auth.js"]) {
+        assert.equal(inProject(cwd, "Edit", { file_path: base + "/" + rel, new_string: "x" }), "allow", base + "/" + rel);
+      }
+      assert.equal(inProject(cwd, "Edit", { file_path: base + "/src/a.test.ts", new_string: soft }), "allow", "soft secret in a test file");
+    }
+    assert.equal(inProject(cwd, "Edit", { file_path: cwd + "/src/a.ts", new_string: soft }), "ask", "control");
+  });
+
+  test("an MSYS-style project dir (/c/...) still bounds the walk", { skip: !WIN && "win32 only" }, async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer);
+    const repo = path.join(outer, "repo");
+    const sub = path.join(repo, "src");
+    await mkdir(sub, { recursive: true });
+    const msys = repo.replace(/^([A-Za-z]):/, (_, d) => "/" + d.toLowerCase()).replace(/\\/g, "/");
+    assert.equal(where(sub, msys).exclude, 0, msys);
+    assert.equal(where(sub, msys).root.toLowerCase(), repo.toLowerCase());
+  });
+
+  // Documents the contract only: a sibling's walk never reaches the project dir,
+  // so a prefix bug in the containment check could not show here.
+  test("a sibling folder sharing the project dir's prefix is outside it", async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer);
+    const repo = path.join(outer, "repo");
+    const other = path.join(outer, "repo-other", "src");
+    await mkdir(repo, { recursive: true });
+    await mkdir(other, { recursive: true });
+    assert.equal(where(other, repo).root, outer, "not bounded: the walk goes on up");
+  });
+
+  test("cwd outside the project dir: its own config wins, else the project dir's", async () => {
+    const repo = await project({ highRisk: { exclude: ["a/**"] } });
+    const own = await project({ highRisk: { exclude: ["b/**", "c/**"] } });
+    const bare = await project();
+    assert.deepEqual(where(own, repo), { root: own, file: path.join(own, ".claude", "canonkit.json"), exclude: 2 });
+    assert.deepEqual(where(bare, repo), { root: repo, file: path.join(repo, ".claude", "canonkit.json"), exclude: 1 });
+  });
+
+  test("a nested config applies whole, no merge, relative to its own folder", async () => {
+    const repo = await project({ highRisk: { include: ["src/payments/**"] } });
+    const demo = path.join(repo, "examples", "demo");
+    await cfgAt(demo, { highRisk: { exclude: ["src/domain/contracts/**"] } });
+    const { root, include, rel } = hook().projectConfig(demo, repo);
+    assert.equal(path.resolve(root), demo);
+    assert.equal(include.length, 0, "the project's include does not carry into the nested folder");
+    assert.equal(rel(demo + "/src/domain/contracts/x.ts"), "src/domain/contracts/x.ts");
+    assert.equal(inProject(demo, "Edit", { file_path: demo + "/src/domain/contracts/x.ts", new_string: "x" }, "CONFIG", { CLAUDE_PROJECT_DIR: repo }), "allow");
+  });
+
+  test("no config anywhere: the root is the project dir, not cwd", async () => {
+    const repo = await project();
+    const sub = path.join(repo, "src", "lib");
+    await mkdir(sub, { recursive: true });
+    assert.equal(where(sub, repo).root, repo);
+    assert.equal(hook().projectConfig(sub, repo).rel(sub + "/a.ts"), "src/lib/a.ts");
+  });
+
+  test("on Windows, a project dir differing only in case still bounds the walk", { skip: !WIN && "win32 only" }, async () => {
+    const outer = await mkdtemp(path.join(HOME, "outer-"));
+    await cfgAt(outer);
+    const repo = path.join(outer, "repo");
+    const sub = path.join(repo, "src");
+    await mkdir(sub, { recursive: true });
+    assert.equal(where(sub, repo.toUpperCase()).exclude, 0);
+    assert.equal(where(sub, repo.toUpperCase()).root.toLowerCase(), repo.toLowerCase());
+  });
+
+  test("the walk stops below home: ~/.claude/canonkit.json is not a project config", async () => {
+    const cfg = path.join(HOME, ".claude", "canonkit.json");
+    await writeFile(cfg, JSON.stringify({ highRisk: { exclude: ["src/domain/contracts/**"] } }));
+    try {
+      const cwd = path.join(HOME, "work", "app");
+      await mkdir(cwd, { recursive: true });
+      assert.equal(inProject(cwd, "Edit", { file_path: cwd + "/src/domain/contracts/x.ts", new_string: "x" }), "ask");
+    } finally { await rm(cfg, { force: true }); }
+  });
+});
+
+describe("the pre-rename forwarder keeps gating", () => {
+  // settings.json (global or a project's) may still run meu-time-hook.js, which
+  // install turns into a forwarder. If importing the hook stopped running it,
+  // every gate would turn off with no sign.
+  for (const [name, body] of [
+    ["the current forwarder (calls run())", "require('./canonkit-hook.js').run();\n"],
+    ["an older forwarder that only require()s", "require('./canonkit-hook.js');\n"],
+  ]) {
+    test(name, async () => {
+      const dir = await project();
+      await copyFile(HOOK, path.join(dir, "canonkit-hook.js"));
+      await writeFile(path.join(dir, "package.json"), '{ "type": "commonjs" }');
+      await writeFile(path.join(dir, "meu-time-hook.js"), "// canonkit-forwarder\n" + body);
+      const r = spawnSync(process.execPath, [path.join(dir, "meu-time-hook.js")], {
+        input: JSON.stringify(pre("Bash", { command: "git commit -m x" })), encoding: "utf8", env: hookEnv(),
+      });
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask");
+    });
+  }
 });
 
 describe("log location (meu-time-activity -> canonkit-activity)", () => {
@@ -695,6 +1230,18 @@ describe("definition-of-done gate", () => {
     // afternoon budget edit: "somebody was reviewed at some point" is not review.
     await seed({ ts: 1, event: "agent_start", agent: "gard" });
     assert.equal(stop(), "block");
+  });
+  test("a gate already rotated into events.jsonl.1 still counts", async () => {
+    // A rotation, or the meu-time log merge, can move this session's gate there.
+    const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-rotated-"));
+    try {
+      const dir = path.join(home, ".claude", "canonkit-activity");
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "events.jsonl.1"),
+        JSON.stringify({ ts: Date.now(), session: "ROTATED", event: "gate", kind: "high-risk-surface", file: "src/auth/x.ts" }) + "\n");
+      const r = runHook({ hook_event_name: "Stop", session_id: "ROTATED" }, { HOME: home, USERPROFILE: home });
+      assert.equal(JSON.parse(r.stdout).decision, "block");
+    } finally { await rm(home, { recursive: true, force: true }); }
   });
   test("a reviewer dispatched AFTER the gate clears it", async () => {
     await seed({ ts: Date.now() + 60000, event: "agent_start", agent: "perry" });

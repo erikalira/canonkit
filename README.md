@@ -147,27 +147,81 @@ divergir da do repo, ela é preservada como `canonkit-hook.js.local.bak` antes d
 ser sobrescrita.
 
 Quais caminhos contam como superfície HIGH-risk ou budget de performance é
-ajustável por projeto em `.claude/canonkit.json` (lido do diretório da sessão):
+ajustável por projeto em `.claude/canonkit.json`:
 
 ```json
 {
+  "version": 1,
   "highRisk": { "include": ["src/billing/**"], "exclude": ["src/domain/contracts/**"] },
   "perfBudgets": ["perf/thresholds.yml"]
 }
 ```
 
-Glob com `/` casa com o caminho relativo ao projeto; sem `/`, com o nome do
-arquivo em qualquer profundidade. `include` vence `exclude`. `exclude` nunca
-silencia a checagem de segredo no conteúdo nem caminhos que guardam credenciais
-(`.env`, `secret`, `credential`, `.npmrc`, `github_token`...). `perfBudgets` só
-acrescenta à lista padrão (lighthouserc, size-limit, bundlesize, `budget.json`,
-thresholds do k6...): remover um padrão seria afrouxar o gate, e isso é do Perry.
-Editar o próprio `canonkit.json` é um gate. Config inválida = padrões.
+**Onde é lido.** Na pasta mais próxima subindo a partir do cwd da sessão,
+parando em `CLAUDE_PROJECT_DIR` quando o cwd está dentro dele (uma config acima
+do repositório não vale para ele) e, fora disso, abaixo do home
+(`~/.claude/canonkit.json` não é config de projeto); se nenhuma tiver o arquivo,
+em `CLAUDE_PROJECT_DIR`. Vale o arquivo mais próximo, inteiro, sem mesclar: um
+aninhado (submódulo, exemplo) substitui o do projeto enquanto o cwd está nele. O cwd vem primeiro porque, num
+worktree, o diretório do projeto é o checkout principal, onde os globs ancorados
+do worktree nunca casariam. Os globs casam com o caminho relativo à pasta onde o
+arquivo está. Só é lido um arquivo comum de até 64 KiB, e só as 100 primeiras
+entradas de cada lista: um hook que trava ou estoura memória falha aberto.
+`version` é opcional e só `1` é lido: outra versão = padrões. Chaves
+desconhecidas são ignoradas. Config inválida = padrões — um erro de digitação
+nunca desliga um gate.
+
+**Dialeto de glob: parecido com gitignore, não gitignore.** Glob com `/` casa
+com o caminho relativo ao projeto; sem `/`, com o nome do arquivo em qualquer
+profundidade. `*` e `?` ficam dentro de um segmento; `**` como segmento inteiro
+atravessa segmentos (em qualquer outro lugar é um `*`). `/` no fim = tudo abaixo
+da pasta (`dir/` = `dir/**`). Não há `!` nem `[...]` (são literais). Sem
+diferença de maiúsculas. Antes de casar, todo caminho é normalizado (`\`, `//`,
+`./`, `..`, sufixo de stream NTFS, `/c/...` do Git Bash), então grafias
+diferentes do mesmo arquivo dão o mesmo resultado.
+
+**O que `exclude` não alcança.** `include` vence `exclude`. Um repo commita esse
+arquivo e quem clona nunca passa pelo gate de edição dele, então `exclude`:
+- nunca silencia a checagem de segredo no conteúdo;
+- nunca silencia caminhos que guardam credenciais (`.env`, `secret`,
+  `credential`, `.npmrc`, `github_token`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `id_rsa`/`id_ed25519`/`id_ecdsa`, `kubeconfig`, `.pgpass`, `*.tfvars`,
+  `*.tfstate`...);
+- nunca silencia os termos fortes (`auth`, `jwt`, `secret`, `credential`, `rbac`,
+  `schema.prisma`, `migrations` em código...) — só as palavras ambíguas
+  (`sessions`, `contracts`, `permissions`, `gateway`, `login`) e a lista de
+  tokens. Por isso `migrations` em prosa (`docs/migration-guide.md`) não conta, e
+  a palavra `author` (`AuthorCard`, `authors/`, `authoring/`, `AUTHORS.md`)
+  não é `auth` — `authority`, `authorize`, `AUTHORITY` e `authOrRedirect` são;
+- descarta globs pega-tudo, julgados pelo que casam, não pela grafia (`*`, `**`,
+  `*.*`, `?*`...), e julgados juntos: o glob que, somado aos anteriores, faria
+  a lista casar quase tudo é descartado (`*.ts`, `*.go`, `*.rb`, `*.py`).
+
+Quando um `exclude` cala um gate, o hook grava um evento `excluded-by-config`
+(com o glob) que o dashboard mostra e o gate do Stop ignora.
+
+`perfBudgets` só acrescenta à lista padrão (lighthouserc, size-limit,
+bundlesize, bundlewatch, `budget.json`/`budgets.json`/`*.budgets.json` em
+qualquer profundidade, `*perf-budget*`/`*performance-budget*`, `perfBudget.json`
+e afins em camelCase logo antes da extensão, de `-` ou de `_`
+(`perfBudget-prod.json`), thresholds do
+k6...): remover um padrão seria afrouxar o gate, e isso é do Perry. Os padrões
+ignoram `.md`/`.mdx` e pastas geradas (`node_modules`, `dist`, `build`...),
+só dentro da pasta da config — fora dela (um worktree irmão sem config própria,
+um arquivo fora do projeto) o caminho fica absoluto e o gate pergunta; uma
+entrada sua em `perfBudgets` vale como escrita. Budgets dentro de arquivos de
+uso geral — `angular.json`, o `size-limit` do `package.json`, `next.config.*`,
+hints de webpack — são opt-in via `perfBudgets`; thresholds do k6 escritos
+inline no script são uma lacuna conhecida. Editar o próprio `canonkit.json` é um
+gate.
 
 Ao atualizar de uma versão com o nome antigo (`meu-time`), o `install` move
-`~/.claude/meu-time-activity/` para `canonkit-activity/` e remove o
-`meu-time-hook.js` — ou, se o `settings.json` ainda o executa, troca-o por um
-repassador para `canonkit-hook.js` até você atualizar o comando.
+`~/.claude/meu-time-activity/` para `canonkit-activity/` (se as duas existirem,
+junta o histórico, o mais antigo primeiro, e remove a antiga) e troca o
+`meu-time-hook.js` por um repassador para `canonkit-hook.js`, que nunca é
+removido: um `.claude/settings.json` de projeto pode ainda executá-lo, e o
+`install` não tem como encontrá-lo. Aponte todo `settings.json` para
+`canonkit-hook.js` e apague o repassador. O tratamento do nome antigo sai na 2.0.
 
 O registro é conferido **por evento**: `PreToolUse`, `PostToolUse` (matcher
 `Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
@@ -184,6 +238,16 @@ cache write, número de chamadas de API e `report_chars`, o tamanho do relatóri
 que voltou para o contexto de quem despachou — ele é relido em todo turno
 seguinte, então é um custo à parte do que o subagente gastou). Só números e
 metadados — nunca o texto do prompt nem do resultado.
+
+**Campos estáveis do `events.jsonl`** (outras ferramentas podem lê-los): em toda
+linha, `ts` (ms desde a época), `session` e `event` (`prompt`, `gate`,
+`agent_start`, `agent_launch`, `agent_end`, `agent_stop`, `tool_result`). Em
+`gate`: `kind` (`git`, `high-risk-surface`, `secret-block`, `secret-ask`,
+`perf-budget`, `excluded-by-config`, `context-size`), `file`, `tool`, `project`
+e, em `excluded-by-config`, `glob`. Em `agent_start`/`agent_end`: `id`, `agent`,
+`model`, `effort`; em `agent_end`, também `resolved_model`, `mode`,
+`duration_ms`, `tool_uses`, `tokens` e `report_chars`. Campos desconhecidos devem
+ser ignorados por quem lê: novos podem aparecer sem aviso.
 
 Os tokens são **somados do transcript do subagente**, não lidos do payload do
 hook: o `usage` que o `PostToolUse` entrega descreve só a última chamada de API

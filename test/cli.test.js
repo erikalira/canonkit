@@ -8,7 +8,7 @@
  */
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
@@ -458,15 +458,43 @@ describe("hooks", () => {
       encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home },
     });
 
-    test("an old hook nothing references is removed, its copy kept", async () => {
-      const { home } = await scratch("upgrade-unreferenced");
+    test("an old hook the global settings do not reference still forwards (a project's may)", async () => {
+      // A project's .claude/settings.json can run it too, and install cannot
+      // find those: deleting the file would turn that project's gates off.
+      const { home, project } = await scratch("upgrade-unreferenced");
       await seedOld(home);
+      await mkdir(path.join(project, ".claude"), { recursive: true });
+      await writeFile(path.join(project, ".claude", "settings.json"), JSON.stringify({
+        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }] },
+      }));
       const { out, status } = run(["install", "--no-reference"], { home });
       assert.equal(status, 0, out);
-      assert.ok(!existsSync(oldHook(home)), "old hook left behind");
+      assert.ok(existsSync(oldHook(home)), "the forwarder must stay");
       assert.equal(await read(oldHook(home) + ".local.bak"), OLD);
       assert.ok(existsSync(hookPath(home)));
-      assert.match(out, /meu-time-hook\.js/);
+      assert.match(out, /project's \.claude\/settings\.json/);
+      const r = gate(home, oldHook(home));
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask", "the forwarder does not gate");
+    });
+
+    test("an older forwarder that only require()d the hook is refreshed, not backed up", async () => {
+      const { home } = await scratch("upgrade-stale-forwarder");
+      await mkdir(claude(home, "hooks"), { recursive: true });
+      await writeFile(oldHook(home), "// canonkit-forwarder: old\nrequire('./canonkit-hook.js');\n");
+      run(["install", "--no-reference"], { home });
+      assert.match(await read(oldHook(home)), /require\('\.\/canonkit-hook\.js'\)\.run\(\)/);
+      assert.ok(!existsSync(oldHook(home) + ".local.bak"), "a forwarder is not the user's edit");
+      const r = gate(home, oldHook(home));
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask");
+    });
+
+    test("a reference in settings.local.json counts as settings still running it", async () => {
+      const { home } = await scratch("upgrade-local-settings");
+      await seedOld(home);
+      await writeFile(claude(home, "settings.local.json"), '{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"node ~/.claude/hooks/meu-time-hook.js"}]}]}}');
+      const { out } = run(["install", "--no-reference"], { home });
+      assert.match(out, /settings\.json still runs meu-time-hook\.js/);
     });
 
     test("an old hook settings.json still runs keeps the gates firing and is reported", async () => {
@@ -499,16 +527,85 @@ describe("hooks", () => {
       assert.match(out, /canonkit-activity/);
     });
 
-    test("when both logs exist the old one is left in place and reported", async () => {
+    test("when both logs exist they merge oldest first, once, and the old one goes", async () => {
       const { home } = await scratch("upgrade-log-both");
+      const seed = async (d, f, line) => {
+        await mkdir(claude(home, d), { recursive: true });
+        await writeFile(claude(home, d, f), line + "\n");
+      };
+      await seed("meu-time-activity", "events.jsonl.1", '{"n":1}');
+      await seed("meu-time-activity", "events.jsonl", '{"n":2}');
+      await seed("canonkit-activity", "events.jsonl.1", '{"n":3}');
+      await seed("canonkit-activity", "events.jsonl", '{"n":4}');
+      const { out, status } = run(["install", "--no-reference"], { home });
+      assert.equal(status, 0, out);
+      assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"n":1}\n{"n":2}\n{"n":3}\n{"n":4}\n');
+      assert.ok(!existsSync(claude(home, "canonkit-activity", "events.jsonl.1")), "everything fits the live file");
+      assert.ok(!existsSync(claude(home, "meu-time-activity")));
+      assert.ok(!existsSync(claude(home, "meu-time-activity.merging")));
+      assert.match(out, /merged ~\/\.claude\/meu-time-activity/);
+      const again = run(["install", "--no-reference"], { home });
+      assert.doesNotMatch(again.out, /meu-time-activity/, "the note must not repeat forever");
+      assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"n":1}\n{"n":2}\n{"n":3}\n{"n":4}\n');
+    });
+
+    test("a merged log too big for the live file keeps its newest lines there", async () => {
+      // Otherwise the hook's first append rotates the whole merge out of the
+      // file the Stop gate reads.
+      const { home } = await scratch("upgrade-log-big");
+      const pad = "x".repeat(1000);
+      const old = Array.from({ length: 1500 }, (_, i) => JSON.stringify({ n: i, pad })).join("\n") + "\n";
+      await mkdir(claude(home, "meu-time-activity"), { recursive: true });
+      await writeFile(claude(home, "meu-time-activity", "events.jsonl"), old);
+      await mkdir(claude(home, "canonkit-activity"), { recursive: true });
+      await writeFile(claude(home, "canonkit-activity", "events.jsonl"), '{"n":"new"}\n');
+      run(["install", "--no-reference"], { home });
+      const live = await read(claude(home, "canonkit-activity", "events.jsonl"));
+      const rotated = await read(claude(home, "canonkit-activity", "events.jsonl.1"));
+      assert.ok(Buffer.byteLength(live) <= 1024 * 1024);
+      assert.ok(live.endsWith('{"n":"new"}\n'));
+      assert.equal((rotated + live).split("\n").filter(Boolean).length, 1501, "no line lost or repeated");
+      assert.ok(rotated.startsWith(JSON.stringify({ n: 0, pad })));
+    });
+
+    test("--dry-run with both logs present merges nothing", async () => {
+      const { home } = await scratch("upgrade-log-dry-both");
       for (const d of ["meu-time-activity", "canonkit-activity"]) {
         await mkdir(claude(home, d), { recursive: true });
         await writeFile(claude(home, d, "events.jsonl"), `{"from":"${d}"}\n`);
       }
-      const { out } = run(["install", "--no-reference"], { home });
+      const { out } = run(["install", "--no-reference", "--dry-run"], { home });
+      assert.match(out, /would merge/);
       assert.equal(await read(claude(home, "meu-time-activity", "events.jsonl")), '{"from":"meu-time-activity"}\n');
       assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"from":"canonkit-activity"}\n');
-      assert.match(out, /meu-time-activity/);
+    });
+
+    test("an empty old folder next to a populated new one is just removed", async () => {
+      const { home } = await scratch("upgrade-log-empty-old");
+      await mkdir(claude(home, "meu-time-activity"), { recursive: true });
+      await mkdir(claude(home, "canonkit-activity"), { recursive: true });
+      await writeFile(claude(home, "canonkit-activity", "events.jsonl"), '{"n":4}\n');
+      run(["install", "--no-reference"], { home });
+      assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"n":4}\n');
+      assert.ok(!existsSync(claude(home, "meu-time-activity")));
+    });
+
+    test("an old folder held open is left alone and install still succeeds", { skip: process.platform !== "win32" && "folder locks are a Windows behaviour" }, async () => {
+      // A process whose cwd is the folder is how Windows refuses the rename
+      // (EBUSY/EPERM) — the same thing a running dashboard does.
+      const { home } = await scratch("upgrade-log-locked");
+      for (const d of ["meu-time-activity", "canonkit-activity"]) {
+        await mkdir(claude(home, d), { recursive: true });
+        await writeFile(claude(home, d, "events.jsonl"), `{"from":"${d}"}\n`);
+      }
+      const holder = spawn(process.execPath, ["-e", "setTimeout(() => {}, 30000)"], { cwd: claude(home, "meu-time-activity"), stdio: "ignore" });
+      try {
+        const { out, status } = run(["install", "--no-reference"], { home });
+        assert.equal(status, 0, out);
+        assert.match(out, /could not merge/);
+        assert.equal(await read(claude(home, "meu-time-activity", "events.jsonl")), '{"from":"meu-time-activity"}\n');
+        assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"from":"canonkit-activity"}\n');
+      } finally { holder.kill(); }
     });
 
     test("an old dashboard is reported, not deleted", async () => {

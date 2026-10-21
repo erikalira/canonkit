@@ -393,21 +393,28 @@ async function installDashboard(ctx, dest) {
  * The log moves, so the dashboard and the Stop gate keep their history; both
  * also read the old location, which covers a move that could not happen.
  *
- * The old hook file is the delicate part. settings.json is the user's and is not
- * rewritten here, so while it still runs the old name, deleting the file would
- * turn every gate off with no sign: the runtime reports a hook that cannot start
- * as a non-blocking error and carries on. The file becomes a forwarder instead,
- * until settings.json points at the new name. Its previous contents are kept as
- * .local.bak either way — there is no shipped copy left to tell an edit from.
+ * The old hook file is the delicate part. A settings.json may still run the old
+ * name — the global one, which is the user's and is not rewritten here, or a
+ * project's .claude/settings.json, which cannot even be found from here — and
+ * deleting the file would turn every gate there off with no sign: the runtime
+ * reports a hook that cannot start as a non-blocking error and carries on. So the
+ * file always becomes a forwarder, never disappears. Its previous contents are
+ * kept as .local.bak — there is no shipped copy left to tell an edit from.
+ * Legacy handling sunsets in 2.0.
  */
 const LEGACY = { hook: "meu-time-hook.js", log: "meu-time-activity", dashboard: "meu-time-dashboard" };
 const FORWARDER_MARK = "canonkit-forwarder";
 const HOOK_FORWARDER = `#!/usr/bin/env node
-// ${FORWARDER_MARK}: written by \`canonkit install\` because settings.json still runs
-// this pre-rename name. It runs canonkit-hook.js so the gates keep firing.
-// Point settings.json at canonkit-hook.js, then delete this file.
-require('./canonkit-hook.js');
+// ${FORWARDER_MARK}: written by \`canonkit install\`. A settings.json (the global
+// one or a project's) may still run this pre-rename name; this runs
+// canonkit-hook.js so the gates keep firing there. Point every settings.json at
+// canonkit-hook.js, then delete this file.
+require('./canonkit-hook.js').run();
 `;
+// The hook rotates its log at 2 MB. A merged log is split so the live file starts
+// well under that: otherwise the first append rotates all of it out of the file
+// the Stop gate reads, current session included.
+const LOG_TAIL_BYTES = 1024 * 1024;
 
 async function upgradeFromMeuTime(ctx, claudeDir) {
   const notes = [];
@@ -416,8 +423,7 @@ async function upgradeFromMeuTime(ctx, claudeDir) {
   const newLog = path.join(claudeDir, "canonkit-activity");
   if (existsSync(oldLog)) {
     if (existsSync(newLog)) {
-      notes.push(`~/.claude/${LEGACY.log} and ~/.claude/canonkit-activity both exist; the old one is left in place`);
-      notes.push("  (the hook and the dashboard still read it). Delete it once you no longer need its history.");
+      notes.push(...(await mergeLegacyLog(ctx, oldLog, newLog)));
     } else {
       try {
         await ctx.move(oldLog, newLog);
@@ -433,19 +439,19 @@ async function upgradeFromMeuTime(ctx, claudeDir) {
 
   const oldHook = path.join(claudeDir, "hooks", LEGACY.hook);
   if (existsSync(oldHook)) {
-    const forwarder = (await readFile(oldHook, "utf8")).includes(FORWARDER_MARK);
-    if (!forwarder) {
+    const current = await readFile(oldHook, "utf8");
+    if (!current.includes(FORWARDER_MARK)) {
       await ctx.copy(oldHook, `${oldHook}.local.bak`);
       notes.push(`previous ${LEGACY.hook} kept as ${LEGACY.hook}.local.bak`);
     }
+    // An older forwarder is refreshed too: the hook no longer runs on a bare require().
+    if (current !== HOOK_FORWARDER) await ctx.write(oldHook, HOOK_FORWARDER);
     if (settingsMention(claudeDir, LEGACY.hook)) {
-      if (!forwarder) await ctx.write(oldHook, HOOK_FORWARDER);
       notes.push(`settings.json still runs ${LEGACY.hook}: it now forwards to canonkit-hook.js, so the gates`);
       notes.push(`  keep firing. Replace that command with canonkit-hook.js (wiring above), then delete ${LEGACY.hook}.`);
     } else {
-      await ctx.remove(oldHook);
-      notes.push(`removed ${LEGACY.hook}, replaced by canonkit-hook.js. A project settings.json that ran it`);
-      notes.push("  must point at canonkit-hook.js now.");
+      notes.push(`${LEGACY.hook} now forwards to canonkit-hook.js, in case a project's .claude/settings.json`);
+      notes.push("  still runs it. Point those at canonkit-hook.js, then delete it.");
     }
   }
 
@@ -458,6 +464,63 @@ async function upgradeFromMeuTime(ctx, claudeDir) {
   ctx.log("");
   ctx.log("Upgrade from meu-time:");
   for (const n of notes) ctx.log(`  ${n}`);
+}
+
+/**
+ * Both logs exist when the renamed hook logged before install could move the old
+ * one (the hook was updated first, or an earlier move failed). Merged oldest
+ * first — old.1, old, new.1, new — because everything the old name wrote
+ * predates the first line under the new one, and the dashboard reads in file
+ * order. The old folder is then gone, so this runs once and never nags again.
+ */
+async function mergeLegacyLog(ctx, oldLog, newLog) {
+  if (ctx.dryRun) return [`would merge ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity and remove it`];
+  // Moved aside first: on Windows this is what fails while something (a running
+  // dashboard) holds the folder, and then nothing has been touched yet.
+  const staging = `${oldLog}.merging`;
+  try {
+    await ctx.move(oldLog, staging);
+  } catch (err) {
+    return [
+      `could not merge ~/.claude/${LEGACY.log} into canonkit-activity (${err.code ?? err.message}); it is still read in place.`,
+      "  Re-run install once nothing holds it open.",
+    ];
+  }
+  const live = path.join(newLog, "events.jsonl");
+  const rotated = `${live}.1`;
+  const text = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
+  const hadRotated = existsSync(rotated);
+  const prevRotated = text(rotated);
+  try {
+    const before = text(live);
+    const lines = [path.join(staging, "events.jsonl.1"), path.join(staging, "events.jsonl"), rotated]
+      .map(text).concat(before).join("\n").split("\n").filter((l) => l.trim());
+    let cut = lines.length;
+    for (let bytes = 0; cut > 0 && bytes + Buffer.byteLength(lines[cut - 1]) + 1 <= LOG_TAIL_BYTES; cut--) {
+      bytes += Buffer.byteLength(lines[cut - 1]) + 1;
+    }
+    const body = (ls) => (ls.length ? ls.join("\n") + "\n" : "");
+    if (cut > 0) await ctx.writeAtomic(rotated, body(lines.slice(0, cut)));
+    else await ctx.remove(rotated);
+    // The hook appends while sessions run: whatever landed since the read above
+    // is carried over right before the swap.
+    await ctx.writeAtomic(live, body(lines.slice(cut)) + text(live).slice(before.length));
+  } catch (err) {
+    // Back to where it was, .1 included: a .1 that already holds the old lines,
+    // next to a restored old folder, would merge them twice on the re-run.
+    try {
+      if (hadRotated) await ctx.writeAtomic(rotated, prevRotated);
+      else await ctx.remove(rotated);
+    } catch { /* best effort */ }
+    try { await ctx.move(staging, oldLog); } catch { /* left at .merging */ }
+    return [`could not merge ~/.claude/${LEGACY.log} into canonkit-activity (${err.code ?? err.message}); re-run install.`];
+  }
+  try {
+    await ctx.removeTree(staging);
+  } catch (err) {
+    return [`merged ~/.claude/${LEGACY.log} into canonkit-activity; delete ~/.claude/${LEGACY.log}.merging (${err.code ?? err.message}).`];
+  }
+  return [`merged ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity (history kept) and removed it`];
 }
 
 // Raw text, not parsed: a settings file that is not valid JSON can still run the hook.
@@ -1337,6 +1400,9 @@ function context(dryRun) {
     },
     move: async (from, to) => {
       if (!dryRun) await rename(from, to);
+    },
+    removeTree: async (p) => {
+      if (!dryRun) await rm(p, { recursive: true, force: true });
     },
   };
 }

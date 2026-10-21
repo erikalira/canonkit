@@ -84,6 +84,114 @@ for anyone who clones (a clone never passes the edit gate). Options:
 - (c) honor a project config only after its hash is approved and recorded in
   `~/.claude` (trust-on-first-use) — changes the contract, needs Archie.
 
+**Decided: (b).** Catch-all excludes go to `ignored`; STRONG terms, migrations
+and secret paths are beyond `exclude`; a silenced gate logs `excluded-by-config`.
+Side effect handled: with no escape hatch left on STRONG terms, `author` (not
+`authorize`) no longer matches `auth`.
+
+## Status (2026-10-21, second session)
+
+Items 1–12 applied in the working tree on top of commit 698ad04 (not committed).
+Tests written first for B1/B2. Gard and Quinn re-review after the last edit.
+
+Round 2 (from that re-review; tests first, seen failing):
+- Gard P1: HARD_SECRET runs before the config is read; config read only if a
+  regular file ≤ 64 KiB; only the first 100 entries per list, rest = one line.
+- Gard P2: lookup walks up from cwd first, CLAUDE_PROJECT_DIR is the fallback
+  (worktrees). Catch-all = matches most of 10 sample paths (`*.*`, `**/*.*`).
+  Stop gate reads events.jsonl.1 too.
+- Quinn C1: `..` stops at a drive root; `\\?\` / `\\?\UNC\` prefixes stripped.
+- Quinn C2: `author` carve-out is the lowercase word only (author, authors,
+  authored, authorship); authority, authOrRedirect, etc. ask.
+- Quinn M1 (decided): migrations in prose files (.md, .txt...) do not gate;
+  in code they always do, beyond exclude.
+- L2: camelCase `*perfbudget.*` defaults restore perfBudget.json coverage.
+- L3: hook tests run from the fake HOME and create projects under it.
+- L5: a failed merge restores events.jsonl.1; dry-run with both logs tested.
+- L6: dashboard does not count excluded-by-config as fired; shows the glob.
+- Open, for the user: Gard P3 — gate `.claude/settings*.json` as config
+  (`disableAllHooks` turns every gate off). Not done: changes gate scope.
+- Not done: Linux run (no CI; POSIX branch untested — run once before release).
+
+Round 2 review (after the last edit): **Gard approve, Quinn veto lifted, Perry
+accepts the perf default list.** Nothing blocks a commit.
+
+## Round 3 candidates (all LOW, optional; any hook edit needs a fresh review)
+
+1. Catch-all on the union of excludes, not per glob (`["*.ts","*.go","*.rb","*.py"]`
+   and `*s*` pass today; reach = ambiguous words + token names only).
+2. Lookup order (Gard + Quinn): when cwd is inside CLAUDE_PROJECT_DIR, stop the
+   walk at it (checking it too) — no parent `/tmp/.claude/canonkit.json`. A nested
+   config (submodule, example) still replaces the project's while cwd is inside
+   it; add a test. This reverses item 8's order → **Archie must acknowledge**
+   (public contract).
+3. `AUTHORS`/`AUTHORS.md`/`src/authoring/` ask with no escape: allow uppercase
+   AUTHORS as a word and `authoring`, or record the trade-off in a test.
+4. Perry (optional): `*perfbudget-*`, `*perfbudget_*`, `*performancebudget-*`,
+   `*performancebudget_*` for `perfBudget-prod.json`.
+5. L5 restore path untested (needs an injected write failure) — fine to leave.
+6. User decision pending: gate `.claude/settings*.json` as config (Gard P3).
+7. Backlog for job B: the Stop gate counts reviewers' probe gates (shared
+   session id) and does not see a reviewer resumed by SendMessage (no
+   agent_start) — both fired this session.
+
+## Round 3 (2026-10-21, third session) — items 1–4 applied, tests first
+
+- 1: excludes are judged together; the glob that tips the union over the
+  catch-all line (and any after it that would) is ignored, earlier ones stand.
+- 2: **Archie accepted** cwd-first + CLAUDE_PROJECT_DIR fallback as the contract
+  (item 8's order withdrawn; pre-release, no migration), the bound at
+  CLAUDE_PROJECT_DIR when cwd is inside it (segment-wise, case-insensitive on
+  win32), and nearest-wins with no merge. Residual risk for Gard: a submodule's
+  config is third-party content and drops the project's `include` while cwd is
+  inside it. Recommendation (job B): doctor prints the config `file` and `root`.
+- 3: uppercase `AUTHORS`/`AUTHOR` as a whole word and `authoring` are author;
+  `AUTHORITY`, `AUTH_OR_GUEST` stay auth.
+- 4: `*perfbudget-*`, `*perfbudget_*`, `*performancebudget-*`, `*performancebudget_*`.
+- Review: **Gard approve with P1, Quinn approve.** Applied (tests first, seen
+  failing): Gard P1 — noise/test folders count only on a project-relative path,
+  so a file outside a nested config's folder fails closed (a `build/` above the
+  project let .env through; pre-existing, reachable via nested configs; the
+  soft-secret test-file skip uses the same rule); Gard P3 — MSYS `/c/...`
+  CLAUDE_PROJECT_DIR/cwd normalized before resolve; Quinn — cwd == project dir
+  test, union reason says "with the excludes before it", perfBudget-formatter.ts
+  pinned as an accepted over-match, sibling-prefix test marked as documentation,
+  README drift. Re-review after that edit: **Gard approve (P1 closed), Quinn
+  approve** with one condition, applied after: a test pinning absolute in-project
+  test/noise paths as still skipped (Windows + MSYS forms) and a README/release-note
+  clause that the skips hold only inside the config folder. Test and docs only;
+  the hook is unchanged since the last review. Nothing blocks a commit.
+- Job B (Gard P2): also apply the project's own `include` when the nearest
+  config sits below CLAUDE_PROJECT_DIR (adds gates only); doctor prints
+  `file`/`root`. Known P3: the catch-all samples miss `*.js`, `src/**`
+  (reach = ambiguous words + token names).
+
+## Release notes (draft, for the version bump)
+
+- **Breaking:** the hook is `canonkit-hook.js` and its log is
+  `~/.claude/canonkit-activity/`. `install` moves or merges the old log and
+  leaves `meu-time-hook.js` as a forwarder (never removed). Legacy handling
+  sunsets in 2.0.
+- **New default gate (MEDIUM):** key and credential files are secret paths —
+  `*.pem`, `*.key`, `*.p12`, `*.pfx`, `id_rsa`/`id_ed25519`/`id_ecdsa`/`id_dsa`,
+  `kubeconfig`, `.kube/config`, `.pgpass`, `*.tfvars`, `*.tfstate`.
+- **New:** `.claude/canonkit.json` (`version`, `highRisk.include/exclude`,
+  `perfBudgets`), looked up from cwd upward, stopping at CLAUDE_PROJECT_DIR
+  when cwd is inside it (else below home), then CLAUDE_PROJECT_DIR; the
+  nearest file applies whole, no merge.
+  `exclude` cannot silence secrets, STRONG terms or migrations; catch-alls are
+  rejected, judged together with the excludes before them.
+- **Calibrated:** ambiguous words (sessions, contracts, permissions, gateway,
+  login) gate only in code outside presentational folders; noise folders match
+  whole segments only (`src/distribution/` is source), and only inside the
+  config's folder (outside it, e.g. a sibling worktree with no config, a test or
+  node_modules path asks); `author` is not `auth`.
+- **Perf budgets:** default list extended (size-limit, bundlesize, bundlewatch,
+  budget files, separator-bounded perf-budget names, k6 thresholds); defaults
+  skip `.md`/`.mdx` and generated folders.
+- **Fixed:** glob matching is linear (a hostile config could time the hook out,
+  and a timed-out hook fails open); every path is normalized before any check.
+
 ## Backlog (not job A)
 
 - Stop gate counts gate events from reviewer subagents' own probes (they share the

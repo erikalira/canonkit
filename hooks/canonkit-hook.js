@@ -303,12 +303,87 @@ function deny(reason) {
   process.exit(0);
 }
 
+// ---- PATHS ----
+// Every path check below runs on ONE form of the path: normalized, then made
+// relative to the project when it lies inside it. Checked on the raw string,
+// `src/legacy/../auth/x.ts` matched an exclude for src/legacy,
+// `node_modules/../.env` was noise and `.claude//canonkit.json` was not the
+// config — every spelling of a path was its own way past a gate.
+const WIN = process.platform === 'win32';
+
+function normalizePath(p) {
+  let s = String(p).replace(/\\/g, '/');
+  // Win32 long-path and device prefixes: \\?\C:\x is C:\x, \\?\UNC\h\s is \\h\s.
+  s = s.replace(/^\/\/[?.]\/UNC\//i, '//').replace(/^\/\/[?.]\//, '');
+  // Git Bash and Cygwin spell C:\x as /c/x and /cygdrive/c/x.
+  if (WIN) s = s.replace(/^\/(?:cygdrive\/)?([a-z])(?=\/|$)/i, (_, d) => d + ':');
+  // The drive is set apart so that `..` stops at it, as it does on disk:
+  // normalized as a plain segment, `C:/../x` lost its drive and became relative.
+  let drive = (/^[a-z]:(?=\/|$)/i.exec(s) || [''])[0];
+  s = s.slice(drive.length);
+  if (WIN) drive = drive.toUpperCase();
+  s = s.split('/').map((seg) => {
+    // An NTFS stream suffix names the same file: `x::$DATA` writes x itself.
+    // The explicit `::$TYPE` form is stripped everywhere (no POSIX file is named
+    // like that); a bare `:stream` only on Windows, where it cannot be a name.
+    seg = seg.replace(/:[^:]*:\$[a-z_]+$/i, '');
+    if (WIN) {
+      seg = seg.replace(/:.*$/, '');
+      // Win32 drops trailing dots and spaces: `canonkit.json.` is canonkit.json.
+      if (!/^\.+$/.test(seg)) seg = seg.replace(/[. ]+$/, '');
+    }
+    return seg;
+  }).join('/');
+  if (drive) return drive + path.posix.normalize('/' + s).replace(/(.)\/$/, '$1');
+  s = path.posix.normalize(s);
+  if (s === '.' || s === './') return '';
+  s = s.replace(/^\.\//, '');
+  if (s.length > 1 && s.endsWith('/') && !/^[a-z]:\/$/i.test(s)) s = s.slice(0, -1);
+  return s;
+}
+
+const isAbsolutePath = (p) => p.startsWith('/') || /^[a-z]:\//i.test(p);
+const samePath = (a, b) => (WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
+
+// Edit hands an absolute path, a shell command one relative to the session's
+// cwd: both end up relative to the project root, or absolute when outside it.
+function projectPath(fp, cwd, root) {
+  if (!fp) return '';
+  let p = normalizePath(fp);
+  if (!isAbsolutePath(p)) p = normalizePath(cwd + '/' + p);
+  const r = normalizePath(root);
+  const prefix = r.endsWith('/') ? r : r + '/';
+  if (samePath(p, r)) return '';
+  return samePath(p.slice(0, prefix.length), prefix) ? p.slice(prefix.length) : p;
+}
+
 // HIGH-risk file surfaces — editing these is never truly LOW risk.
 // Split in two on purpose. STRONG terms are unambiguous anywhere in a path
 // (`authClient.ts`, `useOauth.ts`). WORD terms are ordinary English that shows up
 // in ordinary code (`tokenizer.ts`, `sessionStorage.ts`), so they only count on a
 // path-segment boundary. A gate that cries wolf is a gate people click through.
-const HIGH_RISK_STRONG = /(auth|oauth|jwt|passport|secret|credential|\.env|rbac|schema\.prisma|prisma[\/\\]migrations)/i;
+// STRONG terms are also beyond a project's `exclude`, which leaves no escape for
+// a false positive on one — hence the word `author` is not `auth` (namesAuth).
+const HIGH_RISK_STRONG = /(jwt|passport|secret|credential|\.env|rbac|schema\.prisma)/i;
+// Lowercase on purpose: `AuthorCard`, `authors/`, `authoring/` are the word
+// author, while a camelCase `Or` starts a new word (`authOrRedirect`), and
+// `authority`/`authorize` are auth (Spring keeps its granted roles in authority).
+// Uppercase only as a whole word (`AUTHORS`, `AUTHORS.md`), so `AUTHORITY` and
+// `AUTH_OR_GUEST` stay auth.
+const AUTHOR_WORD = /^or(s|ed|ing|ship)?(?![a-z])/;
+const AUTHOR_UPPER = /^OR(S|ED|ING|SHIP)?(?![A-Za-z])/;
+function namesAuth(p) {
+  const re = /auth/gi;
+  for (let m; (m = re.exec(p));) {
+    const rest = p.slice(m.index + 4);
+    if (!AUTHOR_WORD.test(rest) && !(m[0] === 'AUTH' && AUTHOR_UPPER.test(rest))) return true;
+  }
+  return false;
+}
+// Migrations are a HIGH-risk surface by the routing rules, not a heuristic, so
+// they are beyond exclude too — and therefore prose about one (a migration guide)
+// is let through, or it would ask forever.
+const MIGRATION = /(^|[\/._-])migrations?([\/._-]|$)/i;
 // A bare `token(s)` is not here: design tokens, context/LLM tokens and lexer
 // tokens are far more common in paths than credentials. Only a token that names
 // what kind it is (`refresh_token`, `access-token.ts`) or a module that manages
@@ -317,38 +392,104 @@ const HIGH_RISK_STRONG = /(auth|oauth|jwt|passport|secret|credential|\.env|rbac|
 // `npm-token`) and the dotfiles that hold registry credentials stay gated: the
 // secret-content check does not recognise ghp_/npm_ values, so the path is the
 // only backstop for them.
-const HIGH_RISK_WORD = /(^|[\/\\._-])(acl|migrations?|(refresh|access|id|auth|api|bearer|csrf|device|reset|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?|tokens?[_-](store|storage|service|manager|vault|rotation|refresh|validation|verify|issuer)|\.?(npmrc|netrc|pypirc))([\/\\._-]|$)/i;
+const HIGH_RISK_WORD = /(^|[\/._-])(acl|(refresh|access|id|auth|api|bearer|csrf|device|reset|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?|tokens?[_-](store|storage|service|manager|vault|rotation|refresh|validation|verify|issuer)|\.?(npmrc|netrc|pypirc))([\/._-]|$)/i;
 // AMBIGUOUS words name UI and domain folders as often as security surfaces: a
 // `components/sessions/` list, a CRM's `contracts/`, a `docs/gateway.md`. They
 // count only in code outside a presentational folder. `views` is deliberately not
 // presentational (Django views are the request handlers), nor is `pages`
 // (`pages/api/login.ts` is an endpoint), nor `docs/` as a folder: an OpenAPI file
 // under docs/contracts/ is still a contract — only prose files are let through.
-const AMBIGUOUS_WORD = /(^|[\/\\._-])(login|sessions?|contracts?|permissions?|gateway)([\/\\._-]|$)/i;
+const AMBIGUOUS_WORD = /(^|[\/._-])(login|sessions?|contracts?|permissions?|gateway)([\/._-]|$)/i;
 const PROSE_OR_STYLE = /\.(md|mdx|markdown|txt|rst|adoc|css|scss|sass|less|styl|svg|png|jpe?g|gif|webp|ico)$/i;
-const PRESENTATIONAL = /(^|[\/\\])(components?|ui|styles?|stories|assets|icons|locales|i18n)[\/\\]|\.stories\.[cm]?[jt]sx?$/i;
+const PRESENTATIONAL = /(^|\/)(components?|ui|styles?|stories|assets|icons|locales|i18n)\/|\.stories\.[cm]?[jt]sx?$/i;
 // Paths that hold credentials. A project's `exclude` never reaches these: the
-// content check does not recognise every token format (ghp_, npm_), so for these
-// files the path is the only backstop.
-const SECRET_PATH = /(\.env|secret|credential|(^|[\/\\._-])\.?(npmrc|netrc|pypirc)([\/\\._-]|$)|(^|[\/\\._-])(refresh|access|auth|api|bearer|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?([\/\\._-]|$))/i;
+// content check does not recognise every token format (ghp_, npm_), and a key
+// file is binary or base64 it cannot read at all, so for these files the path
+// is the only backstop.
+const SECRET_PATH = /(\.env|secret|credential|(^|[\/._-])\.?(npmrc|netrc|pypirc|pgpass|kubeconfig)([\/._-]|$)|(^|[\/._-])(refresh|access|auth|api|bearer|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?([\/._-]|$)|\.(pem|key|p12|pfx)$|\.tfvars(\.json)?$|\.tfstate(\.backup)?$|(^|\/)id_(rsa|dsa|ecdsa|ed25519)$|(^|\/)\.kube\/config$)/i;
 // The file that tunes these gates is itself a gate: loosening it is a decision.
-const CONFIG_PATH = /(^|[\/\\])\.claude[\/\\]canonkit\.json$/i;
-// Generated, vendored or throwaway: never the surface the gate is about.
-const NOISE_PATH = /(node_modules|[\/\\]\.next|[\/\\]dist|[\/\\]build|coverage|graphify-out|[\/\\]\.git[\/\\])/i;
-const TEST_PATH = /(\.test\.|\.spec\.|__tests__|__mocks__|[\/\\]fixtures?[\/\\]|[\/\\]mocks?[\/\\]|\.example$|\.sample$)/i;
+const CONFIG_PATH = /(^|\/)\.claude\/canonkit\.json$/i;
+// Generated, vendored or throwaway: never the surface the gate is about. Whole
+// segments only — `src/distribution/` and `src/buildings/` are source.
+const NOISE_PATH = /(^|\/)(node_modules|\.next|dist|build|coverage|graphify-out|\.git)\//i;
+const TEST_PATH = /(\.test\.|\.spec\.|(^|\/)(__tests__|__mocks__|fixtures?|mocks?)\/|\.example$|\.sample$)/i;
 
-// Order is the contract: include (explicit) > noise/test > secret paths
-// (never excludable) > exclude > the built-in heuristics.
-function isHighRisk(fp, cfg) {
-  if (!fp) return false;
-  if (CONFIG_PATH.test(fp)) return true;
-  const rel = cfg.rel(fp);
+// Order is the contract: the config file > include (explicit) > noise/test >
+// secret paths and strong terms (never excludable) > exclude > the remaining
+// heuristics. `rel` is the normalized project path (cfg.rel). Returns true,
+// false, or { excludedBy } when only an exclude kept the gate shut.
+// Only a project-relative path can be noise: an absolute one (outside the
+// config's folder, e.g. a nested config's) would be judged by the folders above
+// the project, and a `build/` there let even .env through. Absolute fails closed.
+const isNoise = (rel) => !isAbsolutePath(rel) && NOISE_PATH.test(rel);
+const isTestFile = (rel) => !isAbsolutePath(rel) && TEST_PATH.test(rel);
+
+function highRisk(rel, cfg) {
+  if (!rel) return false;
+  if (CONFIG_PATH.test(rel)) return true;
   if (cfg.include.some((m) => m(rel))) return true;
-  if (NOISE_PATH.test(fp) || TEST_PATH.test(fp)) return false;
-  if (SECRET_PATH.test(fp)) return true;
-  if (cfg.exclude.some((m) => m(rel))) return false;
-  return HIGH_RISK_STRONG.test(fp) || HIGH_RISK_WORD.test(fp) ||
-    (AMBIGUOUS_WORD.test(fp) && !PROSE_OR_STYLE.test(fp) && !PRESENTATIONAL.test(fp));
+  if (isNoise(rel) || isTestFile(rel)) return false;
+  if (SECRET_PATH.test(rel) || HIGH_RISK_STRONG.test(rel) || namesAuth(rel)) return true;
+  if (MIGRATION.test(rel) && !PROSE_OR_STYLE.test(rel)) return true;
+  const heuristic = HIGH_RISK_WORD.test(rel) ||
+    (AMBIGUOUS_WORD.test(rel) && !PROSE_OR_STYLE.test(rel) && !PRESENTATIONAL.test(rel));
+  if (!heuristic) return false;
+  const ex = cfg.exclude.find((m) => m(rel));
+  return ex ? { excludedBy: ex.glob } : true;
+}
+
+// ---- GLOBS ----
+// gitignore-like, not gitignore: a glob with a `/` matches the path relative to
+// the project, one without matches the file name at any depth. `*` and `?` stay
+// in a segment; `**` as a whole segment crosses segments, anywhere else it is a
+// plain `*`. A trailing `/` means everything under that folder. No `!`, no
+// `[...]` (both literal). Matching ignores case: a gate should over-match, never
+// miss on a capital.
+//
+// Matched by hand, not by RegExp: the runtime reports a hook that times out as a
+// non-blocking error, so a glob that backtracks (`*a*a*a…b`) turned every gate
+// off — the secret deny included — and a cloned repo's config was enough. Both
+// levels below are the greedy two-pointer wildcard match, O(glob × path).
+function matchSegment(g, s) {
+  let gi = 0, si = 0, star = -1, mark = 0;
+  while (si < s.length) {
+    if (gi < g.length && g[gi] === '*') { star = gi++; mark = si; }
+    else if (gi < g.length && (g[gi] === '?' || g[gi] === s[si])) { gi++; si++; }
+    else if (star >= 0) { gi = star + 1; si = ++mark; }
+    else return false;
+  }
+  while (gi < g.length && g[gi] === '*') gi++;
+  return gi === g.length;
+}
+
+function matchSegments(gs, ps) {
+  let gi = 0, pi = 0, star = -1, mark = 0;
+  while (pi < ps.length) {
+    if (gi < gs.length && gs[gi] === '**') { star = gi++; mark = pi; }
+    else if (gi < gs.length && matchSegment(gs[gi], ps[pi])) { gi++; pi++; }
+    else if (star >= 0) { gi = star + 1; pi = ++mark; }
+    else return false;
+  }
+  while (gi < gs.length && gs[gi] === '**') gi++;
+  return gi === gs.length;
+}
+
+function globMatcher(glob) {
+  let g = String(glob).replace(/\\/g, '/').toLowerCase().replace(/^(?:\.\/|\/)+/, '');
+  if (g.endsWith('/')) g += '**';
+  const segs = g.split('/')
+    .filter((s) => s !== '' && s !== '.')
+    .map((s) => (/^\*\*+$/.test(s) ? '**' : s.replace(/\*+/g, '*')));
+  let test;
+  if (!segs.length) test = () => false;
+  else if (g.includes('/')) test = (p) => matchSegments(segs, p.toLowerCase().split('/'));
+  else {
+    const seg = segs[0] === '**' ? '*' : segs[0];
+    test = (p) => matchSegment(seg, p.slice(p.lastIndexOf('/') + 1).toLowerCase());
+  }
+  const m = (p) => test(p);
+  m.glob = glob;
+  return m;
 }
 
 // Perf budgets: a HIGH-risk surface with a different owner. Anyone may tighten a
@@ -359,67 +500,170 @@ function isHighRisk(fp, cfg) {
 const PERF_BUDGET_DEFAULTS = [
   '*lighthouserc*', // lighthouserc.json, .lighthouserc.yml
   '*lighthouse*budget*',
-  'budget.json', 'budgets.json', // Lighthouse's budget file
+  // Lighthouse's budget file, at any depth: a finance budget.json asking once is
+  // the accepted price of not missing it (Perry).
+  'budget.json', 'budgets.json', '*.budgets.json',
   '.size-limit*',
   '*bundlesize*', // bundlesize.config.json, .bundlesizerc
-  '*perf*budget*', '*performance*budget*',
+  'bundlewatch*', '.bundlewatch*',
+  // Separator-bounded: `*perf*budget*` matched "superfluous-budget". camelCase
+  // only right before the extension or a separator, so perfBudget.json and
+  // perfBudget-prod.json ask and perfBudgetFormatter.ts does not.
+  '*perf-budget*', '*perf_budget*', '*performance-budget*', '*performance_budget*',
+  '*perfbudget.*', '*perfbudgets.*', '*performancebudget.*', '*performancebudgets.*',
+  '*perfbudget-*', '*perfbudget_*', '*performancebudget-*', '*performancebudget_*',
   '**/k6/**/*threshold*',
-];
+].map(globMatcher);
 
-// ---- PROJECT CONFIG (.claude/canonkit.json in the session's cwd) ----
-//   { "highRisk": { "include": [glob], "exclude": [glob] }, "perfBudgets": [glob] }
-// A glob with a `/` matches the path relative to the project; one without
-// matches the file name at any depth. `*` stays in a segment, `**` crosses them.
-// Matching ignores case: a gate should over-match, never miss on a capital.
-// Anything malformed is ignored and the defaults stand — a typo must not turn a
-// gate off. This shape is read by other tools too (doctor, README): a public contract.
+// The defaults skip prose and generated folders: docs/performance-budget.md is
+// about a budget, node_modules/x/lighthouserc.json is somebody else's. A
+// project's own perfBudgets entries are taken at their word.
+function isPerfBudget(rel, cfg) {
+  if (!rel) return false;
+  if (cfg.perf.some((m) => m(rel))) return true;
+  return !isNoise(rel) && !/\.mdx?$/i.test(rel) && PERF_BUDGET_DEFAULTS.some((m) => m(rel));
+}
+
+// ---- PROJECT CONFIG (.claude/canonkit.json) ----
+//   { "version": 1, "highRisk": { "include": [glob], "exclude": [glob] }, "perfBudgets": [glob] }
+// Found in the nearest folder from the session's cwd up, stopping at
+// CLAUDE_PROJECT_DIR when cwd is inside it (a config above the repo must not
+// gate it) and otherwise below home (~/.claude is the user's, not a project's);
+// failing that, at CLAUDE_PROJECT_DIR. cwd first, because a worktree session's
+// project dir is the main checkout, where the worktree's anchored globs would
+// never match. The nearest file applies whole, no merge: a nested one
+// (submodule, example) replaces the project's while cwd is inside it.
+// "Inside" is by path segment on the normalized paths; a symlinked cwd that
+// does not resolve inside the project dir gets the unbounded walk (accepted).
+// Paths are matched relative to the folder the file is in. Only a regular file
+// of at most 64 KiB is read: a crashed or stalled hook fails open, and a repo
+// commits this file.
+// `version` is optional and only 1 is read: a config written for a later shape
+// gets the defaults rather than a guess. Unknown keys are ignored. Anything
+// malformed is ignored too and the defaults stand — a typo must not turn a gate
+// off — and each thing ignored is returned with the reason, for doctor. This
+// shape is read by other tools (doctor, README): a public contract.
 const MAX_GLOBS = 100;
 const MAX_GLOB_LENGTH = 200;
+const MAX_CONFIG_BYTES = 64 * 1024;
+const CONFIG_KEYS = ['version', 'highRisk', 'perfBudgets'];
+const HIGH_RISK_KEYS = ['include', 'exclude'];
+// A repo commits this file and a clone never passes the edit gate on it, so an
+// exclude that matches nearly everything would switch the gate off for everyone
+// who clones. Judged by what it matches, not how it is spelled: `**`, `*.*` and
+// `?*` all name no folder at all. A glob matching most of these is rejected —
+// judged with the excludes before it, so `*.ts`, `*.go`, `*.rb`, `*.py` cannot
+// add up to one: the glob that tips the union over, and any after it that would
+// too, are rejected; the ones before it stand.
+const CATCH_ALL_SAMPLES = ['a.ts', 'x/y/z.py', 'app/login.go', 'src/server/permissions.ts', 'README',
+  'lib/sessions/store.rb', 'docs/a.md', 'pkg/gateway/main.go', 'Makefile', '.hidden/x.json'];
+const isCatchAll = (m) => CATCH_ALL_SAMPLES.filter((p) => m(p)).length * 2 >= CATCH_ALL_SAMPLES.length;
 
-function globMatcher(glob) {
-  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '');
-  let re = '';
-  for (let i = 0; i < g.length; i++) {
-    const c = g[i];
-    if (c === '*' && g[i + 1] === '*') {
-      i++;
-      if (g[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
-    } else if (c === '*') re += '[^/]*';
-    else if (c === '?') re += '[^/]';
-    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
-  }
-  const rx = new RegExp(`^${re}$`, 'i');
-  return g.includes('/') ? (p) => rx.test(p) : (p) => rx.test(p.slice(p.lastIndexOf('/') + 1));
+const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+
+function isWithin(p, r) {
+  const prefix = r.endsWith('/') ? r : r + '/';
+  return samePath(p, r) || samePath(p.slice(0, prefix.length), prefix);
 }
 
-const globList = (v) => (Array.isArray(v) ? v : [])
-  .filter((g) => typeof g === 'string' && g.trim() && g.length <= MAX_GLOB_LENGTH)
-  .slice(0, MAX_GLOBS)
-  .map(globMatcher);
+function locateConfig(cwd, projectDir) {
+  const home = normalizePath(path.resolve(os.homedir()));
+  const isHome = (dir) => samePath(normalizePath(dir), home);
+  // Normalized before resolve: on win32 an MSYS /c/... resolves to C:\c\...
+  const resolve = (p) => path.resolve(normalizePath(p));
+  const project = projectDir ? normalizePath(resolve(projectDir)) : null;
+  const bound = project && isWithin(normalizePath(resolve(cwd)), project) ? project : null;
+  for (let dir = resolve(cwd); !isHome(dir);) {
+    if (fs.existsSync(path.join(dir, '.claude', 'canonkit.json'))) return { root: dir, file: path.join(dir, '.claude', 'canonkit.json') };
+    if (bound && samePath(normalizePath(dir), bound)) break;
+    const up = path.dirname(dir);
+    if (up === dir) break;
+    dir = up;
+  }
+  if (projectDir && !isHome(resolve(projectDir))) {
+    const root = resolve(projectDir);
+    return { root, file: path.join(root, '.claude', 'canonkit.json') };
+  }
+  return { root: cwd, file: null };
+}
 
-function projectConfig(cwd) {
-  let raw = null;
-  try { raw = JSON.parse(fs.readFileSync(path.join(cwd, '.claude', 'canonkit.json'), 'utf8')); } catch (_) {}
-  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
-  const high = obj(obj(raw).highRisk);
+// Read only when it is a regular file under the cap: a symlink to /dev/zero or
+// a FIFO never ends, and a huge one exhausts memory — either way the hook dies
+// and every gate opens. stat (not open) first: opening a FIFO blocks.
+function readConfigText(file, ignored) {
+  let st;
+  try { st = fs.statSync(file); } catch (_) { return null; } // no config: defaults
+  const where = '.claude/canonkit.json';
+  if (!st.isFile()) { ignored.push({ where, why: 'not a regular file; defaults apply' }); return null; }
+  if (st.size > MAX_CONFIG_BYTES) { ignored.push({ where, why: `larger than ${MAX_CONFIG_BYTES} bytes; defaults apply` }); return null; }
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const buf = Buffer.alloc(MAX_CONFIG_BYTES + 1);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    if (n > MAX_CONFIG_BYTES) { ignored.push({ where, why: `larger than ${MAX_CONFIG_BYTES} bytes; defaults apply` }); return null; }
+    return buf.toString('utf8', 0, n);
+  } catch (_) { return null; } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
+  }
+}
+
+function globList(v, where, ignored, isExclude = false) {
+  if (v === undefined) return [];
+  if (!Array.isArray(v)) { ignored.push({ where, why: 'not an array' }); return []; }
+  const out = [];
+  const anyOut = (p) => out.some((m) => m(p));
+  // Only the first MAX_GLOBS entries are looked at, valid or not: the rest is
+  // one line in `ignored`, not one each.
+  v.slice(0, MAX_GLOBS).forEach((g, i) => {
+    const at = `${where}[${i}]`;
+    if (typeof g !== 'string' || !g.trim()) return ignored.push({ where: at, why: 'not a non-empty string' });
+    if (g.length > MAX_GLOB_LENGTH) return ignored.push({ where: at, why: `longer than ${MAX_GLOB_LENGTH} characters` });
+    const m = globMatcher(g);
+    if (isExclude && isCatchAll(m)) {
+      return ignored.push({ where: at, why: 'a catch-all exclude would turn the gate off for everyone who clones the repo' });
+    }
+    if (isExclude && isCatchAll((p) => m(p) || anyOut(p))) {
+      return ignored.push({ where: at, why: 'with the excludes before it, this would match most paths and turn the gate off for everyone who clones the repo' });
+    }
+    out.push(m);
+  });
+  if (v.length > MAX_GLOBS) ignored.push({ where, why: `more than ${MAX_GLOBS} entries; the rest are ignored` });
+  return out;
+}
+
+function projectConfig(cwd, projectDir = process.env.CLAUDE_PROJECT_DIR) {
+  const { root, file } = locateConfig(cwd, projectDir);
+  const ignored = [];
+  let raw = {};
+  const text = file ? readConfigText(file, ignored) : null;
+  if (text !== null) {
+    try {
+      raw = JSON.parse(text);
+      if (!isObj(raw)) { ignored.push({ where: '.claude/canonkit.json', why: 'not a JSON object; defaults apply' }); raw = {}; }
+    } catch (_) { ignored.push({ where: '.claude/canonkit.json', why: 'not valid JSON; defaults apply' }); }
+  }
+  if (raw.version !== undefined && raw.version !== 1) {
+    ignored.push({ where: 'version', why: `unsupported version ${JSON.stringify(raw.version)}; defaults apply` });
+    raw = {};
+  }
+  for (const k of Object.keys(raw)) if (!CONFIG_KEYS.includes(k)) ignored.push({ where: k, why: 'unknown key' });
+  let high = {};
+  if (raw.highRisk !== undefined) {
+    if (isObj(raw.highRisk)) high = raw.highRisk;
+    else ignored.push({ where: 'highRisk', why: 'not an object' });
+  }
+  for (const k of Object.keys(high)) if (!HIGH_RISK_KEYS.includes(k)) ignored.push({ where: `highRisk.${k}`, why: 'unknown key' });
   return {
-    include: globList(high.include),
-    exclude: globList(high.exclude),
-    perf: [...PERF_BUDGET_DEFAULTS.map(globMatcher), ...globList(obj(raw).perfBudgets)],
-    // Edit hands an absolute path, a shell command a relative one: both end up
-    // relative to the project, with forward slashes.
-    rel(fp) {
-      let p = fp;
-      if (path.isAbsolute(p)) {
-        const r = path.relative(cwd, p);
-        if (r && !r.startsWith('..') && !path.isAbsolute(r)) p = r;
-      }
-      return p.replace(/\\/g, '/').replace(/^\.\//, '');
-    },
+    root,
+    file,
+    include: globList(high.include, 'highRisk.include', ignored),
+    exclude: globList(high.exclude, 'highRisk.exclude', ignored, true),
+    perf: globList(raw.perfBudgets, 'perfBudgets', ignored),
+    ignored,
+    rel: (fp) => projectPath(fp, cwd, root),
   };
 }
-
-const isPerfBudget = (fp, cfg) => !!fp && cfg.perf.some((m) => m(cfg.rel(fp)));
 
 // High-confidence secrets — almost never intentional in source.
 const HARD_SECRET = [
@@ -462,7 +706,9 @@ function main() {
   // ---- DEFINITION-OF-DONE gate (Stop) ----
   if (eventName === 'Stop') {
     if (input.stop_hook_active) process.exit(0); // already nudged once this turn — don't loop
-    const evs = readEvents().filter((e) => e.session && e.session === SESSION);
+    // The rotated half too: a rotation (or install's meu-time log merge) can
+    // move this session's gate there.
+    const evs = readEvents(true).filter((e) => e.session && e.session === SESSION);
     // perf-budget joins the gated kinds. This hook only ever sees the file path,
     // never the direction of the change, so it cannot tell a tightening (which
     // anyone may do) from a loosening (which only Perry may do). It gates both.
@@ -604,27 +850,34 @@ function main() {
     }
     const targets = shellWriteTargets(cmd);
     if (targets.length) {
-      const cfg = projectConfig(cwd);
+      // Before the project config is read: nothing in it may cost the deny.
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
           log({ event: 'gate', kind: 'secret-block', file: targets[0], project, tool });
           deny('canonkit gate (Gard): this command writes a high-confidence secret (private key / cloud key) to a file. Blocked. Move it to an env var / secret store.');
         }
       }
-      if (SOFT_SECRET.test(cmd) && !targets.some((t) => TEST_PATH.test(t))) {
+      const cfg = projectConfig(cwd);
+      const rels = targets.map((t) => cfg.rel(t));
+      // Waived only when every target is a test file: one test target among
+      // several must not carry a credential into the others.
+      if (SOFT_SECRET.test(cmd) && !rels.every(isTestFile)) {
         log({ event: 'gate', kind: 'secret-ask', file: targets[0], project, tool });
         ask('canonkit gate (Gard): this command writes what looks like a hardcoded credential to a file. Confirm this is intentional and not a real secret.');
       }
-      const perf = targets.find((t) => isPerfBudget(t, cfg));
+      const perf = targets.find((_, i) => isPerfBudget(rels[i], cfg));
       if (perf) {
         log({ event: 'gate', kind: 'perf-budget', file: perf, project, tool });
         ask(`canonkit gate (Perry): this command writes "${path.basename(perf)}", which carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
       }
-      const risky = targets.find((t) => isHighRisk(t, cfg));
-      if (risky) {
-        log({ event: 'gate', kind: 'high-risk-surface', file: risky, project, tool });
-        ask(`canonkit gate: this command writes "${path.basename(risky)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
-      }
+      targets.forEach((t, i) => {
+        const verdict = highRisk(rels[i], cfg);
+        if (verdict === true) {
+          log({ event: 'gate', kind: 'high-risk-surface', file: t, project, tool });
+          ask(`canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
+        }
+        if (verdict) log({ event: 'gate', kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool });
+      });
     }
     process.exit(0);
   }
@@ -637,29 +890,45 @@ function main() {
       (Array.isArray(ti.edits) ? ti.edits.map((e) => e.new_string || '').join('\n') : '')
     );
 
-    const cfg = projectConfig(cwd);
+    // Before the project config is read: nothing in it may cost the deny.
     for (const re of HARD_SECRET) {
       if (re.test(content)) {
         log({ event: 'gate', kind: 'secret-block', file: fp, project, tool });
         deny('canonkit gate (Gard): a high-confidence secret (private key / cloud key) was detected in this write. Blocked. Move it to an env var / secret store.');
       }
     }
-    if (SOFT_SECRET.test(content) && !TEST_PATH.test(fp)) {
+    const cfg = projectConfig(cwd);
+    const rel = cfg.rel(fp);
+    if (SOFT_SECRET.test(content) && !isTestFile(rel)) {
       log({ event: 'gate', kind: 'secret-ask', file: fp, project, tool });
       ask('canonkit gate (Gard): looks like a hardcoded credential. Confirm this is intentional and not a real secret.');
     }
-    if (isPerfBudget(fp, cfg)) {
+    if (isPerfBudget(rel, cfg)) {
       log({ event: 'gate', kind: 'perf-budget', file: fp, project, tool });
       ask(`canonkit gate (Perry): "${path.basename(fp)}" carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
     }
-    if (isHighRisk(fp, cfg)) {
+    const verdict = highRisk(rel, cfg);
+    if (verdict === true) {
       log({ event: 'gate', kind: 'high-risk-surface', file: fp, project, tool });
       ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
     }
+    // Not a gate: the dashboard shows what a project's config kept quiet.
+    if (verdict) log({ event: 'gate', kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool });
     process.exit(0);
   }
 
   process.exit(0); // default allow
 }
 
-try { main(); } catch (_) { process.exit(0); /* fail-open */ }
+function run() {
+  try { main(); } catch (_) { process.exit(0); /* fail-open */ }
+}
+
+module.exports = { run, projectConfig, globMatcher, normalizePath };
+
+// Run as the hook itself, or through the pre-rename meu-time-hook.js forwarder.
+// The current forwarder calls run(); one written before this export only
+// require()s this file, and a forwarder that silently stopped gating is the very
+// failure it exists to prevent. Imported anywhere else (doctor, tests), nothing runs.
+const entry = require.main && require.main.filename;
+if (require.main === module || (entry && path.basename(entry) === 'meu-time-hook.js')) run();

@@ -174,7 +174,7 @@
       if (e.event === 'agent_start') { agents++; e.id ? open.set(e.id, e) : legacy.push(e); }
       else if (e.event === 'agent_end') open.delete(e.id);
       else if (e.event === 'agent_stop' && !('agent_id' in e)) legacy.shift();
-      else if (e.event === 'gate') gates++;
+      else if (e.event === 'gate' && e.kind !== 'excluded-by-config') gates++; // a silenced gate did not fire
       else if (e.event === 'prompt') prompts++;
     }
     const active = [...legacy, ...open.values()];
@@ -196,6 +196,8 @@
         const bits = [modelOf(e), effortOf(e), typeof e.duration_ms === 'number' ? dur(e.duration_ms) : '', e.tokens ? tok(e.tokens.total) + ' tok' : ''].filter(Boolean).join(' · ');
         return `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop"><span style="color:${m.c}">${esc(m.name)}</span> finished · ${esc(bits)}</span></div>`; }
       if (e.event === 'agent_stop') return 'agent_id' in e ? '' : `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop">subagent finished</span></div>`;
+      if (e.event === 'gate' && e.kind === 'excluded-by-config') {
+        return `<div class="row">${t}<span class="ic stop">∅</span><span class="body stop">silenced by .claude/canonkit.json · ${esc(e.file || '')}${e.glob ? ' · exclude ' + esc(e.glob) : ''}</span></div>`; }
       if (e.event === 'gate') { const block = e.kind === 'secret-block';
         return `<div class="row">${t}<span class="ic gate ${block ? 'block' : ''}">${block ? '⛔' : '⚠'}</span><span class="body gate ${block ? 'block' : ''}">gate · ${esc(e.kind)}${e.file ? ' · ' + esc(e.file) : ''}${e.detail ? ' · ' + esc(e.detail) : ''}</span></div>`; }
       return '';
