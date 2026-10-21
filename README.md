@@ -127,7 +127,7 @@ todo projeto e anula a regra. Só nomes que este repo é dono são tocados.
 
 O bloco de roteamento promete gates `[ENFORCED]`: confirmação em `git commit`,
 bloqueio de segredos, e o gate de definition-of-done no `Stop`. Esses gates só
-existem enquanto `~/.claude/hooks/meu-time-hook.js` está no disco **e** é
+existem enquanto `~/.claude/hooks/canonkit-hook.js` está no disco **e** é
 referenciado pelo `settings.json`. O `install` copia o arquivo; o registro no
 `settings.json` ele apenas **reporta**, com o JSON pronto para colar.
 
@@ -143,8 +143,31 @@ silêncio. Por isso o `validate.sh` roda `node --check` em cada `hooks/*.js`.
 Editar esse arquivo no lugar sempre foi o único fluxo que ele teve, e foi assim
 que ele passou a existir numa cópia só, numa máquina só. Versioná-lo inverte a
 fonte de verdade, então o instalador protege o caso: se a cópia instalada
-divergir da do repo, ela é preservada como `meu-time-hook.js.local.bak` antes de
+divergir da do repo, ela é preservada como `canonkit-hook.js.local.bak` antes de
 ser sobrescrita.
+
+Quais caminhos contam como superfície HIGH-risk ou budget de performance é
+ajustável por projeto em `.claude/canonkit.json` (lido do diretório da sessão):
+
+```json
+{
+  "highRisk": { "include": ["src/billing/**"], "exclude": ["src/domain/contracts/**"] },
+  "perfBudgets": ["perf/thresholds.yml"]
+}
+```
+
+Glob com `/` casa com o caminho relativo ao projeto; sem `/`, com o nome do
+arquivo em qualquer profundidade. `include` vence `exclude`. `exclude` nunca
+silencia a checagem de segredo no conteúdo nem caminhos que guardam credenciais
+(`.env`, `secret`, `credential`, `.npmrc`, `github_token`...). `perfBudgets` só
+acrescenta à lista padrão (lighthouserc, size-limit, bundlesize, `budget.json`,
+thresholds do k6...): remover um padrão seria afrouxar o gate, e isso é do Perry.
+Editar o próprio `canonkit.json` é um gate. Config inválida = padrões.
+
+Ao atualizar de uma versão com o nome antigo (`meu-time`), o `install` move
+`~/.claude/meu-time-activity/` para `canonkit-activity/` e remove o
+`meu-time-hook.js` — ou, se o `settings.json` ainda o executa, troca-o por um
+repassador para `canonkit-hook.js` até você atualizar o comando.
 
 O registro é conferido **por evento**: `PreToolUse`, `PostToolUse` (matcher
 `Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
@@ -154,7 +177,7 @@ de despacho que nunca são gravadas.
 ### Métricas de despacho e dashboard
 
 Cada despacho de subagente vira duas linhas em
-`~/.claude/meu-time-activity/events.jsonl`, ligadas pelo `id` (o `tool_use_id`):
+`~/.claude/canonkit-activity/events.jsonl`, ligadas pelo `id` (o `tool_use_id`):
 `agent_start` (agente, descrição, `model`, `effort`; vazio = herdou o padrão) e
 `agent_end` (modelo resolvido, duração, tokens de entrada / saída / cache read /
 cache write, número de chamadas de API e `report_chars`, o tamanho do relatório
@@ -178,8 +201,8 @@ mensagem de texto, então `report_chars` mede a `message` do último
 `SubagentHandback` do transcript e só cai para `last_assistant_message` quando não
 há nenhum.
 
-O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
-`node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
+O `install` copia o dashboard para `~/.claude/canonkit-dashboard/`. Rode
+`node ~/.claude/canonkit-dashboard/serve.js` e abra `http://localhost:4317`: além
 da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
 de despachos, tokens médios, tamanho médio do relatório e duração média.
 

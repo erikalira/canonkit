@@ -37,7 +37,7 @@ const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 // some of its events half-works, which hides better than not working — the gates
 // fire, so nobody goes looking for the dispatch metrics that are never written.
 const HOOK_EVENTS = {
-  "meu-time-hook.js": {
+  "canonkit-hook.js": {
     PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task",
     PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
@@ -303,7 +303,8 @@ async function install(ctx, options = {}) {
 
   await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
   await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"));
-  await installDashboard(ctx, path.join(os.homedir(), ".claude", "meu-time-dashboard"));
+  await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"));
+  await installDashboard(ctx, path.join(os.homedir(), ".claude", "canonkit-dashboard"));
 
   if (reference) {
     ctx.log("");
@@ -375,7 +376,7 @@ async function installHooks(ctx, dest) {
 
 /**
  * Install the activity dashboard the hook's event log feeds. It used to live
- * only in ~/.claude/meu-time-dashboard/, the same unversioned single copy the
+ * only in ~/.claude/, the same unversioned single copy the
  * hook once was — so the hook could change the log's shape with nothing in the
  * repo able to follow it.
  */
@@ -385,6 +386,85 @@ async function installDashboard(ctx, dest) {
   await copyKeepingLocal(ctx, DASHBOARD_DIR, dest, files);
   const serve = path.join(dest, "serve.js").split(path.sep).join("/");
   ctx.log(`Installed dashboard -> ${dest}  (run: node ${serve})`);
+}
+
+/**
+ * Before the rename, the hook, its log and its dashboard were called meu-time.
+ * The log moves, so the dashboard and the Stop gate keep their history; both
+ * also read the old location, which covers a move that could not happen.
+ *
+ * The old hook file is the delicate part. settings.json is the user's and is not
+ * rewritten here, so while it still runs the old name, deleting the file would
+ * turn every gate off with no sign: the runtime reports a hook that cannot start
+ * as a non-blocking error and carries on. The file becomes a forwarder instead,
+ * until settings.json points at the new name. Its previous contents are kept as
+ * .local.bak either way — there is no shipped copy left to tell an edit from.
+ */
+const LEGACY = { hook: "meu-time-hook.js", log: "meu-time-activity", dashboard: "meu-time-dashboard" };
+const FORWARDER_MARK = "canonkit-forwarder";
+const HOOK_FORWARDER = `#!/usr/bin/env node
+// ${FORWARDER_MARK}: written by \`canonkit install\` because settings.json still runs
+// this pre-rename name. It runs canonkit-hook.js so the gates keep firing.
+// Point settings.json at canonkit-hook.js, then delete this file.
+require('./canonkit-hook.js');
+`;
+
+async function upgradeFromMeuTime(ctx, claudeDir) {
+  const notes = [];
+
+  const oldLog = path.join(claudeDir, LEGACY.log);
+  const newLog = path.join(claudeDir, "canonkit-activity");
+  if (existsSync(oldLog)) {
+    if (existsSync(newLog)) {
+      notes.push(`~/.claude/${LEGACY.log} and ~/.claude/canonkit-activity both exist; the old one is left in place`);
+      notes.push("  (the hook and the dashboard still read it). Delete it once you no longer need its history.");
+    } else {
+      try {
+        await ctx.move(oldLog, newLog);
+        notes.push(`moved ~/.claude/${LEGACY.log} -> ~/.claude/canonkit-activity (history kept)`);
+      } catch (err) {
+        // A file held open (a running dashboard on Windows) blocks the move. The
+        // read-through keeps the history visible, so the install goes on.
+        notes.push(`could not move ~/.claude/${LEGACY.log} (${err.code ?? err.message}); it is still read in place.`);
+        notes.push("  Re-run install once nothing holds it open.");
+      }
+    }
+  }
+
+  const oldHook = path.join(claudeDir, "hooks", LEGACY.hook);
+  if (existsSync(oldHook)) {
+    const forwarder = (await readFile(oldHook, "utf8")).includes(FORWARDER_MARK);
+    if (!forwarder) {
+      await ctx.copy(oldHook, `${oldHook}.local.bak`);
+      notes.push(`previous ${LEGACY.hook} kept as ${LEGACY.hook}.local.bak`);
+    }
+    if (settingsMention(claudeDir, LEGACY.hook)) {
+      if (!forwarder) await ctx.write(oldHook, HOOK_FORWARDER);
+      notes.push(`settings.json still runs ${LEGACY.hook}: it now forwards to canonkit-hook.js, so the gates`);
+      notes.push(`  keep firing. Replace that command with canonkit-hook.js (wiring above), then delete ${LEGACY.hook}.`);
+    } else {
+      await ctx.remove(oldHook);
+      notes.push(`removed ${LEGACY.hook}, replaced by canonkit-hook.js. A project settings.json that ran it`);
+      notes.push("  must point at canonkit-hook.js now.");
+    }
+  }
+
+  if (existsSync(path.join(claudeDir, LEGACY.dashboard))) {
+    notes.push(`~/.claude/${LEGACY.dashboard} is no longer updated: the dashboard is now ~/.claude/canonkit-dashboard.`);
+    notes.push("  Delete the old one yourself.");
+  }
+
+  if (!notes.length) return;
+  ctx.log("");
+  ctx.log("Upgrade from meu-time:");
+  for (const n of notes) ctx.log(`  ${n}`);
+}
+
+// Raw text, not parsed: a settings file that is not valid JSON can still run the hook.
+function settingsMention(claudeDir, name) {
+  return ["settings.json", "settings.local.json"].some((f) => {
+    try { return readFileSync(path.join(claudeDir, f), "utf8").includes(name); } catch { return false; }
+  });
 }
 
 /**
@@ -1254,6 +1334,9 @@ function context(dryRun) {
     },
     remove: async (p) => {
       if (!dryRun) await rm(p, { force: true });
+    },
+    move: async (from, to) => {
+      if (!dryRun) await rename(from, to);
     },
   };
 }

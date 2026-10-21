@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Minimal, dependency-free server for the Meu Time activity dashboard.
+ * Minimal, dependency-free server for the canonkit activity dashboard.
  * Serves index.html and exposes:
  *   /events.json      the tail of the hook's event log (the live timeline)
  *   /dispatches.json  every agent_end still in the log, one per dispatch (the cost views)
  *   /context.json     measured text volume by session and contributor
- * Run:  node ~/.claude/meu-time-dashboard/serve.js
+ * Run:  node ~/.claude/canonkit-dashboard/serve.js
  * Open: http://localhost:4317
  *
  * Installed copy: the source of truth is dashboard/ in the agent-team-config repo.
@@ -17,14 +17,17 @@ const os = require('os');
 
 const PORT = 4317;
 const HTML = path.join(__dirname, 'index.html');
-const LOG = path.join(os.homedir(), '.claude', 'meu-time-activity', 'events.jsonl');
+const LOG = path.join(os.homedir(), '.claude', 'canonkit-activity', 'events.jsonl');
+// The pre-rename location. install moves it; until then (or if both exist) its
+// history is read first, as the older half.
+const LEGACY_LOG = path.join(os.homedir(), '.claude', 'meu-time-activity', 'events.jsonl');
 
 // The hook rotates the log at 2 MB (events.jsonl -> events.jsonl.1). Read the
 // rotated half first, or the dashboard goes near-empty for a while after every
 // rotation — the last 300 events would be sitting in the file nobody reads.
 function readLines() {
   let lines = [];
-  for (const f of [LOG + '.1', LOG]) {
+  for (const f of [LEGACY_LOG + '.1', LEGACY_LOG, LOG + '.1', LOG]) {
     try {
       lines = lines.concat(fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean));
     } catch (_) {}
@@ -103,5 +106,5 @@ const server = http.createServer((req, res) => {
 module.exports = { contextContributors, server };
 
 if (require.main === module) server.listen(PORT, '127.0.0.1', () => {
-  console.log(`Meu Time dashboard → http://localhost:${PORT}  (Ctrl+C to stop)`);
+  console.log(`canonkit dashboard → http://localhost:${PORT}  (Ctrl+C to stop)`);
 });

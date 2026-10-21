@@ -1,5 +1,5 @@
 /**
- * Contract tests for hooks/meu-time-hook.js.
+ * Contract tests for hooks/canonkit-hook.js.
  *
  * The hook is the mechanical half of the routing block's `[ENFORCED]` rules, and
  * a regression in it is silent by construction: it fails open, so a broken gate
@@ -16,12 +16,13 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const HOOK = path.join(REPO, "hooks", "meu-time-hook.js");
+const HOOK = path.join(REPO, "hooks", "canonkit-hook.js");
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
 const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
@@ -29,8 +30,8 @@ const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
 let HOME;
 
 before(async () => {
-  HOME = await mkdtemp(path.join(os.tmpdir(), "meutime-hook-"));
-  await mkdir(path.join(HOME, ".claude", "meu-time-activity"), { recursive: true });
+  HOME = await mkdtemp(path.join(os.tmpdir(), "canonkit-hook-"));
+  await mkdir(path.join(HOME, ".claude", "canonkit-activity"), { recursive: true });
 });
 after(async () => {
   await rm(HOME, { recursive: true, force: true });
@@ -59,7 +60,7 @@ function runHook(input, env = {}) {
 }
 
 const logged = async (session) =>
-  (await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8"))
+  (await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"))
     .trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.session === session);
 
 const pre = (tool_name, tool_input, session_id = "TEST") =>
@@ -87,7 +88,7 @@ describe("main-thread context contributors", () => {
     const e = events[0];
     assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "tool", "ts"]);
     assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", tool, chars, lines });
-    const jsonl = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
     assert.ok(!jsonl.includes(secret), "sensitive input/result content persisted");
     assert.ok(!jsonl.includes("private-customer"), "private path persisted");
   };
@@ -159,12 +160,12 @@ describe("main-thread context contributors", () => {
     assert.deepEqual(await logged(session), []);
   });
   test("unsafe or absent session identifiers are never logged", async () => {
-    const before = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    const before = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
     for (const session of [privatePath, {}, null, ""]) runHook(post("Glob", { filenames: [] }, session));
-    assert.equal(await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8"), before);
+    assert.equal(await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"), before);
   });
   test("internal filesystem failures stay fail-open with no stdout/stderr", async () => {
-    const home = await mkdtemp(path.join(os.tmpdir(), "meutime-unwritable-"));
+    const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-unwritable-"));
     try {
       await writeFile(path.join(home, ".claude"), "not a directory");
       const r = runHook(post("Bash", { stdout: secret, stderr: "" }, "VOLUME-fail-open"), { HOME: home, USERPROFILE: home });
@@ -266,6 +267,215 @@ describe("file-editing tools", () => {
   });
   test("lighthouserc.json is Perry-gated", () => {
     assert.equal(decide(pre("Edit", { file_path: "lighthouserc.json", new_string: "{}" })), "ask");
+  });
+  test("gate messages say canonkit, not the old name", () => {
+    const r = runHook(pre("Edit", { file_path: "src/auth/x.ts", new_string: "x" }));
+    const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
+    assert.match(reason, /^canonkit gate/);
+    assert.doesNotMatch(r.stdout, /meu.?time/i);
+  });
+});
+
+describe("HIGH-risk path calibration", () => {
+  // Every case is a decision, not a sample. The ambiguous words (login,
+  // session(s), contract(s), permission(s), gateway) name UI and domain folders
+  // as often as security surfaces, so they gate only in code outside a
+  // presentational folder. The strong terms and the secret-bearing names are
+  // untouched: those are the false negatives the gate exists to prevent.
+  const edit = (fp) => decide(pre("Edit", { file_path: fp, new_string: "x" }));
+
+  test("false positives: UI, docs and styles that merely use an ambiguous word", () => {
+    for (const fp of [
+      "src/components/SessionsList.tsx", // no segment boundary: never was a match
+      "src/components/sessions/SessionList.tsx", // a UI folder named after the domain
+      "src/ui/permissions/PermissionBadge.tsx",
+      "src/components/gateway/GatewayStatus.tsx",
+      "src/features/contracts/ContractCard.stories.tsx",
+      "docs/contracts-overview.md", // prose about contracts is not a contract
+      "docs/sessions.md",
+      "src/styles/login.css",
+      "src\\components\\sessions\\List.tsx", // Windows separators
+    ]) {
+      assert.equal(edit(fp), "allow", fp);
+    }
+  });
+
+  test("false negatives: secrets, auth and migrations stay gated wherever they are", () => {
+    for (const fp of [
+      ".env",
+      ".env.local",
+      "config/.env.production",
+      ".npmrc",
+      "src/auth/index.ts",
+      "auth/middleware.go",
+      "src/components/auth/LoginForm.tsx", // a strong term wins over a UI folder
+      "docs/auth.md", // a strong term gates in prose too: unchanged on purpose
+      "db/migrations/001_init.sql",
+      "prisma/migrations/20240101_init/migration.sql",
+      "src/migrations/2024_add_users.ts",
+      "C:\\repo\\src\\auth\\session.ts",
+    ]) {
+      assert.equal(edit(fp), "ask", fp);
+    }
+  });
+
+  test("false negatives: ambiguous words in code outside a presentational folder stay gated", () => {
+    for (const fp of [
+      "src/lib/session/store.ts",
+      "server/sessions/store.ts",
+      "api/permissions.ts",
+      "contracts/Token.sol", // a smart contract
+      "api/contracts/openapi.yaml", // an API contract
+      "docs/contracts/openapi.yaml", // still a contract: only prose files are let through
+      "services/gateway/routes.ts",
+      "src/pages/login.tsx",
+      "pages/api/login.ts",
+    ]) {
+      assert.equal(edit(fp), "ask", fp);
+    }
+  });
+
+  test("the calibration applies to shell writes too", () => {
+    assert.equal(decide(pre("Bash", { command: "echo x > docs/contracts-overview.md" })), "allow");
+    assert.equal(decide(pre("Bash", { command: "echo x > server/sessions/store.ts" })), "ask");
+  });
+});
+
+describe("performance budgets", () => {
+  // Perry is stack-agnostic, so the gate cannot know only Lighthouse.
+  const edit = (fp) => decide(pre("Edit", { file_path: fp, new_string: "{}" }));
+
+  test("the default list covers the common budget files", () => {
+    for (const fp of [
+      "lighthouserc.json",
+      ".lighthouserc.yml",
+      ".size-limit.json",
+      ".size-limit.js",
+      "bundlesize.config.json",
+      ".bundlesizerc",
+      "budget.json",
+      "lighthouse-budget.json",
+      "perf-budget.json",
+      "config/performance-budgets.yml",
+      "load/k6/thresholds.js",
+    ]) {
+      assert.equal(edit(fp), "ask", fp);
+    }
+  });
+
+  test("ordinary files that mention a budget are not budgets", () => {
+    for (const fp of ["src/finance/budget.ts", "docs/performance.md", "load/k6/script.js"]) {
+      assert.equal(edit(fp), "allow", fp);
+    }
+  });
+
+  test("a perf-budget gate is logged under its own kind", async () => {
+    decide(pre("Edit", { file_path: ".size-limit.json", new_string: "[]" }, "PERF-KIND"));
+    const [gate] = await logged("PERF-KIND");
+    assert.equal(gate.kind, "perf-budget");
+  });
+});
+
+describe("project config (.claude/canonkit.json)", () => {
+  // The file is read from the project the session runs in (input.cwd). It
+  // tunes path heuristics only: what is written is always checked.
+  const projects = [];
+  after(() => Promise.all(projects.map((p) => rm(p, { recursive: true, force: true }))));
+
+  async function project(config) {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "canonkit-project-"));
+    projects.push(dir);
+    await mkdir(path.join(dir, ".claude"), { recursive: true });
+    await writeFile(path.join(dir, ".claude", "canonkit.json"), typeof config === "string" ? config : JSON.stringify(config));
+    return dir;
+  }
+  const inProject = (cwd, tool, tool_input, session = "CONFIG") => decide({ ...pre(tool, tool_input, session), cwd });
+  const edit = (cwd, rel, new_string = "x") =>
+    inProject(cwd, "Edit", { file_path: path.join(cwd, rel), new_string });
+
+  test("exclude silences a path heuristic, for absolute and relative paths", async () => {
+    const cwd = await project({ highRisk: { exclude: ["src/domain/contracts/**"] } });
+    assert.equal(edit(cwd, "src/domain/contracts/contract.service.ts"), "allow");
+    assert.equal(inProject(cwd, "Edit", { file_path: "src/domain/contracts/x.ts", new_string: "x" }), "allow");
+    assert.equal(inProject(cwd, "Bash", { command: "echo x > src/domain/contracts/x.ts" }), "allow");
+    assert.equal(edit(cwd, "server/sessions/store.ts"), "ask", "only the excluded path is silenced");
+  });
+
+  test("a pattern without a slash matches the file name at any depth", async () => {
+    const cwd = await project({ highRisk: { exclude: ["*.service.ts"] } });
+    assert.equal(edit(cwd, "src/domain/contracts/contract.service.ts"), "allow");
+  });
+
+  test("exclude never silences secret detection in what is written", async () => {
+    const cwd = await project({ highRisk: { exclude: ["**"] } });
+    assert.equal(edit(cwd, "src/config.ts", FAKE_PEM), "deny");
+    assert.equal(edit(cwd, "src/config.ts", 'const password = "hunter2000"'), "ask");
+    assert.equal(inProject(cwd, "Bash", { command: `echo ${FAKE_AWS_KEY} > src/x.ts` }), "deny");
+  });
+
+  test("exclude cannot silence a secret-bearing path", async () => {
+    // The content check does not recognise every token format (ghp_, npm_), so
+    // for these files the path is the only backstop.
+    const cwd = await project({ highRisk: { exclude: ["**", ".env", ".npmrc", "*token*"] } });
+    for (const rel of [".env", ".env.local", ".npmrc", "config/github_token", "config/secrets.yml", "keys/credentials.json"]) {
+      assert.equal(edit(cwd, rel), "ask", rel);
+    }
+  });
+
+  test("include adds a surface, and wins over exclude", async () => {
+    const cwd = await project({ highRisk: { include: ["src/billing/**"], exclude: ["src/billing/**"] } });
+    assert.equal(edit(cwd, "src/billing/charge.ts"), "ask");
+    assert.equal(inProject(cwd, "Bash", { command: "echo x > src/billing/charge.ts" }), "ask");
+  });
+
+  test("include reaches paths the default treats as noise (tests, fixtures)", async () => {
+    const cwd = await project({ highRisk: { include: ["fixtures/keys/**"] } });
+    assert.equal(edit(cwd, "fixtures/keys/prod.json"), "ask");
+  });
+
+  test("perfBudgets extends the defaults; it cannot remove one", async () => {
+    const cwd = await project({ perfBudgets: ["perf/thresholds.yml"], highRisk: { exclude: ["**"] } });
+    assert.equal(edit(cwd, "perf/thresholds.yml"), "ask");
+    assert.equal(edit(cwd, "lighthouserc.json"), "ask", "a highRisk exclude does not reach the perf gate");
+  });
+
+  test("editing the config itself is a gated change", async () => {
+    const cwd = await project({});
+    assert.equal(edit(cwd, ".claude/canonkit.json", "{}"), "ask");
+    assert.equal(inProject(cwd, "PowerShell", { command: "Set-Content -Path .claude/canonkit.json -Value '{}'" }), "ask");
+    assert.equal(decide(pre("Edit", { file_path: "other/.claude/canonkit.json", new_string: "{}" })), "ask");
+  });
+
+  test("an invalid or wrongly shaped config falls back to the defaults", async () => {
+    for (const bad of ["{ not json", "[]", "null", JSON.stringify({ highRisk: { exclude: "**" } }), JSON.stringify({ highRisk: { exclude: [42, null] } })]) {
+      const cwd = await project(bad);
+      assert.equal(edit(cwd, "src/auth/x.ts"), "ask", bad);
+      assert.equal(edit(cwd, "docs/contracts-overview.md"), "allow", bad);
+    }
+  });
+
+  test("no config file: defaults", () => {
+    assert.equal(decide({ ...pre("Edit", { file_path: "server/sessions/store.ts", new_string: "x" }), cwd: os.tmpdir() }), "ask");
+  });
+});
+
+describe("log location (meu-time-activity -> canonkit-activity)", () => {
+  // An upgrade must not lose a gated edit made just before it: the Stop gate
+  // reads the old log until install has moved it.
+  test("the Stop gate still sees a gate logged under the old directory", async () => {
+    const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-legacy-"));
+    try {
+      const legacy = path.join(home, ".claude", "meu-time-activity");
+      await mkdir(legacy, { recursive: true });
+      await writeFile(path.join(legacy, "events.jsonl"),
+        JSON.stringify({ ts: Date.now(), session: "LEGACY", event: "gate", kind: "high-risk-surface", file: "src/auth/x.ts" }) + "\n");
+      const stop = () => runHook({ hook_event_name: "Stop", session_id: "LEGACY" }, { HOME: home, USERPROFILE: home });
+      assert.equal(JSON.parse(stop().stdout).decision, "block");
+      // A new event lands in the new directory; the old gate is still seen.
+      runHook(pre("Agent", { subagent_type: "bob" }, "LEGACY"), { HOME: home, USERPROFILE: home });
+      assert.ok(existsSync(path.join(home, ".claude", "canonkit-activity", "events.jsonl")));
+      assert.equal(JSON.parse(stop().stdout).decision, "block");
+    } finally { await rm(home, { recursive: true, force: true }); }
   });
 });
 
@@ -469,7 +679,7 @@ describe("definition-of-done gate", () => {
   const stop = (extra = {}) => decide({ hook_event_name: "Stop", session_id: S, ...extra });
   const seed = (obj) =>
     appendFile(
-      path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"),
+      path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"),
       JSON.stringify({ session: S, ...obj }) + "\n",
     );
 
@@ -548,14 +758,14 @@ describe("context-size reminder (UserPromptSubmit)", () => {
 
   test("bands are overridable by env, and 'off' disables", async () => {
     const f = await transcript("ctx-env", [asst(30000)]);
-    assert.ok(prompt("CTX-ENV", f, { MEU_TIME_CONTEXT_BANDS: "20000" }));
-    assert.equal(prompt("CTX-OFF", f, { MEU_TIME_CONTEXT_BANDS: "off" }), null);
+    assert.ok(prompt("CTX-ENV", f, { CANONKIT_CONTEXT_BANDS: "20000" }));
+    assert.equal(prompt("CTX-OFF", f, { CANONKIT_CONTEXT_BANDS: "off" }), null);
   });
 
   test("logs a context-size gate that the definition-of-done gate ignores", async () => {
     const f = await transcript("ctx-log", [asst(110000)]);
     prompt("CTX-LOG", f);
-    const log = await readFile(path.join(HOME, ".claude", "meu-time-activity", "events.jsonl"), "utf8");
+    const log = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
     assert.match(log, /"session":"CTX-LOG".*"kind":"context-size"/);
     assert.equal(decide({ hook_event_name: "Stop", session_id: "CTX-LOG" }), "allow");
   });

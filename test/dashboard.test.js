@@ -55,7 +55,7 @@ test("old events, corrupt lines and unmeasured results do not invent context", (
 test("context reads both retained log files, beyond the timeline's 300 lines", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-context-"));
   try {
-    const dir = path.join(home, ".claude", "meu-time-activity");
+    const dir = path.join(home, ".claude", "canonkit-activity");
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "events.jsonl.1"), lines([
       { session: "s", event: "tool_result", tool: "Read", chars: 100 },
@@ -101,6 +101,24 @@ test("context reads both retained log files, beyond the timeline's 300 lines", a
     assert.equal(served.dispatches.length, 1);
     assert.equal(served.dispatches[0].report_chars, 50);
     assert.equal(served.cache, "no-store"); assert.equal(served.html, true);
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
+test("history still in the pre-rename log directory is read too", async () => {
+  // install moves meu-time-activity to canonkit-activity; until it has, or when
+  // both exist, the dashboard must not drop what the old directory holds.
+  const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-legacy-dash-"));
+  try {
+    for (const [dir, chars] of [["meu-time-activity", 70], ["canonkit-activity", 30]]) {
+      await mkdir(path.join(home, ".claude", dir), { recursive: true });
+      await writeFile(path.join(home, ".claude", dir, "events.jsonl"),
+        JSON.stringify({ session: "s", event: "tool_result", tool: "Read", chars }) + "\n");
+    }
+    const r = spawnSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).contextContributors()))", SERVER], {
+      env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(JSON.parse(r.stdout)[0].total_chars, 100);
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 

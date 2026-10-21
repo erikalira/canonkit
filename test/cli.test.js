@@ -356,7 +356,7 @@ describe("codex custom agents", () => {
 /* ------------------------------------------------------------------ hooks */
 
 describe("hooks", () => {
-  const hookPath = (home) => path.join(home, ".claude", "hooks", "meu-time-hook.js");
+  const hookPath = (home) => path.join(home, ".claude", "hooks", "canonkit-hook.js");
 
   test("installs the hook and says so when settings.json does not reference it", async () => {
     const { home } = await scratch("hook-fresh");
@@ -368,7 +368,7 @@ describe("hooks", () => {
     // The message exists to be pasted into settings.json, where a Windows path
     // separator is an invalid escape. Asserting the forward-slash form is the
     // same check without writing a backslash into this file.
-    assert.ok(out.includes("/.claude/hooks/meu-time-hook.js"), "suggested command is not JSON-pastable");
+    assert.ok(out.includes("/.claude/hooks/canonkit-hook.js"), "suggested command is not JSON-pastable");
   });
 
   test("keeps a locally edited hook as .local.bak before overwriting it", async () => {
@@ -382,7 +382,7 @@ describe("hooks", () => {
     const { out } = run(["install", "--no-reference"], { home });
     assert.ok(out.includes("differed — previous copy kept"));
     assert.equal(await read(hookPath(home) + ".local.bak"), edited);
-    assert.equal(await read(hookPath(home)), await read(path.join(REPO, "hooks", "meu-time-hook.js")));
+    assert.equal(await read(hookPath(home)), await read(path.join(REPO, "hooks", "canonkit-hook.js")));
   });
 
   const EVENTS = ["PreToolUse", "PostToolUse", "SubagentStop", "UserPromptSubmit", "Stop"];
@@ -392,7 +392,7 @@ describe("hooks", () => {
         path.join(home, ".claude", "settings.json"),
         JSON.stringify({
           hooks: Object.fromEntries(
-            events.map((e) => [e, [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }]]),
+            events.map((e) => [e, [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/canonkit-hook.js" }] }]]),
           ),
         }),
       ),
@@ -445,16 +445,101 @@ describe("hooks", () => {
     assert.ok(existsSync(hookPath(home)), "a broken settings.json must not stop the copy");
   });
 
+  describe("upgrade from meu-time", () => {
+    const claude = (home, ...p) => path.join(home, ".claude", ...p);
+    const oldHook = (home) => claude(home, "hooks", "meu-time-hook.js");
+    const OLD = "// the pre-rename hook, possibly edited\n";
+    const seedOld = async (home) => {
+      await mkdir(claude(home, "hooks"), { recursive: true });
+      await writeFile(oldHook(home), OLD);
+    };
+    const gate = (home, script) => spawnSync(process.execPath, [script], {
+      input: JSON.stringify({ hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: { command: "git commit -m x" }, session_id: "UPG" }),
+      encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home },
+    });
+
+    test("an old hook nothing references is removed, its copy kept", async () => {
+      const { home } = await scratch("upgrade-unreferenced");
+      await seedOld(home);
+      const { out, status } = run(["install", "--no-reference"], { home });
+      assert.equal(status, 0, out);
+      assert.ok(!existsSync(oldHook(home)), "old hook left behind");
+      assert.equal(await read(oldHook(home) + ".local.bak"), OLD);
+      assert.ok(existsSync(hookPath(home)));
+      assert.match(out, /meu-time-hook\.js/);
+    });
+
+    test("an old hook settings.json still runs keeps the gates firing and is reported", async () => {
+      // Removing it would make every gate fail open until settings.json is
+      // rewired: the command would point at a file that is not there.
+      const { home } = await scratch("upgrade-referenced");
+      await seedOld(home);
+      await writeFile(claude(home, "settings.json"), JSON.stringify({
+        hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook.js" }] }] },
+      }));
+      const { out } = run(["install", "--no-reference"], { home });
+      assert.equal(await read(oldHook(home) + ".local.bak"), OLD);
+      assert.ok(existsSync(oldHook(home)), "the file settings.json runs must still exist");
+      assert.match(out, /settings\.json still runs meu-time-hook\.js/);
+      const r = gate(home, oldHook(home));
+      assert.equal(r.status, 0, r.stderr);
+      assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask", "the forwarder does not gate");
+      // Re-running install keeps the forwarder and does not back it up over the original.
+      run(["install", "--no-reference"], { home });
+      assert.equal(await read(oldHook(home) + ".local.bak"), OLD);
+    });
+
+    test("the activity log moves to canonkit-activity with its history", async () => {
+      const { home } = await scratch("upgrade-log");
+      await mkdir(claude(home, "meu-time-activity"), { recursive: true });
+      await writeFile(claude(home, "meu-time-activity", "events.jsonl"), '{"event":"prompt"}\n');
+      const { out } = run(["install", "--no-reference"], { home });
+      assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"event":"prompt"}\n');
+      assert.ok(!existsSync(claude(home, "meu-time-activity")));
+      assert.match(out, /canonkit-activity/);
+    });
+
+    test("when both logs exist the old one is left in place and reported", async () => {
+      const { home } = await scratch("upgrade-log-both");
+      for (const d of ["meu-time-activity", "canonkit-activity"]) {
+        await mkdir(claude(home, d), { recursive: true });
+        await writeFile(claude(home, d, "events.jsonl"), `{"from":"${d}"}\n`);
+      }
+      const { out } = run(["install", "--no-reference"], { home });
+      assert.equal(await read(claude(home, "meu-time-activity", "events.jsonl")), '{"from":"meu-time-activity"}\n');
+      assert.equal(await read(claude(home, "canonkit-activity", "events.jsonl")), '{"from":"canonkit-activity"}\n');
+      assert.match(out, /meu-time-activity/);
+    });
+
+    test("an old dashboard is reported, not deleted", async () => {
+      const { home } = await scratch("upgrade-dashboard");
+      await mkdir(claude(home, "meu-time-dashboard"), { recursive: true });
+      const { out } = run(["install", "--no-reference"], { home });
+      assert.ok(existsSync(claude(home, "meu-time-dashboard")));
+      assert.match(out, /meu-time-dashboard/);
+    });
+
+    test("--dry-run moves and removes nothing", async () => {
+      const { home } = await scratch("upgrade-dry");
+      await seedOld(home);
+      await mkdir(claude(home, "meu-time-activity"), { recursive: true });
+      run(["install", "--no-reference", "--dry-run"], { home });
+      assert.equal(await read(oldHook(home)), OLD);
+      assert.ok(existsSync(claude(home, "meu-time-activity")));
+      assert.ok(!existsSync(claude(home, "canonkit-activity")));
+    });
+  });
+
   test("--dry-run installs no hook", async () => {
     const { home } = await scratch("hook-dry");
     run(["install", "--no-reference", "--dry-run"], { home });
     assert.ok(!existsSync(hookPath(home)));
-    assert.ok(!existsSync(path.join(home, ".claude", "meu-time-dashboard")));
+    assert.ok(!existsSync(path.join(home, ".claude", "canonkit-dashboard")));
   });
 });
 
 describe("dashboard", () => {
-  const dash = (home) => path.join(home, ".claude", "meu-time-dashboard");
+  const dash = (home) => path.join(home, ".claude", "canonkit-dashboard");
 
   test("installs the dashboard beside the hook it reads from", async () => {
     const { home } = await scratch("dash-fresh");

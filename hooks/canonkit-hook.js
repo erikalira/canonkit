@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Meu Time — mechanical enforcement + process-observability hook.
+ * canonkit — mechanical enforcement + process-observability hook.
  *
  * Wired (in ~/.claude/settings.json) to PreToolUse, PostToolUse (agents + context tools),
  * SubagentStop, UserPromptSubmit, Stop. Three jobs:
@@ -8,8 +8,11 @@
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
  *        - edits to HIGH-risk surfaces (auth, secrets, migrations, contracts) -> confirm
  *          (forces Archie/Gard consideration even if risk was misjudged as LOW)
- *        - edits to lighthouserc (performance budgets) -> confirm (Perry owns loosening)
+ *        - edits to performance-budget files (lighthouserc, size-limit, ...) -> confirm
+ *          (Perry owns loosening)
  *        - obvious secrets in written content -> block (Gard as a tripwire)
+ *      A project tunes the path heuristics in .claude/canonkit.json (see PROJECT
+ *      CONFIG below); nothing there reaches the content checks.
  *   2. OBSERVABILITY — append a structured event line that the dashboard reads.
  *   3. DEFINITION-OF-DONE — on Stop, if this session touched a gated surface
  *      (HIGH-risk, a secret, or a performance budget) without an independent
@@ -22,7 +25,7 @@
  * past it. Bash and PowerShell therefore share one code path here, and the
  * settings matcher must list both. Same reasoning for NotebookEdit next to Edit/Write.
  *
- * Tests: `npm test` in the agent-team-config repo (test/meu-time-hook.test.js) — hermetic,
+ * Tests: `npm test` in the agent-team-config repo (test/canonkit-hook.test.js) — hermetic,
  * real process. This file is the installed copy; fix it in the repo, not here.
  *
  * DESIGN RULE: fail-open. Any internal error -> exit 0 (allow). A buggy hook must
@@ -33,8 +36,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const LOG_DIR = path.join(os.homedir(), '.claude', 'meu-time-activity');
+const LOG_DIR = path.join(os.homedir(), '.claude', 'canonkit-activity');
 const LOG_FILE = path.join(LOG_DIR, 'events.jsonl');
+// Before the rename the log lived here. `install` moves it; until it has (or if
+// the move failed), reads fall through to it, so a gated edit made just before
+// the upgrade still counts at the next Stop. Nothing is ever written here.
+const LEGACY_LOG_FILE = path.join(os.homedir(), '.claude', 'meu-time-activity', 'events.jsonl');
 // The Stop gate reads this whole file at every turn end, so it cannot grow
 // unbounded. One rotation is enough: the gate only ever asks about this session.
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
@@ -54,7 +61,8 @@ function log(event) {
 // withRotated: also read events.jsonl.1, for lookups that must survive a rotation
 // landing between two halves of the same dispatch.
 function readEvents(withRotated = false) {
-  const files = withRotated ? [LOG_FILE + '.1', LOG_FILE] : [LOG_FILE];
+  const files = [];
+  for (const f of [LEGACY_LOG_FILE, LOG_FILE]) files.push(...(withRotated ? [f + '.1', f] : [f]));
   const out = [];
   for (const f of files) {
     try {
@@ -199,14 +207,15 @@ function subagentTranscript(parentTranscript, agentId) {
 // adds context alongside the prompt and exit 0 never blocks it. The transcript is
 // written asynchronously, so the figure can lag one turn — fine for a reminder.
 // The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
-// MEU_TIME_CONTEXT_BANDS (comma-separated token counts; "off" disables).
+// CANONKIT_CONTEXT_BANDS (comma-separated token counts; "off" disables). The
+// pre-rename MEU_TIME_CONTEXT_BANDS is still read when the new one is unset.
 const DEFAULT_BANDS = [100000, 150000, 200000];
 const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
 const BANDS_FILE = path.join(LOG_DIR, 'context-bands.json');
 const MAX_TRACKED_SESSIONS = 50;
 
 function contextBands() {
-  const raw = process.env.MEU_TIME_CONTEXT_BANDS;
+  const raw = process.env.CANONKIT_CONTEXT_BANDS ?? process.env.MEU_TIME_CONTEXT_BANDS;
   if (raw === undefined || raw.trim() === '') return DEFAULT_BANDS;
   if (/^(off|0|none)$/i.test(raw.trim())) return [];
   const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
@@ -308,19 +317,109 @@ const HIGH_RISK_STRONG = /(auth|oauth|jwt|passport|secret|credential|\.env|rbac|
 // `npm-token`) and the dotfiles that hold registry credentials stay gated: the
 // secret-content check does not recognise ghp_/npm_ values, so the path is the
 // only backstop for them.
-const HIGH_RISK_WORD = /(^|[\/\\._-])(login|sessions?|contracts?|permissions?|acl|gateway|migrations?|(refresh|access|id|auth|api|bearer|csrf|device|reset|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?|tokens?[_-](store|storage|service|manager|vault|rotation|refresh|validation|verify|issuer)|\.?(npmrc|netrc|pypirc))([\/\\._-]|$)/i;
+const HIGH_RISK_WORD = /(^|[\/\\._-])(acl|migrations?|(refresh|access|id|auth|api|bearer|csrf|device|reset|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?|tokens?[_-](store|storage|service|manager|vault|rotation|refresh|validation|verify|issuer)|\.?(npmrc|netrc|pypirc))([\/\\._-]|$)/i;
+// AMBIGUOUS words name UI and domain folders as often as security surfaces: a
+// `components/sessions/` list, a CRM's `contracts/`, a `docs/gateway.md`. They
+// count only in code outside a presentational folder. `views` is deliberately not
+// presentational (Django views are the request handlers), nor is `pages`
+// (`pages/api/login.ts` is an endpoint), nor `docs/` as a folder: an OpenAPI file
+// under docs/contracts/ is still a contract — only prose files are let through.
+const AMBIGUOUS_WORD = /(^|[\/\\._-])(login|sessions?|contracts?|permissions?|gateway)([\/\\._-]|$)/i;
+const PROSE_OR_STYLE = /\.(md|mdx|markdown|txt|rst|adoc|css|scss|sass|less|styl|svg|png|jpe?g|gif|webp|ico)$/i;
+const PRESENTATIONAL = /(^|[\/\\])(components?|ui|styles?|stories|assets|icons|locales|i18n)[\/\\]|\.stories\.[cm]?[jt]sx?$/i;
+// Paths that hold credentials. A project's `exclude` never reaches these: the
+// content check does not recognise every token format (ghp_, npm_), so for these
+// files the path is the only backstop.
+const SECRET_PATH = /(\.env|secret|credential|(^|[\/\\._-])\.?(npmrc|netrc|pypirc)([\/\\._-]|$)|(^|[\/\\._-])(refresh|access|auth|api|bearer|session|jwt|pat|github|gh|npm|pypi|personal|service)[_-]?tokens?([\/\\._-]|$))/i;
+// The file that tunes these gates is itself a gate: loosening it is a decision.
+const CONFIG_PATH = /(^|[\/\\])\.claude[\/\\]canonkit\.json$/i;
 // Generated, vendored or throwaway: never the surface the gate is about.
 const NOISE_PATH = /(node_modules|[\/\\]\.next|[\/\\]dist|[\/\\]build|coverage|graphify-out|[\/\\]\.git[\/\\])/i;
 const TEST_PATH = /(\.test\.|\.spec\.|__tests__|__mocks__|[\/\\]fixtures?[\/\\]|[\/\\]mocks?[\/\\]|\.example$|\.sample$)/i;
 
-function isHighRisk(fp) {
-  if (!fp || NOISE_PATH.test(fp) || TEST_PATH.test(fp)) return false;
-  return HIGH_RISK_STRONG.test(fp) || HIGH_RISK_WORD.test(fp);
+// Order is the contract: include (explicit) > noise/test > secret paths
+// (never excludable) > exclude > the built-in heuristics.
+function isHighRisk(fp, cfg) {
+  if (!fp) return false;
+  if (CONFIG_PATH.test(fp)) return true;
+  const rel = cfg.rel(fp);
+  if (cfg.include.some((m) => m(rel))) return true;
+  if (NOISE_PATH.test(fp) || TEST_PATH.test(fp)) return false;
+  if (SECRET_PATH.test(fp)) return true;
+  if (cfg.exclude.some((m) => m(rel))) return false;
+  return HIGH_RISK_STRONG.test(fp) || HIGH_RISK_WORD.test(fp) ||
+    (AMBIGUOUS_WORD.test(fp) && !PROSE_OR_STYLE.test(fp) && !PRESENTATIONAL.test(fp));
 }
 
 // Perf budgets: a HIGH-risk surface with a different owner. Anyone may tighten a
-// threshold; only Perry loosens one, and only with a measured floor.
-const PERF_BUDGET_PATH = /lighthouserc/i;
+// threshold; only Perry loosens one, and only with a measured floor. Perry is
+// stack-agnostic, so the gate knows the common budget files, and a project adds
+// its own with `perfBudgets` — it can add, never remove: dropping a default
+// would be loosening the gate itself.
+const PERF_BUDGET_DEFAULTS = [
+  '*lighthouserc*', // lighthouserc.json, .lighthouserc.yml
+  '*lighthouse*budget*',
+  'budget.json', 'budgets.json', // Lighthouse's budget file
+  '.size-limit*',
+  '*bundlesize*', // bundlesize.config.json, .bundlesizerc
+  '*perf*budget*', '*performance*budget*',
+  '**/k6/**/*threshold*',
+];
+
+// ---- PROJECT CONFIG (.claude/canonkit.json in the session's cwd) ----
+//   { "highRisk": { "include": [glob], "exclude": [glob] }, "perfBudgets": [glob] }
+// A glob with a `/` matches the path relative to the project; one without
+// matches the file name at any depth. `*` stays in a segment, `**` crosses them.
+// Matching ignores case: a gate should over-match, never miss on a capital.
+// Anything malformed is ignored and the defaults stand — a typo must not turn a
+// gate off. This shape is read by other tools too (doctor, README): a public contract.
+const MAX_GLOBS = 100;
+const MAX_GLOB_LENGTH = 200;
+
+function globMatcher(glob) {
+  const g = glob.replace(/\\/g, '/').replace(/^\.\//, '');
+  let re = '';
+  for (let i = 0; i < g.length; i++) {
+    const c = g[i];
+    if (c === '*' && g[i + 1] === '*') {
+      i++;
+      if (g[i + 1] === '/') { i++; re += '(?:.*/)?'; } else re += '.*';
+    } else if (c === '*') re += '[^/]*';
+    else if (c === '?') re += '[^/]';
+    else re += c.replace(/[.+^${}()|[\]\\]/g, '\\$&');
+  }
+  const rx = new RegExp(`^${re}$`, 'i');
+  return g.includes('/') ? (p) => rx.test(p) : (p) => rx.test(p.slice(p.lastIndexOf('/') + 1));
+}
+
+const globList = (v) => (Array.isArray(v) ? v : [])
+  .filter((g) => typeof g === 'string' && g.trim() && g.length <= MAX_GLOB_LENGTH)
+  .slice(0, MAX_GLOBS)
+  .map(globMatcher);
+
+function projectConfig(cwd) {
+  let raw = null;
+  try { raw = JSON.parse(fs.readFileSync(path.join(cwd, '.claude', 'canonkit.json'), 'utf8')); } catch (_) {}
+  const obj = (v) => (v && typeof v === 'object' && !Array.isArray(v) ? v : {});
+  const high = obj(obj(raw).highRisk);
+  return {
+    include: globList(high.include),
+    exclude: globList(high.exclude),
+    perf: [...PERF_BUDGET_DEFAULTS.map(globMatcher), ...globList(obj(raw).perfBudgets)],
+    // Edit hands an absolute path, a shell command a relative one: both end up
+    // relative to the project, with forward slashes.
+    rel(fp) {
+      let p = fp;
+      if (path.isAbsolute(p)) {
+        const r = path.relative(cwd, p);
+        if (r && !r.startsWith('..') && !path.isAbsolute(r)) p = r;
+      }
+      return p.replace(/\\/g, '/').replace(/^\.\//, '');
+    },
+  };
+}
+
+const isPerfBudget = (fp, cfg) => !!fp && cfg.perf.some((m) => m(cfg.rel(fp)));
 
 // High-confidence secrets — almost never intentional in source.
 const HARD_SECRET = [
@@ -501,29 +600,30 @@ function main() {
     const cmd = String(ti.command || '');
     if (/\bgit\s+(commit|push)\b/.test(cmd)) {
       log({ event: 'gate', kind: 'git', detail: cmd.slice(0, 80), project, tool });
-      ask('Meu Time gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
+      ask('canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
     }
     const targets = shellWriteTargets(cmd);
     if (targets.length) {
+      const cfg = projectConfig(cwd);
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
           log({ event: 'gate', kind: 'secret-block', file: targets[0], project, tool });
-          deny('Meu Time gate (Gard): this command writes a high-confidence secret (private key / cloud key) to a file. Blocked. Move it to an env var / secret store.');
+          deny('canonkit gate (Gard): this command writes a high-confidence secret (private key / cloud key) to a file. Blocked. Move it to an env var / secret store.');
         }
       }
       if (SOFT_SECRET.test(cmd) && !targets.some((t) => TEST_PATH.test(t))) {
         log({ event: 'gate', kind: 'secret-ask', file: targets[0], project, tool });
-        ask('Meu Time gate (Gard): this command writes what looks like a hardcoded credential to a file. Confirm this is intentional and not a real secret.');
+        ask('canonkit gate (Gard): this command writes what looks like a hardcoded credential to a file. Confirm this is intentional and not a real secret.');
       }
-      const perf = targets.find((t) => PERF_BUDGET_PATH.test(t));
+      const perf = targets.find((t) => isPerfBudget(t, cfg));
       if (perf) {
         log({ event: 'gate', kind: 'perf-budget', file: perf, project, tool });
-        ask(`Meu Time gate (Perry): this command writes "${path.basename(perf)}", which carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
+        ask(`canonkit gate (Perry): this command writes "${path.basename(perf)}", which carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
       }
-      const risky = targets.find((t) => isHighRisk(t));
+      const risky = targets.find((t) => isHighRisk(t, cfg));
       if (risky) {
         log({ event: 'gate', kind: 'high-risk-surface', file: risky, project, tool });
-        ask(`Meu Time gate: this command writes "${path.basename(risky)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Confirm to proceed.`);
+        ask(`canonkit gate: this command writes "${path.basename(risky)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
       }
     }
     process.exit(0);
@@ -537,23 +637,24 @@ function main() {
       (Array.isArray(ti.edits) ? ti.edits.map((e) => e.new_string || '').join('\n') : '')
     );
 
+    const cfg = projectConfig(cwd);
     for (const re of HARD_SECRET) {
       if (re.test(content)) {
         log({ event: 'gate', kind: 'secret-block', file: fp, project, tool });
-        deny('Meu Time gate (Gard): a high-confidence secret (private key / cloud key) was detected in this write. Blocked. Move it to an env var / secret store.');
+        deny('canonkit gate (Gard): a high-confidence secret (private key / cloud key) was detected in this write. Blocked. Move it to an env var / secret store.');
       }
     }
     if (SOFT_SECRET.test(content) && !TEST_PATH.test(fp)) {
       log({ event: 'gate', kind: 'secret-ask', file: fp, project, tool });
-      ask('Meu Time gate (Gard): looks like a hardcoded credential. Confirm this is intentional and not a real secret.');
+      ask('canonkit gate (Gard): looks like a hardcoded credential. Confirm this is intentional and not a real secret.');
     }
-    if (PERF_BUDGET_PATH.test(fp)) {
+    if (isPerfBudget(fp, cfg)) {
       log({ event: 'gate', kind: 'perf-budget', file: fp, project, tool });
-      ask(`Meu Time gate (Perry): "${path.basename(fp)}" carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
+      ask(`canonkit gate (Perry): "${path.basename(fp)}" carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
     }
-    if (isHighRisk(fp)) {
+    if (isHighRisk(fp, cfg)) {
       log({ event: 'gate', kind: 'high-risk-surface', file: fp, project, tool });
-      ask(`Meu Time gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Confirm to proceed.`);
+      ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
     }
     process.exit(0);
   }
