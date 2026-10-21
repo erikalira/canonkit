@@ -2,7 +2,7 @@
 /**
  * Meu Time — mechanical enforcement + process-observability hook.
  *
- * Wired (in ~/.claude/settings.json) to PreToolUse, PostToolUse (matcher Agent|Task),
+ * Wired (in ~/.claude/settings.json) to PreToolUse, PostToolUse (agents + context tools),
  * SubagentStop, UserPromptSubmit, Stop. Three jobs:
  *   1. ENFORCEMENT — turn the team's soft HIGH-risk gates into mechanical ones:
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
@@ -143,6 +143,42 @@ function reportChars(v) {
   if (!Array.isArray(v)) return null;
   const texts = v.filter((b) => b && b.type === 'text' && typeof b.text === 'string');
   return texts.length ? texts.reduce((n, b) => n + b.text.length, 0) : null;
+}
+
+// ---- MAIN-THREAD TOOL VOLUME ----
+// PostToolUse carries structured Output, NOT the rendered model tool_result.
+// Fields checked against @anthropic-ai/claude-agent-sdk 0.3.300 sdk-tools.d.ts;
+// PowerShell's stdout/stderr and agent_id semantics checked in Claude Code
+// 2.1.302's runtime schema. No generic JSON.stringify fallback: it would count
+// paths, input metadata and binary data as context. Unknown/non-text output is
+// unmeasured. This is payload text volume, not tokens or exact context growth.
+function textSize(text) {
+  let lines = text.length ? 1 : 0;
+  const newline = /\r\n|\r|\n/g;
+  while (newline.exec(text)) lines++;
+  if (/[\r\n]$/.test(text)) lines--; // a final terminator is not another line
+  return { chars: text.length, lines }; // JS UTF-16 units, like report_chars
+}
+
+function toolResultSize(tool, r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  if (tool === 'Read') {
+    return r.type === 'text' && r.file && typeof r.file.content === 'string'
+      ? textSize(r.file.content) : null;
+  }
+  if (tool === 'Grep' && (r.mode === 'content' || r.mode === 'count')) {
+    return typeof r.content === 'string' ? textSize(r.content) : null;
+  }
+  if (tool === 'Glob' || (tool === 'Grep' && (r.mode === undefined || r.mode === 'files_with_matches'))) {
+    return Array.isArray(r.filenames) && r.filenames.every((f) => typeof f === 'string')
+      ? textSize(r.filenames.join('\n')) : null;
+  }
+  if (tool === 'Bash' || tool === 'PowerShell') {
+    if (r.isImage || typeof r.stdout !== 'string' || typeof r.stderr !== 'string') return null;
+    const out = textSize(r.stdout), err = textSize(r.stderr);
+    return { chars: out.chars + err.chars, lines: out.lines + err.lines };
+  }
+  return null;
 }
 
 // PostToolUse names the parent transcript, not the subagent's. The subagent's sits
@@ -406,6 +442,14 @@ function main() {
   if (eventName === 'PostToolUse') {
     // Observability only. Nothing below this block may run here: the enforcement
     // paths answer as PreToolUse, which a PostToolUse event must never emit.
+    // agent_type is also set for a main thread started with --agent. Only
+    // agent_id identifies a subagent; never mix its tool volume into main.
+    if (input.agent_id === undefined && safeId(SESSION)) {
+      const size = toolResultSize(tool, input.tool_response);
+      // One line per measured result, with an explicit quantitative allowlist.
+      // No project basename either: even that can reveal sensitive context.
+      if (size) log({ event: 'tool_result', session: safeId(SESSION), tool, ...size });
+    }
     if (tool === 'Agent' || tool === 'Task') {
       const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
       const id = input.tool_use_id || '';

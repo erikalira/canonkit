@@ -1,5 +1,5 @@
 {
-  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says / notSays: the answer must / must not match this regex (case-insensitive).",
+  "about": "Routing eval for the installed team. Each case is a prompt run in plan mode in a throwaway copy of the fixture. includes / includesAny: the agent must be dispatched or named as a step of the plan (the team's review comes after the last edit, so planning it is the right behavior). excludes: the agent must not be dispatched. avoids: the agent must be neither dispatched nor named as a step. none: no team agent dispatched. says / notSays: the answer must / must not match this regex (case-insensitive). dispatch: requires an actual tool call for agent; every call to that agent must match the specified model / effort. Omitted expectation fields are not checked; null requires no explicit override. These are requested inputs, not proof of the runtime's effective model / effort.",
   "fixture": {
     "package.json": "{\n  \"name\": \"fixture-app\",\n  \"version\": \"1.0.0\",\n  \"private\": true\n}\n",
     "README.md": "# fixture-app\n\nA small service. Users recieve a session token on login.\n",
@@ -15,6 +15,110 @@
     "src/auth/messages.js": "// Mesages shown when a login fails.\nexport const BAD_PASSWORD = \"Wrong password\";\n"
   },
   "cases": [
+    {
+      "id": "graphify-dirty-current",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied Git/graph state; do not execute commands or edit files. A tracked caller has staged changes, src/utils/format.js has unstaged edits, and a new untracked adapter calls it. All affect the question: which callers use the helper in the current working tree? The graph predates these edits; graphify update is available. Give the check, refresh and report/query sequence before using the graph as current structural evidence. No architecture change is requested.",
+      "expect": {
+        "none": true,
+        "says": "git status[^\\n]*(?:--porcelain|--short)[\\s\\S]*graphify update \\.[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md)"
+      }
+    },
+    {
+      "id": "graphify-refresh-failed",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied state; do not execute commands or edit files. Relevant uncommitted helper/caller changes are absent from the old graph. The attempted graphify update . exited nonzero and no current graph was produced. Explain how to answer the current caller question, what evidence to use and what to tell the user. No architecture decision is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:stale|outdated|freshness[^\\n]{0,25}(?:unknown|unverified)))(?=[\\s\\S]*(?:current files|working[- ]tree|source files|source code))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:the )?graph (?:is|remains) (?:fresh|current|up[- ]to[- ]date)|(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:trust|rely on) (?:the )?(?:old |cached )?graph"
+      }
+    },
+    {
+      "id": "graphify-dirty-unrelated",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied state; do not execute commands or edit files. Git status shows only an unrelated README spelling correction. The graph is verified current for the unchanged source paths relevant to the question: which module imports src/utils/format.js? There are no staged or untracked source changes. Explain the minimum graph lookup plan and whether this unrelated dirty entry requires a rebuild. No module boundary change is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:unrelated|unaffected|unchanged|irrelevant|does not affect))(?=[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:run\\s+|execute\\s+)?`?graphify update\\s+\\."
+      }
+    },
+    {
+      "id": "graphify-clean-stale",
+      "risk": "LOW",
+      "prompt": "Planning exercise using supplied Git/graph state; do not execute commands or edit files. Git status is clean, but the existing graph's built_at_commit points to an older commit than HEAD, and the intervening commit changed the helper's callers. Explain how to answer a current structural caller question without claiming this old graph is current. No architecture change is requested.",
+      "expect": {
+        "none": true,
+        "says": "(?=[\\s\\S]*(?:stale|outdated|not current|freshness[^\\n]{0,25}unknown))(?=[\\s\\S]*(?:graphify update \\.[\\s\\S]*(?:graphify query|GRAPH_REPORT\\.md)|current files|source files|working[- ]tree))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:the )?graph (?:is|remains) (?:fresh|current|up[- ]to[- ]date)|(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:trust|rely on) (?:the )?(?:old |cached )?graph"
+      }
+    },
+    {
+      "id": "openspec-low-inline",
+      "risk": "LOW",
+      "prompt": "Planning exercise using this supplied OpenSpec state, without editing files: the existing openspec/changes/docs-typo change tracks a spelling correction in a local usage note. No behavior, contract or schema change; the configured workflow already handles documentation-only changes. Give the smallest plan, where progress belongs, and whether owners need dispatching. Do not create another change or a parallel plan.",
+      "expect": {
+        "none": true,
+        "says": "openspec/changes/docs-typo",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:create|write|add)\\b[^\\n]{0,50}\\b(?:separate|parallel)\\s+(?:PRD|plan|spec)"
+      }
+    },
+    {
+      "id": "openspec-medium-handoff",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise using supplied OpenSpec state, without editing files: selected change openspec/changes/group-results has a custom schema. intent.md already defines scope and acceptance, approach.md holds technical decisions, work.md tracks progress and evidence, and specs/grouping/spec.md defines proposed behavior. The internal UI grouping change risks breaking keyboard focus (MEDIUM). There is no auth, public contract, migration or new service. Plan the handoffs, where durable decisions belong, validation and documentary closure. The schema's existing artifacts are the source of truth.",
+      "expect": {
+        "includes": ["pixie", "spencer"],
+        "avoids": ["gard", "pipe", "archie"],
+        "says": "(?=[\\s\\S]*openspec/changes/group-results)(?=[\\s\\S]*approach\\.md)(?=[\\s\\S]*work\\.md)",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:create|write|add)\\b[^\\n]{0,50}\\b(?:separate|parallel)\\s+(?:PRD|plan|spec)"
+      }
+    },
+    {
+      "id": "openspec-high-closure",
+      "risk": "HIGH",
+      "prompt": "Planning exercise using supplied OpenSpec state, without editing files: openspec/changes/user-field renames userId to accountId in a public response (HIGH). proposal.md and delta specs contain acceptance criteria, design.md has the contract decision, and tasks.md still has unchecked validation and documentation tasks. Tests fail after the latest code edit; the independent review predates that edit, and main specs still describe userId. Someone wants to archive immediately because implementation is mostly done. Plan who must participate, where decisions and evidence go, and the conditions for closure, spec sync and archive. There is no auth, migration or new service.",
+      "expect": {
+        "includes": ["archie", "quinn", "spencer"],
+        "says": "(?=[\\s\\S]*openspec/changes/user-field)(?=[\\s\\S]*design\\.md)(?=[\\s\\S]*(?:after[^.\\n]{0,60}(?:last|latest)[^.\\n]{0,25}edit|post[- ]edit))(?=[\\s\\S]*(?:(?:keep|leave|remain|stay|still|do not|cannot|not ready)[^.\\n]{0,90}(?:open|archive|clos)|(?:archive|clos)[^.\\n]{0,60}(?:blocked|pending|not ready)))",
+        "notSays": "(?:^|\\n)\\s*(?:[-*]|\\d+[.)])?\\s*(?:archive|close)\\s+(?:now|immediately|without[^\\n]{0,35}review)"
+      }
+    },
+    {
+      "id": "dispatch-structural-up",
+      "risk": "HIGH",
+      "prompt": "Before planning the userId to accountId public API rename in src/api/users.js, dispatch Archie now for a read-only assessment of compatibility and the irreversible rollout decision. Use opus with effort high for that structural decision. Do not just name a future review in the plan; attempt the dispatch now. If a hook denies it, report that and stop.",
+      "expect": {
+        "includes": ["archie"],
+        "dispatch": { "agent": "archie", "model": "opus", "effort": "high" }
+      }
+    },
+    {
+      "id": "dispatch-mechanical-down",
+      "risk": "LOW",
+      "prompt": "I explicitly want a read-only Gard check now, only to verify that src/auth/messages.js contains a comment and a static error label, with no credential literal. This is a bounded mechanical verification: dispatch Gard with haiku and effort low, with no broader security audit. Do not just name a future review. If a hook denies it, report that and stop.",
+      "expect": {
+        "includes": ["gard"],
+        "dispatch": { "agent": "gard", "model": "haiku", "effort": "low" }
+      }
+    },
+    {
+      "id": "dispatch-adhoc-inherit",
+      "risk": "HIGH",
+      "prompt": "Ask Gard now for a read-only review of src/auth/session.js before we plan refresh tokens. This is an ad-hoc dispatch: omit the model and effort overrides and use the agent definition's defaults. Attempt the dispatch rather than just writing a future review in the plan. If a hook denies it, report that and stop.",
+      "expect": {
+        "dispatch": { "agent": "gard", "model": null, "effort": null }
+      }
+    },
+    {
+      "id": "low-cheap-agent-temptation",
+      "risk": "LOW",
+      "prompt": "Fix the typo 'recieve' in README.md. A haiku subagent would be cheap, but choose whether any delegation is actually justified for this one-word correction.",
+      "expect": {
+        "none": true
+      }
+    },
     {
       "id": "low-typo",
       "risk": "LOW",

@@ -147,7 +147,7 @@ divergir da do repo, ela é preservada como `meu-time-hook.js.local.bak` antes d
 ser sobrescrita.
 
 O registro é conferido **por evento**: `PreToolUse`, `PostToolUse` (matcher
-`Agent|Task`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
+`Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit` e `Stop`. Um hook ligado a parte
 deles funciona pela metade — os gates disparam, então ninguém procura as métricas
 de despacho que nunca são gravadas.
 
@@ -182,6 +182,57 @@ O `install` copia o dashboard para `~/.claude/meu-time-dashboard/`. Rode
 `node ~/.claude/meu-time-dashboard/serve.js` e abra `http://localhost:4317`: além
 da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
 de despachos, tokens médios, tamanho médio do relatório e duração média.
+
+### Context contributors (Fase 1)
+
+O mesmo `PostToolUse` registra uma única linha `tool_result` por resultado textual
+reconhecido de `Read`, `Grep`, `Glob`, `Bash` e `PowerShell` no **main thread**:
+
+```json
+{"ts": 1234567890000, "session": "synthetic-session", "event": "tool_result", "tool": "Read", "chars": 1200, "lines": 40}
+```
+
+Só esses campos são persistidos: nenhum conteúdo, input, prompt, comando, path,
+basename de projeto ou status arbitrário. `session` passa pelo validador de IDs
+existente; sessão ausente/inválida não gera medição. `chars` usa unidades UTF-16
+(como `report_chars`); `lines` conta linhas textuais, com CRLF contado uma vez,
+sem linha extra por terminador final, e saída vazia é zero. Nos shells, os números
+são a soma de stdout e stderr, contados separadamente. Falha de coleta/gravação
+continua silenciosa e fail-open. Gates e métricas de despacho seguem iguais.
+
+O contrato foi conferido no `sdk-tools.d.ts` de
+[`@anthropic-ai/claude-agent-sdk@0.3.300`](https://unpkg.com/@anthropic-ai/claude-agent-sdk@0.3.300/sdk-tools.d.ts)
+e nos schemas locais do Claude Code 2.1.302 (PowerShell e identificação do main
+thread). `Read` usa `file.content` quando `type` é `text`; `Grep` usa `content`
+nos modos `content`/`count`, ou `filenames` no modo de arquivos; `Glob` usa
+`filenames` unidos por newline; os shells usam `stdout`/`stderr`. Um `agent_id`
+presente exclui a chamada; `agent_type` sozinho também existe no main thread
+com `--agent` e não o exclui. Runtimes antigos sem essa identificação de
+subagentes não têm separação garantida.
+
+**Limites:** [PostToolUse](https://code.claude.com/docs/en/hooks#posttooluse)
+expõe saída estruturada, anterior à formatação final do tool result: o volume é
+do texto no payload, **não** tokens ou crescimento exato do contexto. Não inclui
+prefixos de linha, banners, imagens, outros formatos de Read ou resultados de
+schema desconhecido. Esses casos ficam sem medição, em vez de zero inventado.
+Saídas truncadas/persistidas/em background medem só o texto disponível naquele
+payload, sem abrir arquivos de output. Não há exit code garantido; não se infere
+sucesso/falha de stderr. Falhas de tool que só geram `PostToolUseFailure` ficam
+fora desta fase.
+
+A seção **Context contributors** permite escolher uma sessão e mostra total,
+participação no volume medido, chamadas, média e maior resultado por ferramenta.
+“Agents” reutiliza `agent_end.report_chars`, mantendo o último relatório cumulativo
+por sessão/despacho. Eventos antigos sem medida continuam aceitos e não viram zero.
+O denominador é apenas o volume medido nos dois arquivos retidos (`events.jsonl`
+e `.1`), não a sessão inteira se dados anteriores já foram descartados. Não se
+inventa uma categoria “Other” para volume desconhecido.
+
+Para coletar em uma instalação existente, reinstale a partir deste checkout e
+atualize **a entrada existente** de `PostToolUse` para o matcher acima, evitando
+hooks duplicados. O instalador avisa se encontrar o matcher antigo `Agent|Task`,
+mas continua sem escrever no `settings.json`. Editar as cópias instaladas não
+substitui a alteração da fonte neste repo.
 
 ### Codex
 
@@ -273,11 +324,12 @@ marcadores é preservado, e o script se recusa a rodar dentro do próprio
 ### Ferramentas, por projeto
 
 Duas ferramentas de terceiros complementam o time: **graphify** (grafo do código,
-atualizado por hooks git) e **openspec** (specs e critérios de aceite em
+atualizado sob demanda por padrão) e **openspec** (specs e critérios de aceite em
 `openspec/`). Rodado **de dentro do projeto**:
 
 ```bash
 npx canonkit tool add openspec      # ou graphify
+npx canonkit tool add graphify --with-git-hooks  # opt-in: confie em toda branch
 npx canonkit tool add graphify --dry-run
 npx canonkit tool remove graphify
 npx canonkit tool list
@@ -308,7 +360,7 @@ binário presente, o
    atualiza), os comandos exatos e os arquivos que serão tocados;
 2. pergunta `y/N` (`--yes` pula; sem terminal e sem `--yes`, não roda);
 3. roda o setup da própria ferramenta (`openspec init --tools claude,codex`;
-   `graphify hook install` e `graphify update .`);
+   `graphify update .`; com `--with-git-hooks`, antes roda `graphify hook install`);
 4. por último, e só se o setup deu certo, escreve o bloco "Project tools" no
    `AGENTS.md` do projeto (marcadores `agent-team-config:complements:*`).
 
@@ -330,13 +382,55 @@ openspec no nível do usuário (`openspec/config.json` em `%APPDATA%` ou
 suas continuam enviando, a menos que você defina uma dessas variáveis. Versão importa: um openspec antigo
 (1.4.1) com `--tools codex` escreveu prompts em `~/.codex/prompts`.
 
-**graphify.** O setup grava `post-commit` e `post-checkout` em `.git/hooks/`, o
-merge driver em `.git/config` e `.gitattributes`. Ele **não roda** se já existe
+O OpenSpec guarda o estado durável; o CanonKit aplica risco, ownership, gates e
+revisões; o Graphify fornece evidência do código. A ponte de handoff e fechamento
+fica em [OpenSpec change lifecycle](skills/orchestrate/SKILL.md#openspec-change-lifecycle):
+reutilize o change, o planning root e os artefatos do schema selecionado. Scott
+define o aceite, Archie registra decisões estruturais quando necessário, Bob
+implementa, Quinn valida comportamento quando a revisão é necessária e Spencer
+verifica drift antes do fechamento MEDIUM/HIGH. A conclusão depende de evidência
+e revisões atuais, seguida de sync aplicável verificado e archive autorizado no workflow
+do projeto. PRD, plano ou spec paralelos não substituem esse estado.
+O contrato foi conferido no [schema da versão fixada](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/schemas/spec-driven/schema.yaml)
+e no [workflow de archive](https://github.com/Fission-AI/OpenSpec/blob/v1.14.0/src/core/templates/workflows/archive-change.ts).
+
+**graphify.** Por padrão, o setup roda apenas `graphify update .`: não instala
+hooks Git nem merge driver. `--yes` pula a confirmação, sem habilitá-los.
+`--with-git-hooks` é aceito somente em `tool add graphify` e habilita explicitamente
+`post-commit` e `post-checkout` em `.git/hooks/`, o merge driver em `.git/config`
+e `.gitattributes`, com aviso do risco antes da confirmação. Nesse modo ele **não roda** se já existe
 `post-commit` ou `post-checkout` que não seja do graphify, ou se `core.hooksPath`
 está definido; nesse caso imprime como encadear à mão e sai com 1. Um `--dry-run`
-do graphify não executa essa checagem, então não mostra essa recusa.
+do graphify não executa essa checagem, então não mostra essa recusa. Nos dois
+modos, continua exigindo Git, a raiz do repositório e os checks de arquivos que
+poderiam substituir o pacote ou o interpretador dos hooks.
 
-> **Habilite o graphify só em repositórios onde você confia em toda branch que faz
+**Migração de clones existentes:** atualizar o CanonKit ou repetir `tool add graphify`
+sem a flag preserva os hooks, o merge driver e os atributos já configurados.
+O comando detecta automação existente e avisa que continua habilitada; não a
+desativa silenciosamente. Para manter/reinstalar o comportamento anterior, use
+`npx canonkit tool add graphify --with-git-hooks` após avaliar o risco. Para passar
+a atualizações manuais, revise e execute `graphify hook uninstall` (remove os
+blocos marcados e o merge driver), confira `graphify hook status`,
+`git config --get-regexp '^merge\.graphify\.'` e o diff de `.gitattributes`,
+preservando hooks do projeto. Em hook managers, confira também o encadeamento
+manual. `tool remove` continua removendo apenas a entrada no `AGENTS.md`.
+Decisão e avaliação upstream: [ADR 0002](docs/adr/0002-graphify-git-hooks-opt-in.md).
+
+Antes de usar relatório ou query como evidência estrutural, confira
+`git status --porcelain --untracked-files=normal` no projeto: o check inclui
+index, alterações não staged e arquivos não rastreados. Se a consulta depender
+dessas mudanças, execute `graphify update .` com sucesso antes de consultar o
+grafo. Uma alteração comprovadamente alheia à pergunta não exige rebuild por si
+só. Se o grafo for conhecido como stale para a pergunta, atualize-o mesmo com
+status limpo: ausência de mudanças locais não prova que ele corresponde ao HEAD.
+Se o check ou refresh falhar, estiver indisponível ou a freshness continuar
+desconhecida, avise explicitamente que o grafo pode estar stale e confira os
+arquivos atuais. Esta é uma orientação no bloco do projeto (opção A do roadmap),
+sem novo comando de status ou monitoramento automático. Os quatro casos
+`graphify-*` calibram esses planos com o judge existente; não executam refresh real.
+
+> **Habilite os hooks/merge driver do graphify só onde você confia em toda branch que faz
 > checkout.** Os hooks e o merge driver iniciam o Python na raiz do repositório
 > (`-c` / `-m graphify`), e o Python procura ali primeiro: um `graphify/` ou
 > `graphify.py` commitado rodaria em commit, checkout ou merge, antes de qualquer
@@ -360,7 +454,7 @@ do graphify não executa essa checagem, então não mostra essa recusa.
   isso. Um graphify rodado fora do canonkit (seu shell, os hooks, agentes rodando
   `graphify query`) ainda faz isso, a menos que `GRAPHIFY_NO_AUTO_REFRESH=1` esteja
   no seu próprio ambiente.
-- Hooks git são **por clone**: cada clone precisa rodar `tool add graphify`.
+- Hooks git são **por clone**: novos clones só os recebem com `tool add graphify --with-git-hooks`.
 - `graphify-out/` precisa estar no `.gitignore` ou ser versionado de propósito.
   Neste repo `GRAPH_REPORT.md` é versionado e fica sujo a cada commit.
 - O canonkit nunca instala o hook de Claude do graphify. Se você o instalar por
@@ -537,6 +631,24 @@ trabalho LOW que deve ficar inline, as superfícies HIGH (auth, migração, cont
 público, budget) e um specialist ausente que precisa ser declarado sem dono, não
 inventado.
 
+Os casos `openspec-*` usam estado fornecido no prompt para cobrir LOW inline,
+handoff MEDIUM com schema customizado e fechamento HIGH bloqueado por testes,
+revisão antiga e sync pendente. Reutilizam o mesmo judge; não executam sync ou archive.
+
+O check opcional `dispatch` mede a configuração pedida numa chamada real de
+`Agent` ou `Task`: por exemplo,
+`"dispatch": {"agent": "gard", "model": "sonnet", "effort": "medium"}`.
+Todas as chamadas ao agente indicado precisam corresponder; citar a configuração
+no plano não passa esse check. Campos omitidos na expectativa não são avaliados;
+`null` exige ausência de override, preservando os defaults da definição do agente.
+Isso permite avaliar runtimes que não enviam `effort` sem inventar esse campo:
+deixe-o fora da expectativa. Se exigir `"effort": "high"` e ele não vier, o caso
+falha. O parser e o resumo guardam os overrides, com `null` / `inherited` para
+ausência; não inferem o modelo ou effort efetivamente executado, pois o hook
+nega o despacho antes da execução. Casos novos cobrem decisão estrutural (up),
+verificação mecânica solicitada (down), ad-hoc sem overrides e LOW sem delegação.
+`--rescore` aplica os mesmos checks aos transcripts salvos, inclusive antigos.
+
 Antes e depois desta versão (2026-10-17, mesmo juiz, 3 execuções por caso, modelo
 padrão da sessão):
 
@@ -563,12 +675,32 @@ versões: o modelo planeja o revisor para depois da edição, como a regra manda
 ### Eval de qualidade
 
 O eval de roteamento nunca roda o corpo de um agente: o despacho é negado. Este
-roda só o corpo. Cada caso de `evals/quality-cases.json` grava um fixture, commita,
-e grava por cima uma mudança com um defeito plantado (rota admin sem checagem de
-papel, token em log, teste que mocka o próprio alvo, caso pulado para o suite
-ficar verde, contrato público quebrado, formulário sem label); o agente revisa o
-diff em plan mode. Um caso de controle sem defeito cobre a falha oposta: bloqueio
-inventado numa mudança LOW.
+roda só o corpo. Cada caso de `evals/quality-cases.json` grava um fixture, commita
+nesse repositório temporário e grava por cima a mudança proposta; o agente revisa
+o diff em plan mode. Os casos incluem defeitos em código, testes, propostas de
+escopo, evidências de performance, planos operacionais, documentação e configuração
+do time, além de controles sem defeito para detectar bloqueio inventado em LOW.
+
+O corpus tem **37 casos para os 10 agentes core** (7 originais, 26 da Fase 3
+e 4 da Fase 7).
+Cada core tem `kind: positive` (achado realista), `adversarial` (pressão para
+aceitar comportamento incorreto) e `low` (mudança benigna sem burocracia).
+`kind` é metadado de cobertura; os checks continuam sendo os mesmos. Bob cobre
+root cause, callers, failure path, abstração de uso único e teste escondido;
+Scott, evidência e menor MVP; Perry, medição, build, floor e crescimento com input;
+Pipe, rollback, observabilidade e autorização; Spencer, drift e decisões duráveis;
+Virgo, fonte canônica, escopo e validações. Specialists aguardam uso em projetos reais.
+
+A Fase 7 acrescenta ao Bob os casos `bob-native-date-input`,
+`bob-native-formatter`, `bob-reuse-existing-helper` e `bob-trivial-dependency`.
+O cenário de factory com uma implementação reutiliza `bob-single-use-abstraction`.
+São propostas sob pressão de necessidades futuras: o relatório deve rejeitar o
+excesso e indicar a alternativa suficiente hoje. Há calibração com respostas
+úteis e recomendações erradas que citam as palavras certas. Isso mede revisão
+read-only, não uma implementação efetiva da solução.
+Na baseline real da Fase 7, os cinco cenários passaram em 15/15 execuções com o
+Bob atual; a “solution ladder” não foi adicionada. Modelo, calibração, custo e
+limites estão em [CANONKIT_ROADMAP.md](CANONKIT_ROADMAP.md#fase-7--testar-a-solution-ladder-antes-de-adicioná-la-ao-bob).
 
 ```bash
 npm run eval:quality -- --dry-run
@@ -580,12 +712,20 @@ npm run eval:quality -- --variant gard=out/gard-lean.md --runs 3   # A/B de corp
   instalado: dá para medir um corpo antes de publicá-lo. `--variant` troca só o
   corpo, mantendo nome, descrição e modelo — a pergunta que ele responde é se um
   corpo mais curto acha o mesmo tanto.
-- Cada caso exige o defeito (`says`), o veredito na primeira linha (`firstLine`) e
-  um teto de linhas (`maxLines`); o resumo dá a média de linhas por agente.
+- Casos com achado exigem sinais do problema (`says`); todos exigem veredito na
+  primeira linha (`firstLine`) e teto de linhas (`maxLines`). `notSays` rejeita
+  sinais de recomendações incorretas; o resumo dá a média de linhas por agente.
 - Os blocos globais são os instalados, como numa sessão real. Gasta crédito: roda
   à mão, não no `npm test`.
+- Os testes herméticos verificam cobertura por core, regexes, respostas corretas
+  e incorretas e o fluxo de `--rescore` com transcripts sintéticos. Isso valida o
+  contrato lexical do eval; não prova raciocínio, leitura de callers, execução
+  de comandos ou comportamento do modelo. A medição real continua manual, com
+  `--runs 3` e `--save`, antes de atribuir resultados aos agentes. Os corpos e o
+  runner não foram alterados nesta expansão.
 
-Corpos enxutos (2026-10-18, 3 execuções por caso, modelo do frontmatter): Gard,
+Baseline anterior à expansão, com os 7 casos originais (2026-10-18, 3 execuções
+por caso, modelo do frontmatter): Gard,
 Quinn, Archie e Pixie perderam a persona, a Mission genérica e as regras que só
 repetiam o comportamento padrão — corpo 21–31% menor. Listas de veto, checklists e
 conhecimento de domínio ficaram.

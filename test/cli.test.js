@@ -416,8 +416,22 @@ describe("hooks", () => {
 
     const { out } = run(["install", "--no-reference"], { home });
     assert.ok(out.includes("under: PostToolUse"), out);
-    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task"'), out);
+    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task|Read|Grep|Glob|Bash|PowerShell"'), out);
     assert.ok(!out.includes('"Stop": ['), "an event that is wired must not be reported");
+  });
+
+  test("reports an old Agent|Task matcher without rewriting settings", async () => {
+    const { home } = await scratch("hook-old-matcher");
+    await wire(home, EVENTS);
+    const settings = path.join(home, ".claude", "settings.json");
+    const data = JSON.parse(await read(settings));
+    data.hooks.PostToolUse[0].matcher = "Agent|Task";
+    await writeFile(settings, JSON.stringify(data));
+    const before = await read(settings);
+    const { out } = run(["install", "--no-reference"], { home });
+    assert.ok(out.includes("under: PostToolUse"), out);
+    assert.ok(out.includes("update its matcher instead of adding a duplicate"), out);
+    assert.equal(await read(settings), before);
   });
 
   test("survives a settings.json that is not valid JSON", async () => {
@@ -685,7 +699,7 @@ describe("tool registry", () => {
     // graphifyy, two y's: `graphify` on PyPI is a different package.
     assert.ok(g.install.some((l) => l.includes(`graphifyy==${g.pin}`)));
     assert.doesNotMatch(g.install.join("\n"), /\bgraphify==/);
-    assert.deepEqual(g.setup, [["hook", "install"], ["update", "."]]);
+    assert.deepEqual(g.setup, [["update", "."]]);
     assert.deepEqual(tools.get("openspec").setup, [["init", "--tools", "claude,codex"]]);
   });
 
@@ -810,6 +824,11 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     const agentsMd = await read(path.join(project, "AGENTS.md"));
     assert.match(agentsMd, /agent-team-config:complements:start/);
     assert.match(agentsMd, /\*\*openspec\*\* — /);
+    // The lifecycle entry point must survive the actual project-tool install.
+    const rules = (await readTools()).get("openspec").rules;
+    for (const rule of rules) assert.ok(agentsMd.includes(rule));
+    assert.match(agentsMd, /orchestrate skill's OpenSpec change lifecycle/);
+    assert.deepEqual((await readdir(project)).sort(), ["AGENTS.md", "openspec"], "integration must not create a parallel plan or spec");
     // The confirmation names what will run, from where, and what it touches.
     assert.match(r.out, /binary: +\S*openspec/);
     assert.match(r.out, /runs: +.*openspec\S* init --tools claude,codex/);
@@ -927,18 +946,128 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
 
   test("graphify runs its preflight, then exactly hook install and update .", { skip: !gitDir }, async () => {
     const { project, tool, calls } = await setup("graphify-ok", { git: true });
-    const r = tool(["add", "graphify", "--yes"], { STUB_VERSION: PINS.graphify });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_VERSION: PINS.graphify });
     assert.equal(r.status, 0, r.out);
     assert.deepEqual(await calls(), [["graphify", "--version"], ["graphify", "hook", "install"], ["graphify", "update", "."]]);
     assert.doesNotMatch(r.out, /!!/);
-    assert.match(await read(path.join(project, "AGENTS.md")), /\*\*graphify\*\* — /);
+    const agentsMd = await read(path.join(project, "AGENTS.md"));
+    assert.match(agentsMd, /\*\*graphify\*\* — /);
+    // Freshness guidance must reach the consuming project, within the 3-line budget.
+    const rules = (await readTools()).get("graphify").rules;
+    for (const rule of rules) assert.ok(agentsMd.includes(rule));
+    assert.match(agentsMd, /git status --porcelain --untracked-files=normal/);
+    assert.match(r.out, /WARNING: --with-git-hooks[\s\S]*before review/);
+  });
+
+  test("graphify defaults to manual updates, even with --yes and on repeated adds", { skip: !gitDir }, async () => {
+    const { project, tool, calls } = await setup("graphify-manual", { git: true });
+    const config = path.join(project, ".git", "config");
+    const beforeConfig = await read(config);
+    const hooksDir = path.join(project, ".git", "hooks");
+    const beforeHooks = await readdir(hooksDir);
+    for (let i = 0; i < 2; i++) {
+      const r = tool(["add", "graphify", "--yes"], { STUB_VERSION: PINS.graphify });
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, /no hooks or merge driver installed or removed/);
+      assert.doesNotMatch(r.out, /hook install/);
+    }
+    assert.deepEqual(await calls(), [
+      ["graphify", "--version"], ["graphify", "update", "."],
+      ["graphify", "--version"], ["graphify", "update", "."],
+    ]);
+    assert.deepEqual(await readdir(hooksDir), beforeHooks);
+    assert.equal(await read(config), beforeConfig);
+    assert.equal(existsSync(path.join(project, ".gitattributes")), false);
+    assert.match(await read(path.join(project, "AGENTS.md")), /git status --porcelain/);
+  });
+
+  test("manual setup preserves existing Git automation and warns about migration", { skip: !gitDir }, async () => {
+    // Cover hooks alone, driver alone, and a hook manager independently.
+    for (const mode of ["hooks", "driver", "custom-path", "husky"]) {
+      const { project, tool, calls, env } = await setup(`graphify-migrate-${mode}`, { git: true });
+      const custom = mode === "custom-path" || mode === "husky";
+      const hooksDir = path.join(project, custom ? ".husky" : ".git/hooks");
+      await mkdir(hooksDir, { recursive: true });
+      if (custom) {
+        assert.equal(spawnSync("git", ["-C", project, "config", "core.hooksPath", mode === "husky" ? ".husky/_" : ".husky"], { env: env() }).status, 0);
+      }
+      const files = [path.join(project, ".git/config"), path.join(project, ".gitattributes")];
+      await writeFile(files[1], "graphify-out/graph.json merge=graphify\n");
+      if (mode === "driver") {
+        assert.equal(spawnSync("git", ["-C", project, "config", "merge.graphify.driver", "python -m graphify merge-driver %O %A %B"], { env: env() }).status, 0);
+      } else {
+        const hook = path.join(hooksDir, "post-commit");
+        await writeFile(hook, "#!/bin/sh\necho mine\n# graphify-hook-start\nold\n# graphify-hook-end\n");
+        files.push(hook);
+      }
+      const customHook = path.join(hooksDir, "post-checkout");
+      await writeFile(customHook, "#!/bin/sh\necho custom\n");
+      files.push(customHook);
+      const before = await Promise.all(files.map(read));
+      const r = tool(["add", "graphify", "--yes"]);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.stderr, /Existing graphify Git automation remains enabled/);
+      assert.match(r.stderr, /No migration performed[\s\S]*graphify hook uninstall/);
+      assert.deepEqual(await Promise.all(files.map(read)), before);
+      assert.deepEqual(await calls(), [["graphify", "--version"], ["graphify", "update", "."]]);
+    }
+  });
+
+  test("both Graphify modes require a repository root and git before setup", { skip: !gitDir }, async () => {
+    for (const flags of [[], ["--with-git-hooks"]]) {
+      for (const mode of ["no-git", "no-repo", "subdirectory"]) {
+        const { root, project, bin, tool, calls, env } = await setup(`graphify-preflight-${flags.length}-${mode}`, { git: mode === "subdirectory" });
+        if (mode === "subdirectory") {
+          // Make the project a directory inside another repository.
+          assert.equal(spawnSync("git", ["init", "-q", root], { env: env() }).status, 0);
+          await rm(path.join(project, ".git"), { recursive: true });
+        }
+        const r = tool(["add", "graphify", ...flags, "--yes"], {}, mode === "no-git" ? bin : undefined);
+        assert.equal(r.status, 1, r.out);
+        assert.match(r.out, /needs git|Not a git repository|Run this from the repository root/);
+        assert.deepEqual(await calls(), [["graphify", "--version"]]);
+        assert.equal(existsSync(path.join(project, "AGENTS.md")), false);
+      }
+    }
+  });
+
+  test("--with-git-hooks is rejected outside tool add graphify before any tool runs", async () => {
+    const { tool, calls } = await setup("graphify-flag-scope");
+    for (const args of [["add", "openspec"], ["remove", "graphify"], ["list"]]) {
+      const r = tool([...args, "--with-git-hooks", "--yes"]);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.out, /only valid for: canonkit tool add graphify/);
+    }
+    assert.deepEqual(await calls(), []);
+  });
+
+  test("--dry-run in either Graphify mode executes nothing", async () => {
+    const { root, project, bin, tool, calls } = await setup("graphify-modes-dry");
+    const fakeGit = path.join(root, "fake-git");
+    await shim(fakeGit, "git", path.join(bin, "stub.cjs"));
+    for (const flags of [[], ["--with-git-hooks"]]) {
+      const r = tool(["add", "graphify", ...flags, "--dry-run"], {}, [bin, fakeGit].join(SEP));
+      assert.equal(r.status, 0, r.out);
+      assert.equal(/runs:.*hook install/.test(r.out), flags.length > 0);
+    }
+    assert.deepEqual(await calls(), []);
+    assert.deepEqual(await readdir(project), []);
+  });
+
+  test("hook opt-in without --yes stops before installing hooks on a non-TTY", { skip: !gitDir }, async () => {
+    const { tool, calls } = await setup("graphify-opt-in-confirm", { git: true });
+    const r = tool(["add", "graphify", "--with-git-hooks"]);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /Trust every branch/);
+    assert.match(r.out, /no terminal to confirm/);
+    assert.deepEqual(await calls(), [["graphify", "--version"]]);
   });
 
   test("graphify does not install over an existing hook", { skip: !gitDir }, async () => {
     const { project, tool, calls } = await setup("graphify-hook", { git: true });
     const hook = path.join(project, ".git", "hooks", "post-commit");
     await writeFile(hook, "#!/bin/sh\necho mine\n");
-    const r = tool(["add", "graphify", "--yes"]);
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"]);
     assert.equal(r.status, 1);
     assert.match(r.out, /never overwrites a git hook/);
     assert.match(r.out, /graphify hook install/);
@@ -950,10 +1079,11 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
   test("every graphify run, --version and list included, has its user-skill rewrite switched off", { skip: !gitDir }, async () => {
     const { root, tool } = await setup("graphify-env", { git: true });
     assert.equal(tool(["add", "graphify", "--yes"]).status, 0);
+    assert.equal(tool(["add", "graphify", "--with-git-hooks", "--yes"]).status, 0);
     assert.equal(tool(["list"]).status, 0);
     const runs = (await read(path.join(root, "argv.log.env"))).trim().split("\n").map((l) => JSON.parse(l));
     const graphify = runs.filter(([b]) => b === "graphify");
-    assert.equal(graphify.length, 4); // --version, hook install, update ., list's --version
+    assert.equal(graphify.length, 6); // manual add, hook opt-in add, list's --version
     assert.ok(graphify.every(([, v]) => v === "1"), JSON.stringify(graphify));
     // A registry value, not a global one: openspec's runs do not get it.
     assert.ok(runs.filter(([b]) => b === "openspec").every(([, v]) => v === null));
@@ -963,7 +1093,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     const { project, tool } = await setup("graphify-chained", { git: true });
     const hook = path.join(project, ".git", "hooks", "post-commit");
     await writeFile(hook, "#!/bin/sh\necho mine\n# graphify-hook-start\nold\n# graphify-hook-end\n");
-    const r = tool(["add", "graphify", "--yes"], { STUB_VERSION: PINS.graphify });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_VERSION: PINS.graphify });
     assert.equal(r.status, 0, r.out);
     assert.doesNotMatch(r.stderr, /!!/);
     const after = await read(hook);
@@ -974,37 +1104,52 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
   test("a chained hook whose own lines graphify wiped is reported loudly", { skip: !gitDir }, async () => {
     const { project, tool } = await setup("graphify-wiped", { git: true });
     await writeFile(path.join(project, ".git", "hooks", "post-commit"), "#!/bin/sh\necho mine\n# graphify-hook-start\nold\n# graphify-hook-end\n");
-    const r = tool(["add", "graphify", "--yes"], { STUB_WIPE_HOOK: "1" });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_WIPE_HOOK: "1" });
     assert.match(r.stderr, /git hook changed outside graphify's block: post-commit/);
   });
 
   test("graphify refuses a repo whose own files its hooks would import or run", { skip: !gitDir }, async () => {
-    for (const [label, plant] of [
-      ["package", (p) => mkdir(path.join(p, "graphify"))],
-      ["module", (p) => writeFile(path.join(p, "graphify.py"), "")],
-    ]) {
-      const { project, tool, calls } = await setup(`graphify-shadow-${label}`, { git: true });
-      await plant(project);
-      const r = tool(["add", "graphify", "--yes"]);
-      assert.equal(r.status, 1, label);
-      assert.match(r.out, /would be imported by graphify's hooks/);
-      assert.deepEqual(await calls(), [["graphify", "--version"]]);
-    }
+    for (const flags of [[], ["--with-git-hooks"]]) {
+      for (const [label, plant] of [
+        ["package", (p) => mkdir(path.join(p, "graphify"))],
+        ["module", (p) => writeFile(path.join(p, "graphify.py"), "")],
+      ]) {
+        const { project, tool, calls } = await setup(`graphify-shadow-${flags.length}-${label}`, { git: true });
+        await plant(project);
+        const r = tool(["add", "graphify", ...flags, "--yes"]);
+        assert.equal(r.status, 1, label);
+        assert.match(r.out, /would be imported by graphify's hooks/);
+        assert.deepEqual(await calls(), [["graphify", "--version"]]);
+      }
 
-    const { project, tool, env } = await setup("graphify-pinned-python", { git: true });
-    await mkdir(path.join(project, "graphify-out"));
-    await writeFile(path.join(project, "graphify-out", ".graphify_python"), "/tmp/evil\n");
-    spawnSync("git", ["-C", project, "add", "-f", "graphify-out/.graphify_python"], { env: env() });
-    const r = tool(["add", "graphify", "--yes"]);
-    assert.equal(r.status, 1);
-    assert.match(r.out, /\.graphify_python is committed/);
+      const { project, tool, env } = await setup(`graphify-pinned-python-${flags.length}`, { git: true });
+      await mkdir(path.join(project, "graphify-out"));
+      await writeFile(path.join(project, "graphify-out", ".graphify_python"), "/tmp/evil\n");
+      spawnSync("git", ["-C", project, "add", "-f", "graphify-out/.graphify_python"], { env: env() });
+      const r = tool(["add", "graphify", ...flags, "--yes"]);
+      assert.equal(r.status, 1);
+      assert.match(r.out, /\.graphify_python is committed/);
+    }
+  });
+
+  test("a failed manual update preserves the project block and reports no hook installation", { skip: !gitDir }, async () => {
+    const { project, tool, calls } = await setup("graphify-manual-fail", { git: true });
+    const file = path.join(project, "AGENTS.md");
+    await writeFile(file, "# project rules\n");
+    const r = tool(["add", "graphify", "--yes"], { STUB_FAIL: "update ." });
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /canonkit did not change AGENTS\.md/);
+    assert.doesNotMatch(r.out, /Already done:|To undo it:/);
+    assert.equal(await read(file), "# project rules\n");
+    assert.deepEqual(await calls(), [["graphify", "--version"], ["graphify", "update", "."]]);
+    assert.equal(existsSync(path.join(project, ".git/hooks/post-commit")), false);
   });
 
   test("a binary found only inside the project is named as such, not as missing", async () => {
     const { root, project, tool } = await setup("inside-only");
     const venv = path.join(project, ".venv", "bin");
     await shim(venv, "graphify", path.join(root, "bin", "stub.cjs"));
-    const r = tool(["add", "graphify", "--yes"], {}, venv);
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], {}, venv);
     assert.equal(r.status, 1);
     assert.match(r.out, /found only inside the project/);
     assert.match(r.out, /graphifyy==/);
@@ -1013,13 +1158,13 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
   test("a change graphify makes to a hook that was already there is reported loudly", { skip: !gitDir }, async () => {
     const { project, tool } = await setup("graphify-touch", { git: true });
     await writeFile(path.join(project, ".git", "hooks", "pre-push"), "#!/bin/sh\n");
-    const r = tool(["add", "graphify", "--yes"], { STUB_TOUCH_HOOK: "1" });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_TOUCH_HOOK: "1" });
     assert.match(r.stderr, /git hook changed: pre-push/);
   });
 
   test("a step failing after an earlier one succeeded says what was done and how to undo it", { skip: !gitDir }, async () => {
     const { project, tool } = await setup("graphify-partial", { git: true });
-    const r = tool(["add", "graphify", "--yes"], { STUB_FAIL: "update ." });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_FAIL: "update ." });
     assert.equal(r.status, 1);
     assert.match(r.out, /canonkit did not change AGENTS\.md/);
     assert.match(r.out, /Already done: graphify hook install/);
@@ -1032,7 +1177,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     // A git that logs like the tools do: if the preflight ran, it would show.
     const fakeGit = path.join(root, "fake-git");
     await shim(fakeGit, "git", path.join(bin, "stub.cjs"));
-    const r = tool(["add", "graphify", "--dry-run"], {}, [bin, fakeGit].join(SEP));
+    const r = tool(["add", "graphify", "--with-git-hooks", "--dry-run"], {}, [bin, fakeGit].join(SEP));
     assert.equal(r.status, 0, r.out);
     assert.deepEqual(await calls(), []);
     assert.deepEqual(await readdir(project), []);
@@ -1071,7 +1216,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
   test("graphify does not install when core.hooksPath is set", { skip: !gitDir }, async () => {
     const { project, tool, calls, env } = await setup("graphify-hookspath", { git: true });
     spawnSync("git", ["-C", project, "config", "core.hooksPath", ".husky"], { env: env() });
-    const r = tool(["add", "graphify", "--yes"]);
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"]);
     assert.equal(r.status, 1);
     assert.match(r.out, /core\.hooksPath is set/);
     assert.deepEqual(await calls(), [["graphify", "--version"]]);
@@ -1079,7 +1224,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
 
   test("a hook graphify did not announce is reported loudly", { skip: !gitDir }, async () => {
     const { tool } = await setup("graphify-extra", { git: true });
-    const r = tool(["add", "graphify", "--yes"], { STUB_EXTRA_HOOK: "1" });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_EXTRA_HOOK: "1" });
     assert.match(r.stderr, /unexpected new git hook: pre-push/);
   });
 

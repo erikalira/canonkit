@@ -39,7 +39,7 @@ const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 const HOOK_EVENTS = {
   "meu-time-hook.js": {
     PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task",
-    PostToolUse: "Agent|Task",
+    PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
     UserPromptSubmit: null,
     Stop: null,
@@ -436,7 +436,19 @@ async function reportHookWiring(ctx, dest, files) {
       continue;
     }
     for (const [event, matcher] of Object.entries(events)) {
-      if (!JSON.stringify(hooks[event] ?? []).includes(file)) missing.push([file, event, matcher]);
+      const entries = hooks[event] ?? [];
+      const referenced = JSON.stringify(entries).includes(file);
+      // An existing Agent|Task registration still runs dispatch metrics, but
+      // silently misses main-thread volume. Report replacement wiring, never
+      // edit settings.json or recommend a second overlapping registration.
+      const covered = event !== "PostToolUse" || matcher.split("|").every((tool) =>
+        Array.isArray(entries) && entries.some((entry) => {
+          if (!JSON.stringify(entry.hooks ?? []).includes(file)) return false;
+          if (!entry.matcher || entry.matcher === "*") return true;
+          try { return new RegExp(entry.matcher).test(tool); } catch { return false; }
+        }),
+      );
+      if (!referenced || !covered) missing.push([file, event, matcher]);
     }
   }
   if (!missing.length) return;
@@ -444,9 +456,10 @@ async function reportHookWiring(ctx, dest, files) {
   ctx.log("");
   for (const file of new Set(missing.map(([f]) => f))) {
     const events = missing.filter(([f, e]) => f === file && e).map(([, e]) => e);
-    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json${events.length ? ` under: ${events.join(", ")}` : ""}`);
+    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json with required coverage${events.length ? ` under: ${events.join(", ")}` : ""}`);
   }
   ctx.log("  A hook the runtime never calls fails silently. Add under \"hooks\" in settings.json:");
+  ctx.log("  If an entry already exists, update its matcher instead of adding a duplicate hook.");
   for (const [file, event, matcher] of missing) {
     const cmd = path.join(dest, file).split(path.sep).join("/");
     const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${cmd}" }] }`;
@@ -859,6 +872,7 @@ async function writeToolsBlock(ctx, project, tools, active) {
 const CLAUDE_MD = ["CLAUDE.md", path.join(".claude", "CLAUDE.md")];
 
 /**
+ * Both modes check the repository and detect existing automation. With opt-in,
  * graphify's hooks go into the repository's hooks directory. A hook already
  * there is the project's, and a core.hooksPath (husky, a shared global path) is a
  * directory canonkit does not get to write into; either way it stops and says
@@ -867,14 +881,14 @@ const CLAUDE_MD = ["CLAUDE.md", path.join(".claude", "CLAUDE.md")];
  */
 const GRAPHIFY_HOOKS = { "post-commit": "# graphify-hook-start", "post-checkout": "# graphify-checkout-hook-start" };
 
-function gitHooksPreflight(project) {
+function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   const fail = (lines) => ({ ok: false, message: lines.join("\n") });
   const git = resolveBin("git", { cwd: project });
   if (!git) return fail(["graphify needs git, and git is not on PATH."]);
   const out = (args) => runBin(git, args, { cwd: project, capture: true, timeout: 30 * 1000 });
 
   const top = out(["rev-parse", "--show-toplevel"]);
-  if (top.status !== 0) return fail([`Not a git repository: ${project}`, "graphify's setup installs git hooks; run git init first."]);
+  if (top.status !== 0) return fail([`Not a git repository: ${project}`, "Run git init first."]);
   const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
   const root = realpathSync.native(path.resolve(top.stdout.trim()));
   if (!same(root, project)) return fail([`Run this from the repository root: ${root}`]);
@@ -900,10 +914,10 @@ function gitHooksPreflight(project) {
   const chain = [
     "To chain graphify yourself: read the existing hook, then run `graphify hook install`",
     "(it appends a marked block to an existing hook file) or call graphify from your hook",
-    "manager. Then re-run `npx canonkit tool add graphify`.",
+    "manager only if you trust every branch, then re-run `npx canonkit tool add graphify --with-git-hooks`.",
   ];
   const hooksPath = out(["config", "core.hooksPath"]);
-  if (hooksPath.status === 0 && hooksPath.stdout.trim()) {
+  if (withGitHooks && hooksPath.status === 0 && hooksPath.stdout.trim()) {
     return fail([`core.hooksPath is set (${hooksPath.stdout.trim()}): git hooks are managed elsewhere, so canonkit installs none.`, ...chain]);
   }
   if (hooksPath.status !== 1 && hooksPath.status !== 0) return fail([`git config core.hooksPath failed: ${hooksPath.stderr.trim() || hooksPath.error}`]);
@@ -911,14 +925,25 @@ function gitHooksPreflight(project) {
   const dir = out(["rev-parse", "--git-path", "hooks"]);
   if (dir.status !== 0) return fail([`git rev-parse --git-path hooks failed: ${dir.stderr.trim() || dir.error}`]);
   const hooksDir = path.resolve(project, dir.stdout.trim());
+  const before = hookSnapshot(hooksDir);
+  const merge = out(["config", "--get", "merge.graphify.driver"]);
+  if (merge.status !== 0 && merge.status !== 1) return fail([`git config merge.graphify failed: ${merge.stderr.trim() || merge.error}`]);
+  const automatic = [...before].filter(([, text]) => /# graphify-(?:checkout-)?hook/.test(text)).map(([name]) => name);
+  // Husky 9 stores wrapper scripts in .husky/_, and user hook bodies in .husky/.
+  if (hooksPath.stdout.trim() && path.basename(hooksDir) === "_") {
+    for (const [name, text] of hookSnapshot(path.dirname(hooksDir))) {
+      if (/# graphify-(?:checkout-)?hook/.test(text)) automatic.push(`../${name}`);
+    }
+  }
+  if (merge.stdout.trim()) automatic.push("merge.graphify driver");
 
-  for (const [hook, marker] of Object.entries(GRAPHIFY_HOOKS)) {
+  for (const [hook, marker] of withGitHooks ? Object.entries(GRAPHIFY_HOOKS) : []) {
     const file = path.join(hooksDir, hook);
     if (existsSync(file) && !readFileSync(file, "utf8").includes(marker)) {
       return fail([`${path.relative(project, file)} already exists and is not graphify's; canonkit never overwrites a git hook.`, ...chain]);
     }
   }
-  return { ok: true, hooksDir, before: hookSnapshot(hooksDir) };
+  return { ok: true, hooksDir, before, automatic };
 }
 
 /** A hook's text without graphify's marked block, whitespace folded. */
@@ -1010,9 +1035,10 @@ function printMissing(tool, project) {
  * setup fails — an entry for a tool whose setup did not finish teaches agents a
  * workflow the project does not have.
  */
-async function toolAdd(ctx, name, { yes = false } = {}) {
+async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   const { tools, tool } = await getTool(name);
   const project = toolProject();
+  const setup = withGitHooks ? [["hook", "install"], ...tool.setup] : tool.setup;
 
   const abs = resolveBin(tool.bin, { cwd: project });
   if (!abs) {
@@ -1025,7 +1051,7 @@ async function toolAdd(ctx, name, { yes = false } = {}) {
   if (!ctx.dryRun) {
     version = binVersion(abs, { project, env: toolEnv(tool) });
     if (tool.preflight === "git-hooks") {
-      hooks = gitHooksPreflight(project);
+      hooks = gitHooksPreflight(project, { withGitHooks });
       if (!hooks.ok) {
         console.error(hooks.message);
         return 1;
@@ -1041,8 +1067,24 @@ async function toolAdd(ctx, name, { yes = false } = {}) {
     ctx.log(`  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`);
     for (const l of tool.install) ctx.log(`             ${l}`);
   } else ctx.log(`  version: ${version} (the pinned one)`);
-  if (tool.preflight === "git-hooks" && ctx.dryRun) ctx.log("  checks:  git hooks and core.hooksPath (not run in a dry run)");
-  tool.setup.forEach((args, i) => ctx.log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
+  if (tool.preflight === "git-hooks") {
+    if (ctx.dryRun) ctx.log("  checks:  repository and Git automation (not run in a dry run)");
+    if (withGitHooks) {
+      ctx.log("  WARNING: --with-git-hooks enables hooks and a merge driver that can execute repository code");
+      ctx.log("           on commit, checkout and merge before review. Trust every branch you check out.");
+      ctx.log("  touches: .git/hooks/post-commit, .git/hooks/post-checkout, .git/config and .gitattributes");
+    } else {
+      ctx.log("  Git automation: no hooks or merge driver installed or removed (--yes does not enable them).");
+      if (hooks?.automatic.length) {
+        loud([
+          `Existing graphify Git automation remains enabled: ${hooks.automatic.join(", ")}.`,
+          "It can execute repository code on commit, checkout and merge before review. Trust every branch.",
+          "No migration performed. To disable it, review and run `graphify hook uninstall`, then inspect git config and .gitattributes.",
+        ]);
+      }
+    }
+  }
+  setup.forEach((args, i) => ctx.log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
   tool.touches.forEach((t, i) => ctx.log(`  ${i ? "        " : "touches:"} ${t}`));
   ctx.log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
   for (const [k, v] of Object.entries(tool.env)) ctx.log(`  env:     ${k}=${v}`);
@@ -1058,13 +1100,13 @@ async function toolAdd(ctx, name, { yes = false } = {}) {
   if (!(await confirm(yes))) return 1;
 
   const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
-  for (const [i, args] of tool.setup.entries()) {
+  for (const [i, args] of setup.entries()) {
     ctx.log(`> ${display(abs, args)}`);
     const r = runBin(abs, args, { cwd: project, env: toolEnv(tool) });
     if (r.error || r.status !== 0) {
       console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
       if (i > 0) {
-        console.error(`Already done: ${tool.setup.slice(0, i).map((a) => `${tool.bin} ${a.join(" ")}`).join(", ")}.`);
+        console.error(`Already done: ${setup.slice(0, i).map((a) => `${tool.bin} ${a.join(" ")}`).join(", ")}.`);
         if (tool.undo.length) console.error(`To undo it: ${tool.undo.join("; ")}`);
       }
       warnNewClaudeMd(project, claudeBefore);
@@ -1072,7 +1114,7 @@ async function toolAdd(ctx, name, { yes = false } = {}) {
     }
   }
 
-  if (hooks) {
+  if (hooks && withGitHooks) {
     const problems = graphifyHooksProblems(hooks);
     if (problems.length) loud(["graphify's hooks are not what canonkit expected — check before committing:", ...problems]);
   }
@@ -1137,7 +1179,7 @@ async function toolCommand(ctx, [sub, ...names], flags) {
     return 0;
   }
   if ((sub === "add" || sub === "remove") && names.length === 1) {
-    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes") }) : toolRemove(ctx, names[0]);
+    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes"), withGitHooks: flags.includes("--with-git-hooks") }) : toolRemove(ctx, names[0]);
   }
   console.error("Usage: canonkit tool add|remove <name> | canonkit tool list\n");
   console.error(usage());
@@ -1162,6 +1204,7 @@ Usage:
 Options:
   --dry-run       report what would change without writing (or running) anything
   --yes           tool add: skip the confirmation prompt
+  --with-git-hooks tool add graphify: opt in to automatic Git hooks and merge driver
   -h, --help      show this
   -v, --version   show the package version
 
@@ -1223,7 +1266,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -1248,6 +1291,10 @@ async function main(argv) {
   }
 
   const ctx = context(flags.includes("--dry-run"));
+  if (flags.includes("--with-git-hooks") && (command !== "tool" || rest.length !== 2 || rest[0] !== "add" || rest[1] !== "graphify")) {
+    console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
+    return 1;
+  }
 
   switch (command) {
     case "install":

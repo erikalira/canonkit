@@ -39,7 +39,7 @@ import { fileURLToPath } from "node:url";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CASES = path.join(REPO, "evals", "routing-cases.json");
-const EXPECT_KEYS = ["includes", "includesAny", "excludes", "avoids", "none", "says", "notSays"];
+const EXPECT_KEYS = ["includes", "includesAny", "excludes", "avoids", "none", "says", "notSays", "dispatch"];
 
 // The team is whatever agents/ ships. `none` means no *team* agent: plan mode
 // reaches for Explore or Plan on its own, and counting those would fail a LOW
@@ -82,7 +82,11 @@ export function parseRun(stream) {
       toolUses++;
       // "Task" is the dispatch tool's earlier name; both are the same decision.
       if (block.name === "Agent" || block.name === "Task") {
-        dispatches.push(String(block.input?.subagent_type ?? "general-purpose").toLowerCase());
+        dispatches.push({
+          agent: String(block.input?.subagent_type ?? "general-purpose").toLowerCase(),
+          model: block.input?.model ?? null,
+          effort: block.input?.effort ?? null,
+        });
       } else if (block.name === "ExitPlanMode" && block.input?.plan) {
         plan.push(block.input.plan);
       } else if (block.name === "Write" && isPlanFile(block.input?.file_path)) {
@@ -116,8 +120,8 @@ export function parseRun(stream) {
   return { dispatches, text: said, plan: plan.join("\n"), planFiles, error };
 }
 
-/** Subagents dispatched in a stream-json transcript, in order, lowercased. */
-export const dispatches = (stream) => parseRun(stream).dispatches;
+/** Name-only compatibility view; parseRun preserves the requested overrides. */
+export const dispatches = (stream) => parseRun(stream).dispatches.map((d) => d.agent);
 
 // "no need for Gard", "skip Archie", "without Perry": naming an agent to rule it
 // out is not bringing it in.
@@ -136,7 +140,9 @@ export function names(words, agent) {
 
 /** Judge one parsed run against a case's expectation. */
 export function judge(expect, run, team = TEAM) {
-  const got = run.dispatches;
+  // Accept name-only runs too, so existing callers keep their inclusion checks.
+  const details = run.dispatches.map((d) => typeof d === "string" ? { agent: d } : d);
+  const got = details.map((d) => d.agent);
   const seen = new Set(got);
   const words = `${run.text ?? ""}\n${run.plan ?? ""}`;
   const brought = (a) => seen.has(a) || names(words, a);
@@ -151,6 +157,20 @@ export function judge(expect, run, team = TEAM) {
   for (const a of expect.avoids ?? []) if (brought(a)) problems.push(`brought in ${a}, which it must not`);
   if (expect.says && !new RegExp(expect.says, "i").test(words)) problems.push(`never said /${expect.says}/`);
   if (expect.notSays && new RegExp(expect.notSays, "i").test(words)) problems.push(`said /${expect.notSays}/`);
+  if (expect.dispatch) {
+    const wanted = expect.dispatch;
+    const actual = details.filter((d) => d.agent === wanted.agent);
+    if (!actual.length) problems.push(`never dispatched ${wanted.agent} (configuration needs a tool call)`);
+    // A later correct retry must not hide a dispatch at the wrong level.
+    for (const d of actual) {
+      for (const field of ["model", "effort"]) {
+        // Omitted expectation = unmeasured; null = no explicit override.
+        if (Object.hasOwn(wanted, field) && (d[field] ?? null) !== wanted[field]) {
+          problems.push(`${d.agent} ${field}: expected ${wanted[field] ?? "inherited"}, got ${d[field] ?? "inherited"}`);
+        }
+      }
+    }
+  }
   return { pass: problems.length === 0, problems };
 }
 
@@ -171,6 +191,20 @@ export function validateCases(data) {
     }
     for (const a of ["includes", "includesAny", "excludes", "avoids"].flatMap((k) => c.expect[k] ?? [])) {
       if (!TEAM.has(a)) throw new Error(`${c.id}: '${a}' is not an agent this package ships`);
+    }
+    if (Object.hasOwn(c.expect, "dispatch")) {
+      const d = c.expect.dispatch;
+      if (!d || typeof d !== "object" || Array.isArray(d) || !d.agent ||
+          Object.keys(d).some((k) => !["agent", "model", "effort"].includes(k))) {
+        throw new Error(`${c.id}: dispatch takes an agent and optional model / effort`);
+      }
+      if (!TEAM.has(d.agent)) throw new Error(`${c.id}: '${d.agent}' is not an agent this package ships`);
+      for (const field of ["model", "effort"]) {
+        if (Object.hasOwn(d, field) && d[field] !== null &&
+            (typeof d[field] !== "string" || !d[field].trim())) {
+          throw new Error(`${c.id}: dispatch ${field} must be a non-empty string or null (inherited)`);
+        }
+      }
     }
   }
   return data;
@@ -346,7 +380,8 @@ function main() {
       valid++;
       const { pass, problems } = judge(c.expect, run);
       if (pass) passes++;
-      console.log(`${pass ? "PASS" : "FAIL"}  ${c.id}${tag}  dispatched: ${run.dispatches.join(", ") || "nobody"}${pass ? "" : `  (${problems.join("; ")})`}`);
+      const dispatched = run.dispatches.map((d) => `${d.agent} (model=${d.model ?? "inherited"}, effort=${d.effort ?? "inherited"})`).join(", ");
+      console.log(`${pass ? "PASS" : "FAIL"}  ${c.id}${tag}  dispatched: ${dispatched || "nobody"}${pass ? "" : `  (${problems.join("; ")})`}`);
     });
     // A case is judged on the runs the model actually answered.
     if (!valid) {
