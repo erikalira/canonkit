@@ -120,9 +120,11 @@ describe("install target menu", () => {
     assert.deepEqual(await chooseTargets([], { interactive: false }), ["claude", "codex"]);
   });
 
-  test("in a terminal the menu's choice is returned", async () => {
+  test("in a terminal the menu's selection is returned", async () => {
     prompts.inject([["claude"]]);
     assert.deepEqual(await chooseTargets([], { interactive: true }), ["claude"]);
+    prompts.inject([["claude", "codex"]]);
+    assert.deepEqual(await chooseTargets([], { interactive: true }), ["claude", "codex"]);
   });
 
   test("a cancelled menu returns null, so nothing is installed", async () => {

@@ -91,8 +91,9 @@ Sem clonar nada:
 npx canonkit install
 ```
 
-Roda igual em Linux, macOS e Windows. Num terminal, pergunta para qual runtime
-instalar — Claude Code e Codex, só Claude Code ou só Codex. `--claude` e
+Roda igual em Linux, macOS e Windows. Num terminal, pergunta para quais runtimes
+instalar numa seleção múltipla — Claude Code e Codex vêm marcados, espaço
+desmarca, Enter confirma, e pelo menos um tem que ficar. `--claude` e
 `--codex` respondem sem o menu (os dois juntos = ambos), e sem terminal (script,
 CI) instala para os dois, como antes do menu existir.
 

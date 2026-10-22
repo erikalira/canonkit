@@ -297,16 +297,18 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
 
   const { default: prompts } = await import("prompts");
   const { targets } = await prompts({
-    type: "select",
+    type: "multiselect",
     name: "targets",
     message: "Install the team for",
+    // Both start checked: Enter alone keeps what install did before the menu.
     choices: [
-      { title: "Claude Code and Codex", value: ["claude", "codex"] },
-      { title: "Claude Code only", value: ["claude"], description: "~/.claude, ~/.agents, hooks, dashboard" },
-      { title: "Codex only", value: ["codex"], description: "~/.codex/agents, ~/.agents/skills" },
+      { title: "Claude Code", value: "claude", selected: true, description: "~/.claude, ~/.agents, hooks, dashboard" },
+      { title: "Codex", value: "codex", selected: true, description: "~/.codex/agents, ~/.agents/skills" },
     ],
+    min: 1,
+    hint: "space toggles, enter confirms",
   });
-  return targets ?? null;
+  return targets?.length ? targets : null;
 }
 
 async function install(ctx, options = {}) {
