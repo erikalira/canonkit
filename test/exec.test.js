@@ -213,7 +213,7 @@ exec "${process.execPath}" "${path.join(root, "planted.cjs")}"
   test("stdin is closed: a binary waiting for input gets EOF instead of hanging", async () => {
     const dir = path.join(sandbox, "run-stdin");
     await mkdir(dir, { recursive: true });
-    await writeFile(path.join(dir, "reader.cjs"), "let n=0;process.stdin.on('data',d=>n+=d.length).on('end',()=>{console.log('eof',n)});\n");
+    await writeFile(path.join(dir, "reader.cjs"), "let n=0;process.stdin.on('data',d=>n+=d.length).on('end',()=>{console.log('eof '+n)});\n");
     const r = runBin(process.execPath, ["reader.cjs"], { cwd: dir, timeout: 10000, capture: true });
     assert.equal(r.error, null);
     assert.match(r.stdout, /eof 0/);
