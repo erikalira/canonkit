@@ -15,7 +15,9 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { applyBlock, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool } from "../bin/cli.js";
+import prompts from "prompts";
+
+import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -108,6 +110,27 @@ body
 
 /* ---------------------------------------------------------------- install */
 
+describe("install target menu", () => {
+  test("a flag decides without asking", async () => {
+    assert.deepEqual(await chooseTargets(["--codex"], { interactive: true }), ["codex"]);
+    assert.deepEqual(await chooseTargets(["--claude", "--codex"], { interactive: true }), ["claude", "codex"]);
+  });
+
+  test("no terminal and no flag installs both, as before the menu", async () => {
+    assert.deepEqual(await chooseTargets([], { interactive: false }), ["claude", "codex"]);
+  });
+
+  test("in a terminal the menu's choice is returned", async () => {
+    prompts.inject([["claude"]]);
+    assert.deepEqual(await chooseTargets([], { interactive: true }), ["claude"]);
+  });
+
+  test("a cancelled menu returns null, so nothing is installed", async () => {
+    prompts.inject([new Error("cancelled")]);
+    assert.equal(await chooseTargets([], { interactive: true }), null);
+  });
+});
+
 describe("install", () => {
   test("copies the core team to both runtime paths and nothing else", async () => {
     const { home } = await scratch("install-basic");
@@ -146,6 +169,47 @@ describe("install", () => {
     assert.ok(existsSync(path.join(home, ".claude", "agents", "archie.md")));
     assert.equal(existsSync(path.join(home, "AGENTS.md")), false);
     assert.equal(existsSync(path.join(home, ".claude", "CLAUDE.md")), false);
+  });
+
+  test("--codex writes the Codex half and nothing under ~/.claude", async () => {
+    const { home } = await scratch("install-codex-only");
+    const result = run(["install", "--codex"], { home });
+    assert.equal(result.status, 0, result.out);
+
+    const tomls = (await readdir(path.join(home, ".codex", "agents"))).map((f) => path.basename(f, ".toml")).sort();
+    assert.deepEqual(tomls, [...CORE].sort());
+    assert.ok(existsSync(path.join(home, ".agents", "skills", "orchestrate", "SKILL.md")));
+    assert.match(await read(path.join(home, "AGENTS.md")), /<!-- agent-team-config:start -->/);
+    assert.equal(existsSync(path.join(home, ".claude")), false, "a Codex-only install wrote under ~/.claude");
+    assert.deepEqual((await readdir(path.join(home, ".agents"))).filter((f) => f.endsWith(".md")), []);
+    assert.doesNotMatch(result.out, /canonkit doctor/);
+  });
+
+  test("--claude writes the Claude Code half and no Codex agents or skills", async () => {
+    const { home } = await scratch("install-claude-only");
+    const result = run(["install", "--claude"], { home });
+    assert.equal(result.status, 0, result.out);
+
+    assert.ok(existsSync(path.join(home, ".claude", "agents", "archie.md")));
+    assert.ok(existsSync(path.join(home, ".agents", "archie.md")));
+    assert.ok(existsSync(path.join(home, ".claude", "CLAUDE.md")));
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+    assert.equal(existsSync(path.join(home, ".agents", "skills")), false);
+  });
+
+  test("--wire-hooks with --codex refuses before writing anything", async () => {
+    const { home } = await scratch("install-codex-wire");
+    const result = run(["install", "--codex", "--wire-hooks"], { home });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /needs Claude Code/);
+    assert.deepEqual(await readdir(home), []);
+  });
+
+  test("--claude and --codex are refused outside install and reference", async () => {
+    const { home } = await scratch("install-target-flag-misuse");
+    const result = run(["list", "--codex"], { home });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /only valid for: canonkit install, canonkit reference/);
   });
 
   test("is idempotent — a second run changes no bytes", async () => {

@@ -13,8 +13,11 @@
  * in each agent's own frontmatter (`tier:`), which is where the runtime
  * already reads `name` and `model`, and every installer derives from it.
  *
- * No dependencies, by design — an installer that runs before you trust the
- * repo should not ask you to trust a dependency tree first.
+ * One dependency, and only for the install menu: `prompts` is imported when the
+ * menu is shown and not otherwise, so an install that a flag or the lack of a
+ * terminal decides runs on Node alone. Everything else stays dependency-free —
+ * an installer that runs before you trust the repo should not ask you to trust
+ * a dependency tree first.
  */
 import { readdir, readFile, writeFile, mkdir, copyFile, rm, rename, chmod } from "node:fs/promises";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, accessSync, constants as fsc } from "node:fs";
@@ -279,9 +282,41 @@ async function syncBlock(blockPath, targetPath, markers, ctx) {
 
 /* ---------------------------------------------------------------- commands */
 
+const TARGETS = ["claude", "codex"];
+
+/**
+ * Which runtimes to write for. A flag decides (`--claude`, `--codex`, both for
+ * both); without one, a terminal gets the menu, and anything else — a script,
+ * CI, the tests — gets both, which is what install did before the choice
+ * existed. Returns null when the menu is cancelled: nothing is written.
+ */
+async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && process.stdout.isTTY) } = {}) {
+  const picked = TARGETS.filter((t) => flags.includes(`--${t}`));
+  if (picked.length) return picked;
+  if (!interactive) return [...TARGETS];
+
+  const { default: prompts } = await import("prompts");
+  const { targets } = await prompts({
+    type: "select",
+    name: "targets",
+    message: "Install the team for",
+    choices: [
+      { title: "Claude Code and Codex", value: ["claude", "codex"] },
+      { title: "Claude Code only", value: ["claude"], description: "~/.claude, ~/.agents, hooks, dashboard" },
+      { title: "Codex only", value: ["codex"], description: "~/.codex/agents, ~/.agents/skills" },
+    ],
+  });
+  return targets ?? null;
+}
+
 async function install(ctx, options = {}) {
   const reference = options.reference !== false;
   const wire = options.wireHooks === true;
+  const targets = options.targets ?? TARGETS;
+  const claude = targets.includes("claude");
+  // The hook and settings.json are Claude Code's; wiring them for a Codex-only
+  // install would write the one runtime the person said no to.
+  if (wire && !claude) throw new Error("--wire-hooks registers the Claude Code hook: it needs Claude Code in the install");
   const agents = await readAgents();
   // Before anything is written: a settings.json --wire-hooks would have to
   // guess about stops the whole install, so a refusal leaves no half-install.
@@ -289,7 +324,7 @@ async function install(ctx, options = {}) {
 
   // Both paths are read by Claude Code; keeping them identical avoids the drift
   // that a generated destination invites.
-  const dests = [path.join(os.homedir(), ".agents"), path.join(os.homedir(), ".claude", "agents")];
+  const dests = claude ? [path.join(os.homedir(), ".agents"), path.join(os.homedir(), ".claude", "agents")] : [];
 
   for (const dest of dests) {
     await ctx.mkdir(dest);
@@ -310,20 +345,23 @@ async function install(ctx, options = {}) {
     }
   }
 
-  await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
-  const planned = await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"), { wire });
-  await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"), { wire, planned });
-  await installDashboard(ctx, path.join(os.homedir(), ".claude", "canonkit-dashboard"));
+  if (targets.includes("codex")) await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
+  if (claude) {
+    const planned = await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"), { wire });
+    await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"), { wire, planned });
+    await installDashboard(ctx, path.join(os.homedir(), ".claude", "canonkit-dashboard"));
+  }
 
   if (reference) {
     ctx.log("");
-    await syncReference(ctx);
+    await syncReference(ctx, targets);
   }
 
   ctx.log("");
   ctx.log("Core installed. Domain specialists are per project:");
   ctx.log("  cd <project> && npx canonkit add <name>");
-  ctx.log("Check the install (agents, blocks, hook wiring, config): npx canonkit doctor");
+  // doctor checks the Claude Code half: the agents, the blocks and the hook.
+  if (claude) ctx.log("Check the install (agents, blocks, hook wiring, config): npx canonkit doctor");
 }
 
 /**
@@ -878,9 +916,10 @@ async function wireHooks(ctx, dest) {
   return ctx.dryRun ? { file, text: after } : null;
 }
 
-async function syncReference(ctx) {
+async function syncReference(ctx, targets = TARGETS) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
   await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
+  if (!targets.includes("claude")) return installSkills(ctx, targets);
 
   // Claude Code reads ~/.claude/CLAUDE.md. The routing block only points at
   // ~/AGENTS.md in plain text: projects live under a folder that contains it, so
@@ -893,7 +932,7 @@ async function syncReference(ctx) {
   // this call with the routing block as its entire content.
   await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
 
-  await installSkills(ctx);
+  await installSkills(ctx, targets);
 }
 
 /**
@@ -917,7 +956,7 @@ async function filesUnder(dir, prefix = "") {
   return out.sort();
 }
 
-async function installSkills(ctx) {
+async function installSkills(ctx, targets = TARGETS) {
   if (!existsSync(SKILLS_DIR)) return;
   const names = (await readdir(SKILLS_DIR, { withFileTypes: true }))
     .filter((e) => e.isDirectory() && existsSync(path.join(SKILLS_DIR, e.name, "SKILL.md")))
@@ -925,7 +964,10 @@ async function installSkills(ctx) {
     .sort();
   if (!names.length) return;
 
-  const roots = [path.join(os.homedir(), ".claude", "skills"), path.join(os.homedir(), ".agents", "skills")];
+  const roots = [
+    targets.includes("claude") && path.join(os.homedir(), ".claude", "skills"),
+    targets.includes("codex") && path.join(os.homedir(), ".agents", "skills"),
+  ].filter(Boolean);
   for (const root of roots) {
     for (const name of names) {
       await copyKeepingLocal(ctx, path.join(SKILLS_DIR, name), path.join(root, name), await filesUnder(path.join(SKILLS_DIR, name)));
@@ -1747,9 +1789,10 @@ function usage() {
 
 Usage:
   canonkit install [--no-reference]   install the core team at user level
+           [--claude] [--codex]       for one runtime (asked in a terminal; default both)
            [--wire-hooks]             also register the hook in ~/.claude/settings.json
   canonkit doctor                     check the install; exits 1 on any FAIL
-  canonkit reference                  sync only the global reference blocks
+  canonkit reference [--claude] [--codex]  sync only the global reference blocks
   canonkit add <name>...              add domain specialists to this project
   canonkit remove <name>...           remove domain specialists from this project
   canonkit list                       show the roster and what is installed
@@ -1759,7 +1802,10 @@ Usage:
 
 Options:
   --dry-run       report what would change without writing (or running) anything
-  --wire-hooks    install: write the hook's entries into ~/.claude/settings.json
+  --claude        install, reference: write for Claude Code (with --codex: both)
+  --codex         install, reference: write for Codex. Neither flag: a terminal
+                  shows a menu, a script or CI gets both
+  --wire-hooks   install: write the hook's entries into ~/.claude/settings.json
                   (dated backup first, every other key kept, settings.local.json
                   never written) and remove the meu-time forwarder once unused
   --yes           tool add: skip the confirmation prompt
@@ -1852,7 +1898,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--claude", "--codex", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -1885,15 +1931,27 @@ async function main(argv) {
     console.error("--wire-hooks is only valid for: canonkit install");
     return 1;
   }
+  if (TARGETS.some((t) => flags.includes(`--${t}`)) && command !== "install" && command !== "reference") {
+    console.error("--claude and --codex are only valid for: canonkit install, canonkit reference");
+    return 1;
+  }
 
   switch (command) {
-    case "install":
-      await install(ctx, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks") });
+    case "install": {
+      const targets = await chooseTargets(flags);
+      if (!targets) {
+        console.error("Cancelled: nothing was installed.");
+        return 1;
+      }
+      await install(ctx, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets });
       return 0;
+    }
     case "doctor":
       return doctor();
     case "reference":
-      await syncReference(ctx);
+      // No menu here: reference is the re-sync after editing a block, run
+      // from scripts as often as by hand.
+      await syncReference(ctx, await chooseTargets(flags, { interactive: false }));
       return 0;
     case "add":
     case "remove":
@@ -1934,6 +1992,7 @@ if (invokedDirectly) {
 
 export {
   applyBlock,
+  chooseTargets,
   readAgents,
   parseAgent,
   summaries,

@@ -91,9 +91,25 @@ Sem clonar nada:
 npx canonkit install
 ```
 
-Roda igual em Linux, macOS e Windows: o instalador é Node puro, sem nenhuma
-dependência. Um instalador que roda **antes** de você confiar no repositório não
-deveria pedir que você confie numa árvore de dependências primeiro.
+Roda igual em Linux, macOS e Windows. Num terminal, pergunta para qual runtime
+instalar — Claude Code e Codex, só Claude Code ou só Codex. `--claude` e
+`--codex` respondem sem o menu (os dois juntos = ambos), e sem terminal (script,
+CI) instala para os dois, como antes do menu existir.
+
+O menu é a única dependência (`prompts`, que traz `kleur` e `sisteransi`, nenhum
+com script de install), e só é carregado quando aparece: um install decidido por
+flag ou sem terminal roda em Node puro. Um instalador que roda **antes** de você
+confiar no repositório não deveria pedir que você confie numa árvore de
+dependências maior que isso.
+
+| Escolha | Escreve |
+| --- | --- |
+| Claude Code | `~/.agents/*.md`, `~/.claude/agents`, hooks, dashboard, bloco em `~/.claude/CLAUDE.md`, `~/.claude/skills` |
+| Codex | `~/.codex/agents/*.toml`, `~/.agents/skills` |
+| ambos | os dois; o bloco de `~/AGENTS.md` vai em qualquer escolha |
+
+`--wire-hooks` registra o hook do Claude Code, então é recusado num install só
+para Codex. O `doctor` confere a metade do Claude Code.
 
 De um clone, os scripts continuam valendo — são wrappers do mesmo `bin/cli.js`:
 
@@ -377,7 +393,8 @@ aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 | --- | --- |
 | `install` | core no usuário + hooks + dashboard + blocos de referência globais + skills `orchestrate` e `context-tune` |
 | `install --no-reference` | só os agentes, os hooks e o dashboard |
-| `reference` | só os blocos globais e as skills |
+| `install --claude` / `--codex` | só para um runtime, sem o menu |
+| `reference` | só os blocos globais e as skills (`--claude`/`--codex` restringem; sem menu) |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |
 | `list` | o roster e o que está instalado onde (e aponta para `tool list`) |
