@@ -294,7 +294,10 @@ const REVIEWER = /^(quinn|gard|archie|perry|ws-contract|multiplayer-isolation|ne
 // clear them. Each gate therefore records who opened it and whether on the
 // project, and the Stop gate skips a reviewer subagent's gates outside it.
 // agent_type only with agent_id: a main thread started with --agent carries
-// agent_type too, and it is not a subagent.
+// agent_type too, and it is not a subagent. Captured from real payloads
+// (2026-10-22, Claude Code 2.1.302): the main thread, --agent included, never
+// has the agent_id key; a subagent's tool events carry agent_id and agent_type
+// equal to its subagent_type, foreground and background alike.
 let WHO = {};
 
 // The real path of p, or of its nearest existing ancestor with the rest

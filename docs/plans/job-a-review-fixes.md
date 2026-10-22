@@ -235,7 +235,9 @@ Job B items come from docs/plans/job-b-doctor-wire-hooks.md.
   and a timed-out hook fails open); every path is normalized before any check.
 - **Fixed:** atomic writes (project `AGENTS.md`, settings.json) keep the target's
   mode; a 0600 file no longer comes back 0644 on POSIX.
-- **Before release (Gard P1, Quinn C1):** from real payloads, (a) a subagent's
+- **Before release (Gard P1, Quinn C1):** (a) and (b) verified on real payloads
+  2026-10-22, Claude Code 2.1.302 (job-b-doctor-wire-hooks.md, "Still open"); the
+  Linux/macOS run is still pending. From real payloads, (a) a subagent's
   PreToolUse carries `agent_type` equal to its `subagent_type` (else the probe
   skip never fires — safe, but inert); (b) the main thread, `--agent gard`
   included, never carries `agent_id` (else its own out-of-project gated edits

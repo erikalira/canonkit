@@ -132,9 +132,17 @@ docs/adr/ — 0001/0002 are tool records).
   "--wire-hooks only with install", rollback line, routing block "(subagent)".
 State: `npm test` 326 pass / 0 fail / 3 skipped; `npm run validate` green.
 Still open:
-- Release gate (Gard P1, Quinn C1): real payloads — subagent PreToolUse carries
-  `agent_type`; the main thread (incl. `--agent`) never carries `agent_id`. Linux
-  (and macOS) `npm test` run with the mode test passing.
+- Release gate (Gard P1, Quinn C1): Linux (and macOS) `npm test` run with the
+  mode test passing.
+- ~~Real payloads~~ — verified 2026-10-22, Claude Code 2.1.302 on win32, `claude -p`
+  with a metadata-only capture hook (`--settings`, matcher `*`) after
+  `install --wire-hooks` (doctor all OK). The main thread never had the `agent_id`
+  key: plain (A), `--agent gard` (B: `agent_type: "gard"` on PreToolUse,
+  PostToolUse, Stop), and the dispatcher's Agent/Stop events in C–E. Every
+  subagent PreToolUse/PostToolUse/SubagentStop had `agent_id` and `agent_type`
+  equal to its `subagent_type`: gard foreground (C), gard background (D), bob
+  dispatched from a `--agent gard` main thread (E: `bob`, not inherited `gard`).
+  Not covered: an interactive (non `-p`) session.
 - ADR 0003 "Project config lookup and additive nested lists" (Spencer recommends,
   non-blocking; Archie owns content, Spencer drafts).
 - Optional: doctor shows how many project excludes are not applied under a nested
