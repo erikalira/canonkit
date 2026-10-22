@@ -1,6 +1,6 @@
 # Handoff: `canonkit tool` (2026-10-19)
 
-Implementation of docs/plans/complements.md is **done, uncommitted**. Reviews after
+Implementation of docs/plans/complements.md is **done, committed in a696c60**. Reviews after
 the last code edit: Quinn **approve**, Gard **approve with changes** (all landed).
 `env -u NoDefaultCurrentDirectoryInExePath npm test`: 150 tests, 149 pass, 1 skipped
 (symlink test — this machine cannot create file symlinks). `npm run validate` passes.

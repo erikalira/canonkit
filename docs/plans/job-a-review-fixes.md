@@ -1,7 +1,7 @@
 # Job A — review fixes (2026-10-21)
 
-Job A of `enforcement-onboarding-handoff.md` is implemented but **uncommitted**
-on `main` (handoff says branch `feat/improve-roadmap` — decide before commit).
+Job A of `enforcement-onboarding-handoff.md` is **committed on `main`**: the
+implementation in 698ad04, the review fixes (rounds 1–3) in aa50ed0.
 `npm test` (209 pass, 1 pre-existing symlink skip) and `npm run validate` were
 green before these fixes. Reviewers: Gard, Perry, Quinn, Archie. Quinn vetoed on
 B1/B2; the others approved with conditions. After the fixes, **re-dispatch Gard
@@ -91,7 +91,7 @@ Side effect handled: with no escape hatch left on STRONG terms, `author` (not
 
 ## Status (2026-10-21, second session)
 
-Items 1–12 applied in the working tree on top of commit 698ad04 (not committed).
+Items 1–12 applied on top of commit 698ad04 (committed in aa50ed0).
 Tests written first for B1/B2. Gard and Quinn re-review after the last edit.
 
 Round 2 (from that re-review; tests first, seen failing):
