@@ -272,15 +272,35 @@ que voltou para o contexto de quem despachou — ele é relido em todo turno
 seguinte, então é um custo à parte do que o subagente gastou). Só números e
 metadados — nunca o texto do prompt nem do resultado.
 
-**Campos estáveis do `events.jsonl`** (outras ferramentas podem lê-los): em toda
-linha, `ts` (ms desde a época), `session` e `event` (`prompt`, `gate`,
-`agent_start`, `agent_launch`, `agent_end`, `agent_stop`, `tool_result`). Em
+**Campos estáveis** (outras ferramentas podem lê-los). São dois arquivos em
+`~/.claude/canonkit-activity/`, cada um rodando em 2 MB para um único `.1`:
+`events.jsonl` guarda só eventos de baixo volume, de enforcement e despacho;
+eventos de medição de alto volume nunca vão para ele, porque o Stop gate o lê e
+um volume grande empurraria os gates da sessão para fora dele.
+`tool-results.jsonl` guarda o `tool_result` (campos em *Context contributors*,
+abaixo). Até a 1.1.5, o `tool_result` era gravado no `events.jsonl`; desde a
+1.2.0 vai para o `tool-results.jsonl`. As linhas da 1.1.5 continuam no
+`events.jsonl` e no `.1` até saírem pela rotação, e o dashboard lê os dois.
+Em toda linha: `ts` (ms desde a época), `session` e `event`. No `events.jsonl`, os
+eventos são `prompt`, `gate`, `agent_start`, `agent_launch`, `agent_end`,
+`agent_stop` e `agent_resume`. Em
 `gate`: `kind` (`git`, `high-risk-surface`, `secret-block`, `secret-ask`,
-`perf-budget`, `excluded-by-config`, `context-size`), `file`, `tool`, `project`
-e, em `excluded-by-config`, `glob`. Em `agent_start`/`agent_end`: `id`, `agent`,
+`perf-budget`, `excluded-by-config`, `context-size`, `definition-of-done`),
+`file`, `tool`, `project`; em `excluded-by-config`, `glob`; em
+`high-risk-surface`, `rule`, a regra que casou (`config`, `include`,
+`secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); em
+`definition-of-done` (o Stop gate bloqueou o turno), `files` (quantos arquivos) e
+`rules` (as regras dos gates que o levaram a disparar). Em `agent_resume`: `to`, `has_message`
+(booleano) e `project`. Em `agent_start`/`agent_end`: `id`, `agent`,
 `model`, `effort`; em `agent_end`, também `resolved_model`, `mode`,
 `duration_ms`, `tool_uses`, `tokens` e `report_chars`. Campos desconhecidos devem
 ser ignorados por quem lê: novos podem aparecer sem aviso.
+
+**Um despacho pode ter mais de um `agent_end`.** Um agente continuado ou retomado
+grava uma nova linha com o mesmo `id` a cada parada, com tokens e duração
+**cumulativos**. Para custo, fique com a última linha por `id` (é o que o
+dashboard faz). Somar todas as linhas conta o mesmo trabalho de novo: num log
+real, a soma ingênua deu 642M tokens contra 495M deduplicados.
 
 Os tokens são **somados do transcript do subagente**, não lidos do payload do
 hook: o `usage` que o `PostToolUse` entrega descreve só a última chamada de API
@@ -311,14 +331,28 @@ procura o arquivo dentro da pasta atual e falha com `MODULE_NOT_FOUND`.
 Depois abra `http://localhost:4317`: além da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
 de despachos, tokens médios, tamanho médio do relatório e duração média.
 
-### Context contributors (Fase 1)
+### Context contributors
 
-O mesmo `PostToolUse` registra uma única linha `tool_result` por resultado textual
-reconhecido de `Read`, `Grep`, `Glob`, `Bash` e `PowerShell` no **main thread**:
+O mesmo `PostToolUse` registra em `tool-results.jsonl` uma única linha
+`tool_result` por resultado textual reconhecido de `Read`, `Grep`, `Glob`, `Bash` e `PowerShell`, no **main thread** e
+**dentro dos subagentes**:
 
 ```json
-{"ts": 1234567890000, "session": "synthetic-session", "event": "tool_result", "tool": "Read", "chars": 1200, "lines": 40}
+{"ts": 1234567890000, "session": "synthetic-session", "event": "tool_result", "thread": "main", "tool": "Read", "tool_use_id": "toolu_01Abc", "chars": 1200, "lines": 40}
+{"ts": 1234567890001, "session": "synthetic-session", "event": "tool_result", "thread": "subagent", "agent_id": "a1b2c3d4e5f6a7b8c", "agent_type": "bob", "tool": "Bash", "tool_use_id": "toolu_01Def", "chars": 28000, "lines": 750}
 ```
+
+`thread` diz de quem é o contexto que recebeu o resultado: `main` (o payload não
+tem a chave `agent_id`), `subagent` (um `agent_id` válido — o mesmo que
+`agent_launch`/`agent_end` gravam, e é por ele que o dashboard liga o resultado
+ao despacho) ou `unknown` (a chave existe mas o valor é vazio ou inválido: nunca
+vira main nem é atribuído a um agente). Linha **sem** `thread` é anterior ao
+campo e só era gravada para o main. `tool_use_id` (omitido quando ausente ou
+inválido) permite descartar a segunda linha de um hook registrado duas vezes;
+`agent_type` só aparece quando passa pelo validador de tipos de agente (o de IDs
+mais `.` e `:`, até 128 caracteres, para que agentes de plugin como
+`plugin:reviewer` mantenham a própria linha); um tipo com espaço, barra ou aspas
+é omitido e o agente aparece como `unknown`.
 
 Só esses campos são persistidos: nenhum conteúdo, input, prompt, comando, path,
 basename de projeto ou status arbitrário. `session` passa pelo validador de IDs
@@ -333,9 +367,9 @@ O contrato foi conferido no `sdk-tools.d.ts` de
 e nos schemas locais do Claude Code 2.1.302 (PowerShell e identificação do main
 thread). `Read` usa `file.content` quando `type` é `text`; `Grep` usa `content`
 nos modos `content`/`count`, ou `filenames` no modo de arquivos; `Glob` usa
-`filenames` unidos por newline; os shells usam `stdout`/`stderr`. Um `agent_id`
-presente exclui a chamada; `agent_type` sozinho também existe no main thread
-com `--agent` e não o exclui. Runtimes antigos sem essa identificação de
+`filenames` unidos por newline; os shells usam `stdout`/`stderr`. Só `agent_id`
+identifica um subagente; `agent_type` sozinho também existe no main thread com
+`--agent` e não o torna subagente. Runtimes antigos sem essa identificação de
 subagentes não têm separação garantida.
 
 **Limites:** [PostToolUse](https://code.claude.com/docs/en/hooks#posttooluse)
@@ -348,13 +382,48 @@ payload, sem abrir arquivos de output. Não há exit code garantido; não se inf
 sucesso/falha de stderr. Falhas de tool que só geram `PostToolUseFailure` ficam
 fora desta fase.
 
-A seção **Context contributors** permite escolher uma sessão e mostra total,
-participação no volume medido, chamadas, média e maior resultado por ferramenta.
-“Agents” reutiliza `agent_end.report_chars`, mantendo o último relatório cumulativo
-por sessão/despacho. Eventos antigos sem medida continuam aceitos e não viram zero.
-O denominador é apenas o volume medido nos dois arquivos retidos (`events.jsonl`
-e `.1`), não a sessão inteira se dados anteriores já foram descartados. Não se
-inventa uma categoria “Other” para volume desconhecido.
+A seção **Context contributors** tem uma janela “histórico retido” (todas as
+sessões, subagentes agrupados por tipo de agente) e uma por sessão. Em cada uma:
+resultados de ferramenta recebidos pelo main thread × subagentes × não
+identificados (chars, chamadas, média); o contexto do main por ferramenta
+(total, participação, chamadas, média e maior resultado), onde “Agents” reutiliza
+`agent_end.report_chars`, mantendo o último relatório cumulativo por
+sessão/despacho; e cada subagente com suas ferramentas. Main e subagentes são
+contextos separados: o resultado de um subagente fica no contexto dele, e só o
+relatório volta ao main. Na janela retida, “dispatches” por tipo conta os
+subagentes identificados por `agent_id` (num `tool_result`, `agent_launch` ou
+`agent_end`), não as linhas da tabela de despachos: um `agent_end` sem `agent_id`
+soma seu relatório em “Agents”, mas não entra nessa contagem.
+
+Um subagente sem resultado medido aparece com o motivo, nunca como zero:
+`no tool use` (`agent_end.tool_uses` = 0), `insufficient data` (a sessão não tem
+nenhuma linha gravada por um hook que mede subagentes — histórico anterior) ou
+`no measured result` (só usou ferramentas fora das cinco, payload desconhecido,
+ou ainda está rodando). O denominador é apenas o volume medido nos arquivos
+retidos (`tool-results.jsonl` e `.1`, mais as linhas da 1.1.5 ainda em
+`events.jsonl` e `.1`), não a sessão inteira se dados anteriores já foram
+descartados. Não se inventa uma categoria “Other” para volume desconhecido.
+
+**Janelas.** Os contadores do topo e a timeline usam os **últimos 300 eventos**
+(sem `tool_result`) e contam despachos *iniciados*; as tabelas por modelo e por
+agente usam **todo o histórico retido** e contam despachos *terminados*. Os
+números diferem quando o histórico passa de 300 eventos, quando um despacho
+ainda roda ou quando seu início já saiu do log. O dashboard mostra o início de
+cada janela.
+
+**Tokens.** As tabelas por modelo e por agente mostram, além das médias, Σ total,
+input, output, cache read, cache write, chamadas de API e “cache read %” =
+cache read ÷ (input + cache read + cache write), somados sobre os despachos com
+tokens (coluna “with tokens”). Cada chamada de API reenvia o contexto inteiro, então
+o cache lido é contado de novo a cada chamada: Σ total é volume processado, não
+tokens novos nem custo. Output é piso (ver acima) e aparece com `≥`. Não há
+cálculo de custo: exigiria preços verificáveis por modelo e uma metodologia
+para o output incompleto.
+
+O volume de resultados de ferramenta, inclusive o dos subagentes, tem retenção
+própria em `tool-results.jsonl` e não encurta o histórico de gates e despachos
+do `events.jsonl`. Quanto mais ferramentas a sessão usa, menos tempo cobre o
+histórico de *volume*.
 
 Para coletar em uma instalação existente, reinstale a partir deste checkout e
 atualize **a entrada existente** de `PostToolUse` para o matcher acima, evitando

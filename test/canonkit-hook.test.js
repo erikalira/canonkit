@@ -92,14 +92,17 @@ const inProject = (cwd, tool, tool_input, session = "CONFIG", env) => decide({ .
 const edit = (cwd, rel, new_string = "x") =>
   inProject(cwd, "Edit", { file_path: cwd + "/" + rel, new_string });
 
+// Both logs: tool_result lines live in tool-results.jsonl, everything else in events.jsonl.
+const activity = (f) => path.join(HOME, ".claude", "canonkit-activity", f);
+const readLog = async () => (await Promise.all(["events.jsonl", "tool-results.jsonl"]
+  .map((f) => readFile(activity(f), "utf8").catch(() => "")))).join("");
 const logged = async (session) =>
-  (await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"))
-    .trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.session === session);
+  (await readLog()).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.session === session);
 
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
 
-describe("main-thread context contributors", () => {
+describe("tool-result volume (main thread and subagents)", () => {
   // Synthetic sensitive markers must never reach the activity JSONL, even via
   // cwd, file metadata, unexpected fields or tool_input.
   const secret = "PRIVATE-RESULT-" + FAKE_AWS_KEY;
@@ -119,9 +122,9 @@ describe("main-thread context contributors", () => {
     const events = await logged(session);
     assert.equal(events.length, 1, "one result, no redundant start/end events");
     const e = events[0];
-    assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "tool", "ts"]);
-    assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", tool, chars, lines });
-    const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "thread", "tool", "ts"]);
+    assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", thread: "main", tool, chars, lines });
+    const jsonl = await readLog();
     assert.ok(!jsonl.includes(secret), "sensitive input/result content persisted");
     assert.ok(!jsonl.includes("private-customer"), "private path persisted");
   };
@@ -164,14 +167,44 @@ describe("main-thread context contributors", () => {
     await check("Read", { type: "text", file: { content: "a😀\r\n" } }, 5, 1, "unicode");
     await check("Read", { type: "text", file: { content: "\n" } }, 1, 1, "newline");
   });
-  test("subagent tools are excluded; agent_type alone is allowed on the main thread", async () => {
+  // Payload shape captured from real hooks (Claude Code 2.1.302): the main
+  // thread, --agent included, never has the agent_id key; a subagent's tool
+  // events carry agent_id (the id agent_launch/agent_end log) and agent_type.
+  const strip = (e) => { const { ts, ...rest } = e; return rest; };
+  test("a subagent's results are measured and attributed to its agent_id", async () => {
+    const session = "VOLUME-subagent";
+    const r = runHook(post("Read", { type: "text", file: { content: "ab\ncd" } }, session,
+      { agent_id: "a1b2c3d4e5f6", agent_type: "bob", tool_use_id: "toolu_01SUB" }));
+    assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+    assert.deepEqual((await logged(session)).map(strip), [{
+      session, event: "tool_result", thread: "subagent", agent_id: "a1b2c3d4e5f6", agent_type: "bob",
+      tool: "Read", tool_use_id: "toolu_01SUB", chars: 5, lines: 2,
+    }]);
+  });
+  test("agent_type alone stays main; a present but unusable agent_id is unknown, never main", async () => {
     const session = "VOLUME-main-only";
-    for (const agent_id of ["worker-1", "", null]) {
-      assert.equal(runHook(post("Glob", { filenames: [secret] }, session, { agent_id })).status, 0);
-    }
-    assert.deepEqual(await logged(session), []);
     runHook(post("Glob", { filenames: [] }, session, { agent_type: "bob" }));
-    assert.equal((await logged(session)).length, 1);
+    for (const agent_id of ["", null, privatePath, 42, "x".repeat(65)]) {
+      assert.equal(runHook(post("Glob", { filenames: [secret] }, session, { agent_id, agent_type: secret })).status, 0);
+    }
+    const events = await logged(session);
+    assert.deepEqual(events.map((e) => e.thread), ["main", "unknown", "unknown", "unknown", "unknown", "unknown"]);
+    assert.ok(events.every((e) => !("agent_id" in e) && !("agent_type" in e)), "no unusable id or free text logged");
+  });
+  test("several agents at once each keep their own id; unsafe agent_type and tool_use_id are dropped", async () => {
+    const session = "VOLUME-parallel";
+    for (const [agent_id, agent_type, tool_use_id] of [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", "plugin:x y", "../tu"], ["aplug1", "my.plugin:reviewer", "tu-5"]]) {
+      runHook(post("Bash", { stdout: "x", stderr: "" }, session, { agent_id, agent_type, tool_use_id }));
+    }
+    // A namespaced plugin agent keeps its type; a space or slash still drops it.
+    assert.deepEqual((await logged(session)).map((e) => [e.agent_id, e.agent_type, e.tool_use_id]),
+      [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", undefined, undefined], ["aplug1", "my.plugin:reviewer", "tu-5"]]);
+  });
+  test("subagent results persist no content, path or command", async () => {
+    runHook(post("PowerShell", { stdout: secret, stderr: privatePath }, "VOLUME-sub-private", { agent_id: "asub9", agent_type: "bob" }));
+    const jsonl = await readLog();
+    assert.ok(!jsonl.includes(secret) && !jsonl.includes("private-customer"));
+    assert.equal((await logged("VOLUME-sub-private")).length, 1);
   });
   test("unexpected, binary and absent payloads stay silent and unmeasured", async () => {
     const session = "VOLUME-unknown";
@@ -193,9 +226,9 @@ describe("main-thread context contributors", () => {
     assert.deepEqual(await logged(session), []);
   });
   test("unsafe or absent session identifiers are never logged", async () => {
-    const before = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    const before = await readLog();
     for (const session of [privatePath, {}, null, ""]) runHook(post("Glob", { filenames: [] }, session));
-    assert.equal(await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"), before);
+    assert.equal(await readLog(), before);
   });
   test("internal filesystem failures stay fail-open with no stdout/stderr", async () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-unwritable-"));
@@ -1296,12 +1329,88 @@ describe("definition-of-done gate", () => {
       assert.equal(JSON.parse(r.stdout).decision, "block");
     } finally { await rm(home, { recursive: true, force: true }); }
   });
+  test("a flood of tool results rotates its own log, never the one the gate reads", async () => {
+    // events.jsonl carries only low-volume events: if tool_result lines went
+    // there, a tool-heavy session would rotate its own gate out of reach.
+    const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-flood-"));
+    try {
+      const dir = path.join(home, ".claude", "canonkit-activity");
+      await mkdir(dir, { recursive: true });
+      const events = JSON.stringify({ ts: Date.now(), session: "FLOOD", event: "gate", kind: "high-risk-surface", file: "src/auth/x.ts" }) + "\n";
+      await writeFile(path.join(dir, "events.jsonl"), events);
+      await writeFile(path.join(dir, "tool-results.jsonl"), JSON.stringify({ session: "pad", pad: "x".repeat(2.1 * 1024 * 1024) }) + "\n");
+      const env = { HOME: home, USERPROFILE: home };
+      const read = { hook_event_name: "PostToolUse", session_id: "FLOOD", cwd: home, tool_name: "Read", tool_input: { file_path: "x" },
+        tool_response: { type: "text", file: { content: "x\n" } } };
+      assert.equal(runHook(read, env).status, 0);
+      assert.equal(runHook({ ...read, agent_id: "aflood1", agent_type: "bob" }, env).status, 0);
+      assert.ok((await readFile(path.join(dir, "tool-results.jsonl.1"), "utf8")).includes('"pad"'), "the tool log rotated");
+      const results = (await readFile(path.join(dir, "tool-results.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+      assert.deepEqual(results.map((e) => [e.event, e.thread]), [["tool_result", "main"], ["tool_result", "subagent"]]);
+      assert.equal(await readFile(path.join(dir, "events.jsonl"), "utf8"), events, "no tool_result in the gate's log");
+      assert.ok(!existsSync(path.join(dir, "events.jsonl.1")));
+      const r = runHook({ hook_event_name: "Stop", session_id: "FLOOD" }, env);
+      assert.equal(JSON.parse(r.stdout).decision, "block");
+    } finally { await rm(home, { recursive: true, force: true }); }
+  });
   test("a reviewer dispatched AFTER the gate clears it", async () => {
     await seed({ ts: Date.now() + 60000, event: "agent_start", agent: "perry" });
     assert.equal(stop(), "allow");
   });
   test("the re-entry guard never blocks twice in one turn", () => {
     assert.equal(stop({ stop_hook_active: true }), "allow");
+  });
+});
+
+describe("gate telemetry: the rule that matched, and the Stop gate's blocks", () => {
+  // Without the rule, a false-positive rate can only be argued from a list of
+  // paths; without the block line, what a rule costs in reviewer dispatches
+  // cannot be counted at all.
+  test("a high-risk gate names the rule that matched, and still asks", async () => {
+    const cwd = await project({ highRisk: { include: ["src/billing/**"] } });
+    const cases = {
+      ".claude/canonkit.json": "config",
+      "src/billing/charge.ts": "include",
+      ".env.local": "secret-path",
+      "prisma/schema.prisma": "strong",
+      "src/auth/session.ts": "auth",
+      "db/migrations/001_init.sql": "migration",
+      "src/acl/rules.ts": "word",
+      "src/lib/session/store.ts": "ambiguous",
+    };
+    for (const [rel, rule] of Object.entries(cases)) {
+      const S = "RULE-" + rule;
+      assert.equal(inProject(cwd, "Edit", { file_path: cwd + "/" + rel, new_string: "{}" }, S), "ask", rel);
+      const gate = (await logged(S)).find((e) => e.kind === "high-risk-surface");
+      assert.equal(gate && gate.rule, rule, rel);
+    }
+  });
+
+  test("a shell write names the rule too", async () => {
+    const cwd = await project();
+    const S = "RULE-SHELL";
+    assert.equal(inProject(cwd, "Bash", { command: "echo x > src/auth/x.ts" }, S), "ask");
+    const gate = (await logged(S)).find((e) => e.kind === "high-risk-surface");
+    assert.equal(gate && gate.rule, "auth");
+  });
+
+  test("a Stop gate block is logged once, with its file count and rules", async () => {
+    const cwd = await project();
+    const S = "DOD-LOG";
+    inProject(cwd, "Edit", { file_path: cwd + "/src/auth/x.ts", new_string: "x" }, S);
+    inProject(cwd, "Edit", { file_path: cwd + "/db/migrations/001.sql", new_string: "x" }, S);
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "block");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S, stop_hook_active: true }), "allow");
+    const blocks = (await logged(S)).filter((e) => e.kind === "definition-of-done");
+    assert.equal(blocks.length, 1, "the re-entered Stop logs nothing");
+    assert.equal(blocks[0].files, 2);
+    assert.deepEqual([...blocks[0].rules].sort(), ["auth", "migration"]);
+  });
+
+  test("a logged block never feeds the next Stop", async () => {
+    await appendFile(activity("events.jsonl"),
+      JSON.stringify({ ts: Date.now(), session: "DOD-ALONE", event: "gate", kind: "definition-of-done", files: 1, rules: ["auth"] }) + "\n");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: "DOD-ALONE" }), "allow");
   });
 });
 
