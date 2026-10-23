@@ -298,9 +298,17 @@ mensagem de texto, então `report_chars` mede a `message` do último
 `SubagentHandback` do transcript e só cai para `last_assistant_message` quando não
 há nenhum.
 
-O `install` copia o dashboard para `~/.claude/canonkit-dashboard/`. Rode
-`node ~/.claude/canonkit-dashboard/serve.js` e abra `http://localhost:4317`: além
-da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
+O `install` copia o dashboard para `~/.claude/canonkit-dashboard/`. Rode:
+
+```bash
+node ~/.claude/canonkit-dashboard/serve.js              # Linux, macOS e Git Bash
+node $HOME\.claude\canonkit-dashboard\serve.js          # Windows (PowerShell)
+```
+
+O PowerShell não expande `~` em argumentos de programas externos: com `~/` o Node
+procura o arquivo dentro da pasta atual e falha com `MODULE_NOT_FOUND`.
+
+Depois abra `http://localhost:4317`: além da timeline, ele agrupa os despachos por (modelo, effort) e por agente, com número
 de despachos, tokens médios, tamanho médio do relatório e duração média.
 
 ### Context contributors (Fase 1)
