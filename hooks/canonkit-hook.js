@@ -489,8 +489,10 @@ const TEST_PATH = /(\.test\.|\.spec\.|(^|\/)(__tests__|__mocks__|fixtures?|mocks
 
 // Order is the contract: the config file > include (explicit) > noise/test >
 // secret paths and strong terms (never excludable) > exclude > the remaining
-// heuristics. `rel` is the normalized project path (cfg.rel). Returns true,
-// false, or { excludedBy } when only an exclude kept the gate shut.
+// heuristics. `rel` is the normalized project path (cfg.rel). Returns { rule }
+// naming what matched, false, or { excludedBy } when only an exclude kept the
+// gate shut. The rule is logged on the gate, so a false-positive rate can be
+// measured per rule instead of argued from a list of paths.
 // Only a project-relative path can be noise: an absolute one (outside the
 // config's folder, e.g. a nested config's) would be judged by the folders above
 // the project, and a `build/` there let even .env through. Absolute fails closed.
@@ -504,16 +506,19 @@ const projectAdds = (cfg, key, fp) => !!(cfg.project && fp) && cfg.project[key].
 
 function highRisk(rel, cfg, fp) {
   if (!rel) return false;
-  if (CONFIG_PATH.test(rel)) return true;
-  if (cfg.include.some((m) => m(rel)) || projectAdds(cfg, 'include', fp)) return true;
+  if (CONFIG_PATH.test(rel)) return { rule: 'config' };
+  if (cfg.include.some((m) => m(rel)) || projectAdds(cfg, 'include', fp)) return { rule: 'include' };
   if (isNoise(rel) || isTestFile(rel)) return false;
-  if (SECRET_PATH.test(rel) || HIGH_RISK_STRONG.test(rel) || namesAuth(rel)) return true;
-  if (MIGRATION.test(rel) && !PROSE_OR_STYLE.test(rel)) return true;
-  const heuristic = HIGH_RISK_WORD.test(rel) ||
-    (AMBIGUOUS_WORD.test(rel) && !PROSE_OR_STYLE.test(rel) && !PRESENTATIONAL.test(rel));
-  if (!heuristic) return false;
+  if (SECRET_PATH.test(rel)) return { rule: 'secret-path' };
+  if (HIGH_RISK_STRONG.test(rel)) return { rule: 'strong' };
+  if (namesAuth(rel)) return { rule: 'auth' };
+  if (MIGRATION.test(rel) && !PROSE_OR_STYLE.test(rel)) return { rule: 'migration' };
+  const rule = HIGH_RISK_WORD.test(rel) ? 'word'
+    : AMBIGUOUS_WORD.test(rel) && !PROSE_OR_STYLE.test(rel) && !PRESENTATIONAL.test(rel) ? 'ambiguous'
+      : '';
+  if (!rule) return false;
   const ex = cfg.exclude.find((m) => m(rel));
-  return ex ? { excludedBy: ex.glob } : true;
+  return ex ? { excludedBy: ex.glob } : { rule };
 }
 
 // ---- GLOBS ----
@@ -835,7 +840,15 @@ function main() {
       return !!start && REVIEWER.test(start.agent || '');
     });
     if (gates.length && !reviewed) {
-      const files = [...new Set(gates.map((e) => e.file).filter(Boolean))].join(', ') || 'a HIGH-risk surface';
+      const fileList = [...new Set(gates.map((e) => e.file).filter(Boolean))];
+      const files = fileList.join(', ') || 'a HIGH-risk surface';
+      // The block itself is a gate: it is what costs a reviewer dispatch, and
+      // without this line how often a rule ends in one could not be counted.
+      // GATED does not match this kind, so it never feeds the next Stop.
+      log({
+        event: 'gate', kind: 'definition-of-done', files: fileList.length,
+        rules: [...new Set(gates.map((e) => e.rule || e.kind))], project,
+      });
       process.stdout.write(JSON.stringify({
         decision: 'block',
         reason: `Definition-of-done gate: this session edited gated surfaces (${files}) and no independent reviewer was dispatched (or resumed with SendMessage) after the last of those edits. Per the no-self-merge rule, dispatch Quinn (acceptance criteria), Gard (security), Archie (contract) or Perry (performance budgets) to confirm before declaring done — OR state explicitly why review isn't needed (e.g. trivial, user-authorized). This fires once per turn.`,
@@ -1005,11 +1018,11 @@ function main() {
       }
       targets.forEach((t, i) => {
         const verdict = highRisk(rels[i], cfg, t);
-        if (verdict === true) {
-          logGate({ kind: 'high-risk-surface', file: t, project, tool }, [t], cwd);
+        if (verdict && verdict.rule) {
+          logGate({ kind: 'high-risk-surface', file: t, rule: verdict.rule, project, tool }, [t], cwd);
           ask(`canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
         }
-        if (verdict) logGate({ kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool }, [t], cwd);
+        if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool }, [t], cwd);
       });
     }
     process.exit(0);
@@ -1041,12 +1054,12 @@ function main() {
       ask(`canonkit gate (Perry): "${path.basename(fp)}" carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
     }
     const verdict = highRisk(rel, cfg, fp);
-    if (verdict === true) {
-      logGate({ kind: 'high-risk-surface', file: fp, project, tool }, [fp], cwd);
+    if (verdict && verdict.rule) {
+      logGate({ kind: 'high-risk-surface', file: fp, rule: verdict.rule, project, tool }, [fp], cwd);
       ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
     }
     // Not a gate: the dashboard shows what a project's config kept quiet.
-    if (verdict) logGate({ kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool }, [fp], cwd);
+    if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool }, [fp], cwd);
     process.exit(0);
   }
 

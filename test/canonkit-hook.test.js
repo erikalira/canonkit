@@ -1362,6 +1362,58 @@ describe("definition-of-done gate", () => {
   });
 });
 
+describe("gate telemetry: the rule that matched, and the Stop gate's blocks", () => {
+  // Without the rule, a false-positive rate can only be argued from a list of
+  // paths; without the block line, what a rule costs in reviewer dispatches
+  // cannot be counted at all.
+  test("a high-risk gate names the rule that matched, and still asks", async () => {
+    const cwd = await project({ highRisk: { include: ["src/billing/**"] } });
+    const cases = {
+      ".claude/canonkit.json": "config",
+      "src/billing/charge.ts": "include",
+      ".env.local": "secret-path",
+      "prisma/schema.prisma": "strong",
+      "src/auth/session.ts": "auth",
+      "db/migrations/001_init.sql": "migration",
+      "src/acl/rules.ts": "word",
+      "src/lib/session/store.ts": "ambiguous",
+    };
+    for (const [rel, rule] of Object.entries(cases)) {
+      const S = "RULE-" + rule;
+      assert.equal(inProject(cwd, "Edit", { file_path: cwd + "/" + rel, new_string: "{}" }, S), "ask", rel);
+      const gate = (await logged(S)).find((e) => e.kind === "high-risk-surface");
+      assert.equal(gate && gate.rule, rule, rel);
+    }
+  });
+
+  test("a shell write names the rule too", async () => {
+    const cwd = await project();
+    const S = "RULE-SHELL";
+    assert.equal(inProject(cwd, "Bash", { command: "echo x > src/auth/x.ts" }, S), "ask");
+    const gate = (await logged(S)).find((e) => e.kind === "high-risk-surface");
+    assert.equal(gate && gate.rule, "auth");
+  });
+
+  test("a Stop gate block is logged once, with its file count and rules", async () => {
+    const cwd = await project();
+    const S = "DOD-LOG";
+    inProject(cwd, "Edit", { file_path: cwd + "/src/auth/x.ts", new_string: "x" }, S);
+    inProject(cwd, "Edit", { file_path: cwd + "/db/migrations/001.sql", new_string: "x" }, S);
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "block");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S, stop_hook_active: true }), "allow");
+    const blocks = (await logged(S)).filter((e) => e.kind === "definition-of-done");
+    assert.equal(blocks.length, 1, "the re-entered Stop logs nothing");
+    assert.equal(blocks[0].files, 2);
+    assert.deepEqual([...blocks[0].rules].sort(), ["auth", "migration"]);
+  });
+
+  test("a logged block never feeds the next Stop", async () => {
+    await appendFile(activity("events.jsonl"),
+      JSON.stringify({ ts: Date.now(), session: "DOD-ALONE", event: "gate", kind: "definition-of-done", files: 1, rules: ["auth"] }) + "\n");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: "DOD-ALONE" }), "allow");
+  });
+});
+
 describe("definition-of-done gate: reviewer probes and resumed reviewers", () => {
   // Subagents share the parent's session id. A reviewer that probes the hook in a
   // scratch folder opens gates the parent then could never clear: its own

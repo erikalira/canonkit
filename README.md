@@ -285,12 +285,22 @@ Em toda linha: `ts` (ms desde a época), `session` e `event`. No `events.jsonl`,
 eventos são `prompt`, `gate`, `agent_start`, `agent_launch`, `agent_end`,
 `agent_stop` e `agent_resume`. Em
 `gate`: `kind` (`git`, `high-risk-surface`, `secret-block`, `secret-ask`,
-`perf-budget`, `excluded-by-config`, `context-size`), `file`, `tool`, `project`
-e, em `excluded-by-config`, `glob`. Em `agent_resume`: `to`, `has_message`
+`perf-budget`, `excluded-by-config`, `context-size`, `definition-of-done`),
+`file`, `tool`, `project`; em `excluded-by-config`, `glob`; em
+`high-risk-surface`, `rule`, a regra que casou (`config`, `include`,
+`secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); em
+`definition-of-done` (o Stop gate bloqueou o turno), `files` (quantos arquivos) e
+`rules` (as regras dos gates que o levaram a disparar). Em `agent_resume`: `to`, `has_message`
 (booleano) e `project`. Em `agent_start`/`agent_end`: `id`, `agent`,
 `model`, `effort`; em `agent_end`, também `resolved_model`, `mode`,
 `duration_ms`, `tool_uses`, `tokens` e `report_chars`. Campos desconhecidos devem
 ser ignorados por quem lê: novos podem aparecer sem aviso.
+
+**Um despacho pode ter mais de um `agent_end`.** Um agente continuado ou retomado
+grava uma nova linha com o mesmo `id` a cada parada, com tokens e duração
+**cumulativos**. Para custo, fique com a última linha por `id` (é o que o
+dashboard faz). Somar todas as linhas conta o mesmo trabalho de novo: num log
+real, a soma ingênua deu 642M tokens contra 495M deduplicados.
 
 Os tokens são **somados do transcript do subagente**, não lidos do payload do
 hook: o `usage` que o `PostToolUse` entrega descreve só a última chamada de API
