@@ -47,19 +47,24 @@ const LOG_FILE = path.join(LOG_DIR, 'events.jsonl');
 const LEGACY_LOG_FILE = path.join(os.homedir(), '.claude', 'meu-time-activity', 'events.jsonl');
 // The Stop gate reads this whole file at every turn end, so it cannot grow
 // unbounded. One rotation is enough: the gate only ever asks about this session.
+// events.jsonl carries only low-volume enforcement/dispatch events. High-volume
+// measurement goes to its own file, or it would rotate a session's gate and
+// reviewer events out of what the Stop gate reads. Same cap, same one rotation.
 const MAX_LOG_BYTES = 2 * 1024 * 1024;
+const TOOL_RESULTS_FILE = path.join(LOG_DIR, 'tool-results.jsonl');
 
 let SESSION = ''; // set in main() from the hook input; tags every event for per-session queries
 
-function log(event) {
+function append(file, event) {
   try {
     fs.mkdirSync(LOG_DIR, { recursive: true });
     try {
-      if (fs.statSync(LOG_FILE).size > MAX_LOG_BYTES) fs.renameSync(LOG_FILE, LOG_FILE + '.1');
+      if (fs.statSync(file).size > MAX_LOG_BYTES) fs.renameSync(file, file + '.1');
     } catch (_) { /* no file yet, or a raced rename — either way, just append */ }
-    fs.appendFileSync(LOG_FILE, JSON.stringify({ ts: Date.now(), session: SESSION, ...event }) + '\n');
+    fs.appendFileSync(file, JSON.stringify({ ts: Date.now(), session: SESSION, ...event }) + '\n');
   } catch (_) { /* never throw from logging */ }
 }
+const log = (event) => append(LOG_FILE, event);
 
 // withRotated: also read events.jsonl.1, for lookups that must survive a rotation
 // landing between two halves of the same dispatch.
@@ -100,6 +105,9 @@ function readEvents(withRotated = false) {
 // value seen per call is kept; input and cache numbers are complete.
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 const safeId = (v) => (typeof v === 'string' && /^[\w-]{1,64}$/.test(v) ? v : '');
+// Agent types may be namespaced (`plugin:agent`, `scope.name`): rejecting `:` would
+// fold every plugin agent into one "unknown" row. Still no spaces, slashes or quotes.
+const safeType = (v) => (typeof v === 'string' && /^[\w.:-]{1,128}$/.test(v) ? v : '');
 // Free text the model chose (a task description, an agent's name, a message
 // target): kept short, so one long string cannot bloat the log the Stop gate reads.
 const cap = (v) => (typeof v === 'string' ? v.slice(0, 200) : '');
@@ -900,12 +908,12 @@ function main() {
       const origin = input.agent_id === undefined ? { thread: 'main' }
         : agentId ? { thread: 'subagent', agent_id: agentId } : { thread: 'unknown' };
       // Empty ids are left out, not written as "": one line per result adds up.
-      const agentType = agentId && safeId(input.agent_type);
+      const agentType = agentId && safeType(input.agent_type);
       const toolUseId = safeId(input.tool_use_id);
       // One line per measured result, with an explicit quantitative allowlist.
       // No project basename either: even that can reveal sensitive context.
       if (size) {
-        log({
+        append(TOOL_RESULTS_FILE, {
           event: 'tool_result', session: safeId(SESSION), ...origin, ...(agentType ? { agent_type: agentType } : {}),
           tool, ...(toolUseId ? { tool_use_id: toolUseId } : {}), ...size,
         });

@@ -22,19 +22,24 @@ const LOG = path.join(os.homedir(), '.claude', 'canonkit-activity', 'events.json
 // The pre-rename location. install moves it; until then (or if both exist) its
 // history is read first, as the older half.
 const LEGACY_LOG = path.join(os.homedir(), '.claude', 'meu-time-activity', 'events.jsonl');
+// tool_result lines, since 1.2.0. Those written by 1.1.5 stay in events.jsonl(.1)
+// until rotated out, so the contributors still read both.
+const TOOL_RESULTS = path.join(os.homedir(), '.claude', 'canonkit-activity', 'tool-results.jsonl');
 
-// The hook rotates the log at 2 MB (events.jsonl -> events.jsonl.1). Read the
-// rotated half first, or the dashboard goes near-empty for a while after every
+// The hook rotates each log at 2 MB (x.jsonl -> x.jsonl.1). Read the rotated
+// half first, or the dashboard goes near-empty for a while after every
 // rotation — the last 300 events would be sitting in the file nobody reads.
-function readLines() {
+function readFiles(files) {
   let lines = [];
-  for (const f of [LEGACY_LOG + '.1', LEGACY_LOG, LOG + '.1', LOG]) {
+  for (const f of files) {
     try {
       lines = lines.concat(fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean));
     } catch (_) {}
   }
   return lines;
 }
+const readLines = () => readFiles([LEGACY_LOG + '.1', LEGACY_LOG, LOG + '.1', LOG]);
+const readToolResultLines = () => readFiles([TOOL_RESULTS + '.1', TOOL_RESULTS]);
 const parse = (l) => { try { return JSON.parse(l); } catch (_) { return null; } };
 
 // A background dispatch can log agent_end more than once (a continued or resumed
@@ -56,6 +61,8 @@ const TOOLS = new Set(['Read', 'Grep', 'Glob', 'Bash', 'PowerShell']);
 const SAFE_ID = /^[\w-]{1,64}$/;
 const measured = (n) => Number.isSafeInteger(n) && n >= 0;
 const safe = (v) => (typeof v === 'string' && SAFE_ID.test(v) ? v : '');
+// The hook's agent-type validator: namespaced plugin agents keep their own row.
+const safeType = (v) => (typeof v === 'string' && /^[\w.:-]{1,128}$/.test(v) ? v : '');
 
 function addTo(groups, tool, chars, calls = 1, max = chars) {
   const g = groups.get(tool) || { tool, chars: 0, calls: 0, max_chars: 0 };
@@ -91,7 +98,7 @@ function agentStatus(a, instrumented) {
 // came back to it ("Agents"). Subagent results never enter it — they land in the
 // subagent's own context, listed per agent and joined to the dispatch by the
 // agent_id that agent_launch/agent_end carry (never guessed when absent).
-function contextContributors(lines = readLines()) {
+function contextContributors(lines = readLines().concat(readToolResultLines())) {
   const sessions = new Map();
   const seen = new Set();
   const S = (id) => {
@@ -103,6 +110,10 @@ function contextContributors(lines = readLines()) {
     let a = s.agents.get(agentId);
     if (!a) s.agents.set(agentId, a = { agent_id: agentId, agent: '', dispatch: '', tool_uses: null, groups: new Map() });
     return a;
+  };
+  const endAgent = (a, e) => {
+    if (safeType(e.agent)) a.agent = e.agent;
+    a.tool_uses = typeof e.tool_uses === 'number' ? e.tool_uses : null;
   };
   for (const line of lines) {
     const e = parse(line);
@@ -118,18 +129,22 @@ function contextContributors(lines = readLines()) {
       if (thread === 'main') addTo(s.main, e.tool, e.chars);
       else if (thread === 'subagent' && safe(e.agent_id)) {
         const a = A(s, e.agent_id);
-        if (!a.agent) a.agent = safe(e.agent_type);
+        if (!a.agent) a.agent = safeType(e.agent_type);
         addTo(a.groups, e.tool, e.chars);
       } else addTo(s.unknown, e.tool, e.chars);
     }
-    if (e.event === 'agent_start' && typeof e.id === 'string' && e.id) S(e.session).starts.set(e.id, safe(e.agent));
+    if (e.event === 'agent_start' && typeof e.id === 'string' && e.id) S(e.session).starts.set(e.id, safeType(e.agent));
     if (e.event === 'agent_launch' && safe(e.agent_id) && e.id) Object.assign(A(S(e.session), e.agent_id), { dispatch: e.id });
     // Last cumulative report per dispatch, keyed by session too. Historical
     // events with no report_chars remain unmeasured, never invented as zero.
     if (e.event === 'agent_end') {
       const s = S(e.session);
       if (typeof e.id === 'string' && e.id) s.ends.set(e.id, e);
-      else if (measured(e.report_chars)) addTo(s.main, 'Agents', e.report_chars);
+      else {
+        // No dispatch id to keep the last line by, but the agent still ran: list it.
+        if (measured(e.report_chars)) addTo(s.main, 'Agents', e.report_chars);
+        if (safe(e.agent_id)) endAgent(A(s, e.agent_id), e);
+      }
     }
   }
   const out = [];
@@ -139,8 +154,7 @@ function contextContributors(lines = readLines()) {
       if (!safe(e.agent_id)) continue;
       const a = A(s, e.agent_id);
       a.dispatch = e.id;
-      if (safe(e.agent)) a.agent = e.agent;
-      a.tool_uses = typeof e.tool_uses === 'number' ? e.tool_uses : null;
+      endAgent(a, e);
     }
     for (const a of s.agents.values()) if (a.dispatch && s.starts.get(a.dispatch)) a.agent = s.starts.get(a.dispatch);
     // A session with nothing measured and no dispatch has nothing to say.

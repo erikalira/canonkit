@@ -92,9 +92,12 @@ const inProject = (cwd, tool, tool_input, session = "CONFIG", env) => decide({ .
 const edit = (cwd, rel, new_string = "x") =>
   inProject(cwd, "Edit", { file_path: cwd + "/" + rel, new_string });
 
+// Both logs: tool_result lines live in tool-results.jsonl, everything else in events.jsonl.
+const activity = (f) => path.join(HOME, ".claude", "canonkit-activity", f);
+const readLog = async () => (await Promise.all(["events.jsonl", "tool-results.jsonl"]
+  .map((f) => readFile(activity(f), "utf8").catch(() => "")))).join("");
 const logged = async (session) =>
-  (await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"))
-    .trim().split("\n").map((l) => JSON.parse(l)).filter((e) => e.session === session);
+  (await readLog()).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)).filter((e) => e.session === session);
 
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
@@ -121,7 +124,7 @@ describe("tool-result volume (main thread and subagents)", () => {
     const e = events[0];
     assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "thread", "tool", "ts"]);
     assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", thread: "main", tool, chars, lines });
-    const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    const jsonl = await readLog();
     assert.ok(!jsonl.includes(secret), "sensitive input/result content persisted");
     assert.ok(!jsonl.includes("private-customer"), "private path persisted");
   };
@@ -190,15 +193,16 @@ describe("tool-result volume (main thread and subagents)", () => {
   });
   test("several agents at once each keep their own id; unsafe agent_type and tool_use_id are dropped", async () => {
     const session = "VOLUME-parallel";
-    for (const [agent_id, agent_type, tool_use_id] of [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", "plugin:x y", "../tu"]]) {
+    for (const [agent_id, agent_type, tool_use_id] of [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", "plugin:x y", "../tu"], ["aplug1", "my.plugin:reviewer", "tu-5"]]) {
       runHook(post("Bash", { stdout: "x", stderr: "" }, session, { agent_id, agent_type, tool_use_id }));
     }
+    // A namespaced plugin agent keeps its type; a space or slash still drops it.
     assert.deepEqual((await logged(session)).map((e) => [e.agent_id, e.agent_type, e.tool_use_id]),
-      [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", undefined, undefined]]);
+      [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", undefined, undefined], ["aplug1", "my.plugin:reviewer", "tu-5"]]);
   });
   test("subagent results persist no content, path or command", async () => {
     runHook(post("PowerShell", { stdout: secret, stderr: privatePath }, "VOLUME-sub-private", { agent_id: "asub9", agent_type: "bob" }));
-    const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    const jsonl = await readLog();
     assert.ok(!jsonl.includes(secret) && !jsonl.includes("private-customer"));
     assert.equal((await logged("VOLUME-sub-private")).length, 1);
   });
@@ -222,9 +226,9 @@ describe("tool-result volume (main thread and subagents)", () => {
     assert.deepEqual(await logged(session), []);
   });
   test("unsafe or absent session identifiers are never logged", async () => {
-    const before = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    const before = await readLog();
     for (const session of [privatePath, {}, null, ""]) runHook(post("Glob", { filenames: [] }, session));
-    assert.equal(await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8"), before);
+    assert.equal(await readLog(), before);
   });
   test("internal filesystem failures stay fail-open with no stdout/stderr", async () => {
     const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-unwritable-"));
@@ -1322,6 +1326,30 @@ describe("definition-of-done gate", () => {
       await writeFile(path.join(dir, "events.jsonl.1"),
         JSON.stringify({ ts: Date.now(), session: "ROTATED", event: "gate", kind: "high-risk-surface", file: "src/auth/x.ts" }) + "\n");
       const r = runHook({ hook_event_name: "Stop", session_id: "ROTATED" }, { HOME: home, USERPROFILE: home });
+      assert.equal(JSON.parse(r.stdout).decision, "block");
+    } finally { await rm(home, { recursive: true, force: true }); }
+  });
+  test("a flood of tool results rotates its own log, never the one the gate reads", async () => {
+    // events.jsonl carries only low-volume events: if tool_result lines went
+    // there, a tool-heavy session would rotate its own gate out of reach.
+    const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-flood-"));
+    try {
+      const dir = path.join(home, ".claude", "canonkit-activity");
+      await mkdir(dir, { recursive: true });
+      const events = JSON.stringify({ ts: Date.now(), session: "FLOOD", event: "gate", kind: "high-risk-surface", file: "src/auth/x.ts" }) + "\n";
+      await writeFile(path.join(dir, "events.jsonl"), events);
+      await writeFile(path.join(dir, "tool-results.jsonl"), JSON.stringify({ session: "pad", pad: "x".repeat(2.1 * 1024 * 1024) }) + "\n");
+      const env = { HOME: home, USERPROFILE: home };
+      const read = { hook_event_name: "PostToolUse", session_id: "FLOOD", cwd: home, tool_name: "Read", tool_input: { file_path: "x" },
+        tool_response: { type: "text", file: { content: "x\n" } } };
+      assert.equal(runHook(read, env).status, 0);
+      assert.equal(runHook({ ...read, agent_id: "aflood1", agent_type: "bob" }, env).status, 0);
+      assert.ok((await readFile(path.join(dir, "tool-results.jsonl.1"), "utf8")).includes('"pad"'), "the tool log rotated");
+      const results = (await readFile(path.join(dir, "tool-results.jsonl"), "utf8")).trim().split("\n").map((l) => JSON.parse(l));
+      assert.deepEqual(results.map((e) => [e.event, e.thread]), [["tool_result", "main"], ["tool_result", "subagent"]]);
+      assert.equal(await readFile(path.join(dir, "events.jsonl"), "utf8"), events, "no tool_result in the gate's log");
+      assert.ok(!existsSync(path.join(dir, "events.jsonl.1")));
+      const r = runHook({ hook_event_name: "Stop", session_id: "FLOOD" }, env);
       assert.equal(JSON.parse(r.stdout).decision, "block");
     } finally { await rm(home, { recursive: true, force: true }); }
   });

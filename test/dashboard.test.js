@@ -223,6 +223,33 @@ test("missing or inconsistent identifiers are never guessed into an agent", () =
   assert.deepEqual(s.agents.map((a) => [a.agent_id, a.agent, a.dispatch, a.chars]), [["aorphan", "unknown", null, 15]]);
 });
 
+test("namespaced agent types keep their own row; an end with no dispatch id still lists its agent", () => {
+  const sessions = contextContributors(lines([
+    tr("s", { ...sub("ap1", { agent_type: "plugin:reviewer" }), chars: 100, tool_use_id: "p1" }),
+    tr("s", { ...sub("ap2", { agent_type: "other.plugin:writer" }), chars: 30, tool_use_id: "p2" }),
+    tr("s", { ...sub("ap3", { agent_type: "plugin:x y" }), chars: 5, tool_use_id: "p3" }), // a space: still unsafe
+    // Foreground end written without `id`: report counted, agent not dropped.
+    { session: "s", event: "agent_end", agent_id: "afg", agent: "plugin:fg", tool_uses: 2, report_chars: 7 },
+  ]));
+  const [s] = sessions;
+  assert.deepEqual(s.agents.map((a) => [a.agent_id, a.agent, a.dispatch, a.tool_uses]),
+    [["ap1", "plugin:reviewer", null, null], ["ap2", "other.plugin:writer", null, null], ["ap3", "unknown", null, null], ["afg", "plugin:fg", null, 2]]);
+  assert.equal(s.contributors.find((g) => g.tool === "Agents").chars, 7);
+  assert.deepEqual(retainedTotals(sessions).agents.map((a) => [a.agent, a.dispatches]),
+    [["plugin:reviewer", 1], ["other.plugin:writer", 1], ["unknown", 1], ["plugin:fg", 1]]);
+});
+
+test("a session spanning the upgrade counts its old main lines and its new subagent lines", () => {
+  const [s] = contextContributors(lines([
+    { session: "s", event: "tool_result", tool: "Read", chars: 40 }, // before `thread` existed
+    tr("s", { thread: "main", chars: 2, tool_use_id: "n1" }),
+    tr("s", { ...sub("a1"), chars: 9, tool_use_id: "n2" }),
+  ]));
+  assert.equal(s.instrumented, true);
+  assert.deepEqual(s.threads.main, { chars: 42, calls: 2 });
+  assert.deepEqual(s.threads.subagents, { chars: 9, calls: 1 });
+});
+
 test("sessions without subagent telemetry say so instead of reading as zero", () => {
   const sessions = contextContributors(lines([
     // Historical: dispatches and old-format main results only.
@@ -269,6 +296,28 @@ test("retained totals compare main and subagents and rank agent types", () => {
   assert.equal(r.agents[1].agent, "quinn");
 });
 
+test("tool results are read from both logs: 1.1.5 history in events.jsonl, new lines in tool-results.jsonl", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-split-"));
+  try {
+    const dir = path.join(home, ".claude", "canonkit-activity");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "events.jsonl"), lines([
+      tr("s", { thread: "main", chars: 100, tool_use_id: "same" }),
+      tr("s", { thread: "main", chars: 1 }),
+    ]).join("\n") + "\n");
+    await writeFile(path.join(dir, "tool-results.jsonl.1"), lines([tr("s", { thread: "main", chars: 2 })]).join("\n") + "\n");
+    await writeFile(path.join(dir, "tool-results.jsonl"), lines([
+      tr("s", { thread: "main", chars: 100, tool_use_id: "same" }), // the same result: counted once
+      tr("s", { thread: "main", chars: 4 }),
+    ]).join("\n") + "\n");
+    const r = spawnSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).contextContributors()))", SERVER], {
+      env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8",
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout)[0].threads.main, { chars: 107, calls: 4 });
+  } finally { await rm(home, { recursive: true, force: true }); }
+});
+
 test("real hook events, across a rotation, reach the dashboard joined and content-free", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-e2e-"));
   try {
@@ -294,7 +343,9 @@ test("real hook events, across a rotation, reach the dashboard joined and conten
     hook(read); // the same hook wired twice
     hook({ hook_event_name: "SubagentStop", agent_id: "abob42", agent_type: "bob", stop_hook_active: false, agent_transcript_path: path.join(home, "none.jsonl") });
     assert.ok((await readFile(path.join(dir, "events.jsonl.1"), "utf8")).includes('"pad"'), "rotated");
-    assert.ok(!(await readFile(path.join(dir, "events.jsonl"), "utf8")).includes(SECRET), "no content, path or prompt persisted");
+    for (const f of ["events.jsonl", "tool-results.jsonl"]) {
+      assert.ok(!(await readFile(path.join(dir, f), "utf8")).includes(SECRET), `no content, path or prompt persisted in ${f}`);
+    }
     const r = spawnSync(process.execPath, ["-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).contextContributors()))", SERVER], {
       env: { ...process.env, HOME: home, USERPROFILE: home }, encoding: "utf8",
     });
