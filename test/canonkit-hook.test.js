@@ -99,7 +99,7 @@ const logged = async (session) =>
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
 
-describe("main-thread context contributors", () => {
+describe("tool-result volume (main thread and subagents)", () => {
   // Synthetic sensitive markers must never reach the activity JSONL, even via
   // cwd, file metadata, unexpected fields or tool_input.
   const secret = "PRIVATE-RESULT-" + FAKE_AWS_KEY;
@@ -119,8 +119,8 @@ describe("main-thread context contributors", () => {
     const events = await logged(session);
     assert.equal(events.length, 1, "one result, no redundant start/end events");
     const e = events[0];
-    assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "tool", "ts"]);
-    assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", tool, chars, lines });
+    assert.deepEqual(Object.keys(e).sort(), ["chars", "event", "lines", "session", "thread", "tool", "ts"]);
+    assert.deepEqual({ ...e, ts: 0 }, { ts: 0, session, event: "tool_result", thread: "main", tool, chars, lines });
     const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
     assert.ok(!jsonl.includes(secret), "sensitive input/result content persisted");
     assert.ok(!jsonl.includes("private-customer"), "private path persisted");
@@ -164,14 +164,43 @@ describe("main-thread context contributors", () => {
     await check("Read", { type: "text", file: { content: "a😀\r\n" } }, 5, 1, "unicode");
     await check("Read", { type: "text", file: { content: "\n" } }, 1, 1, "newline");
   });
-  test("subagent tools are excluded; agent_type alone is allowed on the main thread", async () => {
+  // Payload shape captured from real hooks (Claude Code 2.1.302): the main
+  // thread, --agent included, never has the agent_id key; a subagent's tool
+  // events carry agent_id (the id agent_launch/agent_end log) and agent_type.
+  const strip = (e) => { const { ts, ...rest } = e; return rest; };
+  test("a subagent's results are measured and attributed to its agent_id", async () => {
+    const session = "VOLUME-subagent";
+    const r = runHook(post("Read", { type: "text", file: { content: "ab\ncd" } }, session,
+      { agent_id: "a1b2c3d4e5f6", agent_type: "bob", tool_use_id: "toolu_01SUB" }));
+    assert.equal(r.status, 0); assert.equal(r.stdout, ""); assert.equal(r.stderr, "");
+    assert.deepEqual((await logged(session)).map(strip), [{
+      session, event: "tool_result", thread: "subagent", agent_id: "a1b2c3d4e5f6", agent_type: "bob",
+      tool: "Read", tool_use_id: "toolu_01SUB", chars: 5, lines: 2,
+    }]);
+  });
+  test("agent_type alone stays main; a present but unusable agent_id is unknown, never main", async () => {
     const session = "VOLUME-main-only";
-    for (const agent_id of ["worker-1", "", null]) {
-      assert.equal(runHook(post("Glob", { filenames: [secret] }, session, { agent_id })).status, 0);
-    }
-    assert.deepEqual(await logged(session), []);
     runHook(post("Glob", { filenames: [] }, session, { agent_type: "bob" }));
-    assert.equal((await logged(session)).length, 1);
+    for (const agent_id of ["", null, privatePath, 42, "x".repeat(65)]) {
+      assert.equal(runHook(post("Glob", { filenames: [secret] }, session, { agent_id, agent_type: secret })).status, 0);
+    }
+    const events = await logged(session);
+    assert.deepEqual(events.map((e) => e.thread), ["main", "unknown", "unknown", "unknown", "unknown", "unknown"]);
+    assert.ok(events.every((e) => !("agent_id" in e) && !("agent_type" in e)), "no unusable id or free text logged");
+  });
+  test("several agents at once each keep their own id; unsafe agent_type and tool_use_id are dropped", async () => {
+    const session = "VOLUME-parallel";
+    for (const [agent_id, agent_type, tool_use_id] of [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", "plugin:x y", "../tu"]]) {
+      runHook(post("Bash", { stdout: "x", stderr: "" }, session, { agent_id, agent_type, tool_use_id }));
+    }
+    assert.deepEqual((await logged(session)).map((e) => [e.agent_id, e.agent_type, e.tool_use_id]),
+      [["abob1", "bob", "tu-1"], ["aquinn1", "quinn", "tu-2"], ["abob1", "bob", "tu-3"], ["agard1", undefined, undefined]]);
+  });
+  test("subagent results persist no content, path or command", async () => {
+    runHook(post("PowerShell", { stdout: secret, stderr: privatePath }, "VOLUME-sub-private", { agent_id: "asub9", agent_type: "bob" }));
+    const jsonl = await readFile(path.join(HOME, ".claude", "canonkit-activity", "events.jsonl"), "utf8");
+    assert.ok(!jsonl.includes(secret) && !jsonl.includes("private-customer"));
+    assert.equal((await logged("VOLUME-sub-private")).length, 1);
   });
   test("unexpected, binary and absent payloads stay silent and unmeasured", async () => {
     const session = "VOLUME-unknown";

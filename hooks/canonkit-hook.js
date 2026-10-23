@@ -159,7 +159,7 @@ function reportChars(v) {
   return texts.length ? texts.reduce((n, b) => n + b.text.length, 0) : null;
 }
 
-// ---- MAIN-THREAD TOOL VOLUME ----
+// ---- TOOL RESULT VOLUME (main thread and subagents) ----
 // PostToolUse carries structured Output, NOT the rendered model tool_result.
 // Fields checked against @anthropic-ai/claude-agent-sdk 0.3.300 sdk-tools.d.ts;
 // PowerShell's stdout/stderr and agent_id semantics checked in Claude Code
@@ -890,11 +890,26 @@ function main() {
     // paths answer as PreToolUse, which a PostToolUse event must never emit.
     // agent_type is also set for a main thread started with --agent. Only
     // agent_id identifies a subagent; never mix its tool volume into main.
-    if (input.agent_id === undefined && safeId(SESSION)) {
+    // thread: "main" (no agent_id key), "subagent" (a valid agent_id, the same
+    // id agent_launch/agent_end carry, so the dashboard joins it to its dispatch
+    // without a lookup here), "unknown" (the key present but unusable). A line
+    // without thread predates this field and was only ever written for main.
+    // tool_use_id lets a reader drop the second line of a hook wired twice.
+    if (safeId(SESSION)) {
       const size = toolResultSize(tool, input.tool_response);
+      const origin = input.agent_id === undefined ? { thread: 'main' }
+        : agentId ? { thread: 'subagent', agent_id: agentId } : { thread: 'unknown' };
+      // Empty ids are left out, not written as "": one line per result adds up.
+      const agentType = agentId && safeId(input.agent_type);
+      const toolUseId = safeId(input.tool_use_id);
       // One line per measured result, with an explicit quantitative allowlist.
       // No project basename either: even that can reveal sensitive context.
-      if (size) log({ event: 'tool_result', session: safeId(SESSION), tool, ...size });
+      if (size) {
+        log({
+          event: 'tool_result', session: safeId(SESSION), ...origin, ...(agentType ? { agent_type: agentType } : {}),
+          tool, ...(toolUseId ? { tool_use_id: toolUseId } : {}), ...size,
+        });
+      }
     }
     if (tool === 'Agent' || tool === 'Task') {
       const r = input.tool_response && typeof input.tool_response === 'object' ? input.tool_response : {};
