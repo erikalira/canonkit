@@ -1,7 +1,7 @@
 {
   "name": "canonkit",
   "version": "1.1.5",
-  "description": "A versioned agent team for Claude Code and Codex. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
+  "description": "A versioned agent team for Claude Code, Codex and OpenCode. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
   "type": "module",
   "bin": {
     "canonkit": "bin/cli.js"
@@ -29,6 +29,7 @@
     "claude",
     "claude-code",
     "codex",
+    "opencode",
     "agents",
     "subagents",
     "ai",

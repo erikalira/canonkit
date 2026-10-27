@@ -20,6 +20,7 @@ graphify-out/*
 # é este repo. Uma cópia commitada duplica o que install já resolve.
 .claude/agents/
 .codex/agents/
+.opencode/agents/
 
 # npm pack output
 *.tgz

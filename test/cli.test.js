@@ -51,7 +51,8 @@ function run(args, { home, cwd }) {
     encoding: "utf8",
     // os.homedir() reads USERPROFILE on Windows and HOME elsewhere. Setting
     // both is what makes this test suite run the same on all three platforms.
-    env: { ...process.env, HOME: home, USERPROFILE: home },
+    // OpenCode's folder follows XDG_CONFIG_HOME, so it is pinned inside HOME too.
+    env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") },
   });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
@@ -114,9 +115,12 @@ describe("install target menu", () => {
   test("a flag decides without asking", async () => {
     assert.deepEqual(await chooseTargets(["--codex"], { interactive: true }), ["codex"]);
     assert.deepEqual(await chooseTargets(["--claude", "--codex"], { interactive: true }), ["claude", "codex"]);
+    assert.deepEqual(await chooseTargets(["--opencode"], { interactive: true }), ["opencode"]);
+    assert.deepEqual(await chooseTargets(["--opencode", "--claude"], { interactive: true }), ["claude", "opencode"]);
   });
 
   test("no terminal and no flag installs both, as before the menu", async () => {
+    // OpenCode is opt-in: its global AGENTS.md ends its fallback to ~/.claude/CLAUDE.md.
     assert.deepEqual(await chooseTargets([], { interactive: false }), ["claude", "codex"]);
   });
 
@@ -212,6 +216,37 @@ describe("install", () => {
     const result = run(["list", "--codex"], { home });
     assert.equal(result.status, 1, result.out);
     assert.match(result.out, /only valid for: canonkit install, canonkit reference/);
+    assert.match(run(["add", "maya", "--opencode"], { home }).out, /only valid for: canonkit install, canonkit reference/);
+  });
+
+  test("--opencode writes the OpenCode half and nothing under ~/.claude or ~/.codex", async () => {
+    const { home } = await scratch("install-opencode-only");
+    const result = run(["install", "--opencode"], { home });
+    assert.equal(result.status, 0, result.out);
+
+    const mds = (await readdir(path.join(home, ".config", "opencode", "agents"))).map((f) => path.basename(f, ".md")).sort();
+    assert.deepEqual(mds, [...CORE].sort());
+    assert.match(await read(path.join(home, ".config", "opencode", "AGENTS.md")), /<!-- agent-team-config:opencode:start -->/);
+    // Skills through the runtime-neutral path, which OpenCode reads natively.
+    assert.ok(existsSync(path.join(home, ".agents", "skills", "orchestrate", "SKILL.md")));
+    assert.match(await read(path.join(home, "AGENTS.md")), /<!-- agent-team-config:start -->/);
+    assert.equal(existsSync(path.join(home, ".claude")), false, "an OpenCode-only install wrote under ~/.claude");
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+    assert.deepEqual((await readdir(path.join(home, ".agents"))).filter((f) => f.endsWith(".md")), []);
+  });
+
+  test("without --opencode nothing is written for OpenCode", async () => {
+    const { home } = await scratch("install-no-opencode");
+    assert.equal(run(["install"], { home }).status, 0);
+    assert.equal(existsSync(path.join(home, ".config")), false);
+  });
+
+  test("--wire-hooks with --opencode alone refuses before writing anything", async () => {
+    const { home } = await scratch("install-opencode-wire");
+    const result = run(["install", "--opencode", "--wire-hooks"], { home });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /needs Claude Code/);
+    assert.deepEqual(await readdir(home), []);
   });
 
   test("is idempotent — a second run changes no bytes", async () => {
@@ -418,6 +453,132 @@ describe("codex custom agents", () => {
 });
 
 /* ------------------------------------------------------------ specialists */
+
+/* -------------------------------------------------------------- opencode */
+
+describe("opencode agents", () => {
+  const ocDir = (home) => path.join(home, ".config", "opencode", "agents");
+  // The frontmatter as a strict parser sees it: key, then the raw value.
+  const front = (text) => {
+    const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
+    assert.ok(m, "no frontmatter");
+    return Object.fromEntries(
+      m[1].split("\n").filter((l) => !l.startsWith("#")).map((l) => [l.slice(0, l.indexOf(":")), l.slice(l.indexOf(":") + 1).trim()]),
+    );
+  };
+
+  test("writes one Markdown subagent per core agent, the body unchanged", async () => {
+    const { home } = await scratch("opencode-core");
+    assert.equal(run(["install", "--opencode", "--no-reference"], { home }).status, 0);
+
+    const written = (await readdir(ocDir(home))).sort();
+    assert.deepEqual(written, CORE.map((n) => `${n}.md`).sort());
+
+    const source = (await readAgents()).find((a) => a.name === "archie");
+    const archie = await read(path.join(ocDir(home), "archie.md"));
+    const f = front(archie);
+    // Without mode a custom agent loads as a primary agent.
+    assert.equal(f.mode, "subagent");
+    // Quoted, so a strict YAML parser reads the ": " inside it as text.
+    assert.equal(JSON.parse(f.description), source.description);
+    assert.ok(archie.endsWith(source.body.replace(/\n+$/, "") + "\n"), "body differs from the source");
+  });
+
+  test("sets no model, variant, name or tier: the session's model always wins", async () => {
+    const { home } = await scratch("opencode-no-model");
+    run(["install", "--opencode", "--no-reference"], { home });
+    for (const name of CORE) {
+      const f = front(await read(path.join(ocDir(home), `${name}.md`)));
+      assert.deepEqual(Object.keys(f).sort(), ["description", "mode"], `${name}: ${Object.keys(f)}`);
+    }
+  });
+
+  test("follows XDG_CONFIG_HOME, as OpenCode does", async () => {
+    const { home } = await scratch("opencode-xdg");
+    const xdg = path.join(home, "xdg");
+    const result = runIn(["install", "--opencode"], { home, env: { XDG_CONFIG_HOME: xdg } });
+    assert.equal(result.status, 0, result.out);
+    assert.ok(existsSync(path.join(xdg, "opencode", "agents", "archie.md")));
+    assert.ok(existsSync(path.join(xdg, "opencode", "AGENTS.md")));
+    assert.equal(existsSync(path.join(home, ".config")), false);
+  });
+
+  test("reports an older copy of an agent it owns, without deleting it", async () => {
+    const { home } = await scratch("opencode-stale-copy");
+    await mkdir(ocDir(home), { recursive: true });
+    await writeFile(path.join(ocDir(home), "archie-tech-architect.md"), "stale");
+
+    const result = run(["install", "--opencode", "--no-reference"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /older copies of agents this repo owns: archie-tech-architect\.md/);
+    assert.match(result.out, /OpenCode loads any \.md here/);
+    assert.ok(existsSync(path.join(ocDir(home), "archie-tech-architect.md")), "must not delete it");
+  });
+
+  test("stays quiet about your own agents and about repo scaffolding", async () => {
+    const { home } = await scratch("opencode-quiet");
+    await mkdir(path.join(ocDir(home), ".github"), { recursive: true });
+    await writeFile(path.join(ocDir(home), ".gitignore"), "*.log");
+    await writeFile(path.join(ocDir(home), "my-own-reviewer.md"), "---\ndescription: mine\n---\n");
+
+    const result = run(["install", "--opencode", "--no-reference"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.doesNotMatch(result.out, /older copies/);
+    assert.ok(existsSync(path.join(ocDir(home), "my-own-reviewer.md")));
+    assert.ok(existsSync(path.join(ocDir(home), ".gitignore")));
+  });
+
+  test("does not leave a specialist at user level", async () => {
+    const { home } = await scratch("opencode-stray");
+    await mkdir(ocDir(home), { recursive: true });
+    await writeFile(path.join(ocDir(home), "maya.md"), "stale");
+
+    assert.equal(run(["install", "--opencode", "--no-reference"], { home }).status, 0);
+    assert.equal(existsSync(path.join(ocDir(home), "maya.md")), false);
+  });
+});
+
+describe("opencode reference block", () => {
+  const ocMd = (home) => path.join(home, ".config", "opencode", "AGENTS.md");
+
+  test("reference --opencode writes its own block, never the routing one", async () => {
+    const { home } = await scratch("opencode-reference");
+    const result = run(["reference", "--opencode"], { home });
+    assert.equal(result.status, 0, result.out);
+
+    const text = await read(ocMd(home));
+    assert.match(text, /<!-- agent-team-config:opencode:start -->[\s\S]*<!-- agent-team-config:opencode:end -->/);
+    // Nothing is enforced in OpenCode until a plugin enforces it.
+    assert.doesNotMatch(text, /^- `\[ENFORCED\]`/m);
+    assert.doesNotMatch(text, /agent-team-config:routing/);
+    assert.match(text, /model of the session/);
+    assert.equal(existsSync(path.join(home, ".claude")), false);
+  });
+
+  test("preserves local rules outside the markers and is idempotent", async () => {
+    const { home } = await scratch("opencode-reference-preserve");
+    await mkdir(path.dirname(ocMd(home)), { recursive: true });
+    await writeFile(ocMd(home), "# minhas regras\n\nnao pode sumir\n");
+
+    assert.equal(run(["reference", "--opencode"], { home }).status, 0);
+    const first = await read(ocMd(home));
+    assert.match(first, /# minhas regras\s+nao pode sumir/);
+
+    const second = run(["reference", "--opencode"], { home });
+    assert.match(second.out, /already current: .*AGENTS\.md/);
+    assert.equal(await read(ocMd(home)), first);
+  });
+
+  test("says when it ends OpenCode's fallback to ~/.claude/CLAUDE.md", async () => {
+    const { home } = await scratch("opencode-reference-fallback");
+    await mkdir(path.join(home, ".claude"), { recursive: true });
+    await writeFile(path.join(home, ".claude", "CLAUDE.md"), "regra minha\n");
+
+    assert.match(run(["reference", "--opencode"], { home }).out, /instead of ~\/\.claude\/CLAUDE\.md/);
+    // Only the run that creates the file ends the fallback.
+    assert.doesNotMatch(run(["reference", "--opencode"], { home }).out, /instead of ~\/\.claude\/CLAUDE\.md/);
+  });
+});
 
 /* ------------------------------------------------------------------ hooks */
 
@@ -728,7 +889,7 @@ describe("hooks", () => {
 // The harness sets CLAUDE_PROJECT_DIR for every command it runs, this suite
 // included: a test that means one passes it explicitly.
 function runIn(args, { home, cwd, env = {} }) {
-  const e = { ...process.env, HOME: home, USERPROFILE: home, ...env };
+  const e = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
   if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
   const result = spawnSync(process.execPath, [CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: e });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
@@ -1070,6 +1231,23 @@ describe("doctor", () => {
     }
   });
 
+  test("checks OpenCode's agents only where they were installed", async () => {
+    const { home, project } = await ready("doctor-opencode");
+    assert.doesNotMatch(doctor({ home, cwd: project }).out, /opencode agents/);
+
+    runIn(["install", "--opencode"], { home });
+    assert.match(line(doctor({ home, cwd: project }).out, /^\w+ +opencode agents/), /^OK /);
+
+    const dir = path.join(home, ".config", "opencode", "agents");
+    await writeFile(path.join(dir, "bob.md"), "---\ndescription: edited\nmode: subagent\n---\n");
+    assert.match(line(doctor({ home, cwd: project }).out, /^\w+ +opencode agents/), /^WARN .*bob/);
+
+    await rm(path.join(dir, "quinn.md"));
+    const { out, status } = doctor({ home, cwd: project });
+    assert.equal(status, 1);
+    assert.match(line(out, /^\w+ +opencode agents/), /^FAIL .*quinn.*--opencode/);
+  });
+
   test("is read-only", async () => {
     const { home, project } = await ready("doctor-readonly");
     const before = await snapshot(home);
@@ -1235,6 +1413,9 @@ describe("specialists", () => {
     // Codex reads .codex/agents/<name>.toml and never looks at .claude/.
     assert.ok(existsSync(path.join(project, ".codex", "agents", "maya.toml")));
     assert.ok(existsSync(path.join(project, ".codex", "agents", "nova.toml")));
+    // OpenCode reads .opencode/agents/<name>.md, generated as a subagent.
+    assert.match(await read(path.join(project, ".opencode", "agents", "maya.md")), /^mode: subagent$/m);
+    assert.ok(existsSync(path.join(project, ".opencode", "agents", "nova.md")));
 
     const agentsMd = await read(path.join(project, "AGENTS.md"));
     assert.match(agentsMd, /\*\*maya\*\* \(veto\) — game design/);
@@ -1260,6 +1441,8 @@ describe("specialists", () => {
     // Removing from one runtime and leaving the other is the drift this avoids.
     assert.equal(existsSync(path.join(project, ".codex", "agents", "nova.toml")), false);
     assert.ok(existsSync(path.join(project, ".codex", "agents", "maya.toml")));
+    assert.equal(existsSync(path.join(project, ".opencode", "agents", "nova.md")), false);
+    assert.ok(existsSync(path.join(project, ".opencode", "agents", "maya.md")));
   });
 
   for (const [label, eol] of [["LF", "\n"], ["CRLF", "\r\n"]]) {

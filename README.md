@@ -1,6 +1,6 @@
 # canonkit
 
-Versioned source for the agent team used with Claude Code and Codex. Published
+Versioned source for the agent team used with Claude Code, Codex and OpenCode. Published
 on npm as `canonkit`; the repository is `agent-team-config`.
 
 Each agent is a single Markdown file in `agents/`, stored in exactly the format
@@ -92,10 +92,13 @@ npx canonkit install
 ```
 
 Roda igual em Linux, macOS e Windows. Num terminal, pergunta para quais runtimes
-instalar numa seleção múltipla — Claude Code e Codex vêm marcados, espaço
-desmarca, Enter confirma, e pelo menos um tem que ficar. `--claude` e
-`--codex` respondem sem o menu (os dois juntos = ambos), e sem terminal (script,
-CI) instala para os dois, como antes do menu existir.
+instalar numa seleção múltipla — Claude Code e Codex vêm marcados, OpenCode não;
+espaço alterna, Enter confirma, e pelo menos um tem que ficar. `--claude`,
+`--codex` e `--opencode` respondem sem o menu (combinam entre si), e sem terminal
+(script, CI) instala para Claude Code e Codex, como antes do menu existir.
+OpenCode é opt-in porque escrever `~/.config/opencode/AGENTS.md` encerra o
+fallback dele para `~/.claude/CLAUDE.md` — mudança que não cabe fazer para quem
+não pediu OpenCode.
 
 O menu é a única dependência (`prompts`, que traz `kleur` e `sisteransi`, nenhum
 com script de install), e só é carregado quando aparece: um install decidido por
@@ -107,10 +110,12 @@ dependências maior que isso.
 | --- | --- |
 | Claude Code | `~/.agents/*.md`, `~/.claude/agents`, hooks, dashboard, bloco em `~/.claude/CLAUDE.md`, `~/.claude/skills` |
 | Codex | `~/.codex/agents/*.toml`, `~/.agents/skills` |
-| ambos | os dois; o bloco de `~/AGENTS.md` vai em qualquer escolha |
+| OpenCode | `~/.config/opencode/agents/*.md`, bloco em `~/.config/opencode/AGENTS.md`, `~/.agents/skills` (sem hooks) |
+| mais de um | a soma; o bloco de `~/AGENTS.md` vai em qualquer escolha |
 
-`--wire-hooks` registra o hook do Claude Code, então é recusado num install só
-para Codex. O `doctor` confere a metade do Claude Code.
+`--wire-hooks` registra o hook do Claude Code, então é recusado num install sem
+Claude Code. O `doctor` confere a metade do Claude Code e, se houver agentes do
+canonkit em `~/.config/opencode/agents`, também esses.
 
 De um clone, os scripts continuam valendo — são wrappers do mesmo `bin/cli.js`:
 
@@ -465,14 +470,40 @@ apagar não é decisão de instalador.
 Scaffolding (`.gitignore`, `.github/`), diretórios e agentes seus não geram
 aviso. Um aviso que dispara em `.gitignore` ensina você a ignorar avisos.
 
+### OpenCode
+
+Com `--opencode` (ou marcado no menu), o core vai para
+`~/.config/opencode/agents/<nome>.md` (`$XDG_CONFIG_HOME/opencode` se definido).
+É Markdown como a fonte, mas **gerado**, não copiado nem linkado: o frontmatter
+fica só com `description` e `mode: subagent`. Sem `mode`, o OpenCode carrega um
+agente custom como primário; e `model: sonnet` não é um id que ele aceite. O
+corpo é o mesmo de `agents/<nome>.md`.
+
+**Sem modelo, por decisão:** os agentes não definem `model` nem variante. O
+OpenCode roda com os modelos que a sessão tiver, e um subagente sem `model` usa o
+modelo do agente que o acionou — vale sempre o modelo da sessão. Por isso a regra
+"todo despacho nomeia modelo e esforço" não se aplica lá.
+
+O bloco em `~/.config/opencode/AGENTS.md` (`reference/opencode-block.md`) é
+próprio: aponta para `~/AGENTS.md` e diz que nada é `[ENFORCED]` no OpenCode —
+não há hook lá ainda, as regras valem por julgamento. Criar esse arquivo encerra o
+fallback do OpenCode para `~/.claude/CLAUDE.md`; o instalador avisa quando isso
+acontece, para você copiar regras suas que devam continuar valendo lá.
+
+Skills: o OpenCode lê `~/.agents/skills` e `~/.claude/skills` nativamente, então
+um install só para OpenCode escreve as skills em `~/.agents/skills`. Mesmas
+regras do Codex para specialists deixados no nível do usuário (removidos) e para
+cópias antigas de agentes do repo (reportadas, nunca removidas — aqui elas
+carregam como um segundo agente, já que o OpenCode lê todo `.md` da pasta).
+
 ### Comandos
 
 | Comando | O que faz |
 | --- | --- |
 | `install` | core no usuário + hooks + dashboard + blocos de referência globais + skills `orchestrate` e `context-tune` |
 | `install --no-reference` | só os agentes, os hooks e o dashboard |
-| `install --claude` / `--codex` | só para um runtime, sem o menu |
-| `reference` | só os blocos globais e as skills (`--claude`/`--codex` restringem; sem menu) |
+| `install --claude` / `--codex` / `--opencode` | só para esses runtimes, sem o menu |
+| `reference` | só os blocos globais e as skills (`--claude`/`--codex`/`--opencode` restringem; sem menu) |
 | `add <nome>...` | specialists no projeto atual |
 | `remove <nome>...` | remove specialists do projeto atual |
 | `list` | o roster e o que está instalado onde (e aponta para `tool list`) |
@@ -493,15 +524,16 @@ npx canonkit add maya nova
 ```
 
 Escolher quais specialists o projeto tem continua sendo decisão explícita sua —
-o instalador só cuida do que é fácil esquecer. **Três** destinos precisam saber
+o instalador só cuida do que é fácil esquecer. **Quatro** destinos precisam saber
 do agente, e esquecer um deles é a falha que ele existe para evitar:
 
 - **Claude Code** lê `.claude/agents/<nome>.md`
 - **Codex** lê `.codex/agents/<nome>.toml` — ele não olha `.claude/agents/`
+- **OpenCode** lê `.opencode/agents/<nome>.md`, gerado como subagente sem modelo
 - **o `AGENTS.md` do projeto** é o que diz ao agente principal *quando* acionar
   cada um; sem ele o subagente existe e ninguém o chama
 
-Os três são escritos num passo só. O bloco do `AGENTS.md` é reconstruído a partir
+Os quatro são escritos num passo só. O bloco do `AGENTS.md` é reconstruído a partir
 do que está de fato em disco, então ele sempre reflete a realidade e não o
 histórico de comandos.
 
@@ -671,12 +703,13 @@ mexer em nenhum agente:
 npx canonkit reference
 ```
 
-Sincroniza **dois blocos**, porque dois runtimes leem coisas diferentes:
+Sincroniza **dois blocos** (três com `--opencode`), porque cada runtime lê coisas diferentes:
 
 | Arquivo do repo | Vai para | Lido por | Conteúdo |
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex e Claude Code | o time inteiro: quem existe, autoridade de bloqueio, roteamento HIGH, regras de despacho |
 | `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | só o específico do Claude: o ponteiro para `~/AGENTS.md` e as regras `[ENFORCED]` dos hooks |
+| `reference/opencode-block.md` | `~/.config/opencode/AGENTS.md` | OpenCode | só o específico do OpenCode: o ponteiro para `~/AGENTS.md`, modelo vindo da sessão, nada `[ENFORCED]` |
 
 Junto dos blocos vai a skill `orchestrate` (`skills/orchestrate/SKILL.md`), que guarda
 o que só importa na hora de orquestrar: a justificativa de nomear modelo e esforço
