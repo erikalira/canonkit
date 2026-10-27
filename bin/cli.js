@@ -343,6 +343,10 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
     ],
     min: 1,
     hint: "space toggles, enter confirms",
+    // The hint already says how; prompts' own instruction block adds five lines
+    // that a Windows terminal miscounts on redraw, leaving a copy of the header
+    // behind on every keypress.
+    instructions: false,
   });
   return targets?.length ? targets : null;
 }
