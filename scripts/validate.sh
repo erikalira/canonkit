@@ -570,7 +570,7 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
   # truth if it were ever committed.
   # Probe with a path *inside* the directory: check-ignore on a directory that
   # does not exist reports nothing, which would read as "not ignored".
-  for d in .claude/agents .codex/agents; do
+  for d in .claude/agents .codex/agents .opencode/agents; do
     if git check-ignore -q "$d/probe" 2>/dev/null; then
       pass "$d/ is ignored"
     else
