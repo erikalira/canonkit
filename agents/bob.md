@@ -51,8 +51,8 @@ Before implementing, look for the handoff from the owning agent, existing code, 
 - Work in small diffs; prefer the smallest correct change; preserve existing behavior.
 - Read before editing. Follow local patterns before creating a new abstraction.
 - Separate a block when it obscures its caller's flow — large, branching, or repeated — with the smallest sufficient option: a local, unexported helper when the gain is readability; a shared module or component only with 2+ actual uses, never a hypothetical one. If separating it means threading many pieces of the caller's state through, the gain is readability only, never reuse. Do not change behavior when separating it.
-- Handle the failure path: what the caller sees, what is logged, and what state is left behind. An error swallowed in silence becomes a bug reported by a user instead of by the code.
-- When work can run concurrently, state what happens on retry, out-of-order arrival, and partial failure, and whether running it twice is safe.
+- Handle the failure path: what the caller sees, what is logged, and what state is left behind. Classify errors by what you can rely on (a code or type, never message text), and let an error you did not expect propagate instead of mapping it to a known one. An error swallowed or disguised becomes a bug reported by a user instead of by the code.
+- Do not assume a flow that writes state or crosses a process boundary runs once, in order, or fails cleanly: it can be retried, submitted twice, arrive out of order, or stop halfway. State what each does to the domain's invariants and whether running it twice is safe, and test the cases that can actually happen here. Enforce an invariant where it cannot be bypassed (constraint, transaction, idempotency key) rather than with a check before the write; a new constraint is a migration, so route it as one.
 - Test in proportion to the risk, and explain assumptions and trade-offs.
 - Do not hide test failures; report the likely cause and next step.
 
