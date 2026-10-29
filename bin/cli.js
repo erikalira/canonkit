@@ -1060,8 +1060,7 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
  * in a skill's directory goes, not only SKILL.md: Codex reads its invocation
  * policy from agents/openai.yaml beside it.
  */
-// Relative paths of every file below dir. Walked by hand: readdir's recursive
-// option needs Node 20.1, and engines accepts any 20.
+// Relative paths of every file below dir, sorted.
 async function filesUnder(dir, prefix = "") {
   const out = [];
   for (const e of await readdir(path.join(dir, prefix), { withFileTypes: true })) {

@@ -18,7 +18,7 @@
     "LICENSE"
   ],
   "scripts": {
-    "test": "node scripts/test.mjs",
+    "test": "node --test \"test/*.test.js\"",
     "validate": "bash scripts/validate.sh",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test",
@@ -47,7 +47,7 @@
     "url": "git+https://github.com/erikalira/agent-team-config.git"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "publishConfig": {
     "access": "public"
