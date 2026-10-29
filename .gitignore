@@ -24,3 +24,6 @@ graphify-out/*
 
 # npm pack output
 *.tgz
+
+# eval-quality --save transcripts: local evidence, summarized in docs/evals.md
+out/
