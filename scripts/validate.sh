@@ -466,7 +466,7 @@ if command -v node >/dev/null 2>&1; then
   # The installer reads agents/, reference/, hooks/, dashboard/, skills/ and tools/ at runtime. Leaving any of
   # them out of the published tarball is the one packaging mistake that cannot be
   # caught by running the CLI from a clone, because a clone always has them.
-  node - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
+  node --input-type=module - <<'JS' > "$TMP" 2>/dev/null || echo "FAIL	package.json is unreadable" > "$TMP"
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);

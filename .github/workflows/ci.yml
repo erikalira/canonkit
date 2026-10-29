@@ -1,6 +1,6 @@
 # The hook promises the same gates under Bash and PowerShell and runs on every
 # tool call, so the suite has to pass where users actually run it — not only on
-# the author's machine. Node 18 is the floor package.json declares; 22 is LTS.
+# the author's machine. Node 20 is the floor package.json declares; 22 and 24 are LTS.
 name: CI
 
 on:
@@ -24,7 +24,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        node: [18, 22]
+        node: [20, 22, 24]
     defaults:
       run:
         # Git Bash on Windows. npm then inherits a PATH where Git's bash comes
