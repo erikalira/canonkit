@@ -30,7 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAgent } from "../bin/cli.js";
-import { TEAM, parseRun, runClaude, writeFixture } from "./eval-routing.mjs";
+import { TEAM, parseRun, removeTempDir, runClaude, writeFixture } from "./eval-routing.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CASES = path.join(REPO, "evals", "quality-cases.json");
@@ -122,7 +122,7 @@ function runCase(kase, run, opts) {
     for (const f of parsed.planFiles) rmSync(f, { force: true });
     return { ...parsed, report: report(stream) };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   }
 }
 
