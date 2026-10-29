@@ -1,0 +1,57 @@
+# The hook promises the same gates under Bash and PowerShell and runs on every
+# tool call, so the suite has to pass where users actually run it — not only on
+# the author's machine. Node 22 is the floor package.json declares; 24 is the active LTS.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One failing OS must not hide whether the others pass.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node: [22, 24]
+    defaults:
+      run:
+        # Git Bash on Windows. npm then inherits a PATH where Git's bash comes
+        # before System32\bash.exe (the WSL launcher), so `npm run validate`
+        # gets the same bash on every runner.
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      # validate.sh's checks are python3 heredocs, and the Codex TOML check
+      # needs tomllib (3.11+).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Without python3 every Python check in validate.sh prints nothing, finds
+      # no FAIL line and passes — so its presence is asserted, not assumed.
+      - name: python3 with tomllib is on PATH
+        run: python3 -c "import sys, tomllib; print(sys.version)"
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run validate

@@ -28,7 +28,10 @@ const SPECIALISTS = ["dana", "echo", "iris", "maya", "nova"];
 let sandbox;
 
 before(async () => {
-  sandbox = await mkdtemp(path.join(os.tmpdir(), "agent-team-config-test-"));
+  // Canonical, because the CLI prints realpaths (doctor's config root, say): on
+  // macOS tmpdir is under /var -> /private/var, on a Windows runner an 8.3 name.
+  // A test about a path reached through a link builds that link on purpose.
+  sandbox = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "agent-team-config-test-")));
 });
 
 after(async () => {
@@ -1173,6 +1176,21 @@ describe("install --wire-hooks", () => {
       assert.ok(existsSync(FORWARDER(home)));
     });
 
+    test("--dry-run under a HOME reached through a link still says it would remove it", async () => {
+      // HOME's settings.json is also cwd's, named by its realpath (macOS: HOME
+      // under /var, cwd under /private/var). The planned bytes must stand in for
+      // both names, or the file on disk "still runs it". cwd is given as the
+      // realpath because Windows does not resolve a junction in process.cwd().
+      const { root, home } = await scratch("forwarder-dry-linked");
+      await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
+      const linked = path.join(root, "home-link");
+      await symlink(home, linked, process.platform === "win32" ? "junction" : "dir");
+      const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home: linked, cwd: home });
+      assert.match(out, /would remove .*meu-time-hook\.js/, out);
+      assert.doesNotMatch(out, /still runs meu-time-hook\.js/, out);
+      assert.ok(existsSync(FORWARDER(home)));
+    });
+
     test("stays while a settings file runs it without the .js (node resolves it)", async () => {
       const { home } = await scratch("forwarder-no-ext");
       await seed(home, { "settings.local.json": { hooks: { Stop: [{ hooks: [{ type: "command", command: "node ~/.claude/hooks/meu-time-hook" }] }] } } });
@@ -2162,8 +2180,14 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     const { root, project, bin, tool, calls } = await setup("planted");
     const planted = path.join(root, "planted.cjs");
     await writeFile(planted, `require("fs").writeFileSync(${JSON.stringify(path.join(root, "PLANTED"))}, "ran");\n`);
-    await shim(project, "openspec", planted);
-    const r = tool(["add", "openspec", "--yes"], {}, [project, ".", "", bin].join(SEP));
+    // In node_modules/.bin (where `npx canonkit` puts PATH's first entry),
+    // reached absolute and relative. At the project root only on Windows: a
+    // POSIX shim there is a file named `openspec`, which the real `openspec
+    // init` then cannot create its openspec/ folder over.
+    const dotBin = path.join(project, "node_modules", ".bin");
+    await shim(dotBin, "openspec", planted);
+    if (WIN) await shim(project, "openspec", planted);
+    const r = tool(["add", "openspec", "--yes"], {}, [dotBin, path.join("node_modules", ".bin"), project, ".", "", bin].join(SEP));
     assert.equal(r.status, 0, r.out);
     assert.equal(existsSync(path.join(root, "PLANTED")), false);
     assert.equal((await calls()).length, 2);
