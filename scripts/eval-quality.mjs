@@ -153,6 +153,7 @@ function main() {
   const data = validateQualityCases(JSON.parse(readFileSync(CASES, "utf8")));
   // --only takes one id or a comma-separated list; an unknown id is an error, not a skip.
   const only = opts.only ? opts.only.split(",").map((s) => s.trim()).filter(Boolean) : null;
+  if (only && !only.length) throw new Error("--only needs at least one case id");
   const unknown = (only ?? []).filter((id) => !data.cases.some((c) => c.id === id));
   if (unknown.length) throw new Error(`no case named ${unknown.join(", ")}`);
   const cases = data.cases.filter((c) => !only || only.includes(c.id));
