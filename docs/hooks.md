@@ -1,0 +1,157 @@
+# Hooks and gates
+
+The routing block promises `[ENFORCED]` gates: confirmation on `git commit`,
+blocking of secrets, and the definition-of-done gate on `Stop`. What each gate
+says and what to do when it fires is in the README
+(["When a gate fires"](../README.md#when-a-gate-fires)); this page is how the hook
+is wired, how it fails, and how a project tunes which paths count.
+
+Hooks exist only in Claude Code. Codex and OpenCode get the agents and the rules,
+which hold by judgment there.
+
+## Wiring
+
+The gates only exist while `~/.claude/hooks/canonkit-hook.js` is on disk **and**
+is referenced by `settings.json`. `install` copies the file; registering it in
+`settings.json` is, by default, only **reported**, with the JSON ready to paste.
+
+`npx canonkit install --wire-hooks` registers the hook in `~/.claude/settings.json`
+(a dated backup `settings.json.canonkit-<timestamp>.bak`, only when something
+changes; nothing besides the hook entries is changed; `settings.local.json` is
+never written). To undo, restore the `.bak`. It holds the same values as
+`settings.json`, `env` included: keep it out of a dotfiles repository.
+`npx canonkit doctor` checks the installation (agents, blocks, hook, registration,
+log, forwarder, config), only reads, and exits with 1 if any check is `FAIL`.
+
+The split is deliberate. `settings.json` is yours — it carries permissions, env
+and model choice that this installer does not rewrite unless you ask. A hook on
+disk that no event references, on the other hand, does nothing and does not
+complain, which is the worst possible failure mode for a gate: everyone keeps
+believing it runs.
+
+## Who counts as a reviewer for the Stop gate
+
+The definition-of-done gate is satisfied when, **after the last gated edit**, one
+of these agents was dispatched, or resumed with a message (`SendMessage`): `quinn`,
+`gard`, `archie`, `perry`, or one of the project reviewers the hook knows
+(`ws-contract`, `multiplayer-isolation`, `next-perf-reviewer`). A name with a
+suffix counts (`gard-strict` is Gard; `gardener` is not). A reviewer's own probes
+outside the project are not counted as edits.
+
+## It fails open
+
+`main()` is wrapped in a `catch` that exits with 0, so a syntax error never locks
+up your session. It just turns every gate off, silently. That is why
+`validate.sh` runs `node --check` on every `hooks/*.js`, and why `doctor` runs it
+on the installed copy.
+
+Editing this file in place was always the only workflow it had, and that is how
+it came to exist in a single copy, on a single machine. Versioning it inverts the
+source of truth, so the installer protects that case: if the installed copy
+diverges from the repository's, it is preserved as `canonkit-hook.js.local.bak`
+before being overwritten.
+
+## Events it must be registered for
+
+Registration is checked **per event**: `PreToolUse`, `PostToolUse` (matcher
+`Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit`
+and `Stop`. A hook wired to only some of them works halfway — the gates fire, so
+nobody goes looking for the dispatch metrics that never get recorded.
+
+What the hook records on those events is described in
+[telemetry.md](telemetry.md).
+
+## Per-project configuration: `.claude/canonkit.json`
+
+Which paths count as a HIGH-risk surface or a performance budget is adjustable per
+project in `.claude/canonkit.json`:
+
+```json
+{
+  "version": 1,
+  "highRisk": { "include": ["src/billing/**"], "exclude": ["src/domain/contracts/**"] },
+  "perfBudgets": ["perf/thresholds.yml"]
+}
+```
+
+Editing `canonkit.json` itself is a gate.
+
+### Where it is read
+
+In the nearest folder walking up from the session's cwd, stopping at
+`CLAUDE_PROJECT_DIR` when the cwd is inside it (a config above the repository does
+not apply to it) and, outside it, below home (`~/.claude/canonkit.json` is not a
+project config); if none of them has the file, in `CLAUDE_PROJECT_DIR`.
+
+The nearest file wins, whole: a nested one (a submodule, an example) replaces the
+project's while the cwd is inside it — with one exception that only adds gates:
+when the nearest file is below `CLAUDE_PROJECT_DIR` and the project has its own,
+the project's additive lists (`highRisk.include`, `perfBudgets`) apply too,
+matched against the path relative to the project. The project's `exclude` never
+reaches the nested folder, and the nested `exclude` never cancels the project's
+`include`.
+
+In a worktree with its own config the same rule holds: the project's `include`
+keeps adding gates, but anchored globs (with `/`) are matched against the path
+relative to the main checkout and do not match inside the worktree; only globs
+without `/` reach them. The cwd comes first in the search precisely because, in a
+worktree, `CLAUDE_PROJECT_DIR` is the main checkout, where the worktree's anchored
+globs would never match.
+
+Globs match the path relative to the folder where the file is. Only a regular file
+of up to 64 KiB is read, and only the first 100 entries of each list: a hook that
+hangs or runs out of memory fails open. `version` is optional and only `1` is
+read: any other version = defaults. Unknown keys are ignored. An invalid config =
+defaults — a typo never turns a gate off.
+
+### Glob dialect: gitignore-like, not gitignore
+
+A glob with `/` matches the path relative to the project; without `/`, the file
+name at any depth. `*` and `?` stay within one segment; `**` as a whole segment
+crosses segments (anywhere else it is a `*`). A trailing `/` = everything below
+the folder (`dir/` = `dir/**`). There is no `!` and no `[...]` (they are
+literals). Case-insensitive. Before matching, every path is normalized (`\`, `//`,
+`./`, `..`, NTFS stream suffix, Git Bash `/c/...`), so different spellings of the
+same file give the same result.
+
+### What `exclude` cannot reach
+
+`include` beats `exclude`. A repository commits this file and whoever clones it
+never goes through its edit gate, so `exclude`:
+
+- never silences the secret check on content;
+- never silences paths that hold credentials (`.env`, `secret`, `credential`,
+  `.npmrc`, `github_token`, `*.pem`, `*.key`, `*.p12`, `*.pfx`,
+  `id_rsa`/`id_ed25519`/`id_ecdsa`, `kubeconfig`, `.pgpass`, `*.tfvars`,
+  `*.tfstate`...);
+- never silences the strong terms (`auth`, `jwt`, `secret`, `credential`, `rbac`,
+  `schema.prisma`, `migrations` in code...) — only the ambiguous words
+  (`sessions`, `contracts`, `permissions`, `gateway`, `login`) and the token list.
+  That is why `migrations` in prose (`docs/migration-guide.md`) does not count, and
+  the word `author` (`AuthorCard`, `authors/`, `authoring/`, `AUTHORS.md`) is not
+  `auth` — `authority`, `authorize`, `AUTHORITY` and `authOrRedirect` are;
+- drops catch-all globs, judged by what they match, not by how they are spelled
+  (`*`, `**`, `*.*`, `?*`...), and judged together: the glob that, added to the
+  previous ones, would make the list match almost everything is dropped (`*.ts`,
+  `*.go`, `*.rb`, `*.py`).
+
+When an `exclude` silences a gate, the hook records an `excluded-by-config` event
+(with the glob) that the dashboard shows and the Stop gate ignores.
+
+### `perfBudgets`
+
+`perfBudgets` only adds to the default list (lighthouserc, size-limit,
+bundlesize, bundlewatch, `budget.json`/`budgets.json`/`*.budgets.json` at any
+depth, `*perf-budget*`/`*performance-budget*`, `perfBudget.json` and similar
+camelCase forms right before the extension, a `-` or a `_`
+(`perfBudget-prod.json`), k6 thresholds...): removing a default would be
+loosening the gate, and that belongs to Perry.
+
+The defaults ignore `.md`/`.mdx` and generated folders (`node_modules`, `dist`,
+`build`...), only inside the config's folder — outside it (a sibling worktree
+without its own config, a file outside the project) the path stays absolute and
+the gate asks; an entry of yours in `perfBudgets` applies as written.
+
+Budgets inside general-purpose files — `angular.json`, the `size-limit` in
+`package.json`, `next.config.*`, webpack hints — are opt-in via `perfBudgets`; k6
+thresholds written inline in the script are a known gap.
