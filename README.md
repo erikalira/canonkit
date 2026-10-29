@@ -1,7 +1,7 @@
 # canonkit
 
 Versioned source for the agent team used with Claude Code, Codex and OpenCode. Published
-on npm as `canonkit`; the repository is `agent-team-config`.
+on npm and on GitHub as `canonkit`.
 
 Each agent is a single Markdown file in `agents/`, stored in exactly the format
 the runtime reads. Installing is a copy — there is no generation step and
