@@ -1,12 +1,17 @@
 # The hook promises the same gates under Bash and PowerShell and runs on every
 # tool call, so the suite has to pass where users actually run it — not only on
 # the author's machine. Node 22 is the floor package.json declares; 24 is the active LTS.
+#
+# Actions are pinned to a commit, not a tag: a tag can be moved to other code,
+# and release.yml runs this file before it publishes.
 name: CI
 
 on:
   pull_request:
   push:
     branches: [main]
+  # release.yml runs the same checks before publishing, instead of a copy of them.
+  workflow_call:
 
 permissions:
   contents: read
@@ -32,16 +37,18 @@ jobs:
         # gets the same bash on every runner.
         shell: bash
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
 
       # validate.sh's checks are python3 heredocs, and the Codex TOML check
       # needs tomllib (3.11+).
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
 
@@ -55,3 +62,30 @@ jobs:
       - run: npm test
 
       - run: npm run validate
+
+  # The hook blocks a secret written through the agent; this catches one that
+  # reached the history any other way. The whole history, not only the PR's
+  # commits: a key is still exposed in an old commit after a later one deletes it.
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The binary, pinned by checksum, rather than gitleaks-action: no
+      # third-party action code and no license key in the run.
+      - name: Install gitleaks
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/gitleaks.tar.gz" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${VERSION}/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+
+      - name: Scan the full history
+        run: '"$RUNNER_TEMP/gitleaks" git --redact --no-banner --exit-code 1 .'
