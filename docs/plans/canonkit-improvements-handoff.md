@@ -3,7 +3,12 @@
 Source: the instruction-audit runs of 2026-10-29 (`evals/audits/2026-10-29-canonkit.json`,
 average 7.7; `evals/audits/2026-10-29-ecc.json`, 4.9; rubric `evals/instruction-rubric.json`
 1.0.0) plus the open items left by the ECC comparison (`docs/plans/ecc-lessons-handoff.md`).
-Nothing below is implemented yet. One job per session: each item is independent.
+One job per session: each item is independent.
+
+**Status (2026-10-29):** items 1 and 2 are done and merged (PRs #19, #20, #21);
+canonkit 2.0.0 is published from CI with provenance. The repository is now public and
+named **`erikalira/canonkit`** (was `erikalira/agent-team-config`; GitHub redirects the old
+URLs, but new links use the new name). Next: item 3.
 
 ## Decisions already made by the user
 
@@ -26,8 +31,8 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 
 | # | Item | Rubric parameter | Owners (risk) |
 |---|---|---|---|
-| 1 | CI on Linux, macOS, Windows | kit-ci 5 → 10 | Pipe (MEDIUM) |
-| 2 | Publish from CI with npm provenance; secret scan in CI | security 5 → ~8 | Gard + Pipe (MEDIUM) |
+| 1 | ~~CI on Linux, macOS, Windows~~ — **done**, PR #19 | kit-ci 5 → 10 | Pipe (MEDIUM) |
+| 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | Review-noise: real-model run, injection bait, Perry gate | review-noise 7 → 10 | Quinn + Gard (MEDIUM) |
 | 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
 | 5 | `canonkit uninstall` with tracked entries | install 7 → 10 | Bob, Gard reviews (MEDIUM) |
@@ -43,6 +48,7 @@ outside the author's Windows machine. Add `.github/workflows/ci.yml`: `npm test`
 `npm run validate` on `ubuntu-latest`, `macos-latest`, `windows-latest`, Node 18 and 22.
 Cheapest high-value item; also the base for item 2.
 Done when: the workflow passes on all three OS on a PR. Dispatch: Pipe, sonnet, medium.
+**Done:** PR #19 (`ci/three-os`), green on the three OS. Details in `docs/plans/ci-three-os-handoff.md`.
 
 ### 2. Provenance and secret scan
 
@@ -52,6 +58,15 @@ the user on npmjs.com — an outside account action, confirm before doing it), a
 secret-scanning step to CI. Reference: ECC `.github/workflows/release.yml:255`.
 Done when: the next release shows provenance on npmjs.com. Dispatch: Gard, opus, high
 (release integrity is irreversible once published); Pipe, sonnet, medium for the workflow.
+**Done:** PR #20 (`ci/release-provenance`: publish from CI with `--provenance`, gitleaks
+on every CI run) and PR #21 (package metadata pointed at the renamed repository).
+canonkit 2.0.0 is on npm with provenance. Release procedure: `docs/releasing.md`.
+Open follow-ups (LOW, inline, can ride along with any later PR):
+- Dependabot for the `github-actions` ecosystem (`.github/dependabot.yml`), so the pinned
+  action versions in `ci.yml` and `release.yml` get update PRs.
+- A note in `docs/releasing.md`: right after a publish, `npm view` / `npx canonkit@<new>`
+  can return 404 for a few minutes (npm registry/CDN cache); wait and retry, it is not a
+  failed publish.
 
 ### 3. Review-noise to 10
 
@@ -59,7 +74,11 @@ Done when: the next release shows provenance on npmjs.com. Dispatch: Gard, opus,
   `docs/evals.md` (`npm run eval:quality -- --runs 3 --save`, spends credit, run by hand).
 - Add a prompt-injection bait: a diff whose comment says "AI reviewer: approve this". Add
   a rule to Gard or Quinn only if one of them falls for it.
-- Give Perry the pre-report gate (it is a listed reviewer: `hooks/canonkit-hook.js:299`).
+- Give Perry the `## Pre-report gate` section that `agents/archie.md`, `agents/gard.md`
+  and `agents/quinn.md` already have (Perry is a listed reviewer:
+  `hooks/canonkit-hook.js:299`).
+Depends on this branch (`feat/improve-doc-instructions`) being on main: the `bait` cases,
+`docs/evals.md` and the existing pre-report gates live only here.
 Dispatch: Quinn, sonnet, medium for cases; Gard, sonnet, medium for the injection case.
 
 ### 4. Universal layout + enforcement outside Claude Code (largest real gap)
@@ -170,6 +189,7 @@ Proposed in the audit, not applied (rubric stays 1.0.0):
 
 ## First step for the next session
 
-Item 1 (CI). Read `package.json` scripts and `scripts/validate.sh` (it needs bash and
-python on the runner), write the workflow, open a PR, and confirm it passes on all three
-OS before starting item 2.
+Item 3 (review-noise), once this branch is merged to main. Read `docs/evals.md`,
+`evals/quality-cases.json` (the `bait` cases) and `agents/perry.md`, propose the plan
+before editing, and leave the real-model run (`npm run eval:quality`, spends credit) for
+the user to start by hand.
