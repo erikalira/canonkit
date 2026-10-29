@@ -806,16 +806,22 @@ function shellWriteTargets(cmd) {
 const GIT_GLOBAL_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix']);
 const GIT_RUNS_HOOKS = new Set(['commit', 'push', 'merge', 'pull', 'am', 'rebase']);
 const GIT_SIGNS = new Set(['commit', 'merge', 'pull', 'am', 'rebase', 'cherry-pick', 'revert', 'commit-tree']);
-// Subcommands where `-n` is --no-verify. `value`: short options that take a
-// value (the rest of the cluster, or the next token); `attached`: options whose
-// value can only follow in the same token.
-const SHORT_NO_VERIFY = {
-  commit: { value: 'mFcCt', attached: 'uS' },
-  am: { value: '', attached: 'pCS' },
-};
-// Options whose value is the next token: that token is a message or a name, never a flag.
-const GIT_VALUE_OPT = new Set(['-m', '-F', '-C', '-c', '-t', '--message', '--file', '--author', '--date', '--template',
+// Long options whose value is the next token: that token is a message or a
+// name, never a flag. One a subcommand lacks makes git reject the whole
+// command, so skipping its value opens no bypass.
+const GIT_VALUE_LONG = new Set(['--message', '--file', '--author', '--date', '--template',
   '--reuse-message', '--reedit-message', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
+// Short options that take a value (the rest of the cluster, or the next token),
+// per subcommand: the same letter means different things (`commit -m` is a
+// message, `rebase -m` is --merge and `am -m` --message-id, both boolean).
+// A letter missing here costs a false deny on `-x --no-verify`, never a bypass.
+const GIT_VALUE_SHORT = {
+  commit: 'mFCct', merge: 'mFsX', pull: 'sX', rebase: 'sXx', 'cherry-pick': 'mX', revert: 'mX',
+  'commit-tree': 'mFp', push: 'o',
+};
+// Subcommands where `-n` is --no-verify, with the short options whose value can
+// only follow in the same token.
+const SHORT_NO_VERIFY = { commit: 'uS', am: 'pCS' };
 // Words that run the command after them: wrappers, and the shell keywords a
 // command follows (`then git commit ...`, `do git push ...`).
 const CMD_PREFIX = new Set(['env', 'command', 'exec', 'builtin', 'sudo', 'nohup', 'time', 'timeout', 'nice', 'xargs',
@@ -921,6 +927,7 @@ function gitCalls(cmd, tool) {
 function gitBypass({ sub, config, args }) {
   const hooks = GIT_RUNS_HOOKS.has(sub), signs = GIT_SIGNS.has(sub);
   if (!hooks && !signs) return null;
+  const valueShort = GIT_VALUE_SHORT[sub] || '';
   for (const c of config) {
     const eq = c.indexOf('=');
     const key = (eq < 0 ? c : c.slice(0, eq)).toLowerCase();
@@ -931,18 +938,18 @@ function gitBypass({ sub, config, args }) {
   for (let j = 0; j < args.length; j++) {
     const t = args[j];
     if (t === '--') break;
-    if (GIT_VALUE_OPT.has(t)) { j++; continue; }
+    if (GIT_VALUE_LONG.has(t) || (/^-[A-Za-z]$/.test(t) && valueShort.includes(t[1]))) { j++; continue; }
     if (hooks && t.length >= '--no-veri'.length && '--no-verify'.startsWith(t)) return t;
     if (signs && t.length >= '--no-gpg'.length && '--no-gpg-sign'.startsWith(t)) return t;
     // `git commit -n` and `git am -n` are --no-verify; in push, -n is --dry-run,
     // in merge/pull/rebase --no-stat. In a cluster, the letters after one that
     // takes a value are that value (`-mn` = message "n").
-    const short = SHORT_NO_VERIFY[sub];
-    if (short && /^-[A-Za-z0-9]+$/.test(t)) {
+    const attached = SHORT_NO_VERIFY[sub];
+    if (attached !== undefined && /^-[A-Za-z0-9]+$/.test(t)) {
       for (let k = 1; k < t.length; k++) {
         if (t[k] === 'n') return t;
-        if (short.value.includes(t[k])) { if (k === t.length - 1) j++; break; }
-        if (short.attached.includes(t[k])) break;
+        if (valueShort.includes(t[k])) { if (k === t.length - 1) j++; break; }
+        if (attached.includes(t[k])) break;
       }
     }
   }
