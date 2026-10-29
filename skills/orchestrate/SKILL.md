@@ -22,6 +22,8 @@ independent judgments in more than one owner's domain (Scott on scope, Pixie on
 UX, Gard on security: one message, no shared mutable file), or when the user
 asks for it. At MEDIUM, call the owners its named risks point at, one at a time.
 One agent's output as another's input is sequential, not parallel.
+A subagent hands back its result in its report, never "waiting on children" or
+a promise of later results; a report that ends that way is unfinished: resume it.
 
 Two agents *writing code* at the same time each get an isolated worktree (Claude
 Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) —

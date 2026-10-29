@@ -107,15 +107,24 @@ reviews the diff in plan mode. The cases include defects in code, tests, scope
 proposals, performance evidence, operational plans, documentation and team
 configuration, plus defect-free controls to detect an invented block on LOW.
 
-The corpus has **37 cases for the 10 core agents** (7 original, 26 from Phase 3
-and 4 from Phase 7). Each core has `kind: positive` (a realistic finding),
-`adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
-no bureaucracy). `kind` is coverage metadata; the checks stay the same. Bob covers
+The corpus has **40 cases for the 10 core agents** (7 original, 26 from Phase 3,
+4 from Phase 7 and 3 from the reviewer pre-report gate). Each core has
+`kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
+no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
+guarded or compatible, where the right report approves with no finding; it is not
+required per core. `kind` is coverage metadata; the checks stay the same. Bob covers
 root cause, callers, failure path, single-use abstraction and a hidden test; Scott,
 evidence and the smallest MVP; Perry, measurement, build, floor and growth with
 input; Pipe, rollback, observability and authorization; Spencer, drift and durable
 decisions; Virgo, canonical source, scope and validations. Specialists await use in
 real projects.
+
+The pre-report gate in Quinn, Gard and Archie (cite `file:line`, name the failure,
+say why existing guards miss it; zero findings is valid) is measured by
+`gard-guarded-sort-bait`, `archie-additive-field-bait` (bait: a finding without
+proof is the wrong answer) and `quinn-clean-covered-refactor` (clean: no finding
+expected). They have not been run against a model yet: the offline checks only
+validate the case file and the judge.
 
 Phase 7 adds to Bob the cases `bob-native-date-input`, `bob-native-formatter`,
 `bob-reuse-existing-helper` and `bob-trivial-dependency`. The factory-with-one-

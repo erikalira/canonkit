@@ -50,9 +50,11 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
 `events.jsonl`, the events are `prompt`, `gate`, `agent_start`, `agent_launch`,
 `agent_end`, `agent_stop` and `agent_resume`.
 
-- `gate`: `kind` (`git`, `high-risk-surface`, `secret-block`, `secret-ask`,
-  `perf-budget`, `excluded-by-config`, `context-size`, `definition-of-done`),
-  `file`, `tool`, `project`; in `excluded-by-config`, `glob`; in
+- `gate`: `kind` (`git`, `git-bypass`, `high-risk-surface`, `secret-block`,
+  `secret-ask`, `perf-budget`, `excluded-by-config`, `context-size`,
+  `definition-of-done`), `file`, `tool`, `project`; in `git` and `git-bypass`,
+  `detail` (the first 80 characters of the command); in `git-bypass`, `flag` (the
+  flag that was denied); in `excluded-by-config`, `glob`; in
   `high-risk-surface`, `rule`, the rule that matched (`config`, `include`,
   `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); in
   `definition-of-done` (the Stop gate blocked the turn), `files` (how many files)

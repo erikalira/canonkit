@@ -167,10 +167,11 @@ gate`. The context-size reminder is plain text.
 
 | Gate | Fires when | What to do |
 | --- | --- | --- |
-| **git commit / push** | any `git commit` or `git push` | Confirm only if you asked for it. |
+| **git commit / push** | any `git commit` or `git push`, including behind `git -C dir` or `git -c key=value` | Confirm only if you asked for it. |
+| **git hook / signing bypass (block)** | `--no-verify`, `git commit -n`, `--no-gpg-sign`, `-c core.hooksPath=...` or `-c commit.gpgsign=false` | It is denied. Fix what the hook reported. If you really mean to skip it, run the command yourself (`!` in Claude Code). Details in [docs/hooks.md](https://github.com/erikalira/agent-team-config/blob/main/docs/hooks.md#what-the-git-gates-read). |
 | **Secret (block)** | a private key or cloud key would be written to a file | It is denied. Move the value to an env var or a secret store. |
 | **Secret (ask)** | something looks like a hardcoded credential | Confirm only if it is not a real secret, such as a test fixture. |
-| **HIGH-risk surface** | an edit or shell write to an auth, secret, migration or contract path | Look again at the risk. If it really is HIGH, plan the owner's review (Gard, Archie). If it is LOW, confirm and say why. |
+| **HIGH-risk surface** | an edit or shell write to an auth, secret, migration or contract path | The prompt asks for who imports or calls the file, which public contract it touches (or "none") and the rollback: answer before confirming. Look again at the risk. If it really is HIGH, plan the owner's review (Gard, Archie). If it is LOW, confirm and say why. |
 | **Performance budget** | an edit to a budget file (lighthouserc, size-limit, `budget.json`, ...) | The prompt fires either way, because the hook sees the path and not the direction. Confirm a tightening. Loosening is Perry's call, with a measured floor. |
 | **Definition of done** (Stop) | gated files were edited and no reviewer was dispatched after the last edit | Dispatch (or resume) Quinn, Gard, Archie, Perry or a project reviewer, or say explicitly why review isn't needed. Fires once per turn. |
 | **Context size** | the session passes ~100k, 150k or 200k tokens | A reminder, not a block. If the subject changed, start a new session from a handoff. |

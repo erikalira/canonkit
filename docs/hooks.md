@@ -1,7 +1,8 @@
 # Hooks and gates
 
 The routing block promises `[ENFORCED]` gates: confirmation on `git commit`,
-blocking of secrets, and the definition-of-done gate on `Stop`. What each gate
+blocking of git hook and signing bypasses, blocking of secrets, and the
+definition-of-done gate on `Stop`. What each gate
 says and what to do when it fires is in the README
 (["When a gate fires"](../README.md#when-a-gate-fires)); this page is how the hook
 is wired, how it fails, and how a project tunes which paths count.
@@ -28,6 +29,45 @@ and model choice that this installer does not rewrite unless you ask. A hook on
 disk that no event references, on the other hand, does nothing and does not
 complain, which is the worst possible failure mode for a gate: everyone keeps
 believing it runs.
+
+## What the git gates read
+
+Both shells (Bash and PowerShell) go through the same check. The command is split
+into tokens and into its separate commands (a new line, `;`, `&&`, `|`, `{ }`; line
+continuations joined, comments dropped, a `$( )` or `( )` read as a command of its
+own). That way `git` is found behind global options (`-C dir`, `-c key=value`),
+env assignments, wrappers and shell keywords (`sudo -u x`, `timeout 60`, `then`,
+`do`, `!`), `& 'C:\...\git.exe'`, or a preceding `npm test &&`.
+
+**Confirm** on any `git commit` or `git push`. A plain text match is kept next to
+the parsed one, so `bash -c "git commit ..."` is still confirmed.
+
+**Block** (deny, no confirm offered) when the command skips the repository's hooks
+or signing:
+
+| Flag | Subcommands |
+| --- | --- |
+| `--no-verify` (and git's abbreviations, `--no-veri`) | `commit`, `push`, `merge`, `pull`, `am`, `rebase` |
+| `-n`, alone or in a cluster (`-nm`) | `commit` only; in `push`, `-n` is `--dry-run` |
+| `--no-gpg-sign` | `commit`, `merge`, `pull`, `am`, `rebase`, `cherry-pick`, `revert`, `commit-tree` |
+| `-c core.hooksPath=...` | the hook-running subcommands above |
+| `-c commit.gpgsign=false` (`0`, `no`, `off`) | the signing subcommands above |
+
+It is a deny and not a confirm because the usual way in is a reflex: a pre-commit
+hook fails and `--no-verify` is the shortest way past it. A confirm that shows the
+flag gets approved on autopilot. The fix is whatever the hook reported. If you
+really mean to skip it, run the command yourself (in Claude Code, prefix it with
+`!`).
+
+A commit message is data. Text inside `-m "..."`, a heredoc
+(`-m "$(cat <<'EOF' ... EOF)"`) or a PowerShell here-string (`-m @'...'@`) is never
+read as a flag, and neither is anything after `--`.
+
+This is a tripwire for the reflex, not a sandbox. It does not see `HUSKY=0` or
+`SKIP=...` in the environment, a persistent `git config commit.gpgsign false`, a
+git alias (`git ci -n`), `git am -n`, PowerShell block comments (`<# ... #>`), or a
+command wrapped in `bash -c "..."`, `pwsh -Command "..."` or `cmd /c`. The last one is
+still confirmed as a commit or push, so you see the whole command.
 
 ## Who counts as a reviewer for the Stop gate
 

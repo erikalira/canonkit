@@ -271,7 +271,7 @@
       if (e.event === 'agent_stop') return 'agent_id' in e ? '' : `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop">subagent finished</span></div>`;
       if (e.event === 'gate' && e.kind === 'excluded-by-config') {
         return `<div class="row">${t}<span class="ic stop">∅</span><span class="body stop">silenced by .claude/canonkit.json · ${esc(e.file || '')}${e.glob ? ' · exclude ' + esc(e.glob) : ''}</span></div>`; }
-      if (e.event === 'gate') { const block = e.kind === 'secret-block';
+      if (e.event === 'gate') { const block = e.kind === 'secret-block' || e.kind === 'git-bypass';
         return `<div class="row">${t}<span class="ic gate ${block ? 'block' : ''}">${block ? '⛔' : '⚠'}</span><span class="body gate ${block ? 'block' : ''}">gate · ${esc(e.kind)}${e.file ? ' · ' + esc(e.file) : ''}${e.detail ? ' · ' + esc(e.detail) : ''}</span></div>`; }
       return '';
     }).join('');

@@ -241,6 +241,116 @@ describe("tool-result volume (main thread and subagents)", () => {
   });
 });
 
+describe("git hook and signing bypass", () => {
+  // Denied, not asked: the reflex after a failed pre-commit is --no-verify, and a
+  // confirm that shows it gets approved on autopilot.
+  const bash = (command) => decide(pre("Bash", { command }));
+  const ps = (command) => decide(pre("PowerShell", { command }));
+  test("--no-verify is denied in both shells", () => {
+    assert.equal(bash("git commit --no-verify -m x"), "deny");
+    assert.equal(ps("git commit -m x --no-verify"), "deny");
+    assert.equal(bash("git push --no-verify origin main"), "deny");
+    assert.equal(bash("git rebase --no-verify main"), "deny");
+    assert.equal(bash("git commit --no-veri -m x"), "deny"); // git accepts the abbreviation
+  });
+  test("commit -n is --no-verify, alone or in a cluster", () => {
+    assert.equal(bash("git commit -n -m x"), "deny");
+    assert.equal(ps("git commit -nm x"), "deny");
+    assert.equal(bash("git commit -anm x"), "deny");
+  });
+  test("--no-gpg-sign is denied", () => {
+    assert.equal(bash("git commit --no-gpg-sign -m x"), "deny");
+    assert.equal(ps("git merge --no-gpg-sign feat"), "deny");
+    assert.equal(bash("git cherry-pick --no-gpg-sign abc123"), "deny");
+  });
+  test("-c core.hooksPath and -c commit.gpgsign=false are denied", () => {
+    assert.equal(bash("git -c commit.gpgsign=false commit -m x"), "deny");
+    assert.equal(ps("git -c commit.gpgSign=0 commit -m x"), "deny");
+    assert.equal(bash("git -c core.hooksPath=/dev/null commit -m x"), "deny");
+    assert.equal(bash("git -c commit.gpgsign=true commit -m x"), "ask");
+  });
+  test("the flag is found past global options, prefixes and other commands", () => {
+    assert.equal(bash("git -C sub commit --no-verify -m x"), "deny");
+    assert.equal(bash("npm test && git commit --no-verify -m x"), "deny");
+    assert.equal(ps("npm test; if ($?) { git push --no-verify }"), "deny");
+    assert.equal(bash("GIT_TRACE=1 git commit --no-verify -m x"), "deny");
+    assert.equal(ps("& 'C:\\Program Files\\Git\\cmd\\git.exe' commit --no-verify -m x"), "deny");
+    assert.equal(ps('git -C "C:\\repo\\" commit --no-verify -m x'), "deny"); // `\"` is no escape in PowerShell
+  });
+  test("shell keywords and wrappers before git do not hide the flag", () => {
+    assert.equal(bash("if npm test; then git commit --no-verify -m x; fi"), "deny");
+    assert.equal(bash("for b in a b; do git push --no-verify origin $b; done"), "deny");
+    assert.equal(bash("! git commit --no-verify -m x"), "deny");
+    assert.equal(bash("timeout 60 git push --no-verify"), "deny");
+    assert.equal(bash("env -i git commit --no-verify -m x"), "deny");
+    assert.equal(bash("sudo -u bob git commit --no-verify -m x"), "deny");
+  });
+  test("a substitution or redirection inside git's arguments does not hide the flag", () => {
+    assert.equal(bash("git commit -m $(cat msg.txt) --no-verify"), "deny");
+    assert.equal(ps("git commit -m (Get-Content msg.txt -Raw) --no-verify"), "deny");
+    assert.equal(ps("git commit 2>&1 --no-verify"), "deny");
+    assert.equal(bash("(cd sub && git commit --no-verify -m x)"), "deny");
+  });
+  test("comments are not commands", () => {
+    assert.equal(bash("# don't run hooks\ngit commit --no-verify -m x"), "deny");
+    assert.equal(ps("# don't run hooks\ngit commit --no-verify -m x"), "deny");
+    assert.equal(bash("git commit -m x # --no-verify"), "ask");
+    assert.equal(ps("git commit -m x # skip --no-verify"), "ask");
+  });
+  test("an empty or mixed-case false gpgsign is false", () => {
+    assert.equal(bash("git -c commit.gpgsign= commit -m x"), "deny"); // git reads an empty value as false
+    assert.equal(bash("git -c commit.gpgsign=FALSE commit -m x"), "deny");
+  });
+  test("each line is its own command", () => {
+    assert.equal(bash("git add -A\ngit commit --no-verify -m x"), "deny");
+    assert.equal(ps("git add -A\ngit commit --no-verify -m x"), "deny");
+    assert.equal(ps("git add -A\r\ngit push --no-verify"), "deny");
+    assert.equal(bash("git status\ngit -c commit.gpgsign=false commit -m x"), "deny");
+    assert.equal(bash("cat > f <<'EOF'\nx\nEOF\ngit commit -n -m x"), "deny");
+    assert.equal(bash("echo a #b\ngit commit --no-verify"), "deny");
+  });
+  test("a line continuation does not hide the flag", () => {
+    assert.equal(bash("git commit \\\n  --no-verify -m x"), "deny");
+    assert.equal(ps("git commit `\n  --no-verify -m x"), "deny");
+  });
+  test("a commit message that mentions the flags is not a bypass", () => {
+    assert.equal(bash('git commit -m "docs: block --no-verify and -n"'), "ask");
+    assert.equal(bash("git commit -m 'skip --no-gpg-sign'"), "ask");
+    assert.equal(bash("git commit -m \"$(cat <<'EOF'\nfix: \"quoted\" --no-verify, don't -n\nEOF\n)\""), "ask");
+    assert.equal(ps("git commit -m @'\nblock --no-verify, it's \"done\"\n'@"), "ask");
+    assert.equal(ps("git commit -m @'\nx\n'@ --no-verify"), "deny"); // the flag after the message still counts
+    assert.equal(bash('git commit -m "-n"'), "ask");
+    assert.equal(bash("git commit -mn"), "ask"); // message "n"
+    assert.equal(bash("git commit -am x"), "ask");
+    assert.equal(bash("git commit -F - <<'END-OF-MSG'\nfix: --no-verify\nEND-OF-MSG"), "ask");
+    assert.equal(bash("git commit -F - <<'---'\nfix: --no-verify\n---"), "ask");
+    assert.equal(bash('git commit -m "$(echo "fix --no-verify docs")"'), "ask");
+  });
+  test("known limits stay confirmed, not denied", () => {
+    // Documented non-goal: a wrapped shell is a string to this hook. The commit
+    // confirm still shows the whole command.
+    assert.equal(bash("bash -c 'git commit --no-verify -m x'"), "ask");
+    assert.equal(bash("git commit -m x --no-ver"), "ask"); // ambiguous with --no-verbose
+  });
+  test("a secret write next to a commit is still denied", () => {
+    assert.equal(bash(`git -C d commit -m x; echo '${FAKE_PEM}' > k.pem`), "deny");
+    assert.equal(bash(`git commit -m x; echo ${FAKE_AWS_KEY} > .env`), "deny");
+  });
+  test("lookalikes are not bypasses", () => {
+    assert.equal(bash("git push -n origin main"), "ask"); // --dry-run
+    assert.equal(bash("git commit -m x -- --no-verify"), "ask"); // a pathspec
+    assert.equal(bash("git log --grep=no-verify"), "allow");
+    assert.equal(bash("git -c core.hooksPath=/dev/null status"), "allow");
+    assert.equal(bash("echo git"), "allow");
+  });
+  test("a bypass deny is logged and does not feed the Stop gate", async () => {
+    assert.equal(decide(pre("Bash", { command: "git commit --no-verify -m x" }, "BYPASS")), "deny");
+    const gates = (await logged("BYPASS")).filter((e) => e.event === "gate");
+    assert.deepEqual(gates.map((e) => [e.kind, e.flag]), [["git-bypass", "--no-verify"]]);
+    assert.equal(decide({ hook_event_name: "Stop", session_id: "BYPASS" }), "allow");
+  });
+});
+
 describe("every shell is a shell", () => {
   // The side door this closed: on Windows the harness's primary shell tool is
   // PowerShell, so a gate wired only to Bash gates nothing that matters there.
@@ -249,6 +359,10 @@ describe("every shell is a shell", () => {
   });
   test("Bash git push is gated", () => {
     assert.equal(decide(pre("Bash", { command: "git push origin main" })), "ask");
+  });
+  test("git commit/push behind global options is gated", () => {
+    assert.equal(decide(pre("Bash", { command: "git -C sub commit -m x" })), "ask");
+    assert.equal(decide(pre("PowerShell", { command: "git -c user.name=x push" })), "ask");
   });
   test("a PowerShell write to a performance budget is gated", () => {
     assert.equal(decide(pre("PowerShell", { command: "Set-Content -Path lighthouserc.json -Value $x" })), "ask");
@@ -339,6 +453,22 @@ describe("file-editing tools", () => {
     const reason = JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason;
     assert.match(reason, /^canonkit gate/);
     assert.doesNotMatch(r.stdout, /meu.?time/i);
+  });
+
+  // Fact-forcing text belongs to the HIGH-risk surface gate alone: a prompt that
+  // asks for importers and rollback on every gate is one people click through.
+  const reasonOf = (tool, input) => JSON.parse(runHook(pre(tool, input)).stdout).hookSpecificOutput.permissionDecisionReason;
+  const FACTS = /who imports or calls it.*public contract it touches \(or "none"\).*rollback/;
+  test("the HIGH-risk gate asks for importers, contract and rollback (Edit and shell write)", () => {
+    assert.match(reasonOf("Edit", { file_path: "src/auth/x.ts", new_string: "x" }), FACTS);
+    assert.match(reasonOf("Bash", { command: "cat > src/lib/authClient.ts <<EOF\nx\nEOF" }), FACTS);
+    assert.match(reasonOf("Edit", { file_path: "src/auth/x.ts", new_string: "x" }), /Archie\/Gard review.*highRisk\.exclude/);
+  });
+  test("the perf-budget, git and secret gates do not ask for it", () => {
+    assert.doesNotMatch(reasonOf("Edit", { file_path: "lighthouserc.json", new_string: "{}" }), FACTS);
+    assert.doesNotMatch(reasonOf("Bash", { command: "Set-Content -Path lighthouserc.json -Value x" }), FACTS);
+    assert.doesNotMatch(reasonOf("Bash", { command: "git commit -m x" }), FACTS);
+    assert.doesNotMatch(reasonOf("Edit", { file_path: "src/app.ts", new_string: "password = 'hunter2hunter2'" }), FACTS);
   });
 });
 

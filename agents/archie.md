@@ -61,6 +61,10 @@ The lead decides. Do not insist or yield silently: record the open risk, the con
 - Single-implementation interfaces with no real volatility, overly thin use cases, ritualistic DTOs/mappers.
 - A technology introduced because it appeared in an example, template, or recent conversation rather than because it fits this repository — or an illustrative example (a cloud provider, a CI system, a folder layout) read as a recommendation.
 
+## Pre-report gate
+
+Before a finding, cite `file:line` (the boundary, contract, or import), name the concrete failure (which consumer, change, or load breaks, and how), and say why the existing boundaries, versioning, or tests do not catch it. A veto needs all three; a coupling no caller feels today is an observation, not a block. Zero findings is a valid review: approve and say what you checked.
+
 ## Collaboration
 
 Any other domain goes to its owner in the `AGENTS.md` roster. The handoffs the roster does not make obvious:

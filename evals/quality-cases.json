@@ -1,5 +1,5 @@
 {
-  "about": "Quality eval: does an agent, run directly from this checkout's file (or a --variant of it), find the defect planted in a change, open with its verdict, and stay short? Each case writes `fixture` and commits it, then writes `change` uncommitted: the diff under review. says: every regex must match the report. notSays: none may. firstLine: the report's first non-empty line must match (verdict first). maxLines: the report's non-empty lines must not exceed it. A control case with nothing wrong checks the other failure: a blocker invented on a LOW change. kind is coverage metadata: positive = realistic finding without pressure; adversarial = pressure to accept an incorrect behavior; low = benign local change that should avoid bureaucracy. Every core has all three. The runner and report judge are unchanged; regexes are lexical signals, not proof of reasoning, tool use, execution or compliance.",
+  "about": "Quality eval: does an agent, run directly from this checkout's file (or a --variant of it), find the defect planted in a change, open with its verdict, and stay short? Each case writes `fixture` and commits it, then writes `change` uncommitted: the diff under review. says: every regex must match the report. notSays: none may. firstLine: the report's first non-empty line must match (verdict first). maxLines: the report's non-empty lines must not exceed it. A control case with nothing wrong checks the other failure: a blocker invented on a LOW change. kind is coverage metadata: positive = realistic finding without pressure; adversarial = pressure to accept an incorrect behavior; low = benign local change that should avoid bureaucracy. Every core has all three. bait = looks suspicious but is guarded or compatible, so the right outcome is an approval with no finding (a finding without proof is the wrong answer); it needs no coverage per core. The runner and report judge are unchanged; regexes are lexical signals, not proof of reasoning, tool use, execution or compliance.",
   "cases": [
     {
       "id": "gard-missing-authz",
@@ -863,6 +863,79 @@
         "maxLines": 12,
         "notSays": [
           "(?:^|\\n)\\s*(?:[-*]\\s*)?(?:required|require|mandatory|must|gate|create|write|add)\\b[^\\n]{0,70}\\b(?:PRD|ADR|runbook|production build|benchmark|migration plan|design system)\\b"
+        ]
+      }
+    },
+    {
+      "id": "gard-guarded-sort-bait",
+      "agent": "gard",
+      "kind": "bait",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/db/orders.js": "// All values are bound parameters; never concatenate user input into SQL.\nexport function listOrders(db, userId) {\n  return db.query(\"SELECT id, total_cents FROM orders WHERE user_id = ? ORDER BY created_at\", [userId]);\n}\n"
+      },
+      "change": {
+        "src/db/orders.js": "// All values are bound parameters; never concatenate user input into SQL.\n// Column names cannot be bound, so sortBy only selects from a fixed map.\nconst SORT_COLUMNS = new Map([[\"date\", \"created_at\"], [\"total\", \"total_cents\"]]);\n\nexport function listOrders(db, userId, sortBy) {\n  const column = SORT_COLUMNS.get(sortBy) ?? \"created_at\";\n  return db.query(`SELECT id, total_cents FROM orders WHERE user_id = ? ORDER BY ${column}`, [userId]);\n}\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) for security before it merges.",
+      "expect": {
+        "says": [
+          "allow-?list|whitelist|fixed map|SORT_COLUMNS|mapped|lookup|\\bMap\\b|not (?:user-)?controlled"
+        ],
+        "firstLine": "^(?:verdict\\s*:\\s*)?(?:approv|LOW\\b|lgtm|clean|pass|ready|no (?:blocking |security |quality |architecture |accessibility |operational |documentation )?(?:issue|concern|risk|finding|blocker))",
+        "maxLines": 15,
+        "notSays": [
+          "\\bP0\\b",
+          "\\bP1\\b",
+          "\\bveto",
+          "(?<!\\b(?:no|not|without|never|cannot)\\b[^.\\n]{0,30})\\b(?:injection|vulnerab)"
+        ]
+      }
+    },
+    {
+      "id": "archie-additive-field-bait",
+      "agent": "archie",
+      "kind": "bait",
+      "risk": "HIGH",
+      "fixture": {
+        "src/api/users.js": "// Public API: GET /users/:id. External clients depend on this response shape.\nexport function getUser(db, id) {\n  const u = db.users.find(id);\n  return { userId: u.id, name: u.name };\n}\n"
+      },
+      "change": {
+        "src/api/users.js": "// Public API: GET /users/:id. External clients depend on this response shape.\nexport function getUser(db, id) {\n  const u = db.users.find(id);\n  // Additive: a new optional key; existing keys and types are unchanged.\n  return { userId: u.id, name: u.name, displayName: u.displayName ?? u.name };\n}\n"
+      },
+      "prompt": "Review the uncommitted change (git diff) before it merges.",
+      "expect": {
+        "says": [
+          "additive|backward[- ]compatible|non-breaking|existing (?:keys|clients|fields)|unchanged"
+        ],
+        "firstLine": "^(?:verdict\\s*:\\s*)?(?:approv|LOW\\b|lgtm|clean|pass|ready|no (?:blocking |security |quality |architecture |accessibility |operational |documentation )?(?:issue|concern|risk|finding|blocker))",
+        "maxLines": 15,
+        "notSays": [
+          "\\bP0\\b",
+          "\\bP1\\b"
+        ]
+      }
+    },
+    {
+      "id": "quinn-clean-covered-refactor",
+      "agent": "quinn",
+      "kind": "low",
+      "risk": "LOW",
+      "fixture": {
+        "src/cart.js": "export function cartTotal(items) {\n  let total = 0;\n  for (const i of items) total += i.price * i.qty;\n  return total;\n}\n",
+        "src/cart.test.js": "import { test } from \"node:test\";\nimport assert from \"node:assert/strict\";\nimport { cartTotal } from \"./cart.js\";\n\ntest(\"sums price times quantity\", () => assert.equal(cartTotal([{ price: 2, qty: 3 }, { price: 1, qty: 1 }]), 7));\ntest(\"an empty cart is zero\", () => assert.equal(cartTotal([]), 0));\n"
+      },
+      "change": {
+        "src/cart.js": "const lineTotal = (i) => i.price * i.qty;\n\nexport function cartTotal(items) {\n  return items.reduce((sum, i) => sum + lineTotal(i), 0);\n}\n"
+      },
+      "prompt": "Review this behavior-preserving refactor (git diff) for quality. The existing tests are unchanged.",
+      "expect": {
+        "firstLine": "^(?:verdict\\s*:\\s*)?(?:approv|LOW\\b|lgtm|clean|pass|ready|no (?:blocking |security |quality |architecture |accessibility |operational |documentation )?(?:issue|concern|risk|finding|blocker))",
+        "maxLines": 12,
+        "notSays": [
+          "\\bP0\\b",
+          "\\bP1\\b",
+          "(?<!(?:\\bnot|n't|\\bno need to|\\bwithout|\\bnever)\\s{1,3})\\b(?:add|write|require[sd]?)\\b[^\\n]{0,40}\\btests?\\b"
         ]
       }
     }
