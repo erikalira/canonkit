@@ -816,7 +816,7 @@ const GIT_VALUE_LONG = new Set(['--message', '--file', '--author', '--date', '--
 // message, `rebase -m` is --merge and `am -m` --message-id, both boolean).
 // A letter missing here costs a false deny on `-x --no-verify`, never a bypass.
 const GIT_VALUE_SHORT = {
-  commit: 'mFCct', merge: 'mFsX', pull: 'sX', rebase: 'sXx', 'cherry-pick': 'msX', revert: 'msX',
+  commit: 'mFCct', merge: 'mFsX', pull: 'sX', rebase: 'sXx', 'cherry-pick': 'mX', revert: 'mX',
   'commit-tree': 'mFp', push: 'o',
 };
 // Subcommands where `-n` is --no-verify, with the short options whose value can

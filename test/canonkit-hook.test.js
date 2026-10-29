@@ -263,6 +263,8 @@ describe("git hook and signing bypass", () => {
     assert.equal(bash("git rebase -m --no-verify main"), "deny");
     assert.equal(ps("git rebase -m --no-gpg-sign main"), "deny");
     assert.equal(bash("git am -m --no-verify p.patch"), "deny");
+    assert.equal(bash("git cherry-pick -s --no-gpg-sign abc123"), "deny"); // -s is --signoff here
+    assert.equal(ps("git revert -s --no-gpg-sign abc123"), "deny");
     // Where -m does take a value, the token after it is that value.
     assert.equal(bash("git commit -m --no-verify"), "ask");
     assert.equal(bash("git merge -m --no-verify feat"), "allow");
