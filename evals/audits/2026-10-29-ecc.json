@@ -1,0 +1,2555 @@
+{
+  "rubric": "instruction-quality",
+  "rubricVersion": "1.0.0",
+  "date": "2026-10-29",
+  "target": {
+    "name": "ecc",
+    "version": "2.2.3",
+    "commit": "c05b2d6",
+    "source": "https://github.com/affaan-m/ECC tag v2.2.3 (c05b2d6614f62f6db0047669aa4eefb223d478f9), shallow clone in the session scratchpad",
+    "installProfile": "Recommended default (README.md:169-221): npx ecc-universal@2.2.3 setup -> ecc@ecc Claude Code plugin, Global user scope, Standard hook profile. Rules are not installed (plugins cannot distribute them, README.md:298-308). Primary harness: Claude Code."
+  },
+  "evaluator": {
+    "model": "claude-opus-5-5"
+  },
+  "previous": null,
+  "scores": [
+    {
+      "id": "clarity",
+      "score": 5,
+      "nearestAnchor": "5",
+      "evidence": [
+        "agents/code-reviewer.md:27-33 — clear: 'Only report issues you are confident about (>80% sure it is a real problem)'",
+        "rules/common/agents.md:38 — weak: 'ALWAYS use parallel Task execution for independent operations' (absolute, no scope); agents/code-reviewer.md:3 'MUST BE USED for all code changes' while 22 other *-reviewer agents exist with no rule saying which wins",
+        "Cross-checked, no contradiction: 80% coverage (rules/common/testing.md:3, development-workflow.md:28, code-review.md:37/80, agents/tdd-guide.md:3, skills/tdd-workflow/SKILL.md:3); counts 68/293/94 (.claude-plugin/plugin.json, README.md:142-148, AGENTS.md:3; README.md:1699 is the v2.0.0 changelog); SessionStart cap 8000 chars (README.md:1339 vs scripts/hooks/session-start.js:41)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "rationale",
+      "score": 4,
+      "nearestAnchor": "5",
+      "missingForNext": "Reasons for the mandatory workflow rules (coverage floor, TDD for all types, review on every change).",
+      "evidence": [
+        "Sample: the first ALWAYS/NEVER/MANDATORY rule of each of rules/common/{coding-style,agents,testing,code-review,development-workflow,security}.md plus the hooks that block (config-protection, gateguard) and the next unexplained rule in agents.md, testing.md and security.md — 10 rules, 4 with a specific reason",
+        "With reason: rules/common/coding-style.md:5-12 immutability ('prevents hidden side effects'); rules/common/agents.md:55 final message is the deliverable (children cannot notify a parent whose turn ended); scripts/hooks/config-protection.js:5-7 (agents weaken configs instead of fixing code); scripts/hooks/gateguard-fact-force.js:5-9 ('are you sure?' is always answered yes)",
+        "Without reason: rules/common/testing.md:3 80% coverage; testing.md:5 all three test types required; code-review.md:9 mandatory review after any change; development-workflow.md:9 research mandatory before any implementation; agents.md:38 always parallel; security.md:18 always env vars"
+      ],
+      "delta": null
+    },
+    {
+      "id": "proportionality",
+      "score": 1,
+      "nearestAnchor": "0",
+      "missingForNext": "A risk scale whose tiers change what is required, with an explicit skip at low risk.",
+      "evidence": [
+        "No change-risk scale. rules/common/testing.md:12-18 'MANDATORY workflow' and :5 'Test Types (ALL required)'; rules/common/code-review.md:9-15 mandatory review after writing or modifying any code; agents/code-reviewer.md:3 'MUST BE USED for all code changes'",
+        "The only tiering is finding severity (rules/common/code-review.md:55 CRITICAL -> BLOCK) and one trigger for security-sensitive code (:13); neither changes what a low-risk change may skip. No 'trivial'/'typo' exception found in rules/common/*.md"
+      ],
+      "delta": null
+    },
+    {
+      "id": "context-cost",
+      "score": 2,
+      "nearestAnchor": "0",
+      "measurement": {
+        "words": 16047,
+        "files": [
+          {
+            "path": "agents/a11y-architect.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/agent-evaluator.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "agents/architect.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "agents/build-error-resolver.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "agents/chief-of-staff.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "agents/code-architect.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "agents/code-explorer.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "agents/code-reviewer.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "agents/code-simplifier.md",
+            "part": "description",
+            "words": 20
+          },
+          {
+            "path": "agents/comment-analyzer.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "agents/conversation-analyzer.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "agents/cpp-build-resolver.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "agents/cpp-reviewer.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "agents/csharp-reviewer.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/dart-build-resolver.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "agents/database-reviewer.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/django-build-resolver.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "agents/django-reviewer.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "agents/doc-updater.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "agents/docs-lookup.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "agents/e2e-runner.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "agents/fastapi-reviewer.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "agents/flutter-reviewer.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "agents/fsharp-reviewer.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/gan-evaluator.md",
+            "part": "description",
+            "words": 22
+          },
+          {
+            "path": "agents/gan-generator.md",
+            "part": "description",
+            "words": 21
+          },
+          {
+            "path": "agents/gan-planner.md",
+            "part": "description",
+            "words": 22
+          },
+          {
+            "path": "agents/go-build-resolver.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "agents/go-reviewer.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "agents/harmonyos-app-resolver.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "agents/harness-optimizer.md",
+            "part": "description",
+            "words": 16
+          },
+          {
+            "path": "agents/healthcare-reviewer.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "agents/homelab-architect.md",
+            "part": "description",
+            "words": 21
+          },
+          {
+            "path": "agents/java-build-resolver.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "agents/java-reviewer.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "agents/kotlin-build-resolver.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "agents/kotlin-reviewer.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "agents/loop-operator.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "agents/marketing-agent.md",
+            "part": "description",
+            "words": 45
+          },
+          {
+            "path": "agents/mle-reviewer.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "agents/network-architect.md",
+            "part": "description",
+            "words": 20
+          },
+          {
+            "path": "agents/network-config-reviewer.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "agents/network-troubleshooter.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "agents/opensource-forker.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "agents/opensource-packager.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "agents/opensource-sanitizer.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "agents/performance-optimizer.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/php-reviewer.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "agents/planner.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "agents/pr-test-analyzer.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "agents/python-reviewer.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "agents/pytorch-build-resolver.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "agents/rag-pipeline-reviewer.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "agents/react-build-resolver.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "agents/react-reviewer.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "agents/refactor-cleaner.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "agents/rust-build-resolver.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "agents/rust-reviewer.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "agents/security-reviewer.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "agents/seo-specialist.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "agents/silent-failure-hunter.md",
+            "part": "description",
+            "words": 13
+          },
+          {
+            "path": "agents/spec-miner.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "agents/swift-build-resolver.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "agents/swift-reviewer.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "agents/tdd-guide.md",
+            "part": "description",
+            "words": 21
+          },
+          {
+            "path": "agents/type-design-analyzer.md",
+            "part": "description",
+            "words": 10
+          },
+          {
+            "path": "agents/typescript-reviewer.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "agents/vue-reviewer.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/accessibility/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/agent-architecture-audit/SKILL.md",
+            "part": "description",
+            "words": 64
+          },
+          {
+            "path": "skills/agent-eval/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/agent-harness-construction/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/agent-introspection-debugging/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/agent-payment-x402/SKILL.md",
+            "part": "description",
+            "words": 49
+          },
+          {
+            "path": "skills/agent-self-evaluation/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/agent-sort/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/agentic-engineering/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/agentic-os/SKILL.md",
+            "part": "description",
+            "words": 42
+          },
+          {
+            "path": "skills/ai-first-engineering/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/ai-regression-testing/SKILL.md",
+            "part": "description",
+            "words": 49
+          },
+          {
+            "path": "skills/android-clean-architecture/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/angular-developer/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/api-connector-builder/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/api-design/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/architecture-decision-records/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/article-writing/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/automation-audit-ops/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/autonomous-agent-harness/SKILL.md",
+            "part": "description",
+            "words": 51
+          },
+          {
+            "path": "skills/autonomous-loops/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/backend-patterns/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/benchmark-methodology/SKILL.md",
+            "part": "description",
+            "words": 59
+          },
+          {
+            "path": "skills/benchmark-optimization-loop/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/benchmark/SKILL.md",
+            "part": "description",
+            "words": 51
+          },
+          {
+            "path": "skills/blender-motion-state-inspection/SKILL.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "skills/blueprint/SKILL.md",
+            "part": "description",
+            "words": 59
+          },
+          {
+            "path": "skills/brand-discovery/SKILL.md",
+            "part": "description",
+            "words": 53
+          },
+          {
+            "path": "skills/brand-voice/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/browser-qa/SKILL.md",
+            "part": "description",
+            "words": 67
+          },
+          {
+            "path": "skills/bun-runtime/SKILL.md",
+            "part": "description",
+            "words": 20
+          },
+          {
+            "path": "skills/canary-watch/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/carrier-relationship-management/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/cisco-ios-patterns/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/ck/SKILL.md",
+            "part": "description",
+            "words": 63
+          },
+          {
+            "path": "skills/claude-devfleet/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/click-path-audit/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/clickhouse-io/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/code-tour/SKILL.md",
+            "part": "description",
+            "words": 52
+          },
+          {
+            "path": "skills/codebase-onboarding/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/codehealth-mcp/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/coding-standards/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/competitive-platform-analysis/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/competitive-report-structure/SKILL.md",
+            "part": "description",
+            "words": 53
+          },
+          {
+            "path": "skills/compose-multiplatform-patterns/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/config-gc/SKILL.md",
+            "part": "description",
+            "words": 60
+          },
+          {
+            "path": "skills/configure-ecc/SKILL.md",
+            "part": "description",
+            "words": 59
+          },
+          {
+            "path": "skills/connections-optimizer/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/content-engine/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/content-hash-cache-pattern/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/context-budget/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/continuous-agent-loop/SKILL.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "skills/continuous-learning-v2/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/continuous-learning/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/contract-first/SKILL.md",
+            "part": "description",
+            "words": 51
+          },
+          {
+            "path": "skills/cost-aware-llm-pipeline/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/cost-tracking/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/council-multi-model/SKILL.md",
+            "part": "description",
+            "words": 59
+          },
+          {
+            "path": "skills/council/SKILL.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "skills/counterparty-channel-discipline/SKILL.md",
+            "part": "description",
+            "words": 59
+          },
+          {
+            "path": "skills/cpp-coding-standards/SKILL.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "skills/cpp-testing/SKILL.md",
+            "part": "description",
+            "words": 16
+          },
+          {
+            "path": "skills/crosspost/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/csharp-testing/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/customer-billing-ops/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/customs-trade-compliance/SKILL.md",
+            "part": "description",
+            "words": 61
+          },
+          {
+            "path": "skills/dart-flutter-patterns/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/dashboard-builder/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/data-scraper-agent/SKILL.md",
+            "part": "description",
+            "words": 61
+          },
+          {
+            "path": "skills/data-throughput-accelerator/SKILL.md",
+            "part": "description",
+            "words": 58
+          },
+          {
+            "path": "skills/database-migrations/SKILL.md",
+            "part": "description",
+            "words": 51
+          },
+          {
+            "path": "skills/deep-research/SKILL.md",
+            "part": "description",
+            "words": 61
+          },
+          {
+            "path": "skills/defi-amm-security/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/delivery-gate/SKILL.md",
+            "part": "description",
+            "words": 53
+          },
+          {
+            "path": "skills/deployment-patterns/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/design-system/SKILL.md",
+            "part": "description",
+            "words": 63
+          },
+          {
+            "path": "skills/dev-team/SKILL.md",
+            "part": "description",
+            "words": 45
+          },
+          {
+            "path": "skills/django-celery/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/django-patterns/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/django-security/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/django-tdd/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/django-verification/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/dmux-workflows/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/docker-patterns/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/documentation-lookup/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/dotnet-patterns/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/dynamic-workflow-mode/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/e2e-testing/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/ecc-guide/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/ecc-recipes/SKILL.md",
+            "part": "description",
+            "words": 70
+          },
+          {
+            "path": "skills/ecc-tools-cost-audit/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/email-ops/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/energy-procurement/SKILL.md",
+            "part": "description",
+            "words": 47
+          },
+          {
+            "path": "skills/enterprise-agent-ops/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/error-handling/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/esign-field-placement/SKILL.md",
+            "part": "description",
+            "words": 62
+          },
+          {
+            "path": "skills/eval-harness/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/evm-token-decimals/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/exa-search/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/fal-ai-media/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/fastapi-patterns/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/finance-billing-ops/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/flox-environments/SKILL.md",
+            "part": "description",
+            "words": 70
+          },
+          {
+            "path": "skills/flutter-dart-code-review/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/foundation-models-on-device/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/frontend-a11y/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/frontend-design-direction/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/frontend-patterns/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/frontend-slides/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/fsharp-testing/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/gan-style-harness/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/gateguard/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/generating-python-installer/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/git-workflow/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/github-ops/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/golang-patterns/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/golang-testing/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/google-workspace-ops/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/growth-log/SKILL.md",
+            "part": "description",
+            "words": 64
+          },
+          {
+            "path": "skills/healthcare-cdss-patterns/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/healthcare-emr-patterns/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/healthcare-eval-harness/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/healthcare-phi-compliance/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/hermes-imports/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/hexagonal-architecture/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/hipaa-compliance/SKILL.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "skills/homelab-network-readiness/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/homelab-network-setup/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/homelab-pihole-dns/SKILL.md",
+            "part": "description",
+            "words": 49
+          },
+          {
+            "path": "skills/homelab-vlan-segmentation/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/homelab-wireguard-vpn/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/hookify-rules/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/i18n-sync/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/inherit-legacy-style/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/intent-driven-development/SKILL.md",
+            "part": "description",
+            "words": 73
+          },
+          {
+            "path": "skills/inventory-demand-planning/SKILL.md",
+            "part": "description",
+            "words": 45
+          },
+          {
+            "path": "skills/investor-materials/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/investor-outreach/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/ios-icon-gen/SKILL.md",
+            "part": "description",
+            "words": 45
+          },
+          {
+            "path": "skills/iterative-retrieval/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/ito-baskets/SKILL.md",
+            "part": "description",
+            "words": 70
+          },
+          {
+            "path": "skills/ito-compute/SKILL.md",
+            "part": "description",
+            "words": 66
+          },
+          {
+            "path": "skills/ito-inference/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/ito-training/SKILL.md",
+            "part": "description",
+            "words": 52
+          },
+          {
+            "path": "skills/java-coding-standards/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/jira-integration/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/jpa-patterns/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/knowledge-ops/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/kotlin-coroutines-flows/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/kotlin-exposed-patterns/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/kotlin-ktor-patterns/SKILL.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "skills/kotlin-patterns/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/kotlin-testing/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/kubernetes-patterns/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/laravel-patterns/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/laravel-plugin-discovery/SKILL.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "skills/laravel-security/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/laravel-tdd/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/laravel-verification/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/latency-critical-systems/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/lead-intelligence/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/liquid-glass-design/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/living-docs-governance/SKILL.md",
+            "part": "description",
+            "words": 63
+          },
+          {
+            "path": "skills/llm-trading-agent-security/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/logistics-exception-management/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/loop-design-check/SKILL.md",
+            "part": "description",
+            "words": 56
+          },
+          {
+            "path": "skills/mailtrap-email-integration/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/make-interfaces-feel-better/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/manim-video/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/market-research/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/marketing-campaign/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/master-agreement-generator/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/mcp-server-patterns/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/messages-ops/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/ml-adoption-playbook/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/mle-workflow/SKILL.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "skills/motion-advanced/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/motion-foundations/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/motion-patterns/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/mysql-patterns/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/nanoclaw-repl/SKILL.md",
+            "part": "description",
+            "words": 45
+          },
+          {
+            "path": "skills/nasiko-control-plane/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/nestjs-patterns/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/netmiko-ssh-automation/SKILL.md",
+            "part": "description",
+            "words": 38
+          },
+          {
+            "path": "skills/network-bgp-diagnostics/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/network-config-validation/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/network-interface-health/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/nextjs-turbopack/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/nodejs-keccak256/SKILL.md",
+            "part": "description",
+            "words": 47
+          },
+          {
+            "path": "skills/nutrient-document-processing/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/nuxt4-patterns/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/openclaw-persona-forge/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/opensource-pipeline/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/operator-approval-loop/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/orch-add-feature/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/orch-build-mvp/SKILL.md",
+            "part": "description",
+            "words": 52
+          },
+          {
+            "path": "skills/orch-change-feature/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/orch-fix-defect/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/orch-pipeline/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/orch-refine-code/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/parallel-execution-optimizer/SKILL.md",
+            "part": "description",
+            "words": 64
+          },
+          {
+            "path": "skills/perl-patterns/SKILL.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "skills/perl-security/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/perl-testing/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/plan-canvas/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/plan-orchestrate/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/plankton-code-quality/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/postgres-patterns/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/prediction-market-oracle-research/SKILL.md",
+            "part": "description",
+            "words": 49
+          },
+          {
+            "path": "skills/prediction-market-risk-review/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/prisma-patterns/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/product-capability/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/product-lens/SKILL.md",
+            "part": "description",
+            "words": 57
+          },
+          {
+            "path": "skills/production-audit/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/production-scheduling/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/project-flow-ops/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/prompt-optimizer/SKILL.md",
+            "part": "description",
+            "words": 60
+          },
+          {
+            "path": "skills/python-patterns/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/python-testing/SKILL.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "skills/pytorch-patterns/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/quality-nonconformance/SKILL.md",
+            "part": "description",
+            "words": 51
+          },
+          {
+            "path": "skills/quarkus-patterns/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/quarkus-security/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/quarkus-tdd/SKILL.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "skills/quarkus-verification/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/rails-patterns/SKILL.md",
+            "part": "description",
+            "words": 49
+          },
+          {
+            "path": "skills/ralphinho-rfc-pipeline/SKILL.md",
+            "part": "description",
+            "words": 62
+          },
+          {
+            "path": "skills/react-native-patterns/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/react-patterns/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/react-performance/SKILL.md",
+            "part": "description",
+            "words": 43
+          },
+          {
+            "path": "skills/react-testing/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/recsys-pipeline-architect/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/recursive-decision-ledger/SKILL.md",
+            "part": "description",
+            "words": 60
+          },
+          {
+            "path": "skills/redis-patterns/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/regex-vs-llm-structured-text/SKILL.md",
+            "part": "description",
+            "words": 58
+          },
+          {
+            "path": "skills/remotion-video-creation/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/repo-scan/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/research-ops/SKILL.md",
+            "part": "description",
+            "words": 28
+          },
+          {
+            "path": "skills/returns-reverse-logistics/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/rules-distill/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/rust-patterns/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/rust-testing/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/safety-guard/SKILL.md",
+            "part": "description",
+            "words": 54
+          },
+          {
+            "path": "skills/santa-method/SKILL.md",
+            "part": "description",
+            "words": 41
+          },
+          {
+            "path": "skills/scientific-db-pubmed-database/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/scientific-db-uspto-database/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/scientific-pkg-gget/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/scientific-thinking-literature-review/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/scientific-thinking-scholar-evaluation/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/search-first/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/security-bounty-hunter/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/security-review/SKILL.md",
+            "part": "description",
+            "words": 25
+          },
+          {
+            "path": "skills/security-scan/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/seo/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/skill-comply/SKILL.md",
+            "part": "description",
+            "words": 52
+          },
+          {
+            "path": "skills/skill-scout/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/skill-stocktake/SKILL.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "skills/social-graph-ranker/SKILL.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "skills/social-publisher/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/springboot-patterns/SKILL.md",
+            "part": "description",
+            "words": 42
+          },
+          {
+            "path": "skills/springboot-security/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/springboot-tdd/SKILL.md",
+            "part": "description",
+            "words": 21
+          },
+          {
+            "path": "skills/springboot-verification/SKILL.md",
+            "part": "description",
+            "words": 55
+          },
+          {
+            "path": "skills/strategic-compact/SKILL.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "skills/swift-actor-persistence/SKILL.md",
+            "part": "description",
+            "words": 34
+          },
+          {
+            "path": "skills/swift-concurrency-6-2/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/swift-protocol-di-testing/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/swiftui-patterns/SKILL.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "skills/taste-application/SKILL.md",
+            "part": "description",
+            "words": 76
+          },
+          {
+            "path": "skills/taste-distillation/SKILL.md",
+            "part": "description",
+            "words": 63
+          },
+          {
+            "path": "skills/taste/SKILL.md",
+            "part": "description",
+            "words": 67
+          },
+          {
+            "path": "skills/tasteforge-video/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "skills/tdd-workflow/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/team-agent-orchestration/SKILL.md",
+            "part": "description",
+            "words": 48
+          },
+          {
+            "path": "skills/team-builder/SKILL.md",
+            "part": "description",
+            "words": 61
+          },
+          {
+            "path": "skills/terminal-opener/SKILL.md",
+            "part": "description",
+            "words": 71
+          },
+          {
+            "path": "skills/terminal-ops/SKILL.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "skills/tinystruct-patterns/SKILL.md",
+            "part": "description",
+            "words": 60
+          },
+          {
+            "path": "skills/token-budget-advisor/SKILL.md",
+            "part": "description",
+            "words": 70
+          },
+          {
+            "path": "skills/ui-demo/SKILL.md",
+            "part": "description",
+            "words": 37
+          },
+          {
+            "path": "skills/ui-to-vue/SKILL.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "skills/uncloud/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/unified-memory/SKILL.md",
+            "part": "description",
+            "words": 40
+          },
+          {
+            "path": "skills/unified-notifications-ops/SKILL.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "skills/verification-loop/SKILL.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "skills/video-editing/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/videodb/SKILL.md",
+            "part": "description",
+            "words": 66
+          },
+          {
+            "path": "skills/visa-doc-translate/SKILL.md",
+            "part": "description",
+            "words": 58
+          },
+          {
+            "path": "skills/vite-patterns/SKILL.md",
+            "part": "description",
+            "words": 30
+          },
+          {
+            "path": "skills/vue-patterns/SKILL.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "skills/windows-desktop-e2e/SKILL.md",
+            "part": "description",
+            "words": 33
+          },
+          {
+            "path": "skills/workspace-surface-audit/SKILL.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "skills/x-api/SKILL.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "commands/aside.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/auto-update.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/build-fix.md",
+            "part": "description",
+            "words": 14
+          },
+          {
+            "path": "commands/checkpoint.md",
+            "part": "description",
+            "words": 10
+          },
+          {
+            "path": "commands/code-review.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "commands/cost-report.md",
+            "part": "description",
+            "words": 39
+          },
+          {
+            "path": "commands/cpp-build.md",
+            "part": "description",
+            "words": 18
+          },
+          {
+            "path": "commands/cpp-review.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "commands/cpp-test.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/ecc-guide.md",
+            "part": "description",
+            "words": 36
+          },
+          {
+            "path": "commands/epic-claim.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/epic-decompose.md",
+            "part": "description",
+            "words": 10
+          },
+          {
+            "path": "commands/epic-publish.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/epic-review.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/epic-sync.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/epic-unblock.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/epic-validate.md",
+            "part": "description",
+            "words": 7
+          },
+          {
+            "path": "commands/evolve.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/fastapi-review.md",
+            "part": "description",
+            "words": 16
+          },
+          {
+            "path": "commands/feature-dev.md",
+            "part": "description",
+            "words": 9
+          },
+          {
+            "path": "commands/flutter-build.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "commands/flutter-review.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/flutter-test.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "commands/gan-build.md",
+            "part": "description",
+            "words": 13
+          },
+          {
+            "path": "commands/gan-design.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/go-build.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/go-review.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "commands/go-test.md",
+            "part": "description",
+            "words": 18
+          },
+          {
+            "path": "commands/gradle-build.md",
+            "part": "description",
+            "words": 9
+          },
+          {
+            "path": "commands/harness-audit.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "commands/hookify-configure.md",
+            "part": "description",
+            "words": 6
+          },
+          {
+            "path": "commands/hookify-help.md",
+            "part": "description",
+            "words": 6
+          },
+          {
+            "path": "commands/hookify-list.md",
+            "part": "description",
+            "words": 5
+          },
+          {
+            "path": "commands/hookify.md",
+            "part": "description",
+            "words": 42
+          },
+          {
+            "path": "commands/instinct-export.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/instinct-import.md",
+            "part": "description",
+            "words": 9
+          },
+          {
+            "path": "commands/instinct-status.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/jira.md",
+            "part": "description",
+            "words": 20
+          },
+          {
+            "path": "commands/kotlin-build.md",
+            "part": "description",
+            "words": 18
+          },
+          {
+            "path": "commands/kotlin-review.md",
+            "part": "description",
+            "words": 17
+          },
+          {
+            "path": "commands/kotlin-test.md",
+            "part": "description",
+            "words": 16
+          },
+          {
+            "path": "commands/learn-eval.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/learn.md",
+            "part": "description",
+            "words": 52
+          },
+          {
+            "path": "commands/loop-start.md",
+            "part": "description",
+            "words": 58
+          },
+          {
+            "path": "commands/loop-status.md",
+            "part": "description",
+            "words": 10
+          },
+          {
+            "path": "commands/marketing-campaign.md",
+            "part": "description",
+            "words": 58
+          },
+          {
+            "path": "commands/model-route.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/multi-backend.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/multi-execute.md",
+            "part": "description",
+            "words": 13
+          },
+          {
+            "path": "commands/multi-frontend.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/multi-plan.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "commands/multi-workflow.md",
+            "part": "description",
+            "words": 13
+          },
+          {
+            "path": "commands/orch-add-feature.md",
+            "part": "description",
+            "words": 22
+          },
+          {
+            "path": "commands/orch-build-mvp.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "commands/orch-change-feature.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "commands/orch-fix-defect.md",
+            "part": "description",
+            "words": 23
+          },
+          {
+            "path": "commands/orch-refine-code.md",
+            "part": "description",
+            "words": 22
+          },
+          {
+            "path": "commands/orch-review.md",
+            "part": "description",
+            "words": 50
+          },
+          {
+            "path": "commands/plan-canvas.md",
+            "part": "description",
+            "words": 31
+          },
+          {
+            "path": "commands/plan-prd.md",
+            "part": "description",
+            "words": 13
+          },
+          {
+            "path": "commands/plan.md",
+            "part": "description",
+            "words": 44
+          },
+          {
+            "path": "commands/pm2.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/pr.md",
+            "part": "description",
+            "words": 16
+          },
+          {
+            "path": "commands/project-init.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "commands/projects.md",
+            "part": "description",
+            "words": 7
+          },
+          {
+            "path": "commands/promote.md",
+            "part": "description",
+            "words": 6
+          },
+          {
+            "path": "commands/prp-commit.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/prp-implement.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/prp-plan.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/prp-pr.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/prp-prd.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/prune.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "commands/python-review.md",
+            "part": "description",
+            "words": 18
+          },
+          {
+            "path": "commands/quality-gate.md",
+            "part": "description",
+            "words": 14
+          },
+          {
+            "path": "commands/react-build.md",
+            "part": "description",
+            "words": 32
+          },
+          {
+            "path": "commands/react-review.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "commands/react-test.md",
+            "part": "description",
+            "words": 24
+          },
+          {
+            "path": "commands/refactor-clean.md",
+            "part": "description",
+            "words": 11
+          },
+          {
+            "path": "commands/resume-session.md",
+            "part": "description",
+            "words": 20
+          },
+          {
+            "path": "commands/review-pr.md",
+            "part": "description",
+            "words": 35
+          },
+          {
+            "path": "commands/rust-build.md",
+            "part": "description",
+            "words": 19
+          },
+          {
+            "path": "commands/rust-review.md",
+            "part": "description",
+            "words": 18
+          },
+          {
+            "path": "commands/rust-test.md",
+            "part": "description",
+            "words": 15
+          },
+          {
+            "path": "commands/santa-loop.md",
+            "part": "description",
+            "words": 27
+          },
+          {
+            "path": "commands/save-session.md",
+            "part": "description",
+            "words": 22
+          },
+          {
+            "path": "commands/security-scan.md",
+            "part": "description",
+            "words": 29
+          },
+          {
+            "path": "commands/sessions.md",
+            "part": "description",
+            "words": 9
+          },
+          {
+            "path": "commands/setup-pm.md",
+            "part": "description",
+            "words": 6
+          },
+          {
+            "path": "commands/skill-create.md",
+            "part": "description",
+            "words": 46
+          },
+          {
+            "path": "commands/skill-health.md",
+            "part": "description",
+            "words": 26
+          },
+          {
+            "path": "commands/test-coverage.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/update-codemaps.md",
+            "part": "description",
+            "words": 8
+          },
+          {
+            "path": "commands/update-docs.md",
+            "part": "description",
+            "words": 12
+          },
+          {
+            "path": "commands/vue-review.md",
+            "part": "description",
+            "words": 27
+          }
+        ]
+      },
+      "evidence": [
+        "node scripts/rubric.mjs context-cost --desc agents/*.md skills/*/SKILL.md commands/*.md: 68 agent descriptions 1846 + 293 skill descriptions 12349 + 94 command descriptions 1852 = 16047 words -> 2",
+        "No instruction file is auto-loaded by the plugin (the repo's CLAUDE.md/AGENTS.md are for working on ECC itself); MCP servers: none (.claude-plugin/plugin.json mcpServers {})",
+        "Not counted: SessionStart additionalContext (scripts/hooks/session-start.js:647-798), near zero on a fresh install, capped at 8000 chars (~1300 words) once session summaries and instincts exist; with it the steady state is ~17350 words, score 1",
+        "Other profiles: plugin + rules/common + rules/typescript as README.md:300-306 recommends = 16047 + 3610 = 19657 words (score 0); every rules pack = +36847 words"
+      ],
+      "delta": null
+    },
+    {
+      "id": "routing",
+      "score": 4,
+      "nearestAnchor": "5",
+      "missingForNext": "Non-triggers per agent and explicit boundaries between overlapping agents.",
+      "evidence": [
+        "agents/code-reviewer.md:3 — 'Proactively reviews code ... MUST BE USED for all code changes'; agents/architect.md:3 — 'Use PROACTIVELY when planning new features ...'",
+        "14 of 68 agent descriptions say PROACTIVELY; 2 of 68 have a 'When NOT to Use' section (agents/build-error-resolver.md:113, agents/refactor-cleaner.md:82)",
+        "Unresolved overlaps: architect / code-architect / planner (all design or plan features); code-reviewer 'for all code changes' vs 22 language and framework reviewers",
+        "No routing eval found (no case file that expects an agent for a prompt; tests/ covers hooks and installers)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "governance",
+      "score": 1,
+      "nearestAnchor": "0",
+      "missingForNext": "Named owners per domain, a narrow blocking rule and an overrule path.",
+      "evidence": [
+        "No owner per domain and no veto: grep for veto/overrule across agents/*.md, rules/common/*.md, AGENTS.md finds none",
+        "rules/common/code-review.md:55 — any reviewer's CRITICAL finding is 'BLOCK - Must fix before merge' (rules are not in the default plugin install); no overrule path and no rule against closing on the author's own review"
+      ],
+      "delta": null
+    },
+    {
+      "id": "enforcement",
+      "score": 0,
+      "nearestAnchor": "0",
+      "measurement": {
+        "items": {
+          "E1": "absent",
+          "E2": "block",
+          "E3": "warn",
+          "E4": "absent",
+          "E5": "absent"
+        },
+        "penalties": [
+          {
+            "id": "ungated-off-switch",
+            "why": "ECC_HOOKS_ENABLED=false or the plugin option hooks_enabled / ecc/setup.json (scripts/lib/hook-flags.js:64-73) turns every hook off, block-no-verify included; settings.json, where both live, is not gated"
+          },
+          {
+            "id": "ungated-off-switch",
+            "why": "ECC_HOOK_PROFILE=minimal or the plugin option hook_profile (scripts/lib/hook-flags.js:75-84) drops gateguard and config-protection, which run only on standard,strict (hooks/hooks.json)"
+          },
+          {
+            "id": "ungated-off-switch",
+            "why": "ECC_DISABLED_HOOKS=<ids> (scripts/lib/hook-flags.js:86-97) disables any hook by id, including pre:bash:block-no-verify"
+          },
+          {
+            "id": "ungated-off-switch",
+            "why": "ECC_GATEGUARD=off or GATEGUARD_DISABLED=1 (scripts/hooks/gateguard-fact-force.js:1321-1325); the deny message itself tells the model to use it (:1759, :1798)"
+          },
+          {
+            "id": "ungated-off-switch",
+            "why": "GATEGUARD_EXEMPT_GLOBS (scripts/hooks/gateguard-fact-force.js:110-162) exempts any path from the edit gate"
+          }
+        ]
+      },
+      "evidence": [
+        "Profile read: standard (default per scripts/lib/hook-flags.js:82 and README.md:1333-1334). Hook ids and profiles from the commands in hooks/hooks.json.",
+        "E1 absent — the only write-time secret scan is pre-bash-commit-quality.js:132-158, which blocks a commit (exit 2, :502-503) but is registered for the strict profile only (scripts/hooks/bash-hook-dispatcher.js:43-44). governance-capture records, it does not block, and is opt-in (hooks.metadata.json, ECC_GOVERNANCE_CAPTURE=1). No Write/Edit content check found.",
+        "E2 block — scripts/hooks/block-no-verify.js:123-158, :229-241, exit 2 at :759/:785, on minimal,standard,strict (bash-hook-dispatcher.js:24-25). Covers --no-verify, commit -n in clusters, -c core.hooksPath. Gaps: --no-gpg-sign is not checked; the PowerShell matcher runs only gateguard (hooks/hooks.json), so the PowerShell tool is not covered.",
+        "E3 warn — ECC declares no high-risk paths. config-protection.js:1-60 blocks edits to a fixed list of linter/formatter configs. gateguard-fact-force.js denies the first Edit/Write of every file and asks the model for facts, then allows the retry (:1730-1800): the model clears it, the user is never asked. Scored warn, not confirm.",
+        "E4 absent — Bash/PowerShell gateguard gates destructive commands (rm, destructive git, dd, SQL: gateguard-fact-force.js:794-805) and quotes the instruction once per session for routine ones; a redirect into a source file is routine.",
+        "E5 absent — gateguard exempts .claude/settings*.json explicitly (gateguard-fact-force.js:1621-1624, :1865, :1898); config-protection's list has no ECC or Claude hook config; the plugin's hooks.json lives in the plugin cache with no gate.",
+        "Checklist 0+2+1+0+0 = 3; five ungated off-switches (-10); clamped to 0, which matches anchor 0 ('every blocking hook can be turned off by an ungated switch'). Advisory-labeled-enforced was not searched exhaustively: the score is already at the floor."
+      ],
+      "delta": null
+    },
+    {
+      "id": "review-noise",
+      "score": 4,
+      "nearestAnchor": "5",
+      "missingForNext": "The bar in every reviewer, then bait and clean eval cases.",
+      "evidence": [
+        "Bar: agents/code-reviewer.md:27-33 (>80% confidence), :66-70 ('It Is Acceptable And Expected To Return Zero Findings'), :76 common false positives to skip",
+        "Only 3 of 23 *-reviewer agents carry a confidence bar or a zero-findings line (grep 'zero findings|>80%')",
+        "Bait and clean cases: none found. Real-model run: none found."
+      ],
+      "delta": null
+    },
+    {
+      "id": "memory",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Pruning of stale instincts, not only of session files.",
+      "evidence": [
+        "Capture: skills/continuous-learning-v2/SKILL.md:3-34 — hooks observe sessions (pre:observe, stop:evaluate-session in hooks/hooks.json), create atomic instincts with confidence, /evolve clusters them into skills/commands/agents, /promote moves project instincts to global",
+        "Landing: ${XDG_DATA_HOME}/ecc-homunculus/instincts/{personal,inherited} and projects/<hash>/ (SKILL.md:116-191), plain files the user can read",
+        "Wiring and dedupe: scripts/hooks/session-start.js:456-500 loads global and project instincts, dedupes by id (:487-489), filters by confidence and injects at most 6 (:38)",
+        "Pruning: session-tmp retention 30 days (README.md:1345-1346); no expiry or decay of instincts themselves found"
+      ],
+      "delta": null
+    },
+    {
+      "id": "self-measurement",
+      "score": 2,
+      "nearestAnchor": "0",
+      "missingForNext": "Cases per core role (routing, verdicts, low-risk controls) and recorded results.",
+      "evidence": [
+        "No case set tests ECC's own agents' routing or verdicts; tests/ (346 test files) covers hooks, installers and adapters",
+        "docker/context-profiles/ai-eval.js — a real-model evaluation harness (arms, repeats, corpus) for context profiles: behavioral, but not per role",
+        "skills/agent-eval and .agents/skills/eval-harness are tools for the user's agents, not results for ECC's"
+      ],
+      "delta": null
+    },
+    {
+      "id": "observability",
+      "score": 5,
+      "nearestAnchor": "5",
+      "evidence": [
+        "scripts/hooks/cost-tracker.js:5-28 — Stop hook sums usage per session from the transcript into ~/.claude/metrics/costs.jsonl (tokens, cost); per session, not per dispatch",
+        "scripts/hooks/skill-run-tracker.js (post:skill:track) records Skill failures; no record per agent dispatch with model, effort, duration or output size found"
+      ],
+      "delta": null
+    },
+    {
+      "id": "stack-coverage",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "rules/: 21 stack packs (angular, arkts, cpp, csharp, dart, fsharp, golang, java, kotlin, nuxt, perl, php, python, react, react-native, ruby, rust, swift, typescript, vue, web) plus common",
+        "Language reviewers and build resolvers, e.g. agents/cpp-reviewer.md, agents/django-reviewer.md, agents/go-build-resolver.md (23 *-reviewer agents)",
+        "Selective install: per-pack copy (README.md:300-306), install --modules / --with capability: (README.md:257, :484-485)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "portability",
+      "score": 8,
+      "nearestAnchor": "10",
+      "missingForNext": "Enforcement on Kimi and Gemini, whose hook systems exist, or a documented gap for each.",
+      "evidence": [
+        "Claude Code: plugin + hooks/hooks.json. Codex: native plugin, hooks/codex-hooks.json, trust decision (README.md:350-361). OpenCode: .opencode/plugins with --enable-hooks (README.md:400). Cursor: .cursor/hooks.json. Kiro: .kiro/hooks.",
+        "Kimi Code: no hooks; documented at README.md:799 ('Kimi Code supports native hooks, but ECC's current managed-project adapter does not configure them')",
+        "Gemini CLI: .gemini/ has no hooks; Gemini CLI supports BeforeTool hooks today (Google Developers Blog, 'Tailor Gemini CLI to your workflow with hooks'); the gap is not documented in README.md:399-409"
+      ],
+      "delta": null
+    },
+    {
+      "id": "security",
+      "score": 7,
+      "nearestAnchor": "5",
+      "missingForNext": "A secret scan in CI and a gate on the kit's own hook configuration.",
+      "evidence": [
+        "4 runtime dependencies (@iarna/toml, ajv, js-yaml, sql.js; package.json); no install/postinstall/prepare scripts",
+        "Release provenance: npm publish --provenance (.github/workflows/release.yml:255, reusable-release.yml:247) and an SLSA3 generator (.github/workflows/generator-generic-ossf-slsa3-publish.yml)",
+        "CI: npm audit signatures and --audit-level=high (.github/workflows/ci.yml:332-337); validate-workflow-security, unicode safety, no personal paths (.github/workflows/reusable-validate.yml:47-57)",
+        "No secret-scanning step found in any workflow (.gitleaksignore exists, no gitleaks/trufflehog step); the kit's own hook config is not gated (see enforcement E5)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "install",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Bring rule packs under the tracked lifecycle.",
+      "evidence": [
+        "npx ecc-universal@2.2.3 setup / install --guided; list-installed, doctor, repair, uninstall --dry-run, uninstall (README.md:612-622)",
+        "Tracking: install-state store (scripts/install-apply.js:194, scripts/lib/install-state-store-sync); Codex sync writes an ownership manifest so cleanup preserves modified user files (README.md:363); Claude scope moves via claude plugin uninstall --keep-data (scripts/lib/claude-scope-migration.js:164-198)",
+        "Outside the lifecycle: rules are copied by hand with cp -R into ~/.claude/rules/ecc (README.md:300-306)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "consistency",
+      "score": 6,
+      "nearestAnchor": "5",
+      "missingForNext": "One source for repeated rules, with a check that copies match it.",
+      "evidence": [
+        "Validation in CI: validate-agents, -hooks, -commands, -skills, -install-manifests, -rules (.github/workflows/reusable-validate.yml:32-51); a spot check of counts finds none drifted (see clarity)",
+        "Duplication by hand: the 80% coverage rule in at least six files (see clarity); per-harness copies under .cursor/, .kiro/, .opencode/, .codex/, .gemini/, .agents/ and docs/<locale>/; none of the validators found ties a repeated rule to one source"
+      ],
+      "delta": null
+    },
+    {
+      "id": "scope-focus",
+      "score": 2,
+      "nearestAnchor": "0",
+      "missingForNext": "Non-goals, and off-domain skills moved out of the default install.",
+      "evidence": [
+        "Stated purpose: 'Harness-native ECC plugin for engineering teams' (.claude-plugin/plugin.json description); no non-goals or 'not for' found in README.md",
+        "Outside the purpose, installed by default with the plugin: skills/investor-outreach, investor-materials, marketing-campaign, seo, social-publisher, x-api, lead-intelligence, brand-voice, content-engine, manim-video, remotion-video-creation, video-editing, prediction-market-oracle-research, llm-trading-agent-security (26 such names in skills/)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "kit-ci",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "346 test files under tests/; runner node tests/run-all.js (.github/workflows/ci.yml:95-99)",
+        "CI on push to main and release/** and on pull requests (ci.yml:3-8); matrix ubuntu/windows/macos x Node 18/20/22 x npm/pnpm/yarn/bun (ci.yml:21-34); packed install on all three OS (ci.yml:147-154); PowerShell paths covered in 6 hook test files",
+        "Validation step: .github/workflows/reusable-validate.yml"
+      ],
+      "delta": null
+    },
+    {
+      "id": "human-docs",
+      "score": 5,
+      "nearestAnchor": "5",
+      "evidence": [
+        "README.md is 2048 lines; lines 1-68 are sponsor and partner blocks before the first heading, star history at :95, install at :70 and :162",
+        "Quickstart has an expected result: run /plugin list and see ecc@ecc enabled (README.md:196); TROUBLESHOOTING.md and per-harness guides in docs/",
+        "Audiences mixed in one file: install, architecture, sponsorship, self-hosted models and changelog"
+      ],
+      "delta": null
+    }
+  ],
+  "notes": "First run of this target under rubric 1.0.0; no previous run, so no deltas. Context cost counts the descriptions the plugin installs. Claude Code caps the skill listing (third-party sources put the cap at 1-2% of the context window; not verified against official docs), so part of ECC's 14201 skill and command words may never reach the model, at the price of those skills not auto-invoking. The rubric's method does not say whether a harness cap is subtracted; this run did not subtract it. Audited from source at the tag, not from an installed plugin; the default profile was read from README.md and hooks/hooks.json. The auditor ran under canonkit's rules, not ECC's.",
+  "average": 4.9
+}
