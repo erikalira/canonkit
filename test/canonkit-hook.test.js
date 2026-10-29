@@ -258,6 +258,18 @@ describe("git hook and signing bypass", () => {
     assert.equal(ps("git commit -nm x"), "deny");
     assert.equal(bash("git commit -anm x"), "deny");
   });
+  test("a short option takes a value only in the subcommands where it does", () => {
+    // rebase -m is --merge and am -m is --message-id: no value, so the flag after them counts.
+    assert.equal(bash("git rebase -m --no-verify main"), "deny");
+    assert.equal(ps("git rebase -m --no-gpg-sign main"), "deny");
+    assert.equal(bash("git am -m --no-verify p.patch"), "deny");
+    // Where -m does take a value, the token after it is that value.
+    assert.equal(bash("git commit -m --no-verify"), "ask");
+    assert.equal(bash("git merge -m --no-verify feat"), "allow");
+    assert.equal(bash("git cherry-pick -m 1 abc123"), "allow");
+    assert.equal(bash("git cherry-pick -m 1 --no-gpg-sign abc123"), "deny");
+    assert.equal(bash("git rebase -x 'npm test' main"), "allow");
+  });
   test("am -n is --no-verify too; elsewhere -n is not a bypass", () => {
     assert.equal(bash("git am -n p.patch"), "deny");
     assert.equal(ps("git am -3n p.patch"), "deny");
