@@ -1,0 +1,74 @@
+# canonkit installs a hook that runs on every tool call, so the published
+# tarball is worth more to an attacker than the repository is. Publishing only
+# from here means npm attaches provenance (the commit and workflow that built
+# it) and no long-lived npm token exists to steal: trusted publishing
+# authenticates the publish with this run's OIDC token.
+#
+# The trusted publisher on npmjs.com must name this file (release.yml) and the
+# `npm` environment, exactly. Steps: docs/releasing.md.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    # Approval and the tag rule live on the environment, outside this file.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # No npm cache: it is shared with the test jobs, and the publish job
+      # restores nothing another job could have written.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      # Trusted publishing needs npm >= 11.5.1; Node 22 still ships npm 10.
+      - name: npm supports trusted publishing
+        run: |
+          v=$(npm --version)
+          echo "npm $v"
+          node -e 'const [a,b,c]=process.argv[1].split(".").map(Number);process.exit(a>11||(a===11&&(b>5||(b===5&&c>=1)))?0:1)' "$v"
+
+      # Catches a mistake, not an attacker: this check runs from the tagged
+      # commit's own copy of this file. The controls are the tag ruleset and
+      # the environment approval (docs/releasing.md). Releases are stable-only:
+      # a prerelease version would be published as `latest`.
+      - name: Tag is on main, stable, and matches package.json
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          v=$(node -p 'require("./package.json").version')
+          case "$v" in *-*) echo "prerelease $v is not published from here"; exit 1 ;; esac
+          test "v$v" = "$GITHUB_REF_NAME"
+
+      # The tarball's file list goes into the log, for the review after the fact.
+      - run: npm pack --dry-run --ignore-scripts
+
+      # Every step in this job can mint the publish token, so nothing else
+      # runs here: no `npm ci` (the package has no build and publish needs no
+      # node_modules) and --ignore-scripts skips prepublishOnly, whose tests
+      # already passed in the `test` job on this same commit.
+      # Provenance is automatic under trusted publishing; the flag makes a
+      # missing attestation fail the publish instead of passing silently.
+      - run: npm publish --provenance --ignore-scripts
