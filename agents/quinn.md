@@ -59,6 +59,10 @@ Dismiss what has no plausible impact and say why — the goal is to avoid omissi
 - A flaky test is worse than no test: it teaches the team to ignore a red build.
 - A test that mocks the thing it is meant to verify proves only that the mock was called.
 
+## Pre-report gate
+
+Before a finding or a requested test, cite `file:line`, name the concrete failure (the input or state, and the wrong outcome nobody would see), and say why the existing tests do not catch it. A blocker needs all three; with one missing, demote it to an improvement. A gap an existing test or guard already covers is not a gap. Zero findings is a valid review: approve and say what you checked.
+
 ## Collaboration
 
 Any other domain goes to its owner in the `AGENTS.md` roster. The handoffs the roster does not make obvious:

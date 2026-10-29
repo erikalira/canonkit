@@ -1,0 +1,466 @@
+{
+  "about": "Rubric for auditing the quality of an AI-instruction configuration (canonkit, ECC, or any other kit of agents, skills, rules and hooks). Data, not prose: the instruction-audit skill reads it, scores every active parameter 0-10 with evidence, and saves the run under evals/audits/. Anchors 0, 5 and 10 are fixed points; a score between two anchors must say which anchor the target is nearer and what is missing to reach the next one. Measured parameters are scored by their formula, not by judgment. Never delete a parameter: retire it with a date and reason, and record merges in mergedFrom so old runs stay comparable.",
+  "rubric": "instruction-quality",
+  "version": "1.0.0",
+  "date": "2026-10-29",
+  "versioning": {
+    "major": "The set of active parameters, a weight, a formula, or what an anchor scores changes. Runs with different majors are never averaged together.",
+    "minor": "Wording or evidence clarified without changing what any target would score. Runs within the same major stay comparable.",
+    "comparableWithin": "major"
+  },
+  "scale": {
+    "min": 0,
+    "max": 10,
+    "step": 1,
+    "noise": "Without a cited commit, a delta of 1 between runs of the same major is evaluator noise, not progress or regression."
+  },
+  "aggregation": {
+    "method": "weighted-mean",
+    "weights": "equal",
+    "rounding": 1,
+    "why": "The rubric compares different kits; weighting toward what one kit is built for would bias the comparison in its favor."
+  },
+  "knownBias": "Seeded from the canonkit x ECC comparison and drafted under canonkit's own rules. The enforcement checklist and the governance anchors were written from canonkit's vocabulary; read a high canonkit score there with that in mind.",
+  "changelog": [
+    {
+      "version": "1.0.0",
+      "date": "2026-10-29",
+      "change": "First version: 19 parameters, the union of audit rounds 1 and 2 with no merges. context-cost and enforcement are measured; the rest are described.",
+      "reason": "Rounds 1 and 2 used different parameter sets (16 vs 17) and no anchors, so their averages were not comparable and unchanged code moved up to 2 points on judgment alone."
+    }
+  ],
+  "parameters": [
+    {
+      "id": "clarity",
+      "name": "Clarity and precision",
+      "measures": "Whether a model can act on each instruction without guessing: stated conditions, defined terms, and no contradictions between files.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Vague imperatives (\"be careful\", \"write good code\"), absolute rules with no scope, and at least one rule that contradicts another file on the same point.",
+        "5": "Most rules state when they apply and what to do, but some terms are undefined, some absolutes have no scope, or one or two numbers disagree across files.",
+        "10": "Every rule states its condition and its action, each term is defined once, and a cross-file check of numbers and thresholds finds no contradiction."
+      },
+      "evidence": [
+        "At least two quoted rules with file:line, one clear and one weak if any exist.",
+        "Every contradiction found, with both locations; if none, say which numbers and thresholds were cross-checked."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "rationale",
+      "name": "Explains the why",
+      "measures": "Whether non-obvious rules carry a specific reason, so an edge case the rule did not foresee can be decided from the reason.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Rules are bare commands; no reason is given anywhere.",
+        "5": "About half of the non-obvious rules give a reason, and many reasons are generic (\"for quality\", \"best practice\").",
+        "10": "Every non-obvious rule gives a specific reason or the incident behind it, and the reason is enough to decide a case the rule does not name."
+      },
+      "evidence": [
+        "A sample of 10 non-obvious rules (say how they were picked) and the count that carry a specific reason.",
+        "One quoted rule with a specific reason and, if any, one without."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": [],
+      "note": "Round 2 folded this into clarity at the same score. Kept separate: a rule can be precise and still unexplained."
+    },
+    {
+      "id": "proportionality",
+      "name": "Effort proportional to risk",
+      "measures": "Whether the process required changes with the risk of the change, including an explicit license to skip ceremony on low-risk work.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "The same process for every change (always plan, always full review, always TDD); no risk tiers.",
+        "5": "Risk tiers exist, but they do not change what is required, or nothing says what not to do at low risk.",
+        "10": "One risk scale shared by every role; each tier changes what is required; low risk explicitly skips ceremony; scale (blast radius, users) is kept separate from risk."
+      },
+      "evidence": [
+        "The risk scale, file:line.",
+        "Two places where the tier changes what is done, one of them at low risk."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": [],
+      "note": "Round 2 merged this with context-cost; that merge cost canonkit a point with no code change. Kept separate."
+    },
+    {
+      "id": "context-cost",
+      "name": "Always-loaded context cost",
+      "measures": "Words the kit puts in the model's context at the start of every session, before any task.",
+      "kind": "measured",
+      "weight": 1,
+      "measure": {
+        "unit": "words (wc -w)",
+        "method": "On the kit's default install, sum the words of: (a) instruction files the harness loads automatically at user and project level, counting only content the kit installed (exclude the user's own lines outside managed markers); (b) the description of every agent, skill and command installed by default; (c) instructions of MCP servers the kit installs. Exclude bodies loaded only on demand. Other install profiles are reported in notes, not scored.",
+        "formula": "Piecewise linear through points; at or below the first point scores its value, at or above the last scores its value; round to the nearest integer.",
+        "points": [[2500, 10], [8000, 5], [20000, 0]],
+        "calibration": "canonkit 1.1.5 core on Claude Code, 2026-10-29, measured with instruction-audit's rubric.mjs: managed AGENTS.md block 1302 + managed CLAUDE.md block 350 + 10 core agent descriptions 273 + 2 skill descriptions 68 = 1993 words, score 10."
+      },
+      "anchors": {
+        "0": "20000 words or more loaded on every session.",
+        "5": "About 8000 words loaded on every session.",
+        "10": "2500 words or fewer loaded on every session."
+      },
+      "evidence": [
+        "The file list with a word count per file and the total.",
+        "The install profile measured, and the totals of other profiles if they exist."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": [],
+      "note": "Round 2 gave ECC +1 for its lean/full profiles with no measurement. Now the default profile is scored and the others are only reported."
+    },
+    {
+      "id": "routing",
+      "name": "Who to call and when not to",
+      "measures": "Whether each agent or skill says when to use it and when not to, and whether overlaps between them are resolved.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No routing guidance, or every agent says to use it proactively.",
+        "5": "Descriptions say when to call, but not when not to; overlaps between agents are left to the model.",
+        "10": "Each agent states its triggers and its non-triggers, every overlap has an explicit boundary, and routing is checked by eval cases."
+      },
+      "evidence": [
+        "Two quoted descriptions, file:line.",
+        "Overlaps found and whether a boundary resolves them.",
+        "The routing eval file and its case count, if one exists."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "governance",
+      "name": "Ownership, authority, veto",
+      "measures": "Whether each domain has one owner, what that owner can block, under what conditions, and who overrules.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No owner per domain; any agent can block anything, or nothing can be blocked.",
+        "5": "Owners are named, but blocking authority or the overrule path is undefined.",
+        "10": "One owner per domain; blocking is explicit and narrow (inside the domain, above a risk level, against a concrete risk); the overrule path is named; a high-risk change cannot close on its author's own review."
+      },
+      "evidence": [
+        "The ownership/authority table or equivalent, file:line.",
+        "The overrule rule and the self-review rule, if present."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "enforcement",
+      "name": "Rules backed by hooks",
+      "measures": "Whether the critical rules are enforced by code on the kit's primary harness, with no ungated way to turn that code off. Enforcement on other harnesses is scored under portability.",
+      "kind": "measured",
+      "weight": 1,
+      "measure": {
+        "unit": "checklist points minus penalties",
+        "method": "On the default install of the primary harness, give each item an outcome. Read the hook code to decide; a doc saying a hook exists is not evidence.",
+        "items": [
+          { "id": "E1", "check": "Writing an obvious secret (API key, private key) to a file is blocked." },
+          { "id": "E2", "check": "A verification bypass (--no-verify, git commit -n, --no-gpg-sign) is blocked." },
+          { "id": "E3", "check": "An edit to a declared high-risk path blocks or asks for confirmation." },
+          { "id": "E4", "check": "A shell command that writes that path is caught too, in every shell the platform ships." },
+          { "id": "E5", "check": "An edit to the kit's own hook configuration is gated." }
+        ],
+        "outcomes": { "block": 2, "confirm": 2, "warn": 1, "absent": 0 },
+        "penalties": [
+          { "id": "ungated-off-switch", "points": -2, "when": "Each switch (env var, profile, flag) that disables a blocking hook without itself being gated." },
+          { "id": "advisory-labeled-enforced", "points": -1, "when": "Each rule the kit labels enforced or automatic that is only advisory." }
+        ],
+        "formula": "sum of item outcomes + sum of penalties, clamped to 0-10.",
+        "calibration": "Round 1 counted ECC's hook profiles as an advantage, round 2 as a side door (9 to 7 with no code change). The penalty fixes that: a profile that turns off a blocking hook costs 2 unless changing it is gated."
+      },
+      "anchors": {
+        "0": "No blocking hook, or every blocking hook can be turned off by an ungated switch.",
+        "5": "About half of the checklist blocks; or the full checklist with ungated off-switches.",
+        "10": "All five items block or confirm, no ungated off-switch, and every rule labeled enforced is backed by a hook."
+      },
+      "evidence": [
+        "Per item: hook file:line and whether it blocks (exit code or deny decision), warns, or is absent.",
+        "Every off-switch found, and whether changing it is gated.",
+        "Every rule labeled enforced or automatic that no hook backs."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "review-noise",
+      "name": "Review without false positives",
+      "measures": "Whether reviewer agents have a bar a finding must clear, accept zero findings as a valid review, and are tested against bait.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Reviewers are told to find issues; there is no bar for a finding and no statement that zero findings is valid.",
+        "5": "A written bar exists (cite the line, name the concrete failure, say why existing guards miss it), but no eval tests it.",
+        "10": "A bar per reviewer, eval cases with bait and clean diffs, and a recorded real-model run where those cases pass."
+      },
+      "evidence": [
+        "The bar, file:line per reviewer.",
+        "Bait and clean case ids.",
+        "Path and date of a real-model run result; if none, say so."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "memory",
+      "name": "Memory and continuous learning",
+      "measures": "Whether lessons (corrections, incidents, decisions) are captured in a durable, reviewable form and reach the next session.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Nothing: every session starts cold and there is no handoff convention.",
+        "5": "Relies on the host's memory plus a handoff convention; nothing turns a lesson into configuration.",
+        "10": "A mechanism captures lessons into reviewable files, deduplicates and prunes them, and wires them into the next session."
+      },
+      "evidence": [
+        "The capture mechanism, file:line.",
+        "Where lessons land and how they are pruned."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "self-measurement",
+      "name": "Evals of own behavior",
+      "measures": "Whether the kit tests how its agents behave (routing, verdicts, length), not only whether its code runs. Tests of the kit's code are scored under kit-ci.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No behavioral evals.",
+        "5": "Eval cases exist for some roles, run by hand, with no recorded results.",
+        "10": "Cases for every core role, including adversarial, low-risk control and bait cases; one command runs them; results are recorded and compared across versions."
+      },
+      "evidence": [
+        "Case count by kind and by role.",
+        "The runner command.",
+        "A results file, if one exists."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "observability",
+      "name": "Per-dispatch cost telemetry",
+      "measures": "Whether each agent dispatch is logged with what it cost, without recording content, and whether the log can be read.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No telemetry.",
+        "5": "Logs exist but miss cost dimensions (tokens, duration), or they record prompt or report content.",
+        "10": "Every dispatch logged with model, effort, tokens, duration and output size, no content recorded, and a view to read the log."
+      },
+      "evidence": [
+        "Log path and one example record's field names.",
+        "The hook or code that writes it, file:line."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": [],
+      "note": "Round 1 scored this inside self-measurement; round 2 split it out."
+    },
+    {
+      "id": "stack-coverage",
+      "name": "Domains and languages covered",
+      "measures": "How many stacks and domains get specific guidance. Coverage only: whether coverage is the right goal is weighed under scope-focus.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Generic guidance only; no stack or domain gets specific rules.",
+        "5": "About five stacks or domains with specific guidance.",
+        "10": "Fifteen or more stacks or domains with specific guidance each, installable selectively."
+      },
+      "evidence": [
+        "The list of covered stacks and domains, with one path each."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": [],
+      "note": "A stack-agnostic kit scores low here by design."
+    },
+    {
+      "id": "portability",
+      "name": "Harness portability",
+      "measures": "How many harnesses the kit installs on, and whether each gets enforcement and not only copied text.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "One harness only.",
+        "5": "Instructions install on two or more harnesses, but enforcement exists on only one.",
+        "10": "Three or more harnesses, each with enforcement wherever the harness supports hooks or plugins, and the remaining gaps documented."
+      },
+      "evidence": [
+        "A table: harness x (instructions installed, enforcement installed), with paths.",
+        "For each harness without enforcement, whether the harness supports hooks today (check current docs, not memory)."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "security",
+      "name": "Config and supply-chain security",
+      "measures": "The risk the kit itself adds: dependencies, install-time code, secret handling, release integrity.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Secrets in the repo, many dependencies or install scripts, no checks.",
+        "5": "Few dependencies and secret blocking, but no release provenance or signing and no secret scan in CI.",
+        "10": "Minimal dependencies, provenance or signed releases, secret scanning in CI, the kit's own config gated, and install-time code reviewed."
+      },
+      "evidence": [
+        "Runtime dependency count and any install or postinstall scripts.",
+        "CI security steps and release provenance, with paths."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "install",
+      "name": "Install, uninstall, maintenance",
+      "measures": "Whether the kit installs, updates and uninstalls cleanly without destroying the user's own edits.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Manual copying, no uninstall, and the user's config is overwritten.",
+        "5": "One-command, idempotent install with backups; uninstall is partial or manual.",
+        "10": "Install, update and uninstall tracked per entry by stable ids; local edits outside managed markers preserved; a health check command."
+      },
+      "evidence": [
+        "The install, update and uninstall commands.",
+        "How installed entries are tracked, file:line."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "consistency",
+      "name": "Single source, no drift",
+      "measures": "Whether each rule lives in one place, and copies are generated and checked rather than maintained by hand.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "The same rule duplicated across many files, with diverging versions.",
+        "5": "Some duplication, mostly in sync, with no check that keeps it so.",
+        "10": "Each rule has one source; generated copies are checked by a test or validation script; a spot check finds no drift."
+      },
+      "evidence": [
+        "Each duplication found, with both locations.",
+        "The validation script or test that checks copies, if any."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "scope-focus",
+      "name": "Scope discipline",
+      "measures": "Whether every component serves the kit's stated purpose and the kit says what and whom it is not for.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "Unrelated domains (marketing, outreach, media) mixed with the core, and no stated purpose.",
+        "5": "A coherent core with some sprawl; non-goals are implicit.",
+        "10": "Explicit non-goals and who the kit is not for; every component serves the stated purpose; optional domains installed separately."
+      },
+      "evidence": [
+        "The stated purpose and non-goals, file:line.",
+        "Components that fall outside the purpose, if any."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "kit-ci",
+      "name": "Tests and CI of the kit",
+      "measures": "Whether the kit's own code (hooks, installers, validators) is tested, and whether CI runs those tests on every supported OS and shell.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No tests.",
+        "5": "Tests exist and run locally; no CI, or CI on one OS only.",
+        "10": "Tests for hooks and installers run in CI on every push, on every supported OS and shell, plus a validation step."
+      },
+      "evidence": [
+        "Test file count and the test command.",
+        "CI workflow paths and the OS matrix."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    },
+    {
+      "id": "human-docs",
+      "name": "Docs for humans",
+      "measures": "Whether a person can install, understand and maintain the kit from its docs.",
+      "kind": "described",
+      "weight": 1,
+      "anchors": {
+        "0": "No human docs, or only files written for the model.",
+        "5": "A README exists, but it mixes audiences, has no quickstart, or is long enough that setup is hard to find.",
+        "10": "A short quickstart with expected output, reference separate from tutorial, maintenance docs, and no marketing before setup."
+      },
+      "evidence": [
+        "README length in lines and whether a quickstart shows expected output.",
+        "Paths of reference and maintenance docs."
+      ],
+      "status": "active",
+      "added": "2026-10-29",
+      "retired": null,
+      "retiredReason": null,
+      "mergedFrom": []
+    }
+  ]
+}

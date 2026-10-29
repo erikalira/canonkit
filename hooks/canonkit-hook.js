@@ -7,6 +7,8 @@
  * SubagentStop, UserPromptSubmit, Stop. Three jobs:
  *   1. ENFORCEMENT — turn the team's soft HIGH-risk gates into mechanical ones:
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
+ *        - skipping git hooks or signing (--no-verify, commit -n, --no-gpg-sign,
+ *          -c core.hooksPath / commit.gpgsign=false) -> block
  *        - edits to HIGH-risk surfaces (auth, secrets, migrations, contracts) -> confirm
  *          (forces Archie/Gard consideration even if risk was misjudged as LOW)
  *        - edits to performance-budget files (lighthouserc, size-limit, ...) -> confirm
@@ -792,6 +794,168 @@ function shellWriteTargets(cmd) {
   return out;
 }
 
+// ---- GIT BYPASS ----
+// Skipping the repository's own hooks or its signing is a deny, not a confirm.
+// The reflex after a failed pre-commit is `--no-verify`, and a prompt that shows
+// it gets approved on autopilot: the fix is the cause the hook reported, and
+// someone who really means to skip runs the command themselves.
+// Read on tokens, not on the raw string: a commit message that *mentions*
+// --no-verify must not be denied, and only a tokenizer knows where `-m "..."`
+// ends. A tripwire for that reflex, not a sandbox: `bash -c "..."`, an alias or
+// HUSKY=0 pass, and the commit/push confirm still shows them.
+const GIT_GLOBAL_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix']);
+const GIT_RUNS_HOOKS = new Set(['commit', 'push', 'merge', 'pull', 'am', 'rebase']);
+const GIT_SIGNS = new Set(['commit', 'merge', 'pull', 'am', 'rebase', 'cherry-pick', 'revert', 'commit-tree']);
+// Long options whose value is the next token: that token is a message or a
+// name, never a flag. One a subcommand lacks makes git reject the whole
+// command, so skipping its value opens no bypass.
+const GIT_VALUE_LONG = new Set(['--message', '--file', '--author', '--date', '--template',
+  '--reuse-message', '--reedit-message', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
+// Short options that take a value (the rest of the cluster, or the next token),
+// per subcommand: the same letter means different things (`commit -m` is a
+// message, `rebase -m` is --merge and `am -m` --message-id, both boolean).
+// A letter missing here costs a false deny on `-x --no-verify`, never a bypass.
+const GIT_VALUE_SHORT = {
+  commit: 'mFCct', merge: 'mFsX', pull: 'sX', rebase: 'sXx', 'cherry-pick': 'mX', revert: 'mX',
+  'commit-tree': 'mFp', push: 'o',
+};
+// Subcommands where `-n` is --no-verify, with the short options whose value can
+// only follow in the same token.
+const SHORT_NO_VERIFY = { commit: 'uS', am: 'pCS' };
+// Words that run the command after them: wrappers, and the shell keywords a
+// command follows (`then git commit ...`, `do git push ...`).
+const CMD_PREFIX = new Set(['env', 'command', 'exec', 'builtin', 'sudo', 'nohup', 'time', 'timeout', 'nice', 'xargs',
+  'if', 'then', 'else', 'elif', 'while', 'until', 'do', '!']);
+// A wrapper's options whose value is the next token (`sudo -u bob`, `nice -n 10`, `timeout -s KILL`).
+const CMD_PREFIX_VALUE = new Set(['-u', '-g', '-n', '-s', '-k', '-C', '-I']);
+
+// Commands as token lists, one per pipeline/list element. Heredoc and
+// here-string bodies are data (a commit message, usually) and are dropped; a
+// here-string leaves an empty token so `-m @'...'@` still has its value. A
+// `$( )` or `( )` is its own command and leaves a `()` token in the one around
+// it, so `-m $(cat msg) --no-verify` keeps both the value and the flag.
+function shellSegments(cmd, tool) {
+  const esc = tool === 'PowerShell' ? '`' : '\\';
+  const src = String(cmd)
+    .replace(/[\\`]\r?\n/g, ' ')
+    .replace(/@(['"])\r?\n[\s\S]*?\r?\n\1@/g, "''")
+    .replace(/(?<!<)<<(?!<)-?\s*(['"]?)([^\s'"<>;&|()]+)\1[^\n]*\n(?:[^\n]*\n)*?[ \t]*\2[ \t]*\r?(?=\n|$)/g,
+      (m) => m.slice(0, m.indexOf('\n')));
+  // The closing quote of a "..." whose body starts at j; a string inside a
+  // `$( )` in it ("$(echo "x")") is skipped whole.
+  const closeDouble = (j) => {
+    let depth = 0;
+    while (j < src.length) {
+      const d = src[j];
+      if (d === esc) j += 2;
+      else if (d === '"' && !depth) return j;
+      else if (d === '$' && src[j + 1] === '(') { depth++; j += 2; }
+      else if (d === ')' && depth) { depth--; j++; }
+      else if (d === '"') j = closeDouble(j + 1) + 1;
+      else j++;
+    }
+    return src.length;
+  };
+  const segs = [], outer = [];
+  let toks = [], cur = '', has = false;
+  const word = () => { if (has) toks.push(cur); cur = ''; has = false; };
+  const cut = () => { word(); if (toks.length) segs.push(toks); toks = []; };
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === "'") {
+      const j = src.indexOf("'", i + 1);
+      const end = j < 0 ? src.length : j;
+      cur += src.slice(i + 1, end); has = true; i = end;
+    } else if (c === '"') {
+      const j = closeDouble(i + 1);
+      cur += src.slice(i + 1, j); has = true; i = j;
+    } else if (c === esc) {
+      cur += src[i + 1] || ''; has = true; i++;
+    } else if (c === '#' && !has && (i === 0 || /\s/.test(src[i - 1]))) {
+      const j = src.indexOf('\n', i);
+      i = j < 0 ? src.length : j - 1;
+    } else if (c === '\n') {
+      cut(); // before the whitespace branch: a new line is a new command
+    } else if (/\s/.test(c)) {
+      word();
+    } else if (c === '&' && (src[i - 1] === '>' || src[i - 1] === '<' || src[i + 1] === '>')) {
+      cur += c; has = true; // a redirection (2>&1, &>), not a separator
+    } else if (c === '(') {
+      if (/[$@]$/.test(cur)) { cur = cur.slice(0, -1); has = cur !== ''; }
+      word(); outer.push(toks); toks = [];
+    } else if (c === ')') {
+      cut();
+      if (outer.length) { toks = outer.pop(); toks.push('()'); }
+    } else if (';&|{}'.includes(c) || c === '`') {
+      cut();
+    } else {
+      cur += c; has = true;
+    }
+  }
+  cut();
+  while (outer.length) { toks = outer.pop(); cut(); }
+  return segs;
+}
+
+// Each git invocation in a command: its subcommand, `-c` settings and arguments.
+function gitCalls(cmd, tool) {
+  const calls = [];
+  for (const seg of shellSegments(cmd, tool)) {
+    let i = 0;
+    while (i < seg.length) {
+      if (/^[A-Za-z_]\w*=/.test(seg[i])) { i++; continue; }
+      if (!CMD_PREFIX.has(seg[i])) break;
+      for (i++; i < seg.length && (seg[i].startsWith('-') || /^\d[\d.]*[smhd]?$/.test(seg[i])); i++) {
+        if (CMD_PREFIX_VALUE.has(seg[i])) i++;
+      }
+    }
+    if (i >= seg.length || !/^git(\.exe)?$/i.test(seg[i].split(/[\\/]/).pop())) continue;
+    const config = [];
+    for (i++; i < seg.length && seg[i].startsWith('-'); i++) {
+      const t = seg[i];
+      if (t === '-c' || t === '--config-env') config.push(seg[++i] || '');
+      else if (t.startsWith('--config-env=')) config.push(t.slice('--config-env='.length));
+      else if (GIT_GLOBAL_WITH_VALUE.has(t)) i++;
+    }
+    if (i < seg.length) calls.push({ sub: seg[i], config, args: seg.slice(i + 1) });
+  }
+  return calls;
+}
+
+// The flag a git invocation uses to skip hooks or signing, or null. Long
+// options match their unambiguous abbreviations too: git accepts `--no-veri`.
+function gitBypass({ sub, config, args }) {
+  const hooks = GIT_RUNS_HOOKS.has(sub), signs = GIT_SIGNS.has(sub);
+  if (!hooks && !signs) return null;
+  const valueShort = GIT_VALUE_SHORT[sub] || '';
+  for (const c of config) {
+    const eq = c.indexOf('=');
+    const key = (eq < 0 ? c : c.slice(0, eq)).toLowerCase();
+    const value = eq < 0 ? 'true' : c.slice(eq + 1);
+    if (hooks && key === 'core.hookspath') return `-c ${c}`;
+    if (signs && key === 'commit.gpgsign' && /^(false|no|off|0|)$/i.test(value)) return `-c ${c}`;
+  }
+  for (let j = 0; j < args.length; j++) {
+    const t = args[j];
+    if (t === '--') break;
+    if (GIT_VALUE_LONG.has(t) || (/^-[A-Za-z]$/.test(t) && valueShort.includes(t[1]))) { j++; continue; }
+    if (hooks && t.length >= '--no-veri'.length && '--no-verify'.startsWith(t)) return t;
+    if (signs && t.length >= '--no-gpg'.length && '--no-gpg-sign'.startsWith(t)) return t;
+    // `git commit -n` and `git am -n` are --no-verify; in push, -n is --dry-run,
+    // in merge/pull/rebase --no-stat. In a cluster, the letters after one that
+    // takes a value are that value (`-mn` = message "n").
+    const attached = SHORT_NO_VERIFY[sub];
+    if (attached !== undefined && /^-[A-Za-z0-9]+$/.test(t)) {
+      for (let k = 1; k < t.length; k++) {
+        if (t[k] === 'n') return t;
+        if (valueShort.includes(t[k])) { if (k === t.length - 1) j++; break; }
+        if (attached.includes(t[k])) break;
+      }
+    }
+  }
+  return null;
+}
+
 function main() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch (_) {}
@@ -990,19 +1154,33 @@ function main() {
   // ---- ENFORCEMENT: shells (Bash on POSIX, PowerShell on Windows) ----
   if (tool === 'Bash' || tool === 'PowerShell') {
     const cmd = String(ti.command || '');
-    if (/\bgit\s+(commit|push)\b/.test(cmd)) {
-      logGate({ kind: 'git', detail: cmd.slice(0, 80), project, tool });
-      ask('canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
+    // Its own catch: a parser bug costs this check, not every shell gate after it.
+    let calls = [];
+    try { calls = gitCalls(cmd, tool); } catch (_) {}
+    for (const call of calls) {
+      const flag = gitBypass(call);
+      if (flag) {
+        logGate({ kind: 'git-bypass', detail: cmd.slice(0, 80), flag: cap(flag), project, tool });
+        deny(`canonkit gate: \`git ${call.sub} ${flag}\` skips the repository's hooks or commit signing. Blocked: fix what the hook reported instead. If you really mean to skip it, run the command yourself (in Claude Code, prefix it with \`!\`).`);
+      }
     }
+    // Every deny before any confirm: a confirm exits, and a deny after it never runs.
+    // Before the project config is read, too: nothing in it may cost the deny.
     const targets = shellWriteTargets(cmd);
     if (targets.length) {
-      // Before the project config is read: nothing in it may cost the deny.
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
           logGate({ kind: 'secret-block', file: targets[0], project, tool }, targets, cwd);
           deny('canonkit gate (Gard): this command writes a high-confidence secret (private key / cloud key) to a file. Blocked. Move it to an env var / secret store.');
         }
       }
+    }
+    // The raw match stays next to the parsed one: it still sees `bash -c "git commit ..."`.
+    if (/\bgit\s+(commit|push)\b/.test(cmd) || calls.some((c) => c.sub === 'commit' || c.sub === 'push')) {
+      logGate({ kind: 'git', detail: cmd.slice(0, 80), project, tool });
+      ask('canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
+    }
+    if (targets.length) {
       const cfg = projectConfig(cwd);
       const rels = targets.map((t) => cfg.rel(t));
       // Waived only when every target is a test file: one test target among
@@ -1020,7 +1198,7 @@ function main() {
         const verdict = highRisk(rels[i], cfg, t);
         if (verdict && verdict.rule) {
           logGate({ kind: 'high-risk-surface', file: t, rule: verdict.rule, project, tool }, [t], cwd);
-          ask(`canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
+          ask(`canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
         }
         if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool }, [t], cwd);
       });
@@ -1056,7 +1234,7 @@ function main() {
     const verdict = highRisk(rel, cfg, fp);
     if (verdict && verdict.rule) {
       logGate({ kind: 'high-risk-surface', file: fp, rule: verdict.rule, project, tool }, [fp], cwd);
-      ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude). Confirm to proceed.`);
+      ask(`canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
     }
     // Not a gate: the dashboard shows what a project's config kept quiet.
     if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool }, [fp], cwd);

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate the repository against the conventions the README promises.
+# Validate the repository against the conventions docs/team.md and docs/maintaining.md promise.
 #
 # This is the Virgo protocol, automated: frontmatter (name, description, model),
 # structure, the core / specialist split, escalation routing, and the script inventory. It checks the
@@ -131,7 +131,7 @@ for a in agents:
     if out and not ("Open with" in out.group(1) and "omit empty" in out.group(1) and re.search(r"under ~\d+ lines", out.group(1))):
         problems.append("Expected output is unbounded: open with the verdict, omit empty fields, cap the lines")
 
-    # The README's promise: an agent that can veto also says what to do when
+    # The promise in docs/team.md (Conventions): an agent that can veto also says what to do when
     # overruled. Checked as a rule, so agents without veto authority are fine.
     # Veto is phrased more than one way: "Archie may veto", "Gard may veto",
     # but also Spencer's bare "- veto confusing ... documentation;".

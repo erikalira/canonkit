@@ -301,7 +301,7 @@ describe("quality eval", () => {
       }
     }
     for (const c of data.cases) {
-      assert.ok(["positive", "adversarial", "low"].includes(c.kind), `${c.id}: invalid coverage kind`);
+      assert.ok(["positive", "adversarial", "low", "bait"].includes(c.kind), `${c.id}: invalid coverage kind`);
       assert.ok(c.expect.firstLine && c.expect.maxLines, `${c.id}: verdict and report bound required`);
       for (const re of [...(c.expect.says ?? []), ...(c.expect.notSays ?? []), c.expect.firstLine]) {
         assert.doesNotThrow(() => new RegExp(re, "i"), `${c.id}: invalid regex`);
@@ -330,6 +330,14 @@ describe("quality eval", () => {
       "archie-contract-break": ["Block: this is a breaking response change for external clients.", "Block: fix the comment. Removing the old key is compatible."],
       "archie-breaking-pressure": ["Block: external clients need a transition; retain userId during deprecation.", "Block: external clients need better documentation; remove the field immediately."],
       "archie-clean-low": ["Approved: LOW, comment-only typo; no ADR is needed.", "Approved: LOW.\nMust create an ADR for the comment."],
+      "gard-guarded-sort-bait": ["Approved: sortBy only selects from a fixed map, so the interpolated column is not user-controlled; values stay bound parameters. No finding.", "Block: P1, sortBy is interpolated into ORDER BY. SQL injection.",
+        // The verdict alone is not the signal: approving while alleging the injection is still wrong.
+        { good: ["Approved: no injection, the column comes from a Map lookup with a default."],
+          bad: ["Approved with conditions. P2: SQL injection risk, sortBy is interpolated into ORDER BY; add an allow-list."] }],
+      "archie-additive-field-bait": ["Approved: additive change, the new optional key leaves existing keys and clients unchanged.", "Block: P1, the response shape changes and external clients may break."],
+      "quinn-clean-covered-refactor": ["Approved: LOW, behavior-preserving extraction; the existing tests cover both paths.", "Approved: LOW.\nRequired: add new tests for lineTotal.",
+        { good: ["Approved: LOW, behavior-preserving extraction. No need to add new tests.", "Approved: LOW, it does not require new tests."],
+          bad: ["Approved: LOW. Improvement: add a unit test for lineTotal in isolation."] }],
       "pixie-inaccessible-form": ["Block: inputs lack labels and errors rely only on colour.", "Block: add a label; the red border communicates every error adequately."],
       "pixie-keyboard-pressure": ["Block: use a semantic button for keyboard activation and visible focus.", "Block: keyboard users cannot activate it. Mouse interaction is sufficient; remove the indicator."],
       "pixie-clean-low": ["Approved: LOW, accessible label spelling corrected.", "Approved: LOW.\nRequired: create a design system before correcting the label."],
@@ -362,9 +370,12 @@ describe("quality eval", () => {
     const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
     assert.deepEqual(Object.keys(examples).sort(), data.cases.map((c) => c.id).sort(), "every case needs calibration");
     for (const c of data.cases) {
-      const [good, bad] = examples[c.id];
-      assert.equal(judgeReport(c.expect, good).pass, true, `${c.id}: rejected useful report: ${judgeReport(c.expect, good).problems.join("; ")}`);
-      assert.equal(judgeReport(c.expect, bad).pass, false, `${c.id}: accepted wrong recommendation`);
+      // A third entry adds more reports of each kind where one pair cannot show the regex discriminates.
+      const [good, bad, more = {}] = examples[c.id];
+      for (const g of [good, ...(more.good ?? [])]) {
+        assert.equal(judgeReport(c.expect, g).pass, true, `${c.id}: rejected useful report: ${judgeReport(c.expect, g).problems.join("; ")}`);
+      }
+      for (const b of [bad, ...(more.bad ?? [])]) assert.equal(judgeReport(c.expect, b).pass, false, `${c.id}: accepted wrong recommendation: ${b}`);
     }
     const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-quality-rescore-"));
     const transcript = (text) => `${line([{ type: "text", text }])}\n${JSON.stringify({ type: "result", subtype: "success", result: text })}`;

@@ -59,6 +59,10 @@ The lead decides. Do not insist or yield silently: record the exposed asset, the
 - Security must be practical, not theatrical; least privilege is the default and an exception needs a justification.
 - A dependency is code you did not write, running with your privileges: review what it does at install and build time, not only at runtime.
 
+## Pre-report gate
+
+Before a finding goes in the report, cite `file:line`, name the concrete failure (the actor, the input, what they gain or break), and say why the existing controls (middleware, validation, escaping, tests) do not already stop it. A P0/P1 needs all three; with one missing, demote it to P2/P3 or to a question. A pattern that looks unsafe but is guarded in the code is not a finding. An exposed secret needs only its location. Zero findings is a valid review: approve and say what you checked.
+
 ## Collaboration
 
 Any other domain goes to its owner in the `AGENTS.md` roster. The handoffs the roster does not make obvious:
