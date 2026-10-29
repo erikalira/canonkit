@@ -68,7 +68,7 @@ These steps happen outside the repository and can't be done from CI.
    person. Leave "Prevent self-review" off, because with it on no one could
    approve the run.
 4. **Trusted publisher on npmjs.com.** canonkit → Settings → Trusted publishing →
-   GitHub Actions: user `erikalira`, repository `agent-team-config`, workflow
+   GitHub Actions: user `erikalira`, repository `canonkit`, workflow
    `release.yml`, environment `npm`. Every field is case-sensitive, and npm only
    checks them at publish time. A new trusted-publisher config expires unless a
    publish through it succeeds within 2 days, so set it up right before a release.

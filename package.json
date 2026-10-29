@@ -38,13 +38,13 @@
   ],
   "author": "Erika Lira",
   "license": "MIT",
-  "homepage": "https://github.com/erikalira/agent-team-config#readme",
+  "homepage": "https://github.com/erikalira/canonkit#readme",
   "bugs": {
-    "url": "https://github.com/erikalira/agent-team-config/issues"
+    "url": "https://github.com/erikalira/canonkit/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/erikalira/agent-team-config.git"
+    "url": "git+https://github.com/erikalira/canonkit.git"
   },
   "engines": {
     "node": ">=22"
