@@ -6,6 +6,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, mkdir, writeFile, readFile, chmod, symlink } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -18,7 +19,9 @@ let sandbox;
 // A project directory that contains none of the PATH entries under test.
 let elsewhere;
 before(async () => {
-  sandbox = await mkdtemp(path.join(os.tmpdir(), "canonkit-exec-test-"));
+  // Canonical, because exec.js returns realpaths: a runner's tmpdir can be an
+  // 8.3 name (RUNNER~1) on Windows or under /var -> /private/var on macOS.
+  sandbox = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-exec-test-")));
   elsewhere = path.join(sandbox, "elsewhere");
   await mkdir(elsewhere);
 });

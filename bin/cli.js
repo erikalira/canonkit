@@ -681,7 +681,27 @@ async function mergeLegacyLog(ctx, oldLog, newLog) {
  * Raw bytes, not parsed: a file that is not valid JSON can still run the hook.
  * `override` stands in for a file's planned bytes (a dry run writes nothing).
  */
-const pathKey = (p) => (process.platform === "win32" ? path.resolve(p).toLowerCase() : path.resolve(p));
+function pathKey(p) {
+  // One key per file however it is reached: HOME through a symlink (macOS's /var
+  // is /private/var) and the realpath'd cwd name the same settings.json, and a
+  // dry run's planned bytes must stand in for both. The file may not exist yet,
+  // so the nearest existing ancestor is resolved and the rest kept as is.
+  let dir = path.resolve(p);
+  const rest = [];
+  for (;;) {
+    try {
+      dir = realpathSync.native(dir);
+      break;
+    } catch {
+      const up = path.dirname(dir);
+      if (up === dir) break;
+      rest.unshift(path.basename(dir));
+      dir = up;
+    }
+  }
+  const key = path.join(dir, ...rest);
+  return process.platform === "win32" ? key.toLowerCase() : key;
+}
 
 function legacyRunners(claudeDir, override = {}) {
   const dirs = [claudeDir, ...[process.cwd(), process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.join(d, ".claude"))];
@@ -1040,8 +1060,7 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
  * in a skill's directory goes, not only SKILL.md: Codex reads its invocation
  * policy from agents/openai.yaml beside it.
  */
-// Relative paths of every file below dir. Walked by hand: readdir's recursive
-// option needs Node 18.17, and engines accepts any 18.
+// Relative paths of every file below dir, sorted.
 async function filesUnder(dir, prefix = "") {
   const out = [];
   for (const e of await readdir(path.join(dir, prefix), { withFileTypes: true })) {

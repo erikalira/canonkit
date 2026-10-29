@@ -8,7 +8,7 @@ secrets, migrations or public contracts go to the agent that owns them. In Claud
 Code, hooks enforce the rules that matter most, so they hold even when the model
 forgets them.
 
-Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/agent-team-config/tree/main/agents), already in the format
+Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
 Claude Code reads. For Claude Code, installing is a plain copy. Codex and OpenCode
 get a generated copy of the same body. Either way there is one source per agent,
 and nothing to reconcile by hand.
@@ -29,7 +29,7 @@ and nothing to reconcile by hand.
   without sending anything off your machine.
 
 It is not a fit if you want one agent per task, or a heavy spec-first process.
-canonkit can work alongside [openspec](https://github.com/erikalira/agent-team-config/blob/main/docs/tools.md), but it does not replace it.
+canonkit can work alongside [openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md), but it does not replace it.
 
 ## Quickstart
 
@@ -43,7 +43,7 @@ In a terminal, a menu asks which runtimes to install for. Claude Code and Codex
 come pre-selected; OpenCode is opt-in. `--wire-hooks` registers the gate hook in
 `~/.claude/settings.json`. It saves a dated `.bak` first and changes nothing
 else. If you leave the flag out, `install` only prints the JSON for you to paste
-yourself. [What each choice writes](https://github.com/erikalira/agent-team-config/blob/main/docs/install.md#core-at-user-level).
+yourself. [What each choice writes](https://github.com/erikalira/canonkit/blob/main/docs/install.md#core-at-user-level).
 
 **Check that it worked:**
 
@@ -82,7 +82,7 @@ node ~/.claude/canonkit-dashboard/serve.js          # Linux, macOS, Git Bash
 node $HOME\.claude\canonkit-dashboard\serve.js      # Windows PowerShell
 ```
 
-Then open `http://localhost:4317`. [What it records](https://github.com/erikalira/agent-team-config/blob/main/docs/telemetry.md).
+Then open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
 
 ## How it decides: LOW vs HIGH
 
@@ -95,7 +95,7 @@ Every agent uses one shared risk scale:
 - **HIGH**: auth, secrets, migrations, public contracts, new services, payment, a
   production deploy, or anything that is hard to roll back.
 
-Both examples below come from the [routing eval](https://github.com/erikalira/agent-team-config/blob/main/docs/evals.md#routing-eval)
+Both examples below come from the [routing eval](https://github.com/erikalira/canonkit/blob/main/docs/evals.md#routing-eval)
 cases:
 
 **"Fix the typo `recieve` in README.md."** This is LOW. The main agent fixes it
@@ -157,7 +157,7 @@ npx canonkit add maya nova      # writes Claude Code, Codex and OpenCode copies 
 MEDIUM or HIGH change, and only against a risk it can name. You can overrule a
 veto. When you do, the agent records the open risk and keeps helping. Who owns
 what at the boundaries, the conventions every agent follows, and the Integration
-Review are in [docs/team.md](https://github.com/erikalira/agent-team-config/blob/main/docs/team.md).
+Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/docs/team.md).
 
 ## When a gate fires
 
@@ -168,7 +168,7 @@ gate`. The context-size reminder is plain text.
 | Gate | Fires when | What to do |
 | --- | --- | --- |
 | **git commit / push** | any `git commit` or `git push`, including behind `git -C dir` or `git -c key=value` | Confirm only if you asked for it. |
-| **git hook / signing bypass (block)** | `--no-verify`, `git commit -n`, `--no-gpg-sign`, `-c core.hooksPath=...` or `-c commit.gpgsign=false` | It is denied. Fix what the hook reported. If you really mean to skip it, run the command yourself (`!` in Claude Code). Details in [docs/hooks.md](https://github.com/erikalira/agent-team-config/blob/main/docs/hooks.md#what-the-git-gates-read). |
+| **git hook / signing bypass (block)** | `--no-verify`, `git commit -n`, `--no-gpg-sign`, `-c core.hooksPath=...` or `-c commit.gpgsign=false` | It is denied. Fix what the hook reported. If you really mean to skip it, run the command yourself (`!` in Claude Code). Details in [docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md#what-the-git-gates-read). |
 | **Secret (block)** | a private key or cloud key would be written to a file | It is denied. Move the value to an env var or a secret store. |
 | **Secret (ask)** | something looks like a hardcoded credential | Confirm only if it is not a real secret, such as a test fixture. |
 | **HIGH-risk surface** | an edit or shell write to an auth, secret, migration or contract path | The prompt asks for who imports or calls the file, which public contract it touches (or "none") and the rollback: answer before confirming. Look again at the risk. If it really is HIGH, plan the owner's review (Gard, Archie). If it is LOW, confirm and say why. |
@@ -192,7 +192,7 @@ project can tune this in `.claude/canonkit.json`:
 credential paths (`.env`, `*.pem`, ...) or strong terms (`auth`, `jwt`,
 `migrations` in code). Editing `canonkit.json` is itself a gate. Don't edit the
 hook to make a gate stop firing: the next install overwrites it. The full rules
-are in [docs/hooks.md](https://github.com/erikalira/agent-team-config/blob/main/docs/hooks.md).
+are in [docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md).
 
 ### If no gate ever fires
 
@@ -209,7 +209,7 @@ means a broken hook gives no warning of its own.
 | OpenCode (opt-in) | `~/.config/opencode/agents` | block in `~/.config/opencode/AGENTS.md` | no: the rules hold by judgment |
 
 How each target is generated, and why OpenCode is opt-in:
-[docs/install.md](https://github.com/erikalira/agent-team-config/blob/main/docs/install.md#codex).
+[docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#codex).
 
 ## Commands
 
@@ -221,7 +221,7 @@ How each target is generated, and why OpenCode is opt-in:
 | `reference` | only the global blocks and skills |
 | `add <name>...` / `remove <name>...` | specialists in the current project |
 | `list` | the roster and what is installed where |
-| `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/agent-team-config/blob/main/docs/tools.md) in the current project |
+| `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) in the current project |
 
 `--dry-run` works on every command that writes: it reports what would change and
 writes nothing.
@@ -231,23 +231,23 @@ writes nothing.
 **What does it cost per turn?** Claude Code lists every installed agent's
 description on every turn. That list plus the two global blocks comes to about
 3k tokens. An agent's full body (~1–2k tokens) loads only when the agent is
-dispatched. [Measurements](https://github.com/erikalira/agent-team-config/blob/main/docs/evals.md#always-loaded-cost).
+dispatched. [Measurements](https://github.com/erikalira/canonkit/blob/main/docs/evals.md#always-loaded-cost).
 
 **Will it dispatch agents on every small change?** It shouldn't. LOW work stays
 inline by rule. Before each release that changes the instructions, the routing
 eval checks this with cases like the typo fix above. If you see it happen anyway,
-please [open an issue](https://github.com/erikalira/agent-team-config/issues).
+please [open an issue](https://github.com/erikalira/canonkit/issues).
 
 **Can I edit an installed agent?** Not in place: the next `install` overwrites
 `~/.claude/agents`, `~/.agents` and the managed blocks. To change one, create a
 project agent with a different name, or change the source here and reinstall
-([docs/maintaining.md](https://github.com/erikalira/agent-team-config/blob/main/docs/maintaining.md)). Text outside the managed block
+([docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md)). Text outside the managed block
 markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 
 **Does anything leave my machine?** No. The hook records numbers and metadata
 (agent, model, tokens, durations, gate kind) in `~/.claude/canonkit-activity/`. It
 never records prompt text, results or commands.
-[Field list](https://github.com/erikalira/agent-team-config/blob/main/docs/telemetry.md#stable-fields).
+[Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
 **A gate fired on a change I'm sure is LOW.** Confirm it and say why. If the same
 path keeps triggering the gate for no reason, add it to `highRisk.exclude` (see
@@ -255,25 +255,25 @@ path keeps triggering the gate for no reason, add it to `highRisk.exclude` (see
 
 **How do I uninstall?** There is no `uninstall` command yet. The files to delete
 and the blocks to remove are listed in
-[docs/install.md](https://github.com/erikalira/agent-team-config/blob/main/docs/install.md#uninstalling).
+[docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#uninstalling).
 
 **I'm upgrading from `meu-time`.** `install` migrates the log folder and leaves a
 forwarder for the old hook name. See
-[docs/install.md](https://github.com/erikalira/agent-team-config/blob/main/docs/install.md#upgrading-from-meu-time).
+[docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#upgrading-from-meu-time).
 
 ## Documentation
 
 | Doc | For |
 | --- | --- |
-| [docs/install.md](https://github.com/erikalira/agent-team-config/blob/main/docs/install.md) | what each install writes, Codex/OpenCode details, specialists, reference blocks and skills, upgrade, uninstall |
-| [docs/hooks.md](https://github.com/erikalira/agent-team-config/blob/main/docs/hooks.md) | hook wiring, failure mode, `canonkit.json` rules and glob dialect |
-| [docs/telemetry.md](https://github.com/erikalira/agent-team-config/blob/main/docs/telemetry.md) | dispatch metrics, log fields, context contributors, the dashboard |
-| [docs/team.md](https://github.com/erikalira/agent-team-config/blob/main/docs/team.md) | full roster, domain boundaries, agent conventions, Integration Review |
-| [docs/tools.md](https://github.com/erikalira/agent-team-config/blob/main/docs/tools.md) | graphify and openspec integration, with their security notes |
-| [docs/maintaining.md](https://github.com/erikalira/agent-team-config/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
-| [docs/evals.md](https://github.com/erikalira/agent-team-config/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
-| [docs/adr/](https://github.com/erikalira/agent-team-config/tree/main/docs/adr) | architecture decisions |
+| [docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md) | what each install writes, Codex/OpenCode details, specialists, reference blocks and skills, upgrade, uninstall |
+| [docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md) | hook wiring, failure mode, `canonkit.json` rules and glob dialect |
+| [docs/telemetry.md](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md) | dispatch metrics, log fields, context contributors, the dashboard |
+| [docs/team.md](https://github.com/erikalira/canonkit/blob/main/docs/team.md) | full roster, domain boundaries, agent conventions, Integration Review |
+| [docs/tools.md](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) | graphify and openspec integration, with their security notes |
+| [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
+| [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
+| [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License
 
-[MIT](https://github.com/erikalira/agent-team-config/blob/main/LICENSE)
+[MIT](https://github.com/erikalira/canonkit/blob/main/LICENSE)
