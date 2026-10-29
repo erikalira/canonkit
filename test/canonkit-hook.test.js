@@ -258,6 +258,14 @@ describe("git hook and signing bypass", () => {
     assert.equal(ps("git commit -nm x"), "deny");
     assert.equal(bash("git commit -anm x"), "deny");
   });
+  test("am -n is --no-verify too; elsewhere -n is not a bypass", () => {
+    assert.equal(bash("git am -n p.patch"), "deny");
+    assert.equal(ps("git am -3n p.patch"), "deny");
+    assert.equal(bash("git am -p1 p.patch"), "allow");
+    assert.equal(bash("git merge -n feat"), "allow"); // --no-stat
+    assert.equal(bash("git rebase -n main"), "allow"); // --no-stat
+    assert.equal(bash("git log -n 5"), "allow");
+  });
   test("--no-gpg-sign is denied", () => {
     assert.equal(bash("git commit --no-gpg-sign -m x"), "deny");
     assert.equal(ps("git merge --no-gpg-sign feat"), "deny");

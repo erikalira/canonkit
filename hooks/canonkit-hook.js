@@ -806,6 +806,13 @@ function shellWriteTargets(cmd) {
 const GIT_GLOBAL_WITH_VALUE = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace', '--config-env', '--super-prefix']);
 const GIT_RUNS_HOOKS = new Set(['commit', 'push', 'merge', 'pull', 'am', 'rebase']);
 const GIT_SIGNS = new Set(['commit', 'merge', 'pull', 'am', 'rebase', 'cherry-pick', 'revert', 'commit-tree']);
+// Subcommands where `-n` is --no-verify. `value`: short options that take a
+// value (the rest of the cluster, or the next token); `attached`: options whose
+// value can only follow in the same token.
+const SHORT_NO_VERIFY = {
+  commit: { value: 'mFcCt', attached: 'uS' },
+  am: { value: '', attached: 'pCS' },
+};
 // Options whose value is the next token: that token is a message or a name, never a flag.
 const GIT_VALUE_OPT = new Set(['-m', '-F', '-C', '-c', '-t', '--message', '--file', '--author', '--date', '--template',
   '--reuse-message', '--reedit-message', '--cleanup', '--fixup', '--squash', '--trailer', '--pathspec-from-file']);
@@ -927,13 +934,15 @@ function gitBypass({ sub, config, args }) {
     if (GIT_VALUE_OPT.has(t)) { j++; continue; }
     if (hooks && t.length >= '--no-veri'.length && '--no-verify'.startsWith(t)) return t;
     if (signs && t.length >= '--no-gpg'.length && '--no-gpg-sign'.startsWith(t)) return t;
-    // `git commit -n` is --no-verify; in push, -n is --dry-run. In a cluster,
-    // the letters after one that takes a value are that value (`-mn` = message "n").
-    if (sub === 'commit' && /^-[A-Za-z]+$/.test(t)) {
+    // `git commit -n` and `git am -n` are --no-verify; in push, -n is --dry-run,
+    // in merge/pull/rebase --no-stat. In a cluster, the letters after one that
+    // takes a value are that value (`-mn` = message "n").
+    const short = SHORT_NO_VERIFY[sub];
+    if (short && /^-[A-Za-z0-9]+$/.test(t)) {
       for (let k = 1; k < t.length; k++) {
         if (t[k] === 'n') return t;
-        if ('mFcCt'.includes(t[k])) { if (k === t.length - 1) j++; break; }
-        if ('uS'.includes(t[k])) break;
+        if (short.value.includes(t[k])) { if (k === t.length - 1) j++; break; }
+        if (short.attached.includes(t[k])) break;
       }
     }
   }
