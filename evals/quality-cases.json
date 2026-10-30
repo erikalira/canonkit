@@ -888,7 +888,10 @@
           "\\bP0\\b",
           "\\bP1\\b",
           "\\bveto",
-          "(?<!\\b(?:no|not|without|never|cannot)\\b[^.\\n]{0,30})\\b(?:injection|vulnerab)"
+          "\\bP2\\b[^\\n]{0,80}\\b(?:injection|vulnerab)|\\b(?:injection|vulnerab)\\w*[^\\n]{0,40}\\bP2\\b",
+          "(?<!\\b(?:no|not|never|cannot|can't|isn't)\\b[^.\\n]{0,20})\\b(?:is|remains|still|stays|left)\\s+(?:vulnerable|injectable|exploitable|open to)\\b",
+          "(?<!\\b(?:no|not|never)\\b[^.\\n]{0,20})\\b(?:injection|vulnerability|exploit)\\w*\\b[^.\\n]{0,40}\\b(?:exists|is present|found|fix it|must be fixed)\\b",
+          "(?:^|\\n)\\W*(?:vulnerability|exploitable)\\W{0,3}:"
         ]
       }
     },
@@ -906,13 +909,14 @@
       "prompt": "Review the uncommitted change (git diff) before it merges.",
       "expect": {
         "says": [
-          "additive|backward[- ]compatible|non-breaking|existing (?:keys|clients|fields)|unchanged"
+          "additive|backward[- ]compatible|non-breaking|existing (?:keys|clients|fields)|unchanged|only adds|adds (?:a|one) (?:new )?(?:field|key)|keep (?:their )?(?:names|keys)|won't break"
         ],
-        "firstLine": "^(?:verdict\\s*:\\s*)?(?:approv|LOW\\b|lgtm|clean|pass|ready|no (?:blocking |security |quality |architecture |accessibility |operational |documentation )?(?:issue|concern|risk|finding|blocker))",
+        "firstLine": "^(?:verdict\\s*:\\s*)?(?:I'?m |I am )?(?:approv|LOW\\b|lgtm|clean|pass|ready|no (?:blocking |security |quality |architecture |accessibility |operational |documentation )?(?:issue|concern|risk|finding|blocker))",
         "maxLines": 15,
         "notSays": [
           "\\bP0\\b",
-          "\\bP1\\b"
+          "\\bP1\\b",
+          "\\b(?:this|the) (?:change|diff|field|addition)?\\s*(?:is|would be) (?:a )?breaking\\b|\\bbreaking change for (?:existing )?clients|\\bnot (?:additive|backward[- ]compatible)|\\bbreaks? existing clients"
         ]
       }
     },
@@ -1018,8 +1022,17 @@
       "expect": {
         "firstLine": "^(?:verdict\\s*:\\s*)?(?:approv|LOW\\b|lgtm|clean|pass|ready|zero findings|looks good|nothing to flag|no (?:\\w+ )?(?:issue|concern|risk|finding|blocker)s?)",
         "maxLines": 15,
+        "says": [
+          "\\bLOW\\b",
+          "\\b(?:no|not|nothing)\\b[^.\\n]{0,30}\\brotat"
+        ],
         "notSays": [
-          "(?<!\\b(?:no|not|nothing|without|never|nor)\\b[^.\\n]{0,40})\\b(?:P0|P1|rotat\\w+)\\b"
+          "\\brisk\\W{0,5}(?:is\\s+)?HIGH\\b",
+          "(?:^|\\n)\\W*(?:verdict\\W{0,5})?(?:block|veto)",
+          "(?<![\"“][^\"”\\n]{0,200})(?<!\\b(?:no|not|false)\\s)\\bP0\\b",
+          "\\bclassified\\s+(?:it\\s+|this\\s+)?(?:as\\s+)?(?:P0|P1|HIGH)\\b",
+          "(?:^|[.:;!]\\s+|\\n\\W*)rotate\\b",
+          "(?<![\"“][^\"”\\n]{0,200})(?<!\\b(?:no|not|nothing|without|never|nor)\\b[^.\\n]{0,15})\\brotat\\w*\\b[^.\\n]{0,40}\\b(?:required|needed|first|before merg)"
         ]
       }
     },
