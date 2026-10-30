@@ -274,6 +274,29 @@ describe("purity: evaluate() decides without touching the process", () => {
   }
 });
 
+// An adapter may send no usable cwd (Codex, OpenCode). path.basename(cwd) used to
+// throw there, and evaluate()'s fail-open turned every deny into an allow.
+describe("a missing or non-string cwd still denies", () => {
+  const WRITE_KEY = (cwd) => ({
+    event: "PreToolUse", tool: "Write", toolInput: { file_path: "src/app.ts", content: FAKE_PEM }, cwd, session: "CORE",
+  });
+  const rows = [
+    ["git bypass", (cwd) => shell(cwd, "git commit --no-verify -m wip"), "git-bypass"],
+    ["private key write", WRITE_KEY, "secret-block"],
+  ];
+  for (const [label, build, kind] of rows) {
+    for (const [cwdLabel, cwd] of [["undefined", undefined], ["42", 42], ["''", ""], ["{}", {}]]) {
+      test(`${label} with cwd ${cwdLabel}`, () => {
+        const { result, touched } = sealed(() => evaluate(build(cwd), envFor(undefined)));
+        assert.deepEqual(touched, [], "evaluate touched the process or wrote a file");
+        assert.deepEqual({ decision: result.decision, kind: result.kind }, { decision: "deny", kind });
+        const gates = result.logs.filter((l) => l.record.event === "gate");
+        assert.deepEqual(gates.map((l) => l.record.kind), [kind], "one gate record, with the decision's kind");
+      });
+    }
+  }
+});
+
 // ---- 2. PARITY TABLE ----
 // Rows: a normalized event (built against the fixtures) -> the outcome per
 // adapter. `env` overrides the default env for the rows that read the log.

@@ -268,7 +268,9 @@ function realish(p) {
 // ~/.claude counts as inside: the hooks and settings there gate every project,
 // so a probe on them is never only a probe. Any failure counts as inside too,
 // and so does a missing env.home: unable to rule ~/.claude out, the gate counts.
+// So does an empty cwd (none was given): there is no project to be outside of.
 function onProject(fp, cwd, env) {
+  if (!cwd) return true;
   try {
     const real = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
     const file = real(path.resolve(normalizePath(cwd), normalizePath(fp)));
@@ -952,8 +954,12 @@ function decide(evt, env, logs) {
   const eventName = evt.event || '';
   const tool = evt.tool || '';
   const ti = evt.toolInput || {};
-  const cwd = evt.cwd;
+  // A missing or non-string cwd must not cost the denies (path.basename throws on
+  // it, and evaluate() fails open): '' means no project, so no project config is
+  // read and every file counts as in-project, the stricter side.
+  const cwd = typeof evt.cwd === 'string' ? evt.cwd : '';
   const project = path.basename(cwd);
+  const configHere = () => (cwd ? configFor(cwd, env.projectDir, env.home) : { ...loadConfig('', null, ''), project: null });
   // Tags every event for per-session queries.
   const session = evt.session || '';
   const agentId = safeId(evt.agentId);
@@ -1172,7 +1178,7 @@ function decide(evt, env, logs) {
     }
     if (targets.length) {
       // The first config read on this path: every deny is above.
-      const cfg = configFor(cwd, env.projectDir, env.home);
+      const cfg = configHere();
       const rels = targets.map((t) => cfg.rel(t));
       // Waived only when every target is a test file: one test target among
       // several must not carry a credential into the others.
@@ -1216,7 +1222,7 @@ function decide(evt, env, logs) {
       }
     }
     // The first config read on this path: the deny is above.
-    const cfg = configFor(cwd, env.projectDir, env.home);
+    const cfg = configHere();
     const rel = cfg.rel(fp);
     if (SOFT_SECRET.test(content) && !isTestFile(rel)) {
       logGate({ kind: 'secret-ask', file: fp, project, tool }, [fp]);
