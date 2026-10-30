@@ -115,12 +115,15 @@ const envFor = (projectDir, extra = {}) =>
 // Every fs call that can write, wrapped to record its target and still run.
 const FS_WRITES = ["writeFileSync", "appendFileSync", "mkdirSync", "renameSync", "rmSync", "rmdirSync", "unlinkSync",
   "copyFileSync", "cpSync", "writeSync", "truncateSync", "ftruncateSync", "symlinkSync", "linkSync", "mkdtempSync"];
+// The same on fs.promises and the callback API: a write there is still a write.
+const FS_PROMISE_WRITES = ["writeFile", "appendFile", "mkdir", "open", "rm", "rename"];
+const FS_CALLBACK_WRITES = ["writeFile", "appendFile", "mkdir"];
 const ENV_KEYS = ["HOME", "USERPROFILE", "CLAUDE_PROJECT_DIR"];
 
 /**
  * Runs fn synchronously with the process sealed off: process.exit,
  * process.stdout.write and os.homedir throw, the home and project variables are
- * unset, and every fs write is recorded. Everything is restored before return,
+ * unset and every read of one is recorded, and every fs write is recorded. Everything is restored before return,
  * so an assertion failure never leaves a stub behind (assert outside fn).
  * A trap that fires inside evaluate() is caught by its fail-open, so it shows as
  * a wrong decision for a gate and in `touched` for an allow: both are asserted.
@@ -130,9 +133,18 @@ function sealed(fn) {
   const saved = { exit: process.exit, write: process.stdout.write, homedir: os.homedir };
   const savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
   const savedFs = {};
+  const savedPromises = {};
+  const savedCallbacks = {};
+  const realEnv = process.env;
   const trap = (what) => () => { touched.push(what); throw new Error(`evaluate() touched ${what}`); };
   try {
-    for (const k of ENV_KEYS) delete process.env[k];
+    for (const k of ENV_KEYS) delete realEnv[k];
+    process.env = new Proxy(realEnv, {
+      get(target, key, receiver) {
+        if (ENV_KEYS.includes(key)) touched.push(`process.env.${key}`);
+        return Reflect.get(target, key, receiver);
+      },
+    });
     process.exit = trap("process.exit");
     process.stdout.write = trap("process.stdout.write");
     os.homedir = trap("os.homedir");
@@ -144,6 +156,16 @@ function sealed(fn) {
         return savedFs[name].apply(this, args);
       };
     }
+    const record = (saved, owner, name, label) => {
+      if (typeof owner[name] !== "function") return;
+      saved[name] = owner[name];
+      owner[name] = function (...args) {
+        touched.push(`${label}.${name} ${typeof args[0] === "string" ? args[0] : ""}`.trim());
+        return saved[name].apply(this, args);
+      };
+    };
+    for (const name of FS_PROMISE_WRITES) record(savedPromises, fs.promises, name, "fs.promises");
+    for (const name of FS_CALLBACK_WRITES) record(savedCallbacks, fs, name, "fs");
     savedFs.openSync = fs.openSync;
     fs.openSync = function (file, flags, ...rest) {
       if (flags !== undefined && flags !== "r") touched.push(`fs.openSync ${file} ${flags}`);
@@ -152,12 +174,15 @@ function sealed(fn) {
     return { result: fn(), touched };
   } finally {
     for (const [name, f] of Object.entries(savedFs)) fs[name] = f;
+    for (const [name, f] of Object.entries(savedPromises)) fs.promises[name] = f;
+    for (const [name, f] of Object.entries(savedCallbacks)) fs[name] = f;
+    process.env = realEnv;
     process.exit = saved.exit;
     process.stdout.write = saved.write;
     os.homedir = saved.homedir;
     for (const k of ENV_KEYS) {
-      if (savedEnv[k] === undefined) delete process.env[k];
-      else process.env[k] = savedEnv[k];
+      if (savedEnv[k] === undefined) delete realEnv[k];
+      else realEnv[k] = savedEnv[k];
     }
   }
 }
@@ -287,10 +312,12 @@ const PARITY = [
   { name: "config include adds a path", evt: () => editAt(C(), "src/billing/charge.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" } } },
   { name: "config exclude never reaches a strong term", evt: () => editAt(C(), "src/legacy/auth/x.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" } } },
   { name: "a subagent's edit is gated the same", evt: () => ({ ...editAt(P(), "src/auth/session.ts"), agentId: "a1", agentType: "bob" }), expect: { claude: { decision: "ask", kind: "high-risk-surface" } } },
+  // the project dir is not the cwd: a config found only through env.projectDir
+  { name: "config found through env.projectDir, not cwd", evt: () => ({ ...editAt(C(), "src/billing/charge.ts"), cwd: P() }), env: () => ({ projectDir: C() }), expect: { claude: { decision: "ask", kind: "high-risk-surface" } } },
   // definition-of-done
   { name: "Stop after an unreviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "block", kind: "definition-of-done" } } },
   // context-size
-  { name: "prompt past a context band", evt: () => ({ event: "UserPromptSubmit", cwd: P(), session: "S-PARITY-BAND", transcriptPath: fx.transcript }), env: () => ({ logDir: path.join(ROOT, "parity-bands"), contextBands: "1000" }), expect: { claude: { decision: "allow", kind: "context-size" } } },
+  { name: "prompt past a context band", evt: () => ({ event: "UserPromptSubmit", cwd: P(), session: "S-PARITY-BAND", transcriptPath: fx.transcript }), env: () => ({ logDir: path.join(ROOT, "parity-bands"), contextBands: "1000" }), writesBands: true, expect: { claude: { decision: "allow", kind: "context-size" } } },
   // allow
   { name: "a plain command", evt: () => shell(P(), "ls -la"), expect: { claude: { decision: "allow", kind: null } } },
   { name: "git status", evt: () => shell(P(), "git status"), expect: { claude: { decision: "allow", kind: null } } },
@@ -308,9 +335,23 @@ describe("parity table: normalized event -> outcome per adapter", () => {
   for (const row of PARITY) {
     test(row.name, () => {
       const evt = row.evt();
-      const result = evaluate(evt, envFor(evt.cwd, row.env ? row.env() : {}));
+      const env = envFor(evt.cwd, row.env ? row.env() : {});
+      const { result, touched } = sealed(() => evaluate(evt, env));
+      if (row.writesBands) {
+        assert.deepEqual(touched, [`fs.mkdirSync ${env.logDir}`, `fs.writeFileSync ${path.join(env.logDir, "context-bands.json")}`]);
+      } else {
+        assert.deepEqual(touched, [], "evaluate touched the process or wrote a file");
+      }
       assert.ok(result.kind === null || GATE_KINDS.includes(result.kind), `kind ${result.kind} is not in GATE_KINDS`);
       if (result.kind) assert.equal(result.decision, KIND_DECISION[result.kind], `kind ${result.kind} carries one decision`);
+      // The decision and its log line agree: one gate record, with that kind.
+      const gates = result.logs.filter((l) => l.record.event === "gate");
+      // An allow may still audit an exclusion, and only that.
+      if (result.kind) {
+        assert.deepEqual(gates.map((l) => l.record.kind), [result.kind], "exactly one gate record, with the decision's kind");
+      } else {
+        assert.deepEqual(gates.filter((l) => l.record.kind !== "excluded-by-config"), [], "an allow logs no gate but an exclusion");
+      }
       for (const [harness, expected] of Object.entries(row.expect)) {
         assert.ok(ADAPTERS[harness], `no adapter named ${harness}`);
         assert.deepEqual(ADAPTERS[harness].outcome(result), expected, harness);
