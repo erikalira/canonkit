@@ -9,7 +9,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat, rename } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat, rename, cp } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -601,6 +601,34 @@ describe("hooks", () => {
     // separator is an invalid escape. Asserting the forward-slash form is the
     // same check without writing a backslash into this file.
     assert.ok(out.includes("/.claude/hooks/canonkit-hook.js"), "suggested command is not JSON-pastable");
+  });
+
+  test("installs exactly the 2.0 file set into ~/.claude/hooks", async () => {
+    const { home } = await scratch("hook-fileset");
+    run(["install", "--no-reference"], { home });
+    const got = (await readdir(path.join(home, ".claude", "hooks"))).sort();
+    assert.deepEqual(got, ["canonkit-hook.js"]);
+  });
+
+  test("a stray .js in the package hooks dir is not copied", async () => {
+    const { root, home } = await scratch("hook-stray");
+    // A throwaway copy of the package: the real hooks/ is never touched.
+    const pkg = path.join(root, "pkg");
+    await mkdir(pkg, { recursive: true });
+    for (const d of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "tools"]) {
+      await cp(path.join(REPO, d), path.join(pkg, d), { recursive: true });
+    }
+    await cp(path.join(REPO, "package.json"), path.join(pkg, "package.json"));
+    await symlink(path.join(REPO, "node_modules"), path.join(pkg, "node_modules"), "junction");
+    await writeFile(path.join(pkg, "hooks", "stray.js"), "// not in the list\n");
+
+    const result = spawnSync(process.execPath, [path.join(pkg, "bin", "cli.js"), "install", "--no-reference"], {
+      cwd: home,
+      encoding: "utf8",
+      env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual((await readdir(path.join(home, ".claude", "hooks"))).sort(), ["canonkit-hook.js"]);
   });
 
   test("keeps a locally edited hook as .local.bak before overwriting it", async () => {

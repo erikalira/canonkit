@@ -33,6 +33,13 @@ const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
 const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
 const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
+// What each runtime adapter receives from hooks/, by name. An explicit list, not
+// "every .js in the folder": the folder will also hold other adapters' files and
+// shared code, and a stray file must not land in a runtime that does not run it.
+// The claude list is exactly what 2.0 copied. Another adapter adds its own key.
+const HOOK_FILES = {
+  claude: ["canonkit-hook.js"],
+};
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
@@ -493,9 +500,7 @@ async function installOpencode(ctx, agents, dest) {
  * problem the agents had, in its worse form, because nothing validated it.
  */
 async function installHooks(ctx, dest, { wire = false } = {}) {
-  const files = existsSync(HOOKS_DIR)
-    ? (await readdir(HOOKS_DIR)).filter((f) => f.endsWith(".js")).sort()
-    : [];
+  const files = HOOK_FILES.claude.filter((f) => existsSync(path.join(HOOKS_DIR, f)));
   if (!files.length) return null;
 
   await copyKeepingLocal(ctx, HOOKS_DIR, dest, files);
