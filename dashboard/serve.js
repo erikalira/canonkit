@@ -9,7 +9,7 @@
  * Run:  node ~/.claude/canonkit-dashboard/serve.js
  * Open: http://localhost:4317
  *
- * Installed copy: the source of truth is dashboard/ in the agent-team-config repo.
+ * Installed copy: the source of truth is dashboard/ in the canonkit repo.
  */
 const http = require('http');
 const fs = require('fs');

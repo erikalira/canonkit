@@ -23,6 +23,12 @@ because it would be published as `latest`.
      the npmjs.com page shows the "Provenance" badge;
    - in a clean project, `npm i canonkit@X.Y.Z && npm audit signatures` passes.
 
+   For a few minutes after the publish, `npm view canonkit@X.Y.Z` and
+   `npx canonkit@X.Y.Z` can answer 404 (E404): the registry's cache has not caught
+   up yet. That is not a failed publish. The publish step's log on the Actions run
+   is what says whether it went out. Wait and retry; don't re-run the workflow or
+   re-tag, since a version that did publish can't be published again.
+
 The workflow also checks that the tag is on `main` and matches `package.json`.
 That check only catches mistakes: it runs from the tagged commit's own copy of
 the workflow. The tag ruleset and the deployment approval below are what stop
