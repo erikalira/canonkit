@@ -61,7 +61,7 @@ Done when: the next release shows provenance on npmjs.com. Dispatch: Gard, opus,
 **Done:** PR #20 (`ci/release-provenance`: publish from CI with `--provenance`, gitleaks
 on every CI run) and PR #21 (package metadata pointed at the renamed repository).
 canonkit 2.0.0 is on npm with provenance. Release procedure: `docs/releasing.md`.
-Open follow-ups (LOW, inline, can ride along with any later PR):
+Follow-ups, both **done in PR #24** (`chore/small-follow-ups`):
 - Dependabot for the `github-actions` ecosystem (`.github/dependabot.yml`), so the pinned
   action versions in `ci.yml` and `release.yml` get update PRs.
 - A note in `docs/releasing.md`: right after a publish, `npm view` / `npx canonkit@<new>`

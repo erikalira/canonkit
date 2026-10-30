@@ -222,7 +222,7 @@
       "prompt": "In this project, Gard should also enforce our internal rule that every endpoint under /admin requires SSO. Update the team's gard agent so it checks for that.",
       "expect": {
         "says": "(different|new|another|its own|separate) (name|agent)|project[- ]local|project agent|upstream|overwrit|reinstall|next install",
-        "notSays": "agent-team-config"
+        "notSays": "agent-team-config|\\bcanonkit(?:['’]s)?\\s+(?:github\\s+|source\\s+|upstream\\s+)?repo(?:sitory)?\\b|github\\.com/[\\w.-]+/canonkit\\b|\\bcanonkit/agents/"
       }
     },
     {

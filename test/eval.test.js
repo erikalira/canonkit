@@ -93,8 +93,14 @@ describe("routing eval", () => {
     assert.equal(judge({ says: "canonkit add dana" }, run([], "Here is the A/B design.")).pass, false);
     assert.equal(judge({ avoids: ["virgo"] }, run([], "", "1. Ask Virgo for worktrees.")).pass, false);
     assert.equal(judge({ avoids: ["virgo"] }, run([], "", "Each agent gets its own worktree.")).pass, true);
-    assert.equal(judge({ notSays: "agent-team-config" }, run([], "Edit it in the agent-team-config repo.")).pass, false);
-    assert.equal(judge({ notSays: "agent-team-config" }, run([], "Create a project agent with another name.")).pass, true);
+    // The source repo by either name, never the installer the right answer points to.
+    const cases = JSON.parse(readFileSync(path.join(REPO, "evals", "routing-cases.json"), "utf8")).cases;
+    const { notSays } = cases.find((c) => c.id === "customize-installed-agent").expect;
+    assert.equal(judge({ notSays }, run([], "Edit it in the agent-team-config repo.")).pass, false);
+    assert.equal(judge({ notSays }, run([], "Edit it in the canonkit repo.")).pass, false);
+    assert.equal(judge({ notSays }, run([], "Open a PR on github.com/erikalira/canonkit.")).pass, false);
+    assert.equal(judge({ notSays }, run([], "Create a project agent with another name.")).pass, true);
+    assert.equal(judge({ notSays }, run([], "The next npx canonkit install would overwrite it.")).pass, true);
   });
 
   test("a run the model never answered is an error, not a routing failure", () => {
