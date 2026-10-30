@@ -43,10 +43,11 @@
  * variable and no home-directory lookup. What it needs from outside comes in
  * `env` (see claudeEnv). It reads the activity log and the project's
  * .claude/canonkit.json as input; the log lines it would write come back in
- * `logs` as { file, record }, written by the adapter. Its one write is the
- * context-band state (contextReminder): the reminder is only given when that
- * state persisted, or it would repeat every turn. `main()` is the Claude Code
- * adapter: stdin -> normalizeClaude -> evaluate -> log writes, output, exit.
+ * `logs` as { file, record }, written by the adapter. It writes nothing.
+ * `main()` is the Claude Code adapter: stdin -> normalizeClaude -> evaluate ->
+ * log writes -> on UserPromptSubmit, the context-size reminder (contextReminder:
+ * it parses Claude's transcript and persists band state, so it is the adapter's)
+ * -> output, exit.
  * The core stays in this file on purpose: a top-level require of a sibling
  * would throw at load, outside run()'s try, and turn every gate off for an
  * install that copied only this file.
@@ -229,86 +230,6 @@ function toolResultSize(tool, r) {
 function subagentTranscript(parentTranscript, agentId) {
   if (typeof parentTranscript !== 'string' || !agentId) return '';
   return path.join(parentTranscript.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`);
-}
-
-// ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
-// Enforced half of the "New session when the subject changes" rule. A long session is
-// re-read in full on every turn, so the cost of bundling unrelated jobs grows
-// silently; this puts the size in front of the model when it crosses a band.
-// Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
-// session_id + transcript_path; stdout
-//   {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
-// adds context alongside the prompt and exit 0 never blocks it. The transcript is
-// written asynchronously, so the figure can lag one turn — fine for a reminder.
-// The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
-// CANONKIT_CONTEXT_BANDS (comma-separated token counts; "off" disables). The
-// pre-rename MEU_TIME_CONTEXT_BANDS is still read when the new one is unset.
-const DEFAULT_BANDS = [100000, 150000, 200000];
-const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
-const BANDS_FILE = 'context-bands.json'; // inside env.logDir
-const MAX_TRACKED_SESSIONS = 50;
-
-// raw: env.contextBands, the variable's value as the adapter read it.
-function contextBands(raw) {
-  if (typeof raw !== 'string' || raw.trim() === '') return DEFAULT_BANDS;
-  if (/^(off|0|none)$/i.test(raw.trim())) return [];
-  const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
-  return bands.length ? [...new Set(bands)].sort((a, b) => a - b) : DEFAULT_BANDS;
-}
-
-// Context size = what the most recent main-chain API call consumed as input.
-// Read from the end only: transcripts reach several MB.
-function currentContextTokens(file) {
-  let fd;
-  try {
-    fd = fs.openSync(file, 'r');
-    const size = fs.fstatSync(fd).size;
-    const len = Math.min(size, TAIL_BYTES);
-    const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, size - len);
-    const lines = buf.toString('utf8').split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].includes('"usage"')) continue;
-      let e;
-      try { e = JSON.parse(lines[i]); } catch (_) { continue; } // first line may be cut mid-entry
-      const u = e && e.type === 'assistant' && !e.isSidechain && e.message && e.message.usage;
-      if (!u || typeof u !== 'object') continue;
-      const total = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
-      if (total > 0) return total;
-    }
-  } catch (_) { /* unreadable: do nothing */ } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
-  }
-  return null;
-}
-
-function contextReminder(evt, env, log) {
-  const session = evt.session;
-  const bands = contextBands(env.contextBands);
-  if (!bands.length || !session || !env.logDir || typeof evt.transcriptPath !== 'string') return null;
-  const tokens = currentContextTokens(evt.transcriptPath);
-  if (tokens === null) return null;
-
-  const bandsFile = path.join(env.logDir, BANDS_FILE);
-  let state = {};
-  try { state = JSON.parse(fs.readFileSync(bandsFile, 'utf8')) || {}; } catch (_) {}
-  const reached = bands.filter((b) => tokens >= b).pop() || 0; // 0: below every band
-  const last = num(state[session]);
-  // Below every band (e.g. after /compact) the record is dropped so the next climb reminds again.
-  if (reached === 0 && !(session in state)) return null;
-  if (reached !== 0 && reached <= last) return null;
-
-  if (reached === 0) delete state[session]; else state[session] = reached;
-  const keys = Object.keys(state);
-  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACKED_SESSIONS))) delete state[k];
-  try {
-    fs.mkdirSync(env.logDir, { recursive: true });
-    fs.writeFileSync(bandsFile, JSON.stringify(state));
-  } catch (_) { /* cannot persist: skip the reminder rather than repeat it every turn */ return null; }
-  if (reached === 0) return null;
-
-  log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(evt.cwd) });
-  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff, and end with the new session's opening prompt in a fenced block, ready to paste (rule 'New session when the subject changes').`;
 }
 
 // Agents that count as an independent reviewer for the definition-of-done gate.
@@ -957,8 +878,10 @@ function gitBypass({ sub, config, args }) {
 }
 
 // ---- THE CORE: evaluate(evt, env) ----
-// Every kind evaluate() can return besides null (a plain allow). Each is also
-// the `kind` of the gate line it logs, so a decision and its log line join.
+// Every kind a decision can carry besides null (a plain allow). Each is also
+// the `kind` of the gate line logged with it, so a decision and its log line
+// join. evaluate() returns all of them but context-size, which the Claude
+// adapter decides after it (contextReminder).
 const GATE_KINDS = Object.freeze([
   'git-bypass', // deny: skipping the repository's hooks or signing
   'secret-block', // deny: a high-confidence secret written to a file
@@ -967,7 +890,7 @@ const GATE_KINDS = Object.freeze([
   'perf-budget', // ask: a performance-budget file
   'high-risk-surface', // ask: auth/secret/migration/contract paths, and canonkit.json
   'definition-of-done', // block: Stop with a gated edit and no reviewer after it
-  'context-size', // allow, with the reminder as reason
+  'context-size', // allow, with the reminder as reason (Claude adapter only)
 ]);
 
 // What each adapter does with each kind, declared next to the adapter so a test
@@ -1006,7 +929,8 @@ const CLAUDE_GATE_MODES = Object.freeze({
 //   legacyLogDir  the pre-rename log folder, read only (optional)
 //   projectDir    the project root, or undefined/'' for none
 //   home          the user's home folder, or null when unknown
-//   contextBands  the raw CANONKIT_CONTEXT_BANDS value (optional)
+// (claudeEnv also carries contextBands, the raw CANONKIT_CONTEXT_BANDS value,
+// for the adapter's contextReminder; evaluate() does not read it.)
 // Returns { decision, kind, reason, logs }: kind is one of GATE_KINDS or null,
 // logs is [{ file, record }] with file a name inside env.logDir and record the
 // complete JSON line. Fails open by itself: an error is an allow that still
@@ -1096,10 +1020,9 @@ function decide(evt, env, logs) {
 
   // ---- OBSERVABILITY (never blocks) ----
   if (eventName === 'UserPromptSubmit') {
+    // The context-size reminder is decided after this, by the Claude adapter (main).
     log({ event: 'prompt', project });
-    let note = null;
-    try { note = contextReminder(evt, env, log); } catch (_) { /* fail-open */ }
-    return note ? allow('context-size', note) : allow();
+    return allow();
   }
   if (eventName === 'SubagentStop') {
     // Logged on the first stop only: a stop hook that continues the agent fires
@@ -1362,6 +1285,89 @@ function claudeOutput({ decision, kind, reason }) {
   return null;
 }
 
+// ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
+// Enforced half of the "New session when the subject changes" rule. A long session is
+// re-read in full on every turn, so the cost of bundling unrelated jobs grows
+// silently; this puts the size in front of the model when it crosses a band.
+// Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
+// session_id + transcript_path; stdout
+//   {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
+// adds context alongside the prompt and exit 0 never blocks it. The transcript is
+// written asynchronously, so the figure can lag one turn — fine for a reminder.
+// The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
+// CANONKIT_CONTEXT_BANDS (comma-separated token counts; "off" disables). The
+// pre-rename MEU_TIME_CONTEXT_BANDS is still read when the new one is unset.
+// Part of the Claude adapter, not the core: it parses Claude Code's transcript and
+// keeps its band state in env.logDir. main() runs it after evaluate(), which
+// writes nothing.
+const DEFAULT_BANDS = [100000, 150000, 200000];
+const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
+const BANDS_FILE = 'context-bands.json'; // inside env.logDir
+const MAX_TRACKED_SESSIONS = 50;
+
+// raw: env.contextBands, the variable's value as the adapter read it.
+function contextBands(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') return DEFAULT_BANDS;
+  if (/^(off|0|none)$/i.test(raw.trim())) return [];
+  const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  return bands.length ? [...new Set(bands)].sort((a, b) => a - b) : DEFAULT_BANDS;
+}
+
+// Context size = what the most recent main-chain API call consumed as input.
+// Read from the end only: transcripts reach several MB.
+function currentContextTokens(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, TAIL_BYTES);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"usage"')) continue;
+      let e;
+      try { e = JSON.parse(lines[i]); } catch (_) { continue; } // first line may be cut mid-entry
+      const u = e && e.type === 'assistant' && !e.isSidechain && e.message && e.message.usage;
+      if (!u || typeof u !== 'object') continue;
+      const total = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
+      if (total > 0) return total;
+    }
+  } catch (_) { /* unreadable: do nothing */ } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
+  }
+  return null;
+}
+
+function contextReminder(evt, env, log) {
+  const session = evt.session;
+  const bands = contextBands(env.contextBands);
+  if (!bands.length || !session || !env.logDir || typeof evt.transcriptPath !== 'string') return null;
+  const tokens = currentContextTokens(evt.transcriptPath);
+  if (tokens === null) return null;
+
+  const bandsFile = path.join(env.logDir, BANDS_FILE);
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(bandsFile, 'utf8')) || {}; } catch (_) {}
+  const reached = bands.filter((b) => tokens >= b).pop() || 0; // 0: below every band
+  const last = num(state[session]);
+  // Below every band (e.g. after /compact) the record is dropped so the next climb reminds again.
+  if (reached === 0 && !(session in state)) return null;
+  if (reached !== 0 && reached <= last) return null;
+
+  if (reached === 0) delete state[session]; else state[session] = reached;
+  const keys = Object.keys(state);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACKED_SESSIONS))) delete state[k];
+  try {
+    fs.mkdirSync(env.logDir, { recursive: true });
+    fs.writeFileSync(bandsFile, JSON.stringify(state));
+  } catch (_) { /* cannot persist: skip the reminder rather than repeat it every turn */ return null; }
+  if (reached === 0) return null;
+
+  log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(evt.cwd) });
+  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff, and end with the new session's opening prompt in a fenced block, ready to paste (rule 'New session when the subject changes').`;
+}
+
 function main() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch (_) {}
@@ -1369,9 +1375,17 @@ function main() {
   try { input = JSON.parse(raw || '{}'); } catch (_) {}
 
   const env = claudeEnv();
-  const result = evaluate(normalizeClaude(input, process.cwd()), env);
+  const evt = normalizeClaude(input, process.cwd());
+  const result = evaluate(evt, env);
   for (const line of result.logs) writeLog(env.logDir, line);
-  const out = claudeOutput(result);
+  // After the logs: events.jsonl keeps the order prompt, then gate. Its own try,
+  // so a failed reminder costs only the reminder.
+  let note = null;
+  if (evt.event === 'UserPromptSubmit') {
+    const log = (event) => writeLog(env.logDir, { file: EVENTS_FILE, record: { ts: Date.now(), session: evt.session, ...event } });
+    try { note = contextReminder(evt, env, log); } catch (_) { /* fail-open */ }
+  }
+  const out = claudeOutput(note ? allow('context-size', note) : result);
   if (out) process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }

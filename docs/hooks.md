@@ -95,19 +95,20 @@ before being overwritten.
 
 The gates live in one pure function, `evaluate(evt, env)`, in
 `hooks/canonkit-hook.js`. `main()` is only the Claude Code adapter: stdin,
-`normalizeClaude`, `evaluate`, then it writes the log lines, prints the answer and
-exits. This is an **internal contract** that the 2.2 adapters for other harnesses
-build on. It is not a public API: the hook is installed as a single file, and the
-shape below may change between minor versions (the tests in
-`test/hook-core.test.js` are what hold it).
+`normalizeClaude`, `evaluate`, then it writes the log lines, runs the
+context-size reminder on `UserPromptSubmit`, prints the answer and exits. This
+is an **internal contract** that the 2.2 adapters for other harnesses build on.
+It is not a public API: the hook is installed as a single file, and the shape
+below may change between minor versions (the tests in `test/hook-core.test.js`
+are what hold it).
 
 - `evt` is the normalized event: `event`, `tool`, `toolInput`, `cwd` (required),
   `session`, `agentId`/`agentType` (set only on a subagent's events), the Stop
   fields and the PostToolUse fields. `normalizeClaude(input, fallbackCwd)` builds
   it from Claude Code's hook input.
 - `env` is everything else it may know about the machine: `{logDir, legacyLogDir,
-  projectDir, home, contextBands}`. The core never reads the process environment
-  or looks up the home directory itself.
+  projectDir, home}`. The core never reads the process environment or looks up
+  the home directory itself.
 - It returns `{decision, kind, reason, logs}`. `decision` is `allow`, `ask`,
   `deny` or `block`; `kind` is one of `GATE_KINDS` or `null`; `logs` is a list of
   `{file, record}` that the adapter appends under `logDir`.
@@ -120,10 +121,14 @@ shape below may change between minor versions (the tests in
 - Denies (git bypass flags, blocked secrets) are decided **before**
   `.claude/canonkit.json` is read, so a project config can never loosen them.
 
-It has one documented impurity: on `UserPromptSubmit` it writes
-`context-bands.json` in `logDir`. The context-size reminder is only given when
-that state persisted; otherwise it would repeat on every turn. Apart from that
-write, it only reads (the activity log and the project config).
+It writes nothing; it only reads (the activity log and the project config).
+
+The context-size reminder is not part of the core. It parses Claude Code's
+transcript and keeps its band state in `context-bands.json` in `logDir` (the
+reminder is only given when that state persisted, or it would repeat on every
+turn), so the Claude adapter runs it after `evaluate`, in its own `try`, and
+logs its gate line after the prompt line. `context-size` stays in `GATE_KINDS`
+because it is still a decision kind with a mode; `evaluate` never returns it.
 
 ## Events it must be registered for
 

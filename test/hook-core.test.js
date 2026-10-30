@@ -5,9 +5,9 @@
  * and output. This file pins what sits under that adapter, so another harness's
  * adapter (Codex, OpenCode) can be held to the same decisions:
  *   1. PURITY — evaluate() decides without the process: no exit, no stdout, no
- *      home lookup, no environment variable, and no write to env.logDir (the log
- *      lines come back in `logs`). The one documented write, the context-band
- *      state, is tested on its own so the exception stays visible.
+ *      home lookup, no environment variable, and no file write at all (the log
+ *      lines come back in `logs`). The context-band state is the Claude
+ *      adapter's, written by main(); test/canonkit-hook.test.js covers it.
  *   2. PARITY — one table of normalized events and the outcome each adapter must
  *      produce. Only the Claude column exists today; an adapter adds its column
  *      to the rows and its entry to ADAPTERS.
@@ -59,6 +59,11 @@ const ADAPTERS = {
   claude: { modes: CLAUDE_GATE_MODES, outcome: ({ decision, kind }) => ({ decision, kind }) },
 };
 const MODES = ["enforce", "text", "off"];
+// Kinds an adapter decides after evaluate(), never evaluate() itself, so they
+// have no parity row. context-size parses Claude Code's transcript and keeps band
+// state, so it lives in the Claude adapter (main) and test/canonkit-hook.test.js
+// covers it through the real process.
+const ADAPTER_KINDS = ["context-size"];
 
 let ROOT; // temp root, used as env.home: nothing here is the real home
 const fx = {};
@@ -228,29 +233,23 @@ describe("purity: evaluate() decides without touching the process", () => {
     assert.equal(process.env.HOME, before.home);
   });
 
-  // The documented exception (hook header, "Its one write is the context-band
-  // state"): without that state the reminder would repeat every turn. Pinned
-  // here so a second write, or one outside env.logDir, fails instead of passing.
-  test("exception: UserPromptSubmit writes context-bands.json into env.logDir, and nothing else", () => {
+  // It used to write context-bands.json here. The band state moved to the
+  // Claude adapter (main), so a prompt past a band is a plain allow that only
+  // returns its prompt line: no reminder, no band file, the same answer twice.
+  test("UserPromptSubmit writes nothing, even past a context band", () => {
     const logDir = path.join(ROOT, "bands-logs");
     const env = envFor(fx.plain, { logDir, contextBands: "1000" });
     const evt = { event: "UserPromptSubmit", cwd: fx.plain, session: "S-BANDS", transcriptPath: fx.transcript };
 
-    const first = sealed(() => evaluate(evt, env));
-    assert.equal(first.result.decision, "allow");
-    assert.equal(first.result.kind, "context-size");
-    assert.match(first.result.reason, /~5k tokens/);
-    const bandsFile = path.join(logDir, "context-bands.json");
-    assert.deepEqual(first.touched, [`fs.mkdirSync ${logDir}`, `fs.writeFileSync ${bandsFile}`]);
-    assert.deepEqual(fs.readdirSync(logDir), ["context-bands.json"], "the prompt and gate lines are returned, not written");
-    assert.deepEqual(JSON.parse(fs.readFileSync(bandsFile, "utf8")), { "S-BANDS": 1000 });
-    assert.deepEqual(first.result.logs.map((l) => [l.file, l.record.event, l.record.kind]),
-      [["events.jsonl", "prompt", undefined], ["events.jsonl", "gate", "context-size"]]);
-
-    // Why it is written: read back, the same band does not remind again, and no write follows.
-    const second = sealed(() => evaluate(evt, env));
-    assert.equal(second.result.kind, null);
-    assert.deepEqual(second.touched, []);
+    for (const turn of ["first", "second"]) {
+      const { result, touched } = sealed(() => evaluate(evt, env));
+      assert.deepEqual(touched, [], `${turn}: evaluate touched the process or wrote a file`);
+      assert.deepEqual({ decision: result.decision, kind: result.kind, reason: result.reason },
+        { decision: "allow", kind: null, reason: "" }, turn);
+      assert.deepEqual(result.logs.map((l) => [l.file, l.record.event, l.record.session]),
+        [["events.jsonl", "prompt", "S-BANDS"]], `${turn}: only the prompt line, returned`);
+    }
+    assert.equal(fs.existsSync(logDir), false, "evaluate must not create env.logDir or context-bands.json");
   });
 
   // A repo commits this file, so a clone controls it. Both denies run before it
@@ -277,8 +276,8 @@ describe("purity: evaluate() decides without touching the process", () => {
 
 // ---- 2. PARITY TABLE ----
 // Rows: a normalized event (built against the fixtures) -> the outcome per
-// adapter. `env` overrides the default env for the rows that read the log or
-// write band state. To add a harness: give each row its column, and ADAPTERS its line.
+// adapter. `env` overrides the default env for the rows that read the log.
+// To add a harness: give each row its column, and ADAPTERS its line.
 const P = () => fx.plain;
 const C = () => fx.cfg;
 const PARITY = [
@@ -316,8 +315,6 @@ const PARITY = [
   { name: "config found through env.projectDir, not cwd", evt: () => ({ ...editAt(C(), "src/billing/charge.ts"), cwd: P() }), env: () => ({ projectDir: C() }), expect: { claude: { decision: "ask", kind: "high-risk-surface" } } },
   // definition-of-done
   { name: "Stop after an unreviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "block", kind: "definition-of-done" } } },
-  // context-size
-  { name: "prompt past a context band", evt: () => ({ event: "UserPromptSubmit", cwd: P(), session: "S-PARITY-BAND", transcriptPath: fx.transcript }), env: () => ({ logDir: path.join(ROOT, "parity-bands"), contextBands: "1000" }), writesBands: true, expect: { claude: { decision: "allow", kind: "context-size" } } },
   // allow
   { name: "a plain command", evt: () => shell(P(), "ls -la"), expect: { claude: { decision: "allow", kind: null } } },
   { name: "git status", evt: () => shell(P(), "git status"), expect: { claude: { decision: "allow", kind: null } } },
@@ -337,12 +334,9 @@ describe("parity table: normalized event -> outcome per adapter", () => {
       const evt = row.evt();
       const env = envFor(evt.cwd, row.env ? row.env() : {});
       const { result, touched } = sealed(() => evaluate(evt, env));
-      if (row.writesBands) {
-        assert.deepEqual(touched, [`fs.mkdirSync ${env.logDir}`, `fs.writeFileSync ${path.join(env.logDir, "context-bands.json")}`]);
-      } else {
-        assert.deepEqual(touched, [], "evaluate touched the process or wrote a file");
-      }
+      assert.deepEqual(touched, [], "evaluate touched the process or wrote a file");
       assert.ok(result.kind === null || GATE_KINDS.includes(result.kind), `kind ${result.kind} is not in GATE_KINDS`);
+      assert.ok(!ADAPTER_KINDS.includes(result.kind), `${result.kind} is decided by an adapter, never by evaluate()`);
       if (result.kind) assert.equal(result.decision, KIND_DECISION[result.kind], `kind ${result.kind} carries one decision`);
       // The decision and its log line agree: one gate record, with that kind.
       const gates = result.logs.filter((l) => l.record.event === "gate");
@@ -381,7 +375,8 @@ describe("gate maps cover GATE_KINDS", () => {
     const expected = new Set();
     for (const row of PARITY) for (const e of Object.values(row.expect)) if (e.kind) expected.add(e.kind);
     for (const k of expected) assert.ok(GATE_KINDS.includes(k), `${k} is expected but not in GATE_KINDS`);
-    assert.deepEqual([...GATE_KINDS].filter((k) => !expected.has(k)), [], "kinds with no parity row");
+    assert.deepEqual([...GATE_KINDS].filter((k) => !expected.has(k) && !ADAPTER_KINDS.includes(k)), [], "kinds with no parity row");
+    for (const k of ADAPTER_KINDS) assert.ok(!expected.has(k), `${k} is decided by an adapter, yet has a parity row`);
     assert.deepEqual(Object.keys(KIND_DECISION).sort(), [...GATE_KINDS].sort());
   });
 });
