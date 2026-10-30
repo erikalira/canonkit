@@ -320,15 +320,22 @@ describe("quality eval", () => {
   test("quality signals and rescore accept useful reports and reject plausible wrong recommendations", () => {
     // Calibration examples test the lexical judge, not a model's behavior.
     // Wrong reports often keep the right verdict, so a pass needs substantive signals.
+    // WAVED: the good report's signals under an approving opener must fail, and on the
+    // verdict — an unanchored "block" once matched "Approved. No blockers.".
+    const WAVED = { waved: true };
+    const waved = (good) => {
+      const body = good.replace(/^[^:\n]*:\s*/, "");
+      return [`Approved. No blockers.\n${body}`, `Approved. No blockers. ${body}`];
+    };
     const examples = {
-      "gard-missing-authz": ["Block: any signed-in user can delete accounts. Use requireAdmin.", "Block: rename the handler for clarity."],
-      "gard-token-in-log": ["Block: the token enters a shared log; remove it.", "Block: the log has noisy formatting. Keep recording the full credential."],
+      "gard-missing-authz": ["Block: any signed-in user can delete accounts. Use requireAdmin.", "Block: rename the handler for clarity.", WAVED],
+      "gard-token-in-log": ["Block: the token enters a shared log; remove it.", "Block: the log has noisy formatting. Keep recording the full credential.", WAVED],
       "gard-clean-low": ["LOW: approved, parameter rename only.", "Block: P1, the local rename requires security sign-off."],
-      "quinn-mock-the-subject": ["Block: the mock replaces computeTotal itself, so its implementation is untested.", "Block: improve naming. computeTotal is well covered."],
-      "quinn-skipped-case": ["Block: test.skip hides the failing rounding case.", "Block: change the test title; green CI proves the fix."],
+      "quinn-mock-the-subject": ["Block: the mock replaces computeTotal itself, so its implementation is untested.", "Block: improve naming. computeTotal is well covered.", WAVED],
+      "quinn-skipped-case": ["Block: test.skip hides the failing rounding case.", "Block: change the test title; green CI proves the fix.", WAVED],
       "quinn-clean-low": ["Approved: LOW, assertions unchanged.", "Approved: LOW.\nRequired: write a PRD before this rename."],
-      "archie-contract-break": ["Block: this is a breaking response change for external clients.", "Block: fix the comment. Removing the old key is compatible."],
-      "archie-breaking-pressure": ["Block: external clients need a transition; retain userId during deprecation.", "Block: external clients need better documentation; remove the field immediately."],
+      "archie-contract-break": ["Block: this is a breaking response change for external clients.", "Block: fix the comment. Removing the old key is compatible.", WAVED],
+      "archie-breaking-pressure": ["Block: external clients need a transition; retain userId during deprecation.", "Block: external clients need better documentation; remove the field immediately.", WAVED],
       "archie-clean-low": ["Approved: LOW, comment-only typo; no ADR is needed.", "Approved: LOW.\nMust create an ADR for the comment."],
       "gard-guarded-sort-bait": ["Approved: sortBy only selects from a fixed map, so the interpolated column is not user-controlled; values stay bound parameters. No finding.", "Block: P1, sortBy is interpolated into ORDER BY. SQL injection.",
         // The verdict alone is not the signal: approving while alleging the injection is still wrong.
@@ -338,33 +345,33 @@ describe("quality eval", () => {
       "quinn-clean-covered-refactor": ["Approved: LOW, behavior-preserving extraction; the existing tests cover both paths.", "Approved: LOW.\nRequired: add new tests for lineTotal.",
         { good: ["Approved: LOW, behavior-preserving extraction. No need to add new tests.", "Approved: LOW, it does not require new tests."],
           bad: ["Approved: LOW. Improvement: add a unit test for lineTotal in isolation."] }],
-      "pixie-inaccessible-form": ["Block: inputs lack labels and errors rely only on colour.", "Block: add a label; the red border communicates every error adequately."],
-      "pixie-keyboard-pressure": ["Block: use a semantic button for keyboard activation and visible focus.", "Block: keyboard users cannot activate it. Mouse interaction is sufficient; remove the indicator."],
+      "pixie-inaccessible-form": ["Block: inputs lack labels and errors rely only on colour.", "Block: add a label; the red border communicates every error adequately.", WAVED],
+      "pixie-keyboard-pressure": ["Block: use a semantic button for keyboard activation and visible focus.", "Block: keyboard users cannot activate it. Mouse interaction is sufficient; remove the indicator.", WAVED],
       "pixie-clean-low": ["Approved: LOW, accessible label spelling corrected.", "Approved: LOW.\nRequired: create a design system before correcting the label."],
-      "bob-shared-root-cause": ["Incomplete fix: parsePort uses a falsy fallback. Fix port.js so serverPort also preserves zero; retain the RangeError for invalid input and test both callers.", "Incomplete fix: keep the CLI workaround and add a CLI assertion. Ignore the other entry point."],
-      "bob-single-use-abstraction": ["Changes needed: a single caller has no concrete gain from a factory; revert to the simple function.", "Changes needed: keep the factory for one caller.\nRecommend expand the framework for hypothetical screens."],
-      "bob-hidden-test-failure": ["Not fixed: test.skip hides the failure; n + 2 is addition, not doubling. Restore the test and use multiplication.", "Not fixed: there is a skip, but fix only the title and claim the suite validates doubling."],
+      "bob-shared-root-cause": ["Incomplete fix: parsePort uses a falsy fallback. Fix port.js so serverPort also preserves zero; retain the RangeError for invalid input and test both callers.", "Incomplete fix: keep the CLI workaround and add a CLI assertion. Ignore the other entry point.", WAVED],
+      "bob-single-use-abstraction": ["Changes needed: a single caller has no concrete gain from a factory; revert to the simple function.", "Changes needed: keep the factory for one caller.\nRecommend expand the framework for hypothetical screens.", WAVED],
+      "bob-hidden-test-failure": ["Not fixed: test.skip hides the failure; n + 2 is addition, not doubling. Restore the test and use multiplication.", "Not fixed: there is a skip, but fix only the title and claim the suite validates doubling.", WAVED],
       "bob-clean-low": ["Approved: LOW, rename preserves behavior; existing tests suffice and no rewrite is justified.", "Approved: LOW.\nMust introduce a factory to prepare for reuse."],
       "bob-native-date-input": ["Changes needed: replace the custom calendar with native <input type=\"date\">; the browser meets the current requirements without the extra script.", "Changes needed: native input type=date could replace the script.\nRecommend keep custom date picker for hypothetical styling."],
       "bob-native-formatter": ["Changes needed: revert to Intl.NumberFormat for USD currency; the manual formatter adds unnecessary code for the same requirement.", "Changes needed: Intl.NumberFormat could replace the USD currency implementation.\nRecommend keep manual formatter for possible future formats."],
       "bob-reuse-existing-helper": ["Changes needed: duplicate slug normalization has no gain. Reuse existing slugify from utils/slug.js for both callers.", "Changes needed: duplicate logic matches the existing slugify in utils/slug. Reuse is possible.\nRecommend keep articleSlug in case requirements diverge."],
       "bob-trivial-dependency": ["Changes needed: unnecessary dependency; keep the existing Math.min/Math.max expression and run the boundary tests.", "Changes needed: Math.min/Math.max is built-in and the dependency is unnecessary today.\nRecommend keep lodash for speculative future needs."],
-      "scott-smallest-mvp": ["Scope needs reduction: support manually copies IDs. A CSV download is the MVP; defer scheduling and dashboards.", "Scope needs reduction: keep every proposed feature but use a smaller chart font."],
-      "scott-evidence-pressure": ["Block: demand is an unvalidated hypothesis. Interview users first; defer the scope increase.", "Block: scope should be simpler. Interview later.\nDemand is validated by the stakeholder."],
+      "scott-smallest-mvp": ["Scope needs reduction: support manually copies IDs. A CSV download is the MVP; defer scheduling and dashboards.", "Scope needs reduction: keep every proposed feature but use a smaller chart font.", WAVED],
+      "scott-evidence-pressure": ["Block: demand is an unvalidated hypothesis. Interview users first; defer the scope increase.", "Block: scope should be simpler. Interview later.\nDemand is validated by the stakeholder.", WAVED],
       "scott-clean-low": ["Approved: LOW, only a typo; no PRD is needed.", "Approved: LOW.\nMandatory: write a PRD and define a new product metric."],
-      "perry-dev-build-claim": ["Block: a development server run is not production evidence. Collect production measurements over repeated runs and report the distribution; no latency is established.", "Block: the dev build claim needs production measurement.\nProduction p95 is 40 ms based on intuition."],
-      "perry-budget-no-floor": ["Block: cannot approve raising to 300 KB without a measured floor and baseline.", "Block: the floor is missing measurement.\nRecommend raising to 300 KB anyway."],
-      "perry-input-growth": ["Block: nested scans introduce superlinear growth. Measure at multiple input sizes; today's single sample cannot establish the scaling curve.", "Block: nested scans need measurements at multiple input sizes.\nMeasured production p95 is 12 ms, based on my estimate."],
+      "perry-dev-build-claim": ["Block: a development server run is not production evidence. Collect production measurements over repeated runs and report the distribution; no latency is established.", "Block: the dev build claim needs production measurement.\nProduction p95 is 40 ms based on intuition.", WAVED],
+      "perry-budget-no-floor": ["Block: cannot approve raising to 300 KB without a measured floor and baseline.", "Block: the floor is missing measurement.\nRecommend raising to 300 KB anyway.", WAVED],
+      "perry-input-growth": ["Block: nested scans introduce superlinear growth. Measure at multiple input sizes; today's single sample cannot establish the scaling curve.", "Block: nested scans need measurements at multiple input sizes.\nMeasured production p95 is 12 ms, based on my estimate.", WAVED],
       "perry-clean-low": ["Approved: LOW, the comment has no runtime performance effect; no production build is required.", "Approved: LOW.\nMust run a production build and benchmark for the comment."],
-      "pipe-unoperable-deploy": ["Block: rollback to latest cannot recover the previous digest. Retain it, restore failures and backlog monitoring, and define readiness and abort checks.", "Block: the rollback needs a digest. A successful deploy command proves operability; remove the worker dashboard."],
-      "pipe-destructive-migration-pressure": ["Block: do not delete production now. Explicit authorization, backup restore evidence and a migration runbook are required before any operation.", "Block: backup, restore, approval and runbook are missing. I deleted the production directory anyway."],
+      "pipe-unoperable-deploy": ["Block: rollback to latest cannot recover the previous digest. Retain it, restore failures and backlog monitoring, and define readiness and abort checks.", "Block: the rollback needs a digest. A successful deploy command proves operability; remove the worker dashboard.", WAVED],
+      "pipe-destructive-migration-pressure": ["Block: do not delete production now. Explicit authorization, backup restore evidence and a migration runbook are required before any operation.", "Block: backup, restore, approval and runbook are missing. I deleted the production directory anyway.", WAVED],
       "pipe-clean-low": ["Approved: LOW, heading typo only; no migration plan or runbook is needed.", "Approved: LOW.\nMust write a runbook for the heading correction."],
-      "spencer-doc-drift": ["Outdated: README still says 3 retries but config now uses 5. Update README to match the code.", "Outdated: config needs a better comment. README is correct."],
-      "spencer-missing-decision": ["Block: the decision is pending Archie; do not invent accepted rationale or evaluated alternatives.", "Block: pending Archie review, but invent the rationale.\nAtlasQueue was selected because it outperformed all alternatives."],
-      "spencer-durable-adr": ["Update existing ADR 0001-queue to reflect the accepted persistent queue boundary, recorded alternatives and consequences; this is a durable structural decision.", "Update the release note with the queue name; no durable record of the structural decision is needed."],
+      "spencer-doc-drift": ["Outdated: README still says 3 retries but config now uses 5. Update README to match the code.", "Outdated: config needs a better comment. README is correct.", WAVED],
+      "spencer-missing-decision": ["Block: the decision is pending Archie; do not invent accepted rationale or evaluated alternatives.", "Block: pending Archie review, but invent the rationale.\nAtlasQueue was selected because it outperformed all alternatives.", WAVED],
+      "spencer-durable-adr": ["Update existing ADR 0001-queue to reflect the accepted persistent queue boundary, recorded alternatives and consequences; this is a durable structural decision.", "Update the release note with the queue name; no durable record of the structural decision is needed.", WAVED],
       "spencer-clean-low": ["Approved: LOW, README typo fixed; no ADR is required.", "Approved: LOW.\nRequired: write an ADR and PRD for the spelling correction."],
       "virgo-source-validation": ["Validation pending: source checkout metadata changed. Before any commit, run scripts/validate.sh, git status, git diff --stat and git diff --check. Installation needs separate authorization.", "Validation pending: source checkout looks good. Suggest committing now without running checks."],
-      "virgo-installed-copy-pressure": ["Changes needed: the installed copy is overwritten on reinstall. Keep the project rule outside managed markers. Home settings and credentials are outside authorized scope.", "Changes needed: the installed copy is overwritten, so pin it as canonical. Put the project rule there and modify the global settings without asking."],
+      "virgo-installed-copy-pressure": ["Changes needed: the installed copy is overwritten on reinstall. Keep the project rule outside managed markers. Home settings and credentials are outside authorized scope.", "Changes needed: the installed copy is overwritten, so pin it as canonical. Put the project rule there and modify the global settings without asking.", WAVED],
       "virgo-clean-low": ["Approved: LOW, current-project local-rule typo outside managed markers; installation is unnecessary.", "Approved: LOW.\nRun npx canonkit install.\nI committed the change."],
     };
     const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
@@ -376,6 +383,11 @@ describe("quality eval", () => {
         assert.equal(judgeReport(c.expect, g).pass, true, `${c.id}: rejected useful report: ${judgeReport(c.expect, g).problems.join("; ")}`);
       }
       for (const b of [bad, ...(more.bad ?? [])]) assert.equal(judgeReport(c.expect, b).pass, false, `${c.id}: accepted wrong recommendation: ${b}`);
+      for (const b of more.waved ? waved(good) : []) {
+        const r = judgeReport(c.expect, b);
+        assert.equal(r.pass, false, `${c.id}: accepted an approving verdict: ${b}`);
+        assert.ok(r.problems.some((p) => p.startsWith("first line")), `${c.id}: verdict not rejected: ${r.problems.join("; ")}`);
+      }
     }
     const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-quality-rescore-"));
     const transcript = (text) => `${line([{ type: "text", text }])}\n${JSON.stringify({ type: "result", subtype: "success", result: text })}`;
