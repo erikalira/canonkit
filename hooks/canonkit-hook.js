@@ -895,8 +895,15 @@ const GATE_KINDS = Object.freeze([
   'context-size', // allow, with the reminder as reason (Claude adapter only)
 ]);
 
+// What an adapter records without deciding anything: no allow/ask/deny/block
+// attaches to it, so it has no row in a decision table. It still belongs in every
+// mode map, because an `[ENFORCED]` line can promise it ("every dispatch is logged").
+const RECORD_KINDS = Object.freeze([
+  'dispatch-log', // every subagent dispatch, with its model, effort, tokens and duration
+]);
+
 // What each adapter does with each kind, declared next to the adapter so a test
-// can hold it to GATE_KINDS and validate can hold an `[ENFORCED]` line to it.
+// can hold it to GATE_KINDS and RECORD_KINDS and validate can hold an `[ENFORCED]` line to it.
 //   enforce  the harness acts on the decision itself: refuses, prompts, blocks
 //            the stop, or injects the note
 //   text     surfaced as text only; the model decides
@@ -912,6 +919,7 @@ const CLAUDE_GATE_MODES = Object.freeze({
   'high-risk-surface': 'enforce',
   'definition-of-done': 'enforce',
   'context-size': 'enforce',
+  'dispatch-log': 'enforce',
 });
 
 // evt, the normalized event (normalizeClaude builds it from Claude Code's input):
@@ -1402,7 +1410,7 @@ function run() {
 
 module.exports = {
   run, projectConfig, globMatcher, normalizePath,
-  evaluate, normalizeClaude, GATE_KINDS, CLAUDE_GATE_MODES,
+  evaluate, normalizeClaude, GATE_KINDS, RECORD_KINDS, CLAUDE_GATE_MODES,
 };
 
 // Run as the hook itself, or through the pre-rename meu-time-hook.js forwarder.

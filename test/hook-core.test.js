@@ -10,14 +10,21 @@
  *      adapter's, written by main(); test/canonkit-hook.test.js covers it.
  *   2. PARITY — one table of normalized events and the outcome each adapter must
  *      produce. Only the Claude column exists today; an adapter adds its column
- *      to the rows and its entry to ADAPTERS.
- *   3. GATE MAPS — every adapter's mode map covers GATE_KINDS with a documented
- *      mode, and every kind evaluate() returns is in GATE_KINDS.
+ *      to the rows.
+ *   3. GATE MAPS — adapters are discovered, not listed: every .js file that
+ *      HOOK_FILES (bin/cli.js) ships is required and its *_GATE_MODES exports are
+ *      collected. Each map covers GATE_KINDS and RECORD_KINDS exactly, with a
+ *      documented mode, and every kind evaluate() returns is in GATE_KINDS.
+ *   4. MODE VERSUS OUTCOME — for every adapter, a row's expected decision is the
+ *      kind's decision under `enforce` and allow under `text` or `off`. This is
+ *      what keeps an adapter that cannot ask (Codex) from outputting an ask.
+ *   5. SOURCE SCAN — every kind literal in hooks/*.js is a known kind.
+ *   6. LOADING — requiring a listed file runs nothing.
  *
  * Out of scope here (2.2): the `validate` check that holds each `[ENFORCED]` line
- * to a gate map, and "Codex never outputs ask". "Every dispatch is logged" is
- * `[ENFORCED]` too, but it is logging, not a decision kind, so it has no entry in
- * GATE_KINDS and none is invented for it.
+ * to a gate map. "Every dispatch is logged" is `[ENFORCED]` too, but it is
+ * logging, not a decision, so it is a RECORD_KINDS entry: a mode in every map,
+ * and no row in a decision table.
  *
  * The secret fixtures are concatenated on purpose: spelled out, the hook denies
  * the write of this file.
@@ -30,11 +37,13 @@ import path from "node:path";
 import os from "node:os";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { HOOK_FILES } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const HOOKS_DIR = path.join(REPO, "hooks");
+const requireCjs = createRequire(import.meta.url);
 // Loaded before any stub goes in: the module's own load is not under test.
-const { evaluate, GATE_KINDS, CLAUDE_GATE_MODES } =
-  createRequire(import.meta.url)(path.join(REPO, "hooks", "canonkit-hook.js"));
+const { evaluate, GATE_KINDS, RECORD_KINDS } = requireCjs(path.join(HOOKS_DIR, "canonkit-hook.js"));
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
 const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
@@ -52,12 +61,22 @@ const KIND_DECISION = {
   "context-size": "allow",
 };
 
-// One line per adapter. `modes` is its declared gate map; `outcome` reduces an
-// evaluate() result to what that harness does with it. Claude Code enforces
-// every kind as decided, so its outcome is the decision itself.
-const ADAPTERS = {
-  claude: { modes: CLAUDE_GATE_MODES, outcome: ({ decision, kind }) => ({ decision, kind }) },
-};
+// The adapters, found rather than listed: every .js file HOOK_FILES ships to a
+// harness, required, and every export named *_GATE_MODES in it. A shared file
+// listed under several harnesses is required once. `modes` is the declared gate
+// map; `outcome` reduces an evaluate() result to what that harness does with it:
+// the decision itself under `enforce`, an allow under `text` or `off`. (Claude
+// Code enforces every kind, so its outcome is the decision itself.)
+const LISTED_JS = [...new Set(Object.values(HOOK_FILES).flat())].filter((f) => f.endsWith(".js"));
+const appliedBy = (modes) => ({ decision, kind }) =>
+  ({ decision: kind && modes[kind] !== "enforce" ? "allow" : decision, kind });
+const ADAPTERS = {};
+for (const file of LISTED_JS) {
+  for (const [name, modes] of Object.entries(requireCjs(path.join(HOOKS_DIR, file)))) {
+    const m = /^(.+)_GATE_MODES$/.exec(name);
+    if (m) ADAPTERS[m[1].toLowerCase()] = { modes, outcome: appliedBy(modes) };
+  }
+}
 const MODES = ["enforce", "text", "off"];
 // Kinds an adapter decides after evaluate(), never evaluate() itself, so they
 // have no parity row. context-size parses Claude Code's transcript and keeps band
@@ -384,10 +403,16 @@ describe("parity table: normalized event -> outcome per adapter", () => {
 });
 
 // ---- 3. GATE MAPS ----
-describe("gate maps cover GATE_KINDS", () => {
+describe("gate maps cover GATE_KINDS and RECORD_KINDS", () => {
+  test("every harness HOOK_FILES names has an adapter, and the two kind lists do not overlap", () => {
+    assert.ok(Object.keys(ADAPTERS).length > 0, "no adapter discovered");
+    for (const harness of Object.keys(HOOK_FILES)) assert.ok(ADAPTERS[harness], `HOOK_FILES.${harness} ships no *_GATE_MODES export`);
+    assert.deepEqual(GATE_KINDS.filter((k) => RECORD_KINDS.includes(k)), []);
+  });
+
   for (const [harness, { modes }] of Object.entries(ADAPTERS)) {
     test(`${harness}: one documented mode per kind, and no other key`, () => {
-      assert.deepEqual(Object.keys(modes).sort(), [...GATE_KINDS].sort());
+      assert.deepEqual(Object.keys(modes).sort(), [...GATE_KINDS, ...RECORD_KINDS].sort());
       for (const [kind, mode] of Object.entries(modes)) {
         assert.ok(MODES.includes(mode), `${harness}.${kind} = ${mode}, not one of ${MODES.join("|")}`);
       }
@@ -402,4 +427,84 @@ describe("gate maps cover GATE_KINDS", () => {
     for (const k of ADAPTER_KINDS) assert.ok(!expected.has(k), `${k} is decided by an adapter, yet has a parity row`);
     assert.deepEqual(Object.keys(KIND_DECISION).sort(), [...GATE_KINDS].sort());
   });
+});
+
+// ---- 4. MODE VERSUS OUTCOME ----
+// The table's expected column is written by hand per harness; the declared mode
+// is the harness's promise. They must agree, or a harness would output a decision
+// its mode says it cannot (an ask from a harness that has no prompt).
+describe("mode versus outcome: enforce carries the decision, text and off allow", () => {
+  const decisionUnder = (mode, kind) => {
+    assert.ok(MODES.includes(mode), `${kind} has mode ${mode}`);
+    return mode === "enforce" ? KIND_DECISION[kind] : "allow";
+  };
+
+  for (const [harness, { modes }] of Object.entries(ADAPTERS)) {
+    test(`${harness}: every row's expected decision follows its kind's mode`, () => {
+      let withKind = 0;
+      for (const row of PARITY) {
+        const expected = row.expect[harness];
+        assert.ok(expected, `${row.name}: no ${harness} column`);
+        if (!expected.kind) {
+          assert.equal(expected.decision, "allow", `${row.name}: no kind, so a plain allow`);
+          continue;
+        }
+        withKind++;
+        assert.equal(expected.decision, decisionUnder(modes[expected.kind], expected.kind),
+          `${harness}/${row.name}: ${expected.kind} is ${modes[expected.kind]}`);
+      }
+      assert.ok(withKind > 0, "no row carries a kind");
+    });
+  }
+});
+
+// ---- 5. SOURCE SCAN ----
+describe("every kind literal in hooks/*.js is a known kind", () => {
+  // A decision's kind must be a GATE_KINDS entry. A bare `kind:` is also the shape
+  // of a log record, so it may be a RECORD_KINDS entry, or one of the audit-only
+  // lines that carry no decision at all (an exclusion the config made).
+  const AUDIT_KINDS = ["excluded-by-config"];
+  const scan = (re) => {
+    const hits = [];
+    for (const file of fs.readdirSync(HOOKS_DIR).filter((f) => /\.m?js$/.test(f))) {
+      const src = fs.readFileSync(path.join(HOOKS_DIR, file), "utf8");
+      for (const m of src.matchAll(re)) hits.push({ file, kind: m[2] });
+    }
+    return hits;
+  };
+  const shapes = {
+    "askFor/denyFor": /\b(askFor|denyFor)\(\s*['"`]([^'"`]+)['"`]/g,
+    "allow(kind)": /\b(allow)\(\s*['"`]([^'"`]+)['"`]/g,
+    "kind: literal": /\b(kind):\s*['"`]([^'"`]+)['"`]/g,
+  };
+  const known = {
+    "askFor/denyFor": GATE_KINDS,
+    "allow(kind)": GATE_KINDS,
+    "kind: literal": [...GATE_KINDS, ...RECORD_KINDS, ...AUDIT_KINDS],
+  };
+
+  for (const [shape, re] of Object.entries(shapes)) {
+    test(shape, () => {
+      const hits = scan(re);
+      // A scan that matches nothing proves nothing: the pattern would have rotted.
+      assert.ok(hits.length > 0, `no ${shape} literal found, so the pattern no longer matches the source`);
+      const unknown = hits.filter((h) => !known[shape].includes(h.kind)).map((h) => `${h.file}: ${h.kind}`);
+      assert.deepEqual(unknown, [], `not in ${shape === "kind: literal" ? "GATE_KINDS/RECORD_KINDS/audit kinds" : "GATE_KINDS"}`);
+    });
+  }
+});
+
+// ---- 6. LOADING ----
+describe("requiring a listed hook file runs nothing", () => {
+  for (const file of LISTED_JS) {
+    test(file, () => {
+      const full = path.join(HOOKS_DIR, file);
+      // The module is already cached from discovery: evict it so the load runs again.
+      const { touched } = sealed(() => {
+        delete requireCjs.cache[full];
+        requireCjs(full);
+      });
+      assert.deepEqual(touched, [], "loading the file touched the process or wrote a file");
+    });
+  }
 });

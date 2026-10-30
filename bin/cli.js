@@ -2145,6 +2145,7 @@ export {
   summaries,
   codexAgent,
   CODEX_MODELS,
+  HOOK_FILES,
   opencodeAgent,
   replaceProjectBlock,
   readProjectBlock,
