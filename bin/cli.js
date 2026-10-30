@@ -37,8 +37,13 @@ const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 // "every .js in the folder": the folder will also hold other adapters' files and
 // shared code, and a stray file must not land in a runtime that does not run it.
 // The claude list is exactly what 2.0 copied. Another adapter adds its own key.
+// codex: the adapter, a byte-identical copy of the core it requires, and the
+// {"type":"commonjs"} marker that keeps both CommonJS under a parent package
+// that says "module". Listed here, not yet installed: installHooks copies only
+// the claude list, and `--wire-hooks` for Codex is a later change.
 const HOOK_FILES = {
   claude: ["canonkit-hook.js"],
+  codex: ["canonkit-codex.js", "canonkit-hook.js", "package.json"],
 };
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");

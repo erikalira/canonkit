@@ -57,8 +57,19 @@ describe("check-enforced", () => {
     assert.match(r.stdout, /'nonsense', which is not in GATE_KINDS or RECORD_KINDS/);
   });
 
-  // The "kind is not `enforce` in the adapter" branch needs an adapter with a text/off mode
-  // (CODEX_GATE_MODES, slice 6); until one ships there is nothing real to point it at.
+  // Codex cannot prompt, so its `git` gate is text: an [ENFORCED] promise on it is false.
+  test("a kind that is not `enforce` in the block's adapter fails", async () => {
+    const r = run(await root({ "codex-block.md": bullet(" <!-- enforced-by: git -->") }, "| Verified on | codex | 1 | 2 | 3 |\n"));
+    assert.equal(r.status, 1);
+    assert.match(r.stdout, /codex-block\.md:5: 'git' is 'text' in the codex adapter, not 'enforce'/);
+  });
+
+  test("a kind the codex adapter enforces passes, with its Verified-on row", async () => {
+    const r = run(await root({ "codex-block.md": bullet(" <!-- enforced-by: git-bypass,secret-block -->") }, "| Verified on | codex | 1 | 2 | 3 |\n"));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^OK\t1 \[ENFORCED\] rule/);
+  });
+
   test("a block whose harness ships no adapter fails, Verified-on row or not", async () => {
     const r = run(await root({ "opencode-block.md": bullet(" <!-- enforced-by: git-bypass -->") }, "| Verified on | opencode | 1 | 2 | 3 |\n"));
     assert.equal(r.status, 1);
