@@ -337,7 +337,7 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
     message: "Install the team for",
     // The defaults start checked: Enter alone keeps what install did before the menu.
     choices: [
-      { title: "Claude Code", value: "claude", selected: true, description: "~/.claude, ~/.agents, hooks, dashboard" },
+      { title: "Claude Code", value: "claude", selected: true, description: "~/.claude/agents, hooks, dashboard" },
       { title: "Codex", value: "codex", selected: true, description: "~/.codex/agents, ~/.agents/skills" },
       { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills (no hooks)" },
     ],
@@ -364,9 +364,9 @@ async function install(ctx, options = {}) {
   // guess about stops the whole install, so a refusal leaves no half-install.
   if (wire) await readSettingsForWiring(settingsPath());
 
-  // Both paths are read by Claude Code; keeping them identical avoids the drift
-  // that a generated destination invites.
-  const dests = claude ? [path.join(os.homedir(), ".agents"), path.join(os.homedir(), ".claude", "agents")] : [];
+  // Claude Code reads ~/.claude/agents only; no verified harness reads
+  // ~/.agents/<agent>.md, so install no longer writes it (doctor warns on leftovers).
+  const dests = claude ? [path.join(os.homedir(), ".claude", "agents")] : [];
 
   for (const dest of dests) {
     await ctx.mkdir(dest);
@@ -1290,25 +1290,27 @@ async function doctor() {
   const add = (status, check, detail, more = []) => results.push({ status, check, detail, more });
   const text = (p) => { try { return toLf(readFileSync(p, "utf8")); } catch { return null; } };
 
-  // agents: every core agent in both folders Claude Code reads, identical.
+  // agents: every core agent in ~/.claude/agents, matching this package's copy.
   const agents = core(await readAgents());
-  const dirs = [path.join(home, ".agents"), path.join(claudeDir, "agents")];
-  const missing = [], differ = [], stale = [];
+  const missing = [], stale = [];
   for (const a of agents) {
-    const [x, y] = dirs.map((d) => text(path.join(d, `${a.name}.md`)));
-    if (x === null || y === null) missing.push(a.name);
-    else if (x !== y) differ.push(a.name);
+    const x = text(path.join(claudeDir, "agents", `${a.name}.md`));
+    if (x === null) missing.push(a.name);
     else if (x !== (await readOwned(a.file))) stale.push(a.name);
   }
-  if (missing.length || differ.length) {
-    add("FAIL", "agents", [
-      missing.length && `missing from ~/.agents or ~/.claude/agents: ${missing.join(", ")}`,
-      differ.length && `differ between ~/.agents and ~/.claude/agents: ${differ.join(", ")}`,
-    ].filter(Boolean).join("; ") + " — run npx canonkit install");
+  if (missing.length) {
+    add("FAIL", "agents", `missing from ~/.claude/agents: ${missing.join(", ")} — run npx canonkit install`);
   } else if (stale.length) {
     add("WARN", "agents", `differ from this package's: ${stale.join(", ")} — run npx canonkit install`);
   } else {
-    add("OK", "agents", `${agents.length} core agents in ~/.agents and ~/.claude/agents, identical`);
+    add("OK", "agents", `${agents.length} core agents in ~/.claude/agents`);
+  }
+
+  // Leftovers from installs before 2.1: ~/.agents/<core>.md is read by no harness.
+  // Only reported; 3.0 removes byte-identical copies.
+  const leftovers = agents.filter((a) => text(path.join(home, ".agents", `${a.name}.md`)) !== null).map((a) => a.name);
+  if (leftovers.length) {
+    add("WARN", "agents leftovers", `~/.agents has core-named copies: ${leftovers.join(", ")} — not read by any harness; 3.0 removes byte-identical copies`);
   }
 
   // opencode agents: checked only where OpenCode was installed for, which is
@@ -1952,7 +1954,7 @@ Options:
   -h, --help      show this
   -v, --version   show the package version
 
-Core agents install to ~/.agents and ~/.claude/agents (Codex: ~/.codex/agents;
+Core agents install to ~/.claude/agents (Codex: ~/.codex/agents;
 OpenCode: ~/.config/opencode/agents). Specialists install to the current
 project's .claude/, .codex/ and .opencode/agents/ and are registered in its AGENTS.md.
 Tools are never installed by canonkit: a missing one gets its pinned install

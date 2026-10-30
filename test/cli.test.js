@@ -141,16 +141,18 @@ describe("install target menu", () => {
 });
 
 describe("install", () => {
-  test("copies the core team to both runtime paths and nothing else", async () => {
+  test("copies the core team to ~/.claude/agents and nothing else", async () => {
     const { home } = await scratch("install-basic");
     const result = run(["install"], { home });
     assert.equal(result.status, 0, result.out);
 
-    for (const dest of [path.join(home, ".agents"), path.join(home, ".claude", "agents")]) {
-      // ~/.agents also holds skills/ (Codex's user-scope skill path); only the agent files count here.
-      const installed = (await readdir(dest)).filter((f) => f.endsWith(".md")).map((f) => path.basename(f, ".md")).sort();
-      assert.deepEqual(installed, [...CORE].sort(), `wrong contents in ${dest}`);
-    }
+    const dest = path.join(home, ".claude", "agents");
+    const installed = (await readdir(dest)).filter((f) => f.endsWith(".md")).map((f) => path.basename(f, ".md")).sort();
+    assert.deepEqual(installed, [...CORE].sort(), `wrong contents in ${dest}`);
+    // No harness reads ~/.agents/<agent>.md, so install no longer writes it.
+    // (~/.agents/skills/ still exists: the default install includes Codex.)
+    const leftover = existsSync(path.join(home, ".agents")) ? (await readdir(path.join(home, ".agents"))).filter((f) => f.endsWith(".md")) : [];
+    assert.deepEqual(leftover, []);
   });
 
   test("syncs both reference blocks, the routing block not importing AGENTS.md", async () => {
@@ -200,7 +202,7 @@ describe("install", () => {
     assert.equal(result.status, 0, result.out);
 
     assert.ok(existsSync(path.join(home, ".claude", "agents", "archie.md")));
-    assert.ok(existsSync(path.join(home, ".agents", "archie.md")));
+    assert.equal(existsSync(path.join(home, ".agents", "archie.md")), false);
     assert.ok(existsSync(path.join(home, ".claude", "CLAUDE.md")));
     assert.equal(existsSync(path.join(home, ".codex")), false);
     assert.equal(existsSync(path.join(home, ".agents", "skills")), false);
@@ -1315,12 +1317,21 @@ describe("doctor", () => {
     assert.match(line(out, /^FAIL +reference/), /AGENTS\.md|CLAUDE\.md/);
   });
 
-  test("an agent that differs between the two install folders FAILs", async () => {
-    const { home } = await ready("doctor-agent-drift");
-    await writeFile(path.join(home, ".agents", "gard.md"), "---\nname: gard\n---\nedited\n");
+  test("a core agent missing from ~/.claude/agents FAILs", async () => {
+    const { home } = await ready("doctor-agent-missing");
+    await rm(claudeDir(home, "agents", "gard.md"));
     const { out, status } = doctor({ home });
     assert.equal(status, 1);
     assert.match(line(out, /^FAIL +agents/), /gard/);
+  });
+
+  test("a core-named leftover in ~/.agents WARNs, without failing", async () => {
+    const { home } = await ready("doctor-agent-leftover");
+    await mkdir(path.join(home, ".agents"), { recursive: true });
+    await writeFile(path.join(home, ".agents", "gard.md"), "---\nname: gard\n---\nold\n");
+    const { out, status } = doctor({ home });
+    assert.equal(status, 0, out);
+    assert.match(line(out, /^WARN +agents leftovers/), /gard.*not read by any harness; 3\.0 removes byte-identical copies/);
   });
 
   test("a hook that does not parse FAILs the syntax check", async () => {
