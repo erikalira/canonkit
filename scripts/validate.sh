@@ -265,6 +265,18 @@ while IFS=$'	' read -r status detail; do
   if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
 done < "$TMP"
 
+# Every [ENFORCED] rule in a block must name gates that exist and are enforced
+# by that block's adapter (scripts/check-enforced.mjs).
+if command -v node >/dev/null 2>&1; then
+  node "$REPO_ROOT/scripts/check-enforced.mjs" > "$TMP" 2>&1 || true
+  while IFS=$'	' read -r status detail; do
+    [ -z "${status:-}" ] && continue
+    if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+  done < "$TMP"
+else
+  warn "node not found — skipped the [ENFORCED] fitness check"
+fi
+
 head_ "Skills"
 
 # A skill is the on-demand half of the reference: the roster keeps one always-on
