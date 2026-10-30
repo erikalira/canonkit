@@ -31,7 +31,7 @@ before(async () => {
   // Canonical, because the CLI prints realpaths (doctor's config root, say): on
   // macOS tmpdir is under /var -> /private/var, on a Windows runner an 8.3 name.
   // A test about a path reached through a link builds that link on purpose.
-  sandbox = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "agent-team-config-test-")));
+  sandbox = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-test-")));
 });
 
 after(async () => {

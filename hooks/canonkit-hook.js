@@ -30,7 +30,7 @@
  * past it. Bash and PowerShell therefore share one code path here, and the
  * settings matcher must list both. Same reasoning for NotebookEdit next to Edit/Write.
  *
- * Tests: `npm test` in the agent-team-config repo (test/canonkit-hook.test.js) — hermetic,
+ * Tests: `npm test` in the canonkit repo (test/canonkit-hook.test.js) — hermetic,
  * real process. This file is the installed copy; fix it in the repo, not here.
  *
  * DESIGN RULE: fail-open. Any internal error -> exit 0 (allow). A buggy hook must

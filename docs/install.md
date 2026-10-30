@@ -184,7 +184,7 @@ for choosing an agent and not a description of one.
 
 Removing the last specialist takes the whole block out of `AGENTS.md`. Everything
 outside the markers is preserved, and the script refuses to run inside the
-`agent-team-config` repository itself or to install a core agent.
+`canonkit` repository itself or to install a core agent.
 
 ## Global reference blocks and skills
 
