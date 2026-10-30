@@ -91,6 +91,40 @@ source of truth, so the installer protects that case: if the installed copy
 diverges from the repository's, it is preserved as `canonkit-hook.js.local.bak`
 before being overwritten.
 
+## The core: `evaluate(evt, env)`
+
+The gates live in one pure function, `evaluate(evt, env)`, in
+`hooks/canonkit-hook.js`. `main()` is only the Claude Code adapter: stdin,
+`normalizeClaude`, `evaluate`, then it writes the log lines, prints the answer and
+exits. This is an **internal contract** that the 2.2 adapters for other harnesses
+build on. It is not a public API: the hook is installed as a single file, and the
+shape below may change between minor versions (the tests in
+`test/hook-core.test.js` are what hold it).
+
+- `evt` is the normalized event: `event`, `tool`, `toolInput`, `cwd` (required),
+  `session`, `agentId`/`agentType` (set only on a subagent's events), the Stop
+  fields and the PostToolUse fields. `normalizeClaude(input, fallbackCwd)` builds
+  it from Claude Code's hook input.
+- `env` is everything else it may know about the machine: `{logDir, legacyLogDir,
+  projectDir, home, contextBands}`. The core never reads the process environment
+  or looks up the home directory itself.
+- It returns `{decision, kind, reason, logs}`. `decision` is `allow`, `ask`,
+  `deny` or `block`; `kind` is one of `GATE_KINDS` or `null`; `logs` is a list of
+  `{file, record}` that the adapter appends under `logDir`.
+- `CLAUDE_GATE_MODES` declares, per kind, what the Claude adapter does with it:
+  `enforce` (the harness acts on the decision), `text` (surfaced as text, the
+  model decides) or `off` (not offered). Another adapter declares its own map in
+  its own file.
+- It **fails open** by itself: an error is an `allow` that keeps the logs recorded
+  before it.
+- Denies (git bypass flags, blocked secrets) are decided **before**
+  `.claude/canonkit.json` is read, so a project config can never loosen them.
+
+It has one documented impurity: on `UserPromptSubmit` it writes
+`context-bands.json` in `logDir`. The context-size reminder is only given when
+that state persisted; otherwise it would repeat on every turn. Apart from that
+write, it only reads (the activity log and the project config).
+
 ## Events it must be registered for
 
 Registration is checked **per event**: `PreToolUse`, `PostToolUse` (matcher

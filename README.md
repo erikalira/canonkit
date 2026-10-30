@@ -55,7 +55,7 @@ npx canonkit doctor
 exits with 1 if anything failed:
 
 ```text
-OK   agents: 10 core agents in ~/.agents and ~/.claude/agents, identical
+OK   agents: 10 core agents in ~/.claude/agents
 OK   reference: managed blocks in ~/AGENTS.md and ~/.claude/CLAUDE.md
 OK   hook file: ~/.claude/hooks/canonkit-hook.js, same as this package's
 OK   hook syntax: node --check passes
@@ -204,7 +204,7 @@ means a broken hook gives no warning of its own.
 
 | Runtime | Agents | Rules | Hooks and gates |
 | --- | --- | --- | --- |
-| Claude Code | `~/.claude/agents`, `~/.agents` | `~/AGENTS.md` + block in `~/.claude/CLAUDE.md` | yes |
+| Claude Code | `~/.claude/agents` | `~/AGENTS.md` + block in `~/.claude/CLAUDE.md` | yes |
 | Codex | `~/.codex/agents/*.toml` | `~/AGENTS.md` | no: the rules hold by judgment |
 | OpenCode (opt-in) | `~/.config/opencode/agents` | block in `~/.config/opencode/AGENTS.md` | no: the rules hold by judgment |
 
@@ -239,7 +239,7 @@ eval checks this with cases like the typo fix above. If you see it happen anyway
 please [open an issue](https://github.com/erikalira/canonkit/issues).
 
 **Can I edit an installed agent?** Not in place: the next `install` overwrites
-`~/.claude/agents`, `~/.agents` and the managed blocks. To change one, create a
+`~/.claude/agents` and the managed blocks. To change one, create a
 project agent with a different name, or change the source here and reinstall
 ([docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md)). Text outside the managed block
 markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.

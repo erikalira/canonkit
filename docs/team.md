@@ -10,7 +10,7 @@ is not installed cannot be called for completeness.
 
 ## Core team
 
-Installed at user level (`~/.agents` and `~/.claude/agents`) by
+Installed at user level (`~/.claude/agents`) by
 `npx canonkit install` (or, from a clone, `scripts/install.sh` on Linux/macOS and
 `scripts/install.ps1` on Windows). Available for any change, in any project.
 

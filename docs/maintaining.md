@@ -17,7 +17,7 @@ Measuring whether the instructions still work is in [evals.md](evals.md).
 
 Syncing the global blocks is not a step, because `install` already does it.
 
-Do not edit `~/.agents`, `~/.claude/agents`, a project's `.claude/agents/`, or the
+Do not edit `~/.claude/agents`, a project's `.claude/agents/`, or the
 managed block in `~/AGENTS.md` — the next install overwrites them. This repository
 is the only source of truth.
 

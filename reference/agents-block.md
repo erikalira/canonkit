@@ -12,7 +12,7 @@ for completeness. LOW work, generic work, and MEDIUM work no owner's domain
 flags stay inline: a dispatch costs a cold start and a report the caller
 re-reads on every later turn.
 
-## Core team — installed at user level (`~/.agents`, `~/.claude/agents`)
+## Core team — installed at user level (`~/.claude/agents`)
 
 Available in every project. Each agent's description says when to call it; this
 table is who owns what and who can stop a change.
@@ -120,7 +120,7 @@ sets how much *evidence* it needs. Scale calibrates evidence and never waives a
 rule: not a boundary, a contract, validation of the affected path, a security
 check, or the documentation impact.
 
-Installed agent files (`~/.agents`, `~/.claude/agents`, `.claude/agents`) and
+Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
 another name, and local rules go outside this block's markers.
 

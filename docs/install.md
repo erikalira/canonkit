@@ -31,7 +31,7 @@ larger than that.
 
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.agents/*.md`, `~/.claude/agents`, hooks, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills` |
+| Claude Code | `~/.claude/agents`, hooks, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills` |
 | Codex | `~/.codex/agents/*.toml`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md`, block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` (no hooks) |
 | more than one | the sum; the `~/AGENTS.md` block goes in with any choice |
@@ -48,13 +48,10 @@ From a clone, the scripts still work — they are wrappers around the same
 .\scripts\install.ps1         # Windows
 ```
 
-It copies the 10 core agents to both runtime paths:
-
-- `~/.agents`
-- `~/.claude/agents`
-
-Both are read by Claude Code. The installer keeps them identical, which is what
-prevents drift between them. It then syncs the global reference blocks
+For Claude Code it copies the 10 core agents to `~/.claude/agents`, the only
+path Claude Code reads them from. `~/.agents` receives skills only
+(`~/.agents/skills`, which Codex and OpenCode read); nothing verified reads
+`~/.agents/<agent>.md`, so canonkit no longer writes it. It then syncs the global reference blocks
 (`--no-reference` skips that step).
 
 The core/specialist split is declared in **each agent's frontmatter** (`tier:`),
@@ -262,13 +259,22 @@ a project's `.claude/settings.json` may still run it, and `install` has no way t
 find it. Point every `settings.json` at `canonkit-hook.js` and delete the
 forwarder. Handling of the old name goes away in 2.0.
 
+## Upgrading from 2.0: leftover `~/.agents/*.md`
+
+2.0 also copied the core agents to `~/.agents/<agent>.md`. 2.1 stops writing
+them and deletes nothing. The leftover copies are harmless: no harness reads
+them. `npx canonkit doctor` WARNs on each one ("not read by any harness; 3.0
+removes byte-identical copies"). 3.0 deletes the copies that are byte-identical
+to the packaged agent; a copy you modified is kept. Until then you can delete
+them by hand, including a modified one if you no longer want it.
+
 ## Uninstalling
 
 There is no `uninstall` command. To remove canonkit by hand, delete what the
 table under [Core, at user level](#core-at-user-level) lists for the runtimes you
 installed:
 
-- the agent files canonkit owns in `~/.agents`, `~/.claude/agents`,
+- the agent files canonkit owns in `~/.claude/agents`,
   `~/.codex/agents` and `~/.config/opencode/agents` (only the 10 core names; your
   own agents there are untouched by canonkit and should stay);
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
