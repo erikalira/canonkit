@@ -1106,7 +1106,7 @@ async function addSpecialists(ctx, names, options = {}) {
 
   if (path.resolve(project) === PACKAGE_ROOT) {
     throw new Error(
-      "Refusing: this is agent-team-config itself, the source of truth.\n" +
+      "Refusing: this is canonkit itself, the source of truth.\n" +
         "Run this from the project that should receive the specialists.",
     );
   }
@@ -1117,7 +1117,7 @@ async function addSpecialists(ctx, names, options = {}) {
       const isCore = core(agents).some((a) => a.name === name);
       throw new Error(
         isCore
-          ? `${name} is a core agent — install it with 'agent-team-config install'.`
+          ? `${name} is a core agent — install it with 'npx canonkit install'.`
           : `Not a domain specialist: ${name}\nSpecialists: ${[...known.keys()].join(" ")}`,
       );
     }
@@ -1556,7 +1556,7 @@ function toolProject() {
   const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
   if (same(project, realpathSync.native(PACKAGE_ROOT))) {
     throw new Error(
-      "Refusing: this is agent-team-config itself, the source of truth.\n" +
+      "Refusing: this is canonkit itself, the source of truth.\n" +
         "Run this from the project that should use the tool.",
     );
   }

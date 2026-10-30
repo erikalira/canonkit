@@ -2,7 +2,7 @@
 #
 # Thin wrapper around bin/cli.js, which is the single implementation and is
 # itself cross-platform. Kept because it is the documented Windows entry point;
-# `npx agent-team-config install` does the same thing without a clone.
+# `npx canonkit install` does the same thing without a clone.
 [CmdletBinding()]
 param([Parameter(ValueFromRemainingArguments = $true)] [string[]] $Forwarded)
 
