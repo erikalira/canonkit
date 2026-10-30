@@ -13,12 +13,17 @@ Releases are stable versions only. The workflow refuses a prerelease version,
 because it would be published as `latest`.
 
 1. Bump the version in a PR: `npm version <patch|minor|major> --no-git-tag-version`.
-   Commit it and merge it once CI is green.
+   In the same PR, add the release notes at `docs/release-notes/X.Y.Z.md`: what
+   changed, what breaks, and what to do about it (start with the line
+   "Action required", even when it is "none"). Commit it and merge it once CI is
+   green.
 2. Tag what is now on `main` and push the tag:
    `git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
 3. Wait for the CI matrix and the secret scan. Then approve the `npm` deployment
    on the Actions run, after reading the `npm pack --dry-run` file list.
-4. Check the published release:
+4. Create the GitHub release for the tag and link `docs/release-notes/X.Y.Z.md`
+   from it.
+5. Check the published release:
    - `npm view canonkit@X.Y.Z dist.attestations` shows a provenance entry, and
      the npmjs.com page shows the "Provenance" badge;
    - in a clean project, `npm i canonkit@X.Y.Z && npm audit signatures` passes.

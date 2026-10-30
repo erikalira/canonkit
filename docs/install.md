@@ -51,8 +51,8 @@ From a clone, the scripts still work — they are wrappers around the same
 For Claude Code it copies the 10 core agents to `~/.claude/agents`, the only
 path Claude Code reads them from. `~/.agents` receives skills only
 (`~/.agents/skills`, which Codex and OpenCode read); nothing verified reads
-`~/.agents/<agent>.md`, so canonkit no longer writes it. It then syncs the global reference blocks
-(`--no-reference` skips that step).
+`~/.agents/<agent>.md`, so canonkit no longer writes it. It then syncs the global
+reference blocks (`--no-reference` skips that step).
 
 The core/specialist split is declared in **each agent's frontmatter** (`tier:`),
 beside `name` and `model` — where the runtime already reads the other facts about
@@ -263,10 +263,22 @@ forwarder. Handling of the old name goes away in 2.0.
 
 2.0 also copied the core agents to `~/.agents/<agent>.md`. 2.1 stops writing
 them and deletes nothing. The leftover copies are harmless: no harness reads
-them. `npx canonkit doctor` WARNs on each one ("not read by any harness; 3.0
-removes byte-identical copies"). 3.0 deletes the copies that are byte-identical
-to the packaged agent; a copy you modified is kept. Until then you can delete
-them by hand, including a modified one if you no longer want it.
+them, and nothing breaks if you leave them. `npx canonkit doctor` WARNs on each
+one ("not read by any harness; 3.0 removes byte-identical copies"). 3.0 deletes
+the copies that are byte-identical to the packaged agent; a copy you modified is
+kept. Until then you can delete them by hand, including a modified one if you no
+longer want it.
+
+Delete them one file at a time. The 10 core names are `scott`, `archie`, `bob`,
+`quinn`, `gard`, `pixie`, `perry`, `pipe`, `spencer` and `virgo`:
+
+```bash
+rm ~/.agents/scott.md        # repeat for each of the 10 names
+```
+
+Do not glob (`~/.agents/*.md`): the folder may hold files of your own, and only
+those 10 names are canonkit's. Do not touch `~/.agents/skills`: it is where
+canonkit installs skills now.
 
 ## Uninstalling
 
@@ -277,6 +289,9 @@ installed:
 - the agent files canonkit owns in `~/.claude/agents`,
   `~/.codex/agents` and `~/.config/opencode/agents` (only the 10 core names; your
   own agents there are untouched by canonkit and should stay);
+- if you upgraded from 2.0, the leftover `~/.agents/<agent>.md` copies, one file
+  at a time as described in
+  [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
   `~/.claude/CLAUDE.md` and `~/.config/opencode/AGENTS.md`;
 - the `orchestrate` and `context-tune` folders in `~/.claude/skills` and
