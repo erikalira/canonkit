@@ -16,8 +16,12 @@
  *      collected. Each map covers GATE_KINDS and RECORD_KINDS exactly, with a
  *      documented mode, and every kind evaluate() returns is in GATE_KINDS.
  *   4. MODE VERSUS OUTCOME — for every adapter, a row's expected decision is the
- *      kind's decision under `enforce` and allow under `text` or `off`. This is
- *      what keeps an adapter that cannot ask (Codex) from outputting an ask.
+ *      kind's decision under `enforce` and allow under `text` or `off`. That only
+ *      holds the column to the map; a map and a column wrong together would
+ *      pass. What keeps an adapter that cannot ask (Codex) from outputting an
+ *      ask is CAN, a capability table written apart from every map: a kind may
+ *      be `enforce` only where the harness can carry its decision, and a
+ *      harness CAN does not name can carry a deny and nothing else.
  *   5. SOURCE SCAN — every kind literal in hooks/*.js is a known kind.
  *   6. LOADING — requiring a listed file runs nothing.
  *   7. STOP VARIANTS — the definition-of-done gate against a fixture log: each
@@ -331,7 +335,8 @@ describe("a missing or non-string cwd still denies", () => {
 // ---- 2. PARITY TABLE ----
 // Rows: a normalized event (built against the fixtures) -> the outcome per
 // adapter. `env` overrides the default env for the rows that read the log.
-// To add a harness: give each row its column; ADAPTERS finds it through HOOK_FILES.
+// ADAPTERS is discovered through HOOK_FILES, so a new adapter turns "every row
+// has a column for every adapter" red until each PARITY row gets its column.
 // Codex enforces only the two denies: an ask or a block is an allow there, with
 // the kind kept (test/hook-codex.test.js drives the real process).
 const P = () => fx.plain;
@@ -462,6 +467,24 @@ describe("mode versus outcome: enforce carries the decision, text and off allow"
           `${harness}/${row.name}: ${expected.kind} is ${modes[expected.kind]}`);
       }
       assert.ok(withKind > 0, "no row carries a kind");
+    });
+  }
+
+  // What each harness can do with a decision, written apart from the gate maps:
+  // the check above derives the outcome from the same map it checks, so a map
+  // with `git: 'enforce'` and a matching column would pass it. A harness not
+  // named here can deny and nothing else (Codex: an ask is parsed, marked a
+  // failed hook run, and the tool runs anyway).
+  const CAN = { claude: ["allow", "ask", "deny", "block"] };
+  const can = (harness) => CAN[harness] ?? ["deny"];
+
+  for (const [harness, { modes }] of Object.entries(ADAPTERS)) {
+    test(`${harness}: every enforce kind carries a decision the harness can make`, () => {
+      const beyond = Object.entries(modes)
+        .filter(([kind, mode]) => mode === "enforce" && KIND_DECISION[kind])
+        .filter(([kind]) => !can(harness).includes(KIND_DECISION[kind]))
+        .map(([kind]) => `${kind} (${KIND_DECISION[kind]})`);
+      assert.deepEqual(beyond, [], `${harness} enforces decisions it cannot make: ${can(harness).join("|")} only`);
     });
   }
 });
@@ -813,11 +836,39 @@ describe("malformed input fails open", () => {
     }
   });
 
+  // The same env with no home (os.homedir() failed in the adapter): ~/.claude
+  // cannot be ruled out, so every file counts as in the project, the stricter
+  // side (onProject). A file outside the project is the control: out with a home.
+  test("the Codex env with home undefined counts every file as in the project, and still denies", () => {
+    const env = { logDir: null, legacyLogDir: undefined, projectDir: undefined, home: undefined };
+    const outside = path.join(ROOT, "elsewhere", "src", "auth", "session.ts");
+    const inProject = (e) => {
+      const { result, touched } = sealed(() => evaluate({ ...editAt(fx.plain, "x"), toolInput: { file_path: outside, new_string: "x" } }, e));
+      assert.deepEqual(touched, []);
+      assert.deepEqual({ decision: result.decision, kind: result.kind }, { decision: "ask", kind: "high-risk-surface" });
+      return result.logs.filter((l) => l.record.event === "gate").map((l) => l.record.in_project);
+    };
+    assert.deepEqual(inProject({ ...env, home: ROOT }), [false], "control: with a home, the outside file is outside");
+    assert.deepEqual(inProject(env), [true], "with no home, it counts as in the project");
+
+    // A git gate names no file, so its record carries no in_project at all.
+    for (const [evt, kind, inProjectField] of [
+      [shell(fx.plain, "git commit --no-verify -m wip"), "git-bypass", undefined],
+      [{ ...editAt(fx.plain, "x", FAKE_AWS_KEY, "Write"), toolInput: { file_path: outside, content: FAKE_AWS_KEY } }, "secret-block", true],
+    ]) {
+      const { result, touched } = sealed(() => evaluate(evt, env));
+      assert.deepEqual(touched, []);
+      assert.deepEqual({ decision: result.decision, kind: result.kind }, { decision: "deny", kind });
+      assert.deepEqual(result.logs.filter((l) => l.record.event === "gate").map((l) => l.record.in_project), [inProjectField], kind);
+    }
+  });
+
   // The error comes after a log line was recorded: the answer is the fail-open
   // allow, and the line recorded before the error is still returned. The command
   // has two targets: the first only an exclusion the config made (a log line, no
-  // verdict), the second a real ask. The clock throws on its second read, which is
-  // the second log line.
+  // verdict), the second a real ask. The clock throws on every read after its
+  // first, which is the first log line's: how many reads come after does not
+  // matter, and the logs returned pin where the throw landed.
   test("a throw after a log keeps the log and allows", () => {
     const cmd = "echo x > src/legacy/login/a.ts && echo y > src/auth/b.ts";
     const control = sealed(() => evaluate(shell(fx.cfg, cmd), envFor(fx.cfg)));
@@ -839,7 +890,7 @@ describe("malformed input fails open", () => {
     } finally {
       Date.now = realNow;
     }
-    assert.equal(reads, 2, "the fault fired on the second log line");
+    assert.ok(reads >= 2, "the clock was read again after the first log line, and threw");
     assert.deepEqual(faulted.touched, []);
     assert.deepEqual({ decision: faulted.result.decision, kind: faulted.result.kind, reason: faulted.result.reason }, { decision: "allow", kind: null, reason: "" });
     assert.deepEqual(faulted.result.logs.map((l) => [l.file, l.record.event, l.record.kind]), [["events.jsonl", "gate", "excluded-by-config"]]);
