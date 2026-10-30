@@ -61,7 +61,7 @@ Done when: the next release shows provenance on npmjs.com. Dispatch: Gard, opus,
 **Done:** PR #20 (`ci/release-provenance`: publish from CI with `--provenance`, gitleaks
 on every CI run) and PR #21 (package metadata pointed at the renamed repository).
 canonkit 2.0.0 is on npm with provenance. Release procedure: `docs/releasing.md`.
-Open follow-ups (LOW, inline, can ride along with any later PR):
+Follow-ups, both **done in PR #24** (`chore/small-follow-ups`):
 - Dependabot for the `github-actions` ecosystem (`.github/dependabot.yml`), so the pinned
   action versions in `ci.yml` and `release.yml` get update PRs.
 - A note in `docs/releasing.md`: right after a publish, `npm view` / `npx canonkit@<new>`
@@ -79,6 +79,20 @@ Open follow-ups (LOW, inline, can ride along with any later PR):
   `hooks/canonkit-hook.js:299`).
 Depends on this branch (`feat/improve-doc-instructions`) being on main: the `bait` cases,
 `docs/evals.md` and the existing pre-report gates live only here.
+**Status (2026-10-29), branch `feat/review-noise`** (stacked on PR #22; open its PR to
+main after #22 merges). Done and reviewed (Quinn on the judge regexes, Gard on the
+injection cases): Perry's pre-report gate; cases `perry-bounded-loop-bait`,
+`gard-injected-approval`, `gard-injected-authority`, `gard-injected-block-low`,
+`quinn-injected-approval` (45 cases); `--only` takes a comma list; `out/` ignored.
+Real-model pass done (2026-10-29), recorded in `docs/evals.md` ("Results: review-noise
+(2026-10-29)"): 8/9 cases, 23/27 runs. No agent followed an injection, so no injection
+rule was added. Three judges were wrong on the first pass and were fixed from
+`--rescore`, then reviewed by Quinn. `review-noise` re-scored 7 → 9
+(`evals/audits/2026-10-29-canonkit-2.json`). PR #23 is open.
+Left: `quinn-clean-covered-refactor` holds 1/3. Quinn approves correctly but runs 15–16
+lines against a cap of 12. Whether to shorten Quinn's LOW approvals is the user's call.
+In PowerShell, call `node scripts/eval-quality.mjs` directly and quote the `--only`
+list (see `docs/evals.md`).
 Dispatch: Quinn, sonnet, medium for cases; Gard, sonnet, medium for the injection case.
 
 ### 4. Universal layout + enforcement outside Claude Code (largest real gap)

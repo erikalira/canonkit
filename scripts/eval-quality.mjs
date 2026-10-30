@@ -19,6 +19,7 @@
  *   node scripts/eval-quality.mjs                          # every case once
  *   node scripts/eval-quality.mjs --runs 3                 # a case holds at 2 of 3
  *   node scripts/eval-quality.mjs --only gard-token-in-log
+ *   node scripts/eval-quality.mjs --only gard-guarded-sort-bait,quinn-clean-low
  *   node scripts/eval-quality.mjs --variant gard=out/gard-lean.md   # A/B a body
  *   node scripts/eval-quality.mjs --save out/              # keep each transcript
  *   node scripts/eval-quality.mjs --rescore out/           # re-judge saved runs, call nothing
@@ -29,7 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAgent } from "../bin/cli.js";
-import { TEAM, parseRun, runClaude, writeFixture } from "./eval-routing.mjs";
+import { TEAM, parseRun, removeTempDir, runClaude, writeFixture } from "./eval-routing.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CASES = path.join(REPO, "evals", "quality-cases.json");
@@ -121,7 +122,7 @@ function runCase(kase, run, opts) {
     for (const f of parsed.planFiles) rmSync(f, { force: true });
     return { ...parsed, report: report(stream) };
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   }
 }
 
@@ -150,8 +151,12 @@ function parseArgs(argv) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const data = validateQualityCases(JSON.parse(readFileSync(CASES, "utf8")));
-  const cases = data.cases.filter((c) => !opts.only || c.id === opts.only);
-  if (!cases.length) throw new Error(`no case named ${opts.only}`);
+  // --only takes one id or a comma-separated list; an unknown id is an error, not a skip.
+  const only = opts.only ? opts.only.split(",").map((s) => s.trim()).filter(Boolean) : null;
+  if (only && !only.length) throw new Error("--only needs at least one case id");
+  const unknown = (only ?? []).filter((id) => !data.cases.some((c) => c.id === id));
+  if (unknown.length) throw new Error(`no case named ${unknown.join(", ")}`);
+  const cases = data.cases.filter((c) => !only || only.includes(c.id));
 
   if (opts.dryRun) {
     for (const c of cases) {

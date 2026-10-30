@@ -240,6 +240,20 @@ export function drift(home = os.homedir()) {
 }
 
 /**
+ * Remove a run's temp directory. On Windows a process the agent started can
+ * still hold it for a moment (EPERM/EBUSY): retry, and if it is still held,
+ * warn and leave it — a stray temp dir must not abort a paid run whose result
+ * is already saved.
+ */
+export function removeTempDir(dir) {
+  try {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+  } catch (err) {
+    process.stderr.write(`warning: could not remove ${dir} (${err.code ?? err.message}); left in place\n`);
+  }
+}
+
+/**
  * Write files into dir and commit them, so the eval runs inside a repository:
  * the team's gates (commit, HIGH-risk surfaces) are written for one. `change`,
  * when given, is written after the commit and left uncommitted — the diff a
@@ -310,7 +324,7 @@ function runCase(kase, run, fixture, opts) {
     for (const f of parsed.planFiles) rmSync(f, { force: true });
     return parsed;
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    removeTempDir(dir);
   }
 }
 
