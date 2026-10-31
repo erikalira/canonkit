@@ -75,9 +75,6 @@ const SHELL_TOOLS = new Set(['Bash', 'shell', 'local_shell', 'exec_command', 'un
 const PATCH_TOOLS = new Set(['apply_patch', 'Edit', 'Write']);
 const SCRIPT_FLAG = /^-(c|lc|ic|Command)$/i;
 const PATCH_BEGIN = '*** Begin Patch';
-// The apply_patch grammar's file headers. `+` lines are content; ` ` and `-`
-// lines, `@@` hunk headers and `*** End of File` are not.
-const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/;
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
@@ -101,43 +98,22 @@ function patchText(ti) {
   return str(ti.command) || str(ti.input) || str(ti.patch);
 }
 
-// One { path, content } per file the patch writes, in patch order. An Update
-// with a Move to gives two: the source, then the destination with the same
-// content. A Delete gives its path with no content.
+// The patch reader lives in the core (canonkit-hook.js), shared with the
+// OpenCode adapter. It is required when first called, never at load: a missing
+// core must stay one line on stderr and exit 0 (main), not a crash at require.
+const core = () => require('./canonkit-hook.js');
+
+// One { path, content } per file the patch writes (the core's parsePatch,
+// re-exported for the tests and anyone who required it from here).
 function parsePatch(text) {
-  const files = [];
-  let current = null;
-  for (const raw of String(text).split('\n')) {
-    const line = raw.replace(/\r$/, '');
-    const m = PATCH_HEADER.exec(line.trim());
-    if (m) {
-      const [, op, p] = m;
-      if (op === 'Move to') {
-        if (current && current.op === 'Update File') current.moveTo = p.trim();
-        continue;
-      }
-      current = { op, path: p.trim(), lines: [] };
-      files.push(current);
-      continue;
-    }
-    if (current && current.op !== 'Delete File' && line.startsWith('+')) current.lines.push(line.slice(1));
-  }
-  const out = [];
-  for (const f of files) {
-    const content = f.lines.join('\n');
-    out.push({ path: f.path, content });
-    if (f.moveTo) out.push({ path: f.moveTo, content });
-  }
-  return out;
+  return core().parsePatch(text);
 }
 
-// The Write events for a patch. A text that holds no file header still has
-// its content scanned, under no path: a shape this parser misread must not
-// cost the hard-secret deny.
+// The Write events for a patch: one per file the core's patchWrites returns,
+// which includes its fallback (a text with no file header is scanned whole,
+// under no path).
 function patchEvents(text, base) {
-  const files = parsePatch(text);
-  if (!files.length) return text ? [{ ...base, tool: 'Write', toolInput: { file_path: '', content: text } }] : [];
-  return files.map((f) => ({ ...base, tool: 'Write', toolInput: { file_path: f.path, content: f.content } }));
+  return core().patchWrites(text).map((f) => ({ ...base, tool: 'Write', toolInput: { file_path: f.path, content: f.content } }));
 }
 
 // Codex's hook input into evaluate()'s events: none, one, or one per file.

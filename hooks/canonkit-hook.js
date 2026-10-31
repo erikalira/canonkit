@@ -879,6 +879,53 @@ function gitBypass({ sub, config, args }) {
   return null;
 }
 
+// ---- PATCH TEXT (for the adapters; evaluate() never calls it) ----
+// The apply_patch grammar Codex's apply_patch and OpenCode's patch tool share.
+// One reader for both adapters, so a secret cannot slip past one and not the
+// other. Each adapter turns the result into its own Write events.
+// The file headers: `+` lines are content; ` ` and `-` lines, `@@` hunk headers
+// and `*** End of File` are not.
+const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/;
+
+// One { path, content } per file the patch writes, in patch order. An Update
+// with a Move to gives two: the source, then the destination with the same
+// content. A Delete gives its path with no content.
+function parsePatch(text) {
+  const files = [];
+  let current = null;
+  for (const raw of String(text).split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const m = PATCH_HEADER.exec(line.trim());
+    if (m) {
+      const [, op, p] = m;
+      if (op === 'Move to') {
+        if (current && current.op === 'Update File') current.moveTo = p.trim();
+        continue;
+      }
+      current = { op, path: p.trim(), lines: [] };
+      files.push(current);
+      continue;
+    }
+    if (current && current.op !== 'Delete File' && line.startsWith('+')) current.lines.push(line.slice(1));
+  }
+  const out = [];
+  for (const f of files) {
+    const content = f.lines.join('\n');
+    out.push({ path: f.path, content });
+    if (f.moveTo) out.push({ path: f.moveTo, content });
+  }
+  return out;
+}
+
+// What a patch writes, as parsePatch gives it. A text that holds no file
+// header still has its whole content returned, under no path: a shape the
+// parser misread must not cost the hard-secret deny.
+function patchWrites(text) {
+  const files = parsePatch(text);
+  if (files.length) return files;
+  return text ? [{ path: '', content: String(text) }] : [];
+}
+
 // ---- THE CORE: evaluate(evt, env) ----
 // Every kind a decision can carry besides null (a plain allow). Each is also
 // the `kind` of the gate line logged with it, so a decision and its log line
@@ -1411,6 +1458,7 @@ function run() {
 module.exports = {
   run, projectConfig, globMatcher, normalizePath,
   evaluate, normalizeClaude, GATE_KINDS, RECORD_KINDS, CLAUDE_GATE_MODES,
+  parsePatch, patchWrites,
 };
 
 // Run as the hook itself, or through the pre-rename meu-time-hook.js forwarder.
