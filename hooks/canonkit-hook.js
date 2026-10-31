@@ -889,6 +889,10 @@ function gitBypass({ sub, config, args }) {
 // header the gate cannot read hides the `+` lines under it. No `m` flag: `$`
 // must be the end of the line, never a line break inside the path.
 const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): ([\s\S]+)$/;
+// The line is trimmed as Codex's parser trims it (Rust's str::trim): its
+// White_Space set has U+0085, which JS trim() and \s leave. A header the gate
+// does not trim away is not a header to it, and its path escapes the path gates.
+const PATCH_TRIM = /^[\s\u0085]+|[\s\u0085]+$/g;
 
 // The patch read once: `files` is one { path, content } per file it writes, in
 // patch order (an Update with a Move to gives two: the source, then the
@@ -902,7 +906,7 @@ function readPatch(text) {
   let current = null;
   for (const raw of String(text).split('\n')) {
     const line = raw.replace(/\r$/, '');
-    const m = PATCH_HEADER.exec(line.trim());
+    const m = PATCH_HEADER.exec(line.replace(PATCH_TRIM, ''));
     if (m) {
       const [, op, p] = m;
       if (op === 'Move to') {

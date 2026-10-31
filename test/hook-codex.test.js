@@ -293,6 +293,15 @@ describe("normalizeCodex: one Codex call into evaluate()'s events", () => {
     assert.deepEqual(results.map((r) => r.kind), [null, "high-risk-surface"]);
   });
 
+  // Codex trims a header with Rust's str::trim, which strips U+0085 (JS trim()
+  // does not): the path under it is the file Codex writes, and the one gated.
+  test("a header with U+0085 before it is gated by its own path", () => {
+    const evts = normalizeCodex(patch("*** Add File: a.ts", "+a", "\u0085*** Add File: src/auth/session.ts", "+b"), "/fallback");
+    assert.deepEqual(files(evts), [["Write", "a.ts", "a"], ["Write", "src/auth/session.ts", "b"]]);
+    const results = evts.map((e) => evaluate(e, { logDir: null, home: ROOT }));
+    assert.deepEqual(results.map((r) => r.kind), [null, "high-risk-surface"]);
+  });
+
   test("a Delete File is gated by its path, with no content", () => {
     const [evt, ...rest] = normalizeCodex(patch("*** Delete File: src/auth/session.ts"), "/fallback");
     assert.deepEqual(rest, []);

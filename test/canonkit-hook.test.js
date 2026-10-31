@@ -977,6 +977,18 @@ describe("patch reader (parsePatch, patchWrites)", () => {
     }
   });
 
+  // Codex's parser trims a header with Rust's str::trim, which strips U+0085;
+  // JS trim() does not. Missed, the header's + lines fall to the file before it
+  // and its path escapes the path gates.
+  test("a header with U+0085 around it is still a header, as Codex's str::trim reads it", () => {
+    const { parsePatch } = hook();
+    assert.deepEqual(parsePatch(P("*** Add File: a.ts", "+a", "\u0085*** Add File: src/auth/k.ts", "+b")),
+      [{ path: "a.ts", content: "a" }, { path: "src/auth/k.ts", content: "b" }]);
+    assert.deepEqual(parsePatch(P("*** Add File: src/auth/k.ts\u0085", "+b")), [{ path: "src/auth/k.ts", content: "b" }]);
+    assert.deepEqual(parsePatch(P("*** Update File: a.ts", "\u0085*** Move to: src/auth/k.ts", "@@", "+m")),
+      [{ path: "a.ts", content: "m" }, { path: "src/auth/k.ts", content: "m" }]);
+  });
+
   test("+ lines no file owns are returned under no path: before the first header, and after a Delete File", () => {
     const { patchWrites, parsePatch } = hook();
     assert.deepEqual(patchWrites(P("+x", "*** Add File: a", "+y")), [{ path: "a", content: "y" }, { path: "", content: "x" }]);
