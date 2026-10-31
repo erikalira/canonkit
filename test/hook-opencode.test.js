@@ -38,6 +38,7 @@ const coreModule = requireCjs(path.join(HOOKS_DIR, "canonkit-hook.js"));
 const { evaluate, GATE_KINDS } = coreModule;
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
+const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
 
 let ROOT; // temp root: HOME for the child process, and the "type": "module" parent
 let INSTALL; // ROOT/opencode: canonkit/ (HOOK_FILES.opencode) and plugins/canonkit.js
@@ -224,6 +225,18 @@ describe("opencode plugin: the execute.before hook", () => {
     denied(ocEvent("patch", { patchText: `garbled ${FAKE_AWS_KEY}` }), /high-confidence secret/);
   });
 
+  // OpenCode's parser (packages/util/src/patch.ts) takes any header that starts
+  // with "*** Add File: ": a path with U+2028 or CR inside included.
+  for (const [label, sep] of [["U+2028", "\u2028"], ["CR", "\r"]]) {
+    test(`patch: a private key under a first header with ${label} in its path throws`, () => {
+      denied(patch(`*** Add File: k${sep}.pem`, `+${FAKE_PEM}`, "+MIIEow", "*** Add File: ok.ts", "+export const a = 1;"), /high-confidence secret/);
+    });
+  }
+
+  test("patch: a cloud key on a + line before any header throws", () => {
+    denied(patch(`+k = "${FAKE_AWS_KEY}"`, "*** Add File: ok.ts", "+x"), /high-confidence secret/);
+  });
+
   test("shell carrying an apply_patch heredoc is gated as a patch too", () => {
     const cmd = ["apply_patch <<'EOF'", "*** Begin Patch", "*** Add File: a.ts", `+k = "${FAKE_AWS_KEY}"`, "*** End Patch", "EOF"].join("\n");
     denied(shell(cmd), /high-confidence secret/);
@@ -298,6 +311,14 @@ describe("normalizeOpencode: one OpenCode event into evaluate()'s events", () =>
       ["Write", "c.ts", "moved"],
       ["Write", "d/c.ts", "moved"],
       ["Write", "e.ts", ""],
+    ]);
+  });
+
+  test("+ lines no file owns become one Write under no path; a U+2028 path is kept as written", () => {
+    assert.deepEqual(files(normalizeOpencode(patch("+stray", "*** Add File: k\u2028.pem", "+key", "*** Delete File: d", "+late"), PROJ)), [
+      ["Write", "k\u2028.pem", "key"],
+      ["Write", "d", ""],
+      ["Write", "", "stray\nlate"],
     ]);
   });
 

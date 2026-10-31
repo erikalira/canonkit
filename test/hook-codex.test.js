@@ -32,6 +32,7 @@ const { normalizeCodex, parsePatch, codexOutput, CODEX_GATE_MODES } = requireCjs
 const { evaluate, GATE_KINDS } = requireCjs(path.join(HOOKS_DIR, "canonkit-hook.js"));
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
+const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
 
 let ROOT; // temp root: HOME for every spawn, and the "type": "module" parent
 let INSTALL; // ROOT/canonkit: exactly HOOK_FILES.codex
@@ -182,6 +183,18 @@ describe("codex adapter: stdout and exit code", () => {
     denied(spawnAdapter(input), /high-confidence secret/);
   });
 
+  // A path with U+2028 or CR inside is a header to Codex's parser; it must be
+  // one to the gate too, or the + lines under it are never scanned.
+  for (const [label, sep] of [["U+2028", "\u2028"], ["CR", "\r"]]) {
+    test(`apply_patch: a private key under a first header with ${label} in its path is denied`, () => {
+      denied(spawnAdapter(patch(`*** Add File: k${sep}.pem`, `+${FAKE_PEM}`, "+MIIEow", "*** Add File: ok.ts", "+export const a = 1;")), /high-confidence secret/);
+    });
+  }
+
+  test("apply_patch: a cloud key on a + line before any header is denied", () => {
+    denied(spawnAdapter(patch(`+k = "${FAKE_AWS_KEY}"`, "*** Add File: ok.ts", "+x")), /high-confidence secret/);
+  });
+
   test("Bash carrying an apply_patch heredoc is gated as a patch too", () => {
     const cmd = ["apply_patch <<'EOF'", "*** Begin Patch", "*** Add File: a.ts", `+k = "${FAKE_AWS_KEY}"`, "*** End Patch", "EOF"].join("\n");
     denied(spawnAdapter(bash(cmd)), /high-confidence secret/);
@@ -320,6 +333,15 @@ describe("normalizeCodex: one Codex call into evaluate()'s events", () => {
 
   test("parsePatch ignores + lines before the first header", () => {
     assert.deepEqual(parsePatch("+stray\n*** Add File: a\n+x"), [{ path: "a", content: "x" }]);
+  });
+
+  test("but the events scan them: + lines no file owns become one Write under no path", () => {
+    const evts = normalizeCodex(patch("+stray", "*** Add File: k\u2028.pem", "+key", "*** Delete File: d", "+late"), "/f");
+    assert.deepEqual(files(evts), [
+      ["Write", "k\u2028.pem", "key"],
+      ["Write", "d", ""],
+      ["Write", "", "stray\nlate"],
+    ]);
   });
 });
 

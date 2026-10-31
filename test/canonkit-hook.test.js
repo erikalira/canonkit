@@ -959,6 +959,56 @@ describe("every check sees one normalized path", () => {
   });
 });
 
+// The apply_patch reader the Codex and OpenCode adapters share. Each defense has
+// its own test: the header regex (a path with U+2028 or CR inside is still a
+// header) and the orphan entry (a + line no file owns is still scanned).
+describe("patch reader (parsePatch, patchWrites)", () => {
+  const P = (...lines) => ["*** Begin Patch", ...lines, "*** End Patch"].join("\n");
+  const env = () => ({ logDir: null, home: HOME });
+  const writes = (text) => hook().patchWrites(text).map((f) => ({ event: "PreToolUse", tool: "Write", cwd: HOME, toolInput: { file_path: f.path, content: f.content } }));
+
+  test("a header with U+2028 or CR inside its path is still a header, and the path is kept as written", () => {
+    const { parsePatch } = hook();
+    for (const sep of ["\u2028", "\r"]) {
+      assert.deepEqual(parsePatch(P(`*** Add File: k${sep}.pem`, "+a", "*** Add File: ok.ts", "+b")),
+        [{ path: `k${sep}.pem`, content: "a" }, { path: "ok.ts", content: "b" }], JSON.stringify(sep));
+      assert.deepEqual(parsePatch(P("*** Update File: a.ts", `*** Move to: src/auth${sep}/a.ts`, "@@", "+m")),
+        [{ path: "a.ts", content: "m" }, { path: `src/auth${sep}/a.ts`, content: "m" }], JSON.stringify(sep));
+    }
+  });
+
+  test("+ lines no file owns are returned under no path: before the first header, and after a Delete File", () => {
+    const { patchWrites, parsePatch } = hook();
+    assert.deepEqual(patchWrites(P("+x", "*** Add File: a", "+y")), [{ path: "a", content: "y" }, { path: "", content: "x" }]);
+    assert.deepEqual(patchWrites(P("*** Delete File: d", "+z", "*** Add File: a", "+y")),
+      [{ path: "d", content: "" }, { path: "a", content: "y" }, { path: "", content: "z" }]);
+    // parsePatch keeps its contract: what the patch writes, nothing else.
+    assert.deepEqual(parsePatch(P("+x", "*** Add File: a", "+y")), [{ path: "a", content: "y" }]);
+  });
+
+  test("a patch whose + lines all belong to files adds no orphan entry", () => {
+    assert.deepEqual(hook().patchWrites(P("*** Add File: a", "+y", "*** Update File: b", "@@", "-o", "+n")),
+      [{ path: "a", content: "y" }, { path: "b", content: "n" }]);
+  });
+
+  test("a private key under a first header with U+2028 or CR in its path is denied", () => {
+    const { evaluate } = hook();
+    for (const sep of ["\u2028", "\r"]) {
+      const results = writes(P(`*** Add File: k${sep}.pem`, `+${FAKE_PEM}`, "+MIIEow", "*** Add File: ok.ts", "+export const a = 1;"))
+        .map((e) => evaluate(e, env()));
+      assert.ok(results.some((r) => r.decision === "deny" && r.kind === "secret-block"), JSON.stringify(sep));
+    }
+  });
+
+  test("a cloud key on a + line before any header is denied, and its entry gates no path", () => {
+    const { evaluate } = hook();
+    const results = writes(P(`+k = "${FAKE_AWS_KEY}"`, "*** Add File: ok.ts", "+x")).map((e) => evaluate(e, env()));
+    assert.deepEqual(results.map((r) => [r.decision, r.kind]), [["allow", null], ["deny", "secret-block"]]);
+    const plain = writes(P("+just text", "*** Add File: ok.ts", "+x")).map((e) => evaluate(e, env()));
+    assert.deepEqual(plain.map((r) => [r.decision, r.kind]), [["allow", null], ["allow", null]]);
+  });
+});
+
 describe("noise and secret paths", () => {
   const edit0 = (fp) => decide(pre("Edit", { file_path: fp, new_string: "x" }));
 

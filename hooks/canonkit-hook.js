@@ -884,14 +884,21 @@ function gitBypass({ sub, config, args }) {
 // One reader for both adapters, so a secret cannot slip past one and not the
 // other. Each adapter turns the result into its own Write events.
 // The file headers: `+` lines are content; ` ` and `-` lines, `@@` hunk headers
-// and `*** End of File` are not.
-const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): (.+)$/;
+// and `*** End of File` are not. The path is `[\s\S]+`, not `.+`: `.` stops at
+// U+2028, U+2029 and a CR, which both tools' parsers keep inside a path, and a
+// header the gate cannot read hides the `+` lines under it. No `m` flag: `$`
+// must be the end of the line, never a line break inside the path.
+const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): ([\s\S]+)$/;
 
-// One { path, content } per file the patch writes, in patch order. An Update
-// with a Move to gives two: the source, then the destination with the same
-// content. A Delete gives its path with no content.
-function parsePatch(text) {
+// The patch read once: `files` is one { path, content } per file it writes, in
+// patch order (an Update with a Move to gives two: the source, then the
+// destination with the same content; a Delete gives its path with no content).
+// `orphan` is every `+` line no file owns: before the first header, or after a
+// Delete File. The tools reject or ignore those, but the gate cannot know what
+// a given parser does with them, so they are kept for the scan.
+function readPatch(text) {
   const files = [];
+  const orphan = [];
   let current = null;
   for (const raw of String(text).split('\n')) {
     const line = raw.replace(/\r$/, '');
@@ -906,7 +913,9 @@ function parsePatch(text) {
       files.push(current);
       continue;
     }
-    if (current && current.op !== 'Delete File' && line.startsWith('+')) current.lines.push(line.slice(1));
+    if (!line.startsWith('+')) continue;
+    if (current && current.op !== 'Delete File') current.lines.push(line.slice(1));
+    else orphan.push(line.slice(1));
   }
   const out = [];
   for (const f of files) {
@@ -914,16 +923,23 @@ function parsePatch(text) {
     out.push({ path: f.path, content });
     if (f.moveTo) out.push({ path: f.moveTo, content });
   }
-  return out;
+  return { files: out, orphan };
 }
 
-// What a patch writes, as parsePatch gives it. A text that holds no file
-// header still has its whole content returned, under no path: a shape the
-// parser misread must not cost the hard-secret deny.
+// One { path, content } per file the patch writes (readPatch's files).
+function parsePatch(text) {
+  return readPatch(text).files;
+}
+
+// What the gate scans in a patch: the files it writes, plus the `+` lines no
+// file owns as one entry under no path (only the content scan can act on it:
+// no path gate matches ''). A text that holds no file header still has its
+// whole content returned, under no path: a shape the parser misread must not
+// cost the hard-secret deny.
 function patchWrites(text) {
-  const files = parsePatch(text);
-  if (files.length) return files;
-  return text ? [{ path: '', content: String(text) }] : [];
+  const { files, orphan } = readPatch(text);
+  if (!files.length) return text ? [{ path: '', content: String(text) }] : [];
+  return orphan.length ? [...files, { path: '', content: orphan.join('\n') }] : files;
 }
 
 // ---- THE CORE: evaluate(evt, env) ----

@@ -109,9 +109,9 @@ function parsePatch(text) {
   return core().parsePatch(text);
 }
 
-// The Write events for a patch: one per file the core's patchWrites returns,
-// which includes its fallback (a text with no file header is scanned whole,
-// under no path).
+// The Write events for a patch: one per entry the core's patchWrites returns,
+// which includes the `+` lines no file owns (one entry under no path) and its
+// fallback (a text with no file header is scanned whole, under no path).
 function patchEvents(text, base) {
   return core().patchWrites(text).map((f) => ({ ...base, tool: 'Write', toolInput: { file_path: f.path, content: f.content } }));
 }
