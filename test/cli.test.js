@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 import prompts from "prompts";
 
-import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool } from "../bin/cli.js";
+import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -48,19 +48,41 @@ async function scratch(name) {
   return { root, home, project };
 }
 
-function run(args, { home, cwd }) {
+function run(args, { home, cwd, env = {} }) {
   const result = spawnSync(process.execPath, [CLI, ...args], {
     cwd: cwd ?? home,
     encoding: "utf8",
     // os.homedir() reads USERPROFILE on Windows and HOME elsewhere. Setting
     // both is what makes this test suite run the same on all three platforms.
     // OpenCode's folder follows XDG_CONFIG_HOME, so it is pinned inside HOME too.
-    env: { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") },
+    env: isolatedEnv(home, env),
   });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
 
+// A developer's own CODEX_HOME would send every Codex write to their real
+// Codex: it is dropped unless the test sets one.
+function isolatedEnv(home, env) {
+  const e = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
+  if (!("CODEX_HOME" in env)) delete e.CODEX_HOME;
+  return e;
+}
+
+// Every file under a folder with its bytes: what "wrote nothing" and "is
+// read-only" are checked against.
+async function snapshot(dir) {
+  const out = {};
+  for (const e of await readdir(dir, { withFileTypes: true, recursive: true })) {
+    const p = path.join(e.parentPath ?? e.path, e.name);
+    if (e.isFile()) out[path.relative(dir, p)] = await read(p);
+  }
+  return out;
+}
+
 const read = (p) => readFile(p, "utf8");
+// The command install writes into hooks.json for a Codex home.
+const codexCommand = (home, codexHome = path.join(home, ".codex")) =>
+  `node "${path.join(codexHome, "canonkit", "canonkit-codex.js").split(path.sep).join("/")}"`;
 
 /* ----------------------------------------------------------------- roster */
 
@@ -208,12 +230,37 @@ describe("install", () => {
     assert.equal(existsSync(path.join(home, ".agents", "skills")), false);
   });
 
-  test("--wire-hooks with --codex refuses before writing anything", async () => {
+  test("--wire-hooks with --codex wires the Codex hook and writes nothing under ~/.claude", async () => {
     const { home } = await scratch("install-codex-wire");
     const result = run(["install", "--codex", "--wire-hooks"], { home });
-    assert.equal(result.status, 1, result.out);
-    assert.match(result.out, /needs Claude Code/);
-    assert.deepEqual(await readdir(home), []);
+    assert.equal(result.status, 0, result.out);
+    const dir = path.join(home, ".codex", "canonkit");
+    assert.deepEqual((await readdir(dir)).sort(), [...HOOK_FILES.codex].sort());
+    for (const f of HOOK_FILES.codex) {
+      assert.ok((await readFile(path.join(dir, f))).equals(await readFile(path.join(REPO, "hooks", f))), `${f} is not the package's bytes`);
+    }
+    const { hooks } = JSON.parse(await read(path.join(home, ".codex", "hooks.json")));
+    assert.deepEqual(hooks, { PreToolUse: [{ matcher: "Bash|apply_patch", hooks: [{ type: "command", command: codexCommand(home) }] }] });
+    assert.match(result.out, /run \/hooks in Codex/);
+    assert.equal(existsSync(path.join(home, ".claude")), false, "a Codex-only install wrote under ~/.claude");
+  });
+
+  test("--claude --wire-hooks writes nothing under ~/.codex or ~/.config", async () => {
+    const { home } = await scratch("install-claude-wire");
+    const result = run(["install", "--claude", "--wire-hooks"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.ok(existsSync(path.join(home, ".claude", "settings.json")));
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+    assert.equal(existsSync(path.join(home, ".config")), false);
+  });
+
+  test("--claude --opencode --wire-hooks wires Claude Code only, and says OpenCode was not", async () => {
+    const { home } = await scratch("install-claude-opencode-wire");
+    const result = run(["install", "--claude", "--opencode", "--wire-hooks"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.ok(existsSync(path.join(home, ".claude", "settings.json")));
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+    assert.match(result.out, /OpenCode has no hook wiring yet/);
   });
 
   test("--claude and --codex are refused outside install and reference", async () => {
@@ -250,7 +297,7 @@ describe("install", () => {
     const { home } = await scratch("install-opencode-wire");
     const result = run(["install", "--opencode", "--wire-hooks"], { home });
     assert.equal(result.status, 1, result.out);
-    assert.match(result.out, /needs Claude Code/);
+    assert.match(result.out, /needs --claude or --codex/);
     assert.deepEqual(await readdir(home), []);
   });
 
@@ -922,7 +969,7 @@ describe("hooks", () => {
 // The harness sets CLAUDE_PROJECT_DIR for every command it runs, this suite
 // included: a test that means one passes it explicitly.
 function runIn(args, { home, cwd, env = {} }) {
-  const e = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
+  const e = isolatedEnv(home, env);
   if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
   const result = spawnSync(process.execPath, [CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: e });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
@@ -1251,6 +1298,178 @@ describe("install --wire-hooks", () => {
 
 /* ---------------------------------------------------------------- doctor */
 
+/* ------------------------------------------------------- codex wire-hooks */
+
+describe("install --wire-hooks for Codex", () => {
+  const codexDir = (home, ...p) => path.join(home, ".codex", ...p);
+  const hooksJson = (home) => codexDir(home, "hooks.json");
+  const codexBackups = async (home) => (await readdir(codexDir(home))).filter((f) => /^hooks\.json\.canonkit-.*\.bak$/.test(f));
+  const wire = (home, extra = [], env = {}) => runIn(["install", "--codex", "--no-reference", "--wire-hooks", ...extra], { home, env });
+  const theirs = (command, matcher) => ({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
+
+  for (const [name, body] of [
+    ["is not valid JSON", "{ not json"],
+    ["is not an object", "[]"],
+    ["has a hooks that is not an object", '{"hooks": []}'],
+    ["has an event that is not an array", '{"hooks": {"PreToolUse": {}}}'],
+  ]) {
+    test(`refuses a hooks.json that ${name}, writing nothing for either harness`, async () => {
+      const { home } = await scratch(`codex-refuse-${name.replace(/\W+/g, "-")}`);
+      await mkdir(codexDir(home), { recursive: true });
+      await writeFile(hooksJson(home), body);
+      const before = await snapshot(home);
+      // Claude Code in the install too: its half must not be written either.
+      const { out, status } = runIn(["install", "--claude", "--codex", "--wire-hooks"], { home });
+      assert.equal(status, 1, out);
+      assert.match(out, /Refusing --wire-hooks: ~\/\.codex\/hooks\.json .*Nothing was written/);
+      assert.deepEqual(await snapshot(home), before);
+    });
+  }
+
+  test("keeps every other group, event and key in order, appends its own, and backs up first", async () => {
+    const { home } = await scratch("codex-keep");
+    await mkdir(codexDir(home), { recursive: true });
+    const original = JSON.stringify({
+      description: "mine",
+      hooks: {
+        SessionStart: [theirs("node ~/start.js")],
+        PreToolUse: [theirs("node ~/a.js", "Bash"), theirs("node ~/b.js", "apply_patch")],
+        Stop: [theirs("node ~/stop.js")],
+      },
+      futureKey: { x: 1 },
+    }, null, 2);
+    await writeFile(hooksJson(home), original);
+    const { out, status } = wire(home);
+    assert.equal(status, 0, out);
+    const after = JSON.parse(await read(hooksJson(home)));
+    const was = JSON.parse(original);
+    assert.deepEqual(Object.keys(after), Object.keys(was));
+    assert.deepEqual(Object.keys(after.hooks), Object.keys(was.hooks));
+    assert.deepEqual(after.hooks.SessionStart, was.hooks.SessionStart);
+    assert.deepEqual(after.hooks.Stop, was.hooks.Stop);
+    assert.deepEqual(after.futureKey, was.futureKey);
+    // Codex keys trust by group index: the user's groups keep theirs.
+    assert.deepEqual(after.hooks.PreToolUse.slice(0, 2), was.hooks.PreToolUse);
+    assert.deepEqual(after.hooks.PreToolUse[2], theirs(codexCommand(home), "Bash|apply_patch"));
+    const [bak] = await codexBackups(home);
+    assert.ok(bak, "a backup is written before the change");
+    assert.equal(await read(codexDir(home, bak)), original);
+    assert.match(out, /run \/hooks in Codex/);
+  });
+
+  test("a second run changes no bytes, writes no second backup and asks for no /hooks", async () => {
+    const { home } = await scratch("codex-idempotent");
+    await mkdir(codexDir(home), { recursive: true });
+    await writeFile(hooksJson(home), JSON.stringify({ hooks: {} }));
+    assert.equal(wire(home).status, 0);
+    const once = await snapshot(codexDir(home));
+    const again = wire(home);
+    assert.equal(again.status, 0, again.out);
+    assert.deepEqual(await snapshot(codexDir(home)), once);
+    assert.equal((await codexBackups(home)).length, 1);
+    assert.doesNotMatch(again.out, /run \/hooks/);
+    assert.match(again.out, /already wired/);
+  });
+
+  test("no hooks.json: created with its group and no backup", async () => {
+    const { home } = await scratch("codex-fresh");
+    assert.equal(wire(home).status, 0);
+    assert.deepEqual(JSON.parse(await read(hooksJson(home))), { hooks: { PreToolUse: [theirs(codexCommand(home), "Bash|apply_patch")] } });
+    assert.deepEqual(await codexBackups(home), []);
+  });
+
+  test("its own group with a wrong matcher is fixed where it stands, and asks for /hooks", async () => {
+    const { home } = await scratch("codex-matcher");
+    await mkdir(codexDir(home), { recursive: true });
+    const groups = [theirs("node ~/a.js", "Bash"), theirs(codexCommand(home), "Bash"), theirs("node ~/b.js")];
+    await writeFile(hooksJson(home), JSON.stringify({ hooks: { PreToolUse: groups } }));
+    const { out, status } = wire(home);
+    assert.equal(status, 0, out);
+    const { hooks } = JSON.parse(await read(hooksJson(home)));
+    assert.deepEqual(hooks.PreToolUse, [groups[0], theirs(codexCommand(home), "Bash|apply_patch"), groups[2]]);
+    assert.match(out, /PreToolUse\[1\]: matcher set to Bash\|apply_patch/);
+    assert.match(out, /run \/hooks in Codex/);
+  });
+
+  test("its own group naming another path is pointed at this install in place", async () => {
+    const { home } = await scratch("codex-command");
+    await mkdir(codexDir(home), { recursive: true });
+    const old = theirs('node "C:/old/canonkit/canonkit-codex.js"', "Bash|apply_patch");
+    await writeFile(hooksJson(home), JSON.stringify({ hooks: { PreToolUse: [theirs("node ~/a.js"), old] } }));
+    const { out } = wire(home);
+    const { hooks } = JSON.parse(await read(hooksJson(home)));
+    assert.equal(hooks.PreToolUse.length, 2);
+    assert.deepEqual(hooks.PreToolUse[1], theirs(codexCommand(home), "Bash|apply_patch"));
+    assert.match(out, /run \/hooks in Codex/);
+  });
+
+  test("a group shared with the user's hooks keeps its matcher, and is reported", async () => {
+    const { home } = await scratch("codex-shared");
+    await mkdir(codexDir(home), { recursive: true });
+    const shared = { matcher: "Bash", hooks: [{ type: "command", command: "node ~/a.js" }, { type: "command", command: codexCommand(home) }] };
+    const original = JSON.stringify({ hooks: { PreToolUse: [shared] } });
+    await writeFile(hooksJson(home), original);
+    const { out } = wire(home);
+    assert.equal(await read(hooksJson(home)), original);
+    assert.match(out, /PreToolUse\[0\]: shared with other hooks/);
+  });
+
+  test("a command that wraps the adapter is the user's, and its group is left", async () => {
+    const { home } = await scratch("codex-wrapper");
+    await mkdir(codexDir(home), { recursive: true });
+    const wrapper = theirs(`${codexCommand(home)} | tee log`, "Bash");
+    await writeFile(hooksJson(home), JSON.stringify({ hooks: { PreToolUse: [wrapper] } }));
+    wire(home);
+    const { hooks } = JSON.parse(await read(hooksJson(home)));
+    assert.deepEqual(hooks.PreToolUse, [wrapper, theirs(codexCommand(home), "Bash|apply_patch")]);
+  });
+
+  test("--dry-run writes no canonkit/, no hooks.json and no backup", async () => {
+    const { home } = await scratch("codex-dry");
+    const { out, status } = wire(home, ["--dry-run"]);
+    assert.equal(status, 0, out);
+    assert.match(out, /would wire canonkit-codex\.js/);
+    assert.equal(existsSync(codexDir(home)), false);
+  });
+
+  test("CODEX_HOME holds the agents, canonkit/ and hooks.json; nothing goes under ~/.codex", async () => {
+    const { root, home } = await scratch("codex-home");
+    const codexHome = path.join(root, "elsewhere");
+    const { out, status } = wire(home, [], { CODEX_HOME: codexHome });
+    assert.equal(status, 0, out);
+    assert.ok(existsSync(path.join(codexHome, "agents", "bob.toml")));
+    assert.deepEqual((await readdir(path.join(codexHome, "canonkit"))).sort(), [...HOOK_FILES.codex].sort());
+    const { hooks } = JSON.parse(await read(path.join(codexHome, "hooks.json")));
+    assert.equal(hooks.PreToolUse[0].hooks[0].command, codexCommand(home, codexHome));
+    assert.equal(existsSync(codexDir(home)), false);
+  });
+
+  test("a CODEX_HOME the shell would expand inside quotes is refused before anything is written", async () => {
+    const { root, home } = await scratch("codex-home-dollar");
+    const { out, status } = runIn(["install", "--wire-hooks"], { home, env: { CODEX_HOME: path.join(root, "a$b") } });
+    assert.equal(status, 1, out);
+    assert.match(out, /Refusing --wire-hooks: the Codex hook path/);
+    assert.deepEqual(await readdir(home), []);
+    assert.equal(existsSync(path.join(root, "a$b")), false);
+  });
+
+  test("a plain install refreshes canonkit/ only where it exists, and never touches hooks.json", async () => {
+    const { home } = await scratch("codex-refresh");
+    assert.equal(runIn(["install", "--codex", "--no-reference"], { home }).status, 0);
+    assert.equal(existsSync(codexDir(home, "canonkit")), false, "a plain install created an inert copy");
+
+    assert.equal(wire(home).status, 0);
+    const userEdited = JSON.stringify({ hooks: { PreToolUse: [theirs("node ~/a.js")] } });
+    await writeFile(hooksJson(home), userEdited);
+    await writeFile(codexDir(home, "canonkit", "canonkit-hook.js"), "// stale\n");
+    const { out, status } = runIn(["install", "--codex", "--no-reference"], { home });
+    assert.equal(status, 0, out);
+    assert.ok((await readFile(codexDir(home, "canonkit", "canonkit-hook.js"))).equals(await readFile(path.join(REPO, "hooks", "canonkit-hook.js"))));
+    assert.equal(await read(hooksJson(home)), userEdited);
+    assert.doesNotMatch(out, /run \/hooks/);
+  });
+});
+
 describe("doctor", () => {
   const doctor = (o) => runIn(["doctor"], o);
   const line = (out, re) => out.split("\n").find((l) => re.test(l)) ?? "";
@@ -1258,15 +1477,6 @@ describe("doctor", () => {
     const s = await scratch(name);
     runIn(["install", "--wire-hooks"], { home: s.home });
     return s;
-  };
-  // Every file under a folder with its bytes: doctor must leave it exactly so.
-  const snapshot = async (dir) => {
-    const out = {};
-    for (const e of await readdir(dir, { withFileTypes: true, recursive: true })) {
-      const p = path.join(e.parentPath ?? e.path, e.name);
-      if (e.isFile()) out[path.relative(dir, p)] = await read(p);
-    }
-    return out;
   };
 
   test("a full install wired by --wire-hooks passes every check, one line each", async () => {
@@ -1301,6 +1511,62 @@ describe("doctor", () => {
     const before = await snapshot(home);
     doctor({ home, cwd: project });
     assert.deepEqual(await snapshot(home), before);
+  });
+
+  describe("the Codex hook", () => {
+    const codexLine = (out, check) => line(out, new RegExp(`^\\w+ +codex hook ${check}:`));
+    const codexDir = (home, ...p) => path.join(home, ".codex", ...p);
+
+    test("a wired install passes both rows", async () => {
+      const { home, project } = await ready("doctor-codex-ok");
+      const { out, status } = doctor({ home, cwd: project });
+      assert.equal(status, 0, out);
+      assert.match(codexLine(out, "files"), /^OK /);
+      assert.match(codexLine(out, "wiring"), /^OK .*Bash\|apply_patch/);
+    });
+
+    test("no canonkit/ folder: no Codex rows", async () => {
+      const { home, project } = await scratch("doctor-codex-none");
+      runIn(["install", "--claude", "--wire-hooks"], { home });
+      assert.doesNotMatch(doctor({ home, cwd: project }).out, /codex hook/);
+    });
+
+    test("a missing file FAILs: Codex lets every call through", async () => {
+      const { home, project } = await ready("doctor-codex-missing");
+      await rm(codexDir(home, "canonkit", "canonkit-hook.js"));
+      const { out, status } = doctor({ home, cwd: project });
+      assert.equal(status, 1);
+      assert.match(codexLine(out, "files"), /^FAIL .*canonkit-hook\.js.*install --codex/);
+    });
+
+    test("a file that differs from the package's FAILs", async () => {
+      const { home, project } = await ready("doctor-codex-differs");
+      const f = codexDir(home, "canonkit", "canonkit-codex.js");
+      await writeFile(f, (await read(f)) + "// edit\n");
+      const { out, status } = doctor({ home, cwd: project });
+      assert.equal(status, 1);
+      assert.match(codexLine(out, "files"), /^FAIL .*differ.*canonkit-codex\.js/);
+    });
+
+    for (const [name, edit, re] of [
+      ["no hooks.json", (file) => rm(file), /does not exist/],
+      ["a hooks.json that is not JSON", (file) => writeFile(file, "{ nope"), /not valid JSON/],
+      ["no group running it", (file) => writeFile(file, JSON.stringify({ hooks: { PreToolUse: [] } })), /no PreToolUse group/],
+      ["the wrong matcher", async (file) => {
+        const data = JSON.parse(await read(file));
+        data.hooks.PreToolUse[0].matcher = "Bash";
+        await writeFile(file, JSON.stringify(data));
+      }, /matcher is "Bash", not Bash\|apply_patch/],
+    ]) {
+      test(`${name} FAILs the wiring row`, async () => {
+        const { home, project } = await ready(`doctor-codex-${name.replace(/\W+/g, "-")}`);
+        await edit(codexDir(home, "hooks.json"));
+        const { out, status } = doctor({ home, cwd: project });
+        assert.equal(status, 1);
+        assert.match(codexLine(out, "wiring"), /^FAIL /);
+        assert.match(codexLine(out, "wiring"), re);
+      });
+    }
   });
 
   test("an unwired hook FAILs, naming the events, and exits 1", async () => {
