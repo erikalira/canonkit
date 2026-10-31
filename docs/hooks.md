@@ -7,8 +7,21 @@ says and what to do when it fires is in the README
 (["When a gate fires"](../README.md#when-a-gate-fires)); this page is how the hook
 is wired, how it fails, and how a project tunes which paths count.
 
-Hooks exist only in Claude Code. Codex and OpenCode get the agents and the rules,
-which hold by judgment there.
+Claude Code has the full hook. Codex has the two deny gates (see Codex below).
+OpenCode gets the agents and the rules, which hold by judgment there.
+
+## Codex
+
+Codex gets a hook of its own (`canonkit-codex.js`, wired by `--wire-hooks` into
+`$CODEX_HOME/hooks.json`) that enforces only `git-bypass` and `secret-block`; the
+rest of the rules hold by judgment. The `[ENFORCED]` rules in
+`reference/codex-block.md` are held to this table by `scripts/check-enforced.mjs`:
+a harness with `[ENFORCED]` rules needs a `Verified on` row, a real run in which
+the gate denied.
+
+| | Harness | Version | OS | Date | Seen denying |
+| --- | --- | --- | --- | --- | --- |
+| Verified on | codex | codex-cli 0.166.0 | Windows 11 Pro 10.0.26300 | 2026-10-30 | `git commit --no-verify` (Bash); `apply_patch` adding a file with an AWS-key-shaped value |
 
 ## Wiring
 

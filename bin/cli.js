@@ -74,6 +74,7 @@ const HOOK_EVENTS = {
 const ROSTER = ["<!-- agent-team-config:start -->", "<!-- agent-team-config:end -->"];
 const ROUTING = ["<!-- agent-team-config:routing:start -->", "<!-- agent-team-config:routing:end -->"];
 const OPENCODE = ["<!-- agent-team-config:opencode:start -->", "<!-- agent-team-config:opencode:end -->"];
+const CODEX = ["<!-- agent-team-config:codex:start -->", "<!-- agent-team-config:codex:end -->"];
 const PROJECT_SPECIALISTS = [
   "<!-- agent-team-config:specialists:start -->",
   "<!-- agent-team-config:specialists:end -->",
@@ -1184,6 +1185,13 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
     await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
   }
 
+  if (targets.includes("codex")) {
+    // Codex does not load ~/AGENTS.md from a repository below home, so its own
+    // block (in $CODEX_HOME/AGENTS.md) points at it. Its [ENFORCED] lines name
+    // the Codex hook, not the Claude one.
+    await syncBlock(path.join(REFERENCE_DIR, "codex-block.md"), path.join(codexHome(), "AGENTS.md"), CODEX, ctx);
+  }
+
   if (targets.includes("opencode")) {
     // OpenCode's own block, never the routing one: its [ENFORCED] lines name a
     // hook OpenCode does not run. Creating this file is also what stops
@@ -1558,6 +1566,13 @@ async function doctor() {
     else if (!own.length) add("FAIL", "codex hook wiring", `no PreToolUse group in ${tilde(hooksFile)} runs ${codexCommand()} — ${fix}`);
     else if (!own.some((g) => g.matcher === CODEX_MATCHER)) add("FAIL", "codex hook wiring", `its PreToolUse matcher is ${JSON.stringify(own[0].matcher ?? null)}, not ${CODEX_MATCHER} — ${fix}`);
     else add("OK", "codex hook wiring", `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`);
+  }
+
+  // codex AGENTS.override.md: Codex reads it in place of AGENTS.md in the same
+  // folder, so the synced codex block is never loaded while it exists.
+  const override = path.join(codexHome(), "AGENTS.override.md");
+  if (existsSync(override)) {
+    add("WARN", "codex AGENTS.override.md", `${tilde(override)} exists: Codex reads it instead of ${tilde(path.join(codexHome(), "AGENTS.md"))}, so the codex block is not loaded — move its rules into the override or remove the override`);
   }
 
   // log: where every gate and dispatch is recorded; the Stop gate reads it. Checked

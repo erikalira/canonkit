@@ -632,6 +632,53 @@ describe("opencode reference block", () => {
   });
 });
 
+describe("codex reference block", () => {
+  const cxMd = (codexHome) => path.join(codexHome, "AGENTS.md");
+  const MARK = /<!-- agent-team-config:codex:start -->[\s\S]*<!-- agent-team-config:codex:end -->/;
+
+  test("install writes its own block into CODEX_HOME, not into ~/.codex", async () => {
+    const { home, root } = await scratch("codex-reference");
+    const codexHome = path.join(root, "chome");
+    const result = run(["install", "--codex"], { home, env: { CODEX_HOME: codexHome } });
+    assert.equal(result.status, 0, result.out);
+
+    const text = await read(cxMd(codexHome));
+    assert.match(text, MARK);
+    // Codex does not load ~/AGENTS.md from a repo below home: the block points at it.
+    assert.match(text, /read `~\/AGENTS\.md`/);
+    assert.doesNotMatch(text, /agent-team-config:(routing|opencode)/);
+    // Only the two deny gates are marked.
+    const marked = text.split(/\r?\n/).filter((l) => /^- `\[ENFORCED\]`/.test(l));
+    assert.equal(marked.length, 2);
+    assert.match(text, /enforced-by: git-bypass/);
+    assert.match(text, /enforced-by: secret-block/);
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+  });
+
+  test("--claude alone does not touch CODEX_HOME/AGENTS.md", async () => {
+    const { home, root } = await scratch("codex-reference-skipped");
+    const codexHome = path.join(root, "chome");
+    assert.equal(run(["install", "--claude"], { home, env: { CODEX_HOME: codexHome } }).status, 0);
+    assert.equal(existsSync(cxMd(codexHome)), false);
+  });
+
+  test("preserves local rules outside the markers and is idempotent", async () => {
+    const { home, root } = await scratch("codex-reference-preserve");
+    const codexHome = path.join(root, "chome");
+    await mkdir(codexHome, { recursive: true });
+    await writeFile(cxMd(codexHome), "# minhas regras\n\nnao pode sumir\n");
+
+    assert.equal(run(["reference", "--codex"], { home, env: { CODEX_HOME: codexHome } }).status, 0);
+    const first = await read(cxMd(codexHome));
+    assert.match(first, /# minhas regras\s+nao pode sumir/);
+    assert.match(first, MARK);
+
+    const second = run(["reference", "--codex"], { home, env: { CODEX_HOME: codexHome } });
+    assert.match(second.out, /already current: .*AGENTS\.md/);
+    assert.equal(await read(cxMd(codexHome)), first);
+  });
+});
+
 /* ------------------------------------------------------------------ hooks */
 
 describe("hooks", () => {
@@ -1511,6 +1558,27 @@ describe("doctor", () => {
     const before = await snapshot(home);
     doctor({ home, cwd: project });
     assert.deepEqual(await snapshot(home), before);
+  });
+
+  describe("AGENTS.override.md in the Codex home", () => {
+    const check = (out) => line(out, /^\w+ +codex AGENTS\.override\.md:/);
+
+    test("WARNs, without failing, when it shadows the synced AGENTS.md", async () => {
+      const { home, project, root } = await scratch("doctor-codex-override");
+      const codexHome = path.join(root, "chome");
+      runIn(["install", "--wire-hooks"], { home, env: { CODEX_HOME: codexHome } });
+      await writeFile(path.join(codexHome, "AGENTS.override.md"), "mine\n");
+      const { out, status } = doctor({ home, cwd: project, env: { CODEX_HOME: codexHome } });
+      assert.equal(status, 0, out);
+      assert.match(check(out), /^WARN .*AGENTS\.override\.md.*instead of/);
+    });
+
+    test("says nothing when there is no override", async () => {
+      const { home, project, root } = await scratch("doctor-codex-no-override");
+      const codexHome = path.join(root, "chome");
+      runIn(["install", "--wire-hooks"], { home, env: { CODEX_HOME: codexHome } });
+      assert.equal(check(doctor({ home, cwd: project, env: { CODEX_HOME: codexHome } }).out), "");
+    });
   });
 
   describe("the Codex hook", () => {
