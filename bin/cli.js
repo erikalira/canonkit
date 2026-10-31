@@ -1568,6 +1568,16 @@ async function doctor() {
     else add("OK", "codex hook wiring", `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`);
   }
 
+  // codex reference: Codex does not read ~/AGENTS.md from a repo below home, so
+  // its team rules live in its own block. Checked only where Codex was
+  // installed for — any core agent in its agents folder says it was.
+  if (agents.some((a) => existsSync(path.join(codexHome(), "agents", `${a.name}.toml`)))) {
+    const codexMd = path.join(codexHome(), "AGENTS.md");
+    const [cStart, cEnd] = CODEX;
+    if (text(codexMd)?.includes(cStart) && text(codexMd)?.includes(cEnd)) add("OK", "codex reference", `managed block in ${tilde(codexMd)}`);
+    else add("WARN", "codex reference", `no managed block in ${tilde(codexMd)}: Codex does not read ~/AGENTS.md from a repo below home, so it does not see the team's rules — run npx canonkit reference --codex`);
+  }
+
   // codex AGENTS.override.md: Codex reads it in place of AGENTS.md in the same
   // folder, so the synced codex block is never loaded while it exists.
   const override = path.join(codexHome(), "AGENTS.override.md");

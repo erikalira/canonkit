@@ -1560,6 +1560,34 @@ describe("doctor", () => {
     assert.deepEqual(await snapshot(home), before);
   });
 
+  describe("the Codex reference block", () => {
+    const check = (out) => line(out, /^\w+ +codex reference:/);
+
+    test("WARNs, without failing, when a Codex install lost its block", async () => {
+      const { home, project, root } = await scratch("doctor-codex-ref-missing");
+      const env = { CODEX_HOME: path.join(root, "chome") };
+      runIn(["install", "--wire-hooks"], { home, env });
+      await rm(path.join(env.CODEX_HOME, "AGENTS.md"));
+      const { out, status } = doctor({ home, cwd: project, env });
+      assert.equal(status, 0, out);
+      assert.match(check(out), /^WARN .*AGENTS\.md.*reference --codex/);
+    });
+
+    test("is OK after a normal Codex install", async () => {
+      const { home, project, root } = await scratch("doctor-codex-ref-ok");
+      const env = { CODEX_HOME: path.join(root, "chome") };
+      runIn(["install", "--wire-hooks"], { home, env });
+      assert.match(check(doctor({ home, cwd: project, env }).out), /^OK /);
+    });
+
+    test("says nothing on a Claude-only install", async () => {
+      const { home, project, root } = await scratch("doctor-codex-ref-claude");
+      const env = { CODEX_HOME: path.join(root, "chome") };
+      runIn(["install", "--claude"], { home, env });
+      assert.equal(check(doctor({ home, cwd: project, env }).out), "");
+    });
+  });
+
   describe("AGENTS.override.md in the Codex home", () => {
     const check = (out) => line(out, /^\w+ +codex AGENTS\.override\.md:/);
 
