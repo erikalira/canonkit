@@ -70,11 +70,22 @@ describe("check-enforced", () => {
     assert.match(r.stdout, /^OK\t1 \[ENFORCED\] rule/);
   });
 
-  test("a block whose harness ships no adapter fails, Verified-on row or not", async () => {
-    const r = run(await root({ "opencode-block.md": bullet(" <!-- enforced-by: git-bypass -->") }, "| Verified on | opencode | 1 | 2 | 3 |\n"));
+  // OpenCode's plugin hook cannot prompt either: its `git` gate is text.
+  test("a kind that is not `enforce` in the opencode adapter fails", async () => {
+    const r = run(await root({ "opencode-block.md": bullet(" <!-- enforced-by: git -->") }, "| Verified on | opencode | 1 | 2 | 3 |\n"));
     assert.equal(r.status, 1);
-    assert.match(r.stdout, /opencode-block\.md: has \[ENFORCED\] rules but no opencode adapter/);
+    assert.match(r.stdout, /opencode-block\.md:5: 'git' is 'text' in the opencode adapter, not 'enforce'/);
   });
+
+  test("a kind the opencode adapter enforces passes, with its Verified-on row", async () => {
+    const r = run(await root({ "opencode-block.md": bullet(" <!-- enforced-by: git-bypass,secret-block -->") }, "| Verified on | opencode | 1 | 2 | 3 |\n"));
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    assert.match(r.stdout, /^OK\t1 \[ENFORCED\] rule/);
+  });
+
+  // The "block has [ENFORCED] rules but no adapter" branch has no real block left to
+  // point at: claude, codex and opencode all ship one. It stays as a guard for a
+  // fourth block added to BLOCKS before its adapter.
 
   test("a non-Claude block with [ENFORCED] items and no Verified-on row fails", async () => {
     const r = run(await root({ "opencode-block.md": bullet(" <!-- enforced-by: git-bypass -->") }, "# Hooks\n"));

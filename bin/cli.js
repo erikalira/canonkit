@@ -41,10 +41,17 @@ const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 // {"type":"commonjs"} marker that keeps both CommonJS under a parent package
 // that says "module". installCodexHooks copies it to $CODEX_HOME/canonkit/, the
 // adapter first: the command wired into hooks.json names HOOK_FILES.codex[0].
+// opencode: the same shape as codex, for opencodeDir()/canonkit/. Listed here,
+// not yet installed: OpenCode wiring is a later change (slice 11).
 const HOOK_FILES = {
   claude: ["canonkit-hook.js"],
   codex: ["canonkit-codex.js", "canonkit-hook.js", "package.json"],
+  opencode: ["canonkit-opencode.js", "canonkit-hook.js", "package.json"],
 };
+// The OpenCode 2 plugin entry: an ESM file that loads ../canonkit/canonkit-opencode.js.
+// Kept out of HOOK_FILES because its destination differs (opencodeDir()/plugins/,
+// where OpenCode loads every file as a plugin) and it is not CommonJS.
+const OPENCODE_PLUGIN = Object.freeze({ from: "opencode-plugin.mjs", to: "plugins/canonkit.js" });
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
@@ -2349,6 +2356,7 @@ export {
   codexAgent,
   CODEX_MODELS,
   HOOK_FILES,
+  OPENCODE_PLUGIN,
   opencodeAgent,
   replaceProjectBlock,
   readProjectBlock,

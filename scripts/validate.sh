@@ -468,6 +468,14 @@ if command -v node >/dev/null 2>&1; then
     rm -rf "$hook_home"
   done
 
+  # The OpenCode plugin entry is ESM and loads ../canonkit/ only where it is
+  # installed, so it cannot be run from here; test/hook-opencode.test.js imports
+  # it from an installed layout. This catches a syntax error before the tests run.
+  for plugin in hooks/*.mjs; do
+    [ -e "$plugin" ] || continue
+    if node --check "$plugin" 2>/dev/null; then pass "$plugin parses"; else fail "$plugin: syntax error"; fi
+  done
+
   # The dashboard is CommonJS for the same reason as the hooks, and is only ever
   # run by hand — so nothing else would notice it stopped parsing.
   for f in dashboard/*.js; do

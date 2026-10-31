@@ -9,7 +9,7 @@
  *      lines come back in `logs`). The context-band state is the Claude
  *      adapter's, written by main(); test/canonkit-hook.test.js covers it.
  *   2. PARITY — one table of normalized events and the outcome each adapter must
- *      produce: a column per discovered adapter (claude, codex), written by hand
+ *      produce: a column per discovered adapter (claude, codex, opencode), written by hand
  *      and held to the adapter's modes by section 4.
  *   3. GATE MAPS — adapters are discovered, not listed: every .js file that
  *      HOOK_FILES (bin/cli.js) ships is required and its *_GATE_MODES exports are
@@ -337,50 +337,51 @@ describe("a missing or non-string cwd still denies", () => {
 // adapter. `env` overrides the default env for the rows that read the log.
 // ADAPTERS is discovered through HOOK_FILES, so a new adapter turns "every row
 // has a column for every adapter" red until each PARITY row gets its column.
-// Codex enforces only the two denies: an ask or a block is an allow there, with
-// the kind kept (test/hook-codex.test.js drives the real process).
+// Codex and OpenCode enforce only the two denies: an ask or a block is an allow
+// there, with the kind kept (test/hook-codex.test.js drives the real process,
+// test/hook-opencode.test.js the plugin's hook).
 const P = () => fx.plain;
 const C = () => fx.cfg;
 const PARITY = [
   // git-bypass
-  { name: "git commit --no-verify", evt: () => shell(P(), "git commit --no-verify -m wip"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" } } },
-  { name: "git push --no-verify through PowerShell", evt: () => shell(P(), "git push --no-verify", "PowerShell"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" } } },
+  { name: "git commit --no-verify", evt: () => shell(P(), "git commit --no-verify -m wip"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" }, opencode: { decision: "deny", kind: "git-bypass" } } },
+  { name: "git push --no-verify through PowerShell", evt: () => shell(P(), "git push --no-verify", "PowerShell"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" }, opencode: { decision: "deny", kind: "git-bypass" } } },
   // secret-block
-  { name: "shell writes a cloud key", evt: () => shell(P(), `echo ${FAKE_AWS_KEY} > config/aws.txt`), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" } } },
-  { name: "Write with a private key", evt: () => editAt(P(), "src/app.ts", FAKE_PEM, "Write"), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" } } },
-  { name: "secret deny beats a test-file path", evt: () => editAt(P(), "src/app.test.ts", FAKE_PEM), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" } } },
+  { name: "shell writes a cloud key", evt: () => shell(P(), `echo ${FAKE_AWS_KEY} > config/aws.txt`), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" }, opencode: { decision: "deny", kind: "secret-block" } } },
+  { name: "Write with a private key", evt: () => editAt(P(), "src/app.ts", FAKE_PEM, "Write"), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" }, opencode: { decision: "deny", kind: "secret-block" } } },
+  { name: "secret deny beats a test-file path", evt: () => editAt(P(), "src/app.test.ts", FAKE_PEM), expect: { claude: { decision: "deny", kind: "secret-block" }, codex: { decision: "deny", kind: "secret-block" }, opencode: { decision: "deny", kind: "secret-block" } } },
   // git
-  { name: "git commit", evt: () => shell(P(), "git commit -m wip"), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" } } },
-  { name: "a message mentioning --no-verify is not a bypass", evt: () => shell(P(), 'git commit -m "never use --no-verify"'), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" } } },
-  { name: "an empty event name is gated as PreToolUse", evt: () => ({ ...shell(P(), "git push"), event: "" }), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" } } },
+  { name: "git commit", evt: () => shell(P(), "git commit -m wip"), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" }, opencode: { decision: "allow", kind: "git" } } },
+  { name: "a message mentioning --no-verify is not a bypass", evt: () => shell(P(), 'git commit -m "never use --no-verify"'), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" }, opencode: { decision: "allow", kind: "git" } } },
+  { name: "an empty event name is gated as PreToolUse", evt: () => ({ ...shell(P(), "git push"), event: "" }), expect: { claude: { decision: "ask", kind: "git" }, codex: { decision: "allow", kind: "git" }, opencode: { decision: "allow", kind: "git" } } },
   // secret-ask
-  { name: "edit with a soft credential", evt: () => editAt(P(), "src/config.ts", SOFT_SECRET), expect: { claude: { decision: "ask", kind: "secret-ask" }, codex: { decision: "allow", kind: "secret-ask" } } },
-  { name: "shell writes a soft credential", evt: () => shell(P(), `echo "${SOFT_SECRET}" > src/config.ts`), expect: { claude: { decision: "ask", kind: "secret-ask" }, codex: { decision: "allow", kind: "secret-ask" } } },
+  { name: "edit with a soft credential", evt: () => editAt(P(), "src/config.ts", SOFT_SECRET), expect: { claude: { decision: "ask", kind: "secret-ask" }, codex: { decision: "allow", kind: "secret-ask" }, opencode: { decision: "allow", kind: "secret-ask" } } },
+  { name: "shell writes a soft credential", evt: () => shell(P(), `echo "${SOFT_SECRET}" > src/config.ts`), expect: { claude: { decision: "ask", kind: "secret-ask" }, codex: { decision: "allow", kind: "secret-ask" }, opencode: { decision: "allow", kind: "secret-ask" } } },
   // perf-budget
-  { name: "edit lighthouserc.json", evt: () => editAt(P(), "lighthouserc.json"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" } } },
-  { name: "PowerShell writes .size-limit.json", evt: () => shell(P(), "Set-Content -Path .size-limit.json -Value x", "PowerShell"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" } } },
-  { name: "config perfBudgets adds a file", evt: () => editAt(C(), "perf/limits.yml"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" } } },
+  { name: "edit lighthouserc.json", evt: () => editAt(P(), "lighthouserc.json"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" }, opencode: { decision: "allow", kind: "perf-budget" } } },
+  { name: "PowerShell writes .size-limit.json", evt: () => shell(P(), "Set-Content -Path .size-limit.json -Value x", "PowerShell"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" }, opencode: { decision: "allow", kind: "perf-budget" } } },
+  { name: "config perfBudgets adds a file", evt: () => editAt(C(), "perf/limits.yml"), expect: { claude: { decision: "ask", kind: "perf-budget" }, codex: { decision: "allow", kind: "perf-budget" }, opencode: { decision: "allow", kind: "perf-budget" } } },
   // high-risk-surface
-  { name: "edit an auth file", evt: () => editAt(P(), "src/auth/session.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
-  { name: "shell writes a migration", evt: () => shell(P(), "echo x > db/migrations/001_init.sql"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
-  { name: "edit the gate config itself", evt: () => editAt(C(), ".claude/canonkit.json", "{}"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
-  { name: "config include adds a path", evt: () => editAt(C(), "src/billing/charge.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
-  { name: "config exclude never reaches a strong term", evt: () => editAt(C(), "src/legacy/auth/x.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
-  { name: "a subagent's edit is gated the same", evt: () => ({ ...editAt(P(), "src/auth/session.ts"), agentId: "a1", agentType: "bob" }), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "edit an auth file", evt: () => editAt(P(), "src/auth/session.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "shell writes a migration", evt: () => shell(P(), "echo x > db/migrations/001_init.sql"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "edit the gate config itself", evt: () => editAt(C(), ".claude/canonkit.json", "{}"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "config include adds a path", evt: () => editAt(C(), "src/billing/charge.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "config exclude never reaches a strong term", evt: () => editAt(C(), "src/legacy/auth/x.ts"), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "a subagent's edit is gated the same", evt: () => ({ ...editAt(P(), "src/auth/session.ts"), agentId: "a1", agentType: "bob" }), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
   // the project dir is not the cwd: a config found only through env.projectDir
-  { name: "config found through env.projectDir, not cwd", evt: () => ({ ...editAt(C(), "src/billing/charge.ts"), cwd: P() }), env: () => ({ projectDir: C() }), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" } } },
+  { name: "config found through env.projectDir, not cwd", evt: () => ({ ...editAt(C(), "src/billing/charge.ts"), cwd: P() }), env: () => ({ projectDir: C() }), expect: { claude: { decision: "ask", kind: "high-risk-surface" }, codex: { decision: "allow", kind: "high-risk-surface" }, opencode: { decision: "allow", kind: "high-risk-surface" } } },
   // definition-of-done
-  { name: "Stop after an unreviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "block", kind: "definition-of-done" }, codex: { decision: "allow", kind: "definition-of-done" } } },
+  { name: "Stop after an unreviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "block", kind: "definition-of-done" }, codex: { decision: "allow", kind: "definition-of-done" }, opencode: { decision: "allow", kind: "definition-of-done" } } },
   // allow
-  { name: "a plain command", evt: () => shell(P(), "ls -la"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "git status", evt: () => shell(P(), "git status"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "an ordinary edit", evt: () => editAt(P(), "src/utils/format.ts"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "a presentational sessions folder", evt: () => editAt(P(), "src/components/sessions/List.tsx"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "config exclude quiets an ambiguous word", evt: () => editAt(C(), "src/legacy/login/form.ts"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "Stop after a reviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-REVIEWED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "Stop already continued once", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED", stopHookActive: true }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "dispatching a subagent", evt: () => ({ event: "PreToolUse", tool: "Agent", toolInput: { subagent_type: "quinn" }, cwd: P(), session: "CORE" }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
-  { name: "PostToolUse never gates", evt: () => ({ ...editAt(P(), "src/auth/session.ts"), event: "PostToolUse" }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null } } },
+  { name: "a plain command", evt: () => shell(P(), "ls -la"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "git status", evt: () => shell(P(), "git status"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "an ordinary edit", evt: () => editAt(P(), "src/utils/format.ts"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "a presentational sessions folder", evt: () => editAt(P(), "src/components/sessions/List.tsx"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "config exclude quiets an ambiguous word", evt: () => editAt(C(), "src/legacy/login/form.ts"), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "Stop after a reviewed gate", evt: () => ({ event: "Stop", cwd: P(), session: "S-REVIEWED" }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "Stop already continued once", evt: () => ({ event: "Stop", cwd: P(), session: "S-GATED", stopHookActive: true }), env: () => ({ logDir: fx.stopLogs }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "dispatching a subagent", evt: () => ({ event: "PreToolUse", tool: "Agent", toolInput: { subagent_type: "quinn" }, cwd: P(), session: "CORE" }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
+  { name: "PostToolUse never gates", evt: () => ({ ...editAt(P(), "src/auth/session.ts"), event: "PostToolUse" }), expect: { claude: { decision: "allow", kind: null }, codex: { decision: "allow", kind: null }, opencode: { decision: "allow", kind: null } } },
 ];
 
 describe("parity table: normalized event -> outcome per adapter", () => {

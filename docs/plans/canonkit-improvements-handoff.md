@@ -618,6 +618,32 @@ It is a WARN, not a FAIL, until doctor is target-aware (see the backlog above).
 - **Codex** (the block in `codexHome()/AGENTS.md`): implemented after `a2c0bff`.
 - **OpenCode** (the block in `opencodeDir()/AGENTS.md`): goes with slice 12-opencode.
 
+**Slice 8: OpenCode 2 only (2026-10-31, decided by the user; Archie approved with conditions).**
+This machine runs `opencode v2.1.4` (`@opencode/cli`), and OpenCode 2 does not run V1 plugins:
+"V1 plugin implementations do not run in V2" (github.com/anomalyco/opencode, branch `dev`,
+`services/www/src/docs/content/migrate-v1.mdx` and `.../build/plugins/migrate-v1.mdx`). The V1
+shape that §4 item 2 and slice 8 were designed on (`tool.execute.before(input, output)`, a function
+export) comes from <https://opencode.ai/docs/plugins/>, which still documents V1. Slice 8 is
+V2-only: `export default { id, setup }` registers `ctx.tool.hook("execute.before", …)`, whose
+event is `{ tool, sessionID, agent, messageID, id, input }` with no cwd
+(`packages/plugin/src/promise/tool.ts`, `.../build/plugins/server.mdx`), and the tools are
+`shell {command}`, `edit {path, newString}`, `write {path, content}` and `patch {patchText}`
+(`services/www/src/docs/content/tools.mdx`). Row 8 of the 2.2 plan (line 466) and item 4 of
+"Decided by the user" (:514) are superseded on these points; Spencer rewords them formally in
+slice 13. Before it, a refactor moved the apply_patch reader into the core (`parsePatch`,
+`patchWrites`), shared by Codex and OpenCode. The plugin entry is `OPENCODE_PLUGIN` in
+`bin/cli.js`, not a `HOOK_FILES` entry.
+- **Slice 9 also checks** that the ESM in `plugins/canonkit.js` loads under OpenCode's Bun runtime
+  when the nearest `package.json` has no `type` or has `"commonjs"`. If it does not, try
+  `plugins/canonkit.mjs` instead.
+- **Slice 11:**
+  - consume `OPENCODE_PLUGIN`;
+  - refuse `--opencode --wire-hooks` below OpenCode 2, or have doctor WARN, and document
+    "OpenCode 2+";
+  - before starting, replan around `ctx.permission.hook("evaluate")` (a V2 plugin can set
+    `effect: "ask"`) and the V2 `permissions` format (`{action: "shell", resource, effect}`,
+    last match wins), which replaces the V1 `permission.bash` merge.
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).
