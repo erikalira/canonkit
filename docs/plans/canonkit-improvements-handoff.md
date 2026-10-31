@@ -603,6 +603,21 @@ Carried forward:
   - `CODEX_HOME` moves where the trusted command points;
   - the byte-identical doctor rows are the only way a swapped `canonkit/` file is caught.
 
+**Slice 12, OpenCode half: deferred (2026-10-31, decided by the user).** It was started before
+slices 8, 9 and 11. None of them exists on this branch: no `hooks/canonkit-opencode.js`, no
+`HOOK_FILES.opencode`, no slice 9 record, no `test/fixtures/opencode/`. The OpenCode block
+therefore has nothing to mark `[ENFORCED]`, and no "Verified on" row can be written. The
+"prompts on `git commit`/`git push`" line depends on slice 11. `opencode-block.md:16-21`
+("Nothing here is enforced") stays true, and `check-enforced.mjs` stays green. The order is now
+8 → 9 → 11 → 12-opencode. If slice 9's gate fails, OpenCode leaves 2.2, as the plan already says.
+
+**Doctor: WARN on a missing harness block (2026-10-31, decided by the user).** The WARN appears
+only when there is evidence the harness was installed for, meaning a core agent is in its agents
+folder (the same rule as the "opencode agents" rows). That avoids noise for Claude-only users.
+It is a WARN, not a FAIL, until doctor is target-aware (see the backlog above).
+- **Codex** (the block in `codexHome()/AGENTS.md`): implemented after `a2c0bff`.
+- **OpenCode** (the block in `opencodeDir()/AGENTS.md`): goes with slice 12-opencode.
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).
