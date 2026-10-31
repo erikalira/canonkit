@@ -576,6 +576,33 @@ Answers:
   - For Gard (condition 9): code swapped in `~/.codex/canonkit/` behind a trusted command is not
     re-reviewed. Weigh this against the same exposure for Claude's hook in `~/.claude/hooks/`.
 
+**Codex, slice 10 (2026-10-31, commit `ee50f08`).** `npm test` 597 pass, 0 fail, 3 skipped;
+validate green; `canonkit-hook.test.js` unchanged. The `hooks.json` schema was checked against
+the Codex hooks docs (learn.chatgpt.com/docs/hooks.md) and matches this record. Changes beyond
+row 10:
+- Install refuses before any write when the `CODEX_HOME` path holds `"`, `$` or a backtick,
+  because the quoted command would expand and the hook would fail open without a word.
+- A `canonkit-codex.js` command on another path is rewritten in place. A duplicate or shared
+  group is reported and left alone, so the user's trust indices do not shift.
+- `--claude --opencode --wire-hooks` wires Claude only and logs that OpenCode is not wired.
+  OpenCode alone still refuses.
+
+Carried forward:
+- **Slice 15:** the docs name only `~/.codex/hooks.json`. That Codex reads `hooks.json` from
+  `$CODEX_HOME` is assumed; check it with a scratch `CODEX_HOME`.
+- **Slice 13:** the menu text (`~/.codex/agents`) and the `--wire-hooks` usage line
+  (settings.json only) are stale.
+- **Backlog:** doctor is still Claude-only outside the Codex rows. A Codex-only user gets FAIL
+  rows for the Claude agents, blocks and hook, so it needs a target-aware pass.
+- **Gard, end of release:** the exact-command regex, the shared and duplicate handling, and the
+  append-only order. Also:
+  - the `.bak` copies whatever `hooks.json` holds;
+  - both pre-write refusals;
+  - Claude's command takes the same quoting exposure through `os.homedir()` and is not
+    guarded;
+  - `CODEX_HOME` moves where the trusted command points;
+  - the byte-identical doctor rows are the only way a swapped `canonkit/` file is caught.
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).
