@@ -519,6 +519,63 @@ Leave out Gard P3-b: it affects Claude only, and the 2.2 adapters write no log. 
 P3-c, which is 3.0, and the unexpanded-variable path, which is stricter and not weaker. Leave
 out `agents/virgo.md`, an agent file for Virgo at any time, and the pre-2.0 specialist leftover.
 
+#### 2.2 verification record
+
+**Codex, slice 7 (2026-10-30, Windows 11 Pro 10.0.26300, `codex-cli 0.166.0`, model
+`gpt-5.6-luna`).** The user drove the session. Setup: the real `~/.codex`, with `config.toml`
+backed up (`hooks.json` and `canonkit/` did not exist), the three `HOOK_FILES.codex` files in
+`~/.codex/canonkit/`, and four PreToolUse groups in `~/.codex/hooks.json`: `Bash`, `apply_patch`,
+`Edit|Write`, and one with no matcher, capture only. Each group ran a scratch wrapper that teed
+stdin to a file and ran the adapter. Restored afterwards (`config.toml` hash matches the backup).
+
+The versions came first. The npm CLI on PATH was 0.130.0, which rejects
+`service_tier = "default"` written by the desktop app. The app's own CLI, 0.142.4, got an
+empty model list from the server. The test ran on 0.166.0 (npm latest). `gpt-5.5` is not
+offered to a ChatGPT account on 0.166.0.
+
+| Run | Expected | Seen in Codex | Capture |
+|---|---|---|---|
+| (a) `git commit --no-verify -m x` | deny | "Blocked by hook", the canonkit reason verbatim; the model did not retry | `Bash` + catch-all fired; `tool_name: "Bash"`, `tool_input: {"command": "<string>"}` |
+| (b) `apply_patch` adding `creds.txt` with an AKIA test key | deny | "Blocked by hook" twice (two groups), the Gard reason; file not created | `apply_patch` and `Edit\|Write` both fired; `tool_name: "apply_patch"`, patch text in `tool_input.command`; `*** Add File:` carries an absolute Windows path |
+| (c) `git commit -m x` | runs | ran; git then failed on `.git/index.lock` (Codex's Windows sandbox, not canonkit) | adapter stdout empty, exit 0 |
+
+**Gate: (a) and (b) deny, so Codex stays in 2.2.**
+
+Answers:
+- **Matcher names.** A shell call fires `Bash`; an `apply_patch` call fires both `apply_patch` and
+  `Edit|Write`, and its input still says `apply_patch`. Regex alternation works. Slice 10 wires
+  one group, `Bash|apply_patch`.
+- **Input shape.** Keys: `session_id, turn_id, transcript_path, cwd, hook_event_name, model,
+  permission_mode, tool_name, tool_input, tool_use_id`. There is no `agent_id` on a main-session
+  call, and `transcript_path` is a string. These match `normalizeCodex`'s first guesses, so it
+  needs no fix. Scrubbed captures are in `test/fixtures/codex/`, and `test/hook-codex.test.js`
+  runs each one through the spawned adapter.
+- **Windows shell.** Codex runs the hook command through `powershell.exe` (`codex.exe` →
+  `powershell.exe` → `node.exe`). `node "<path>" args` works, so `commandWindows` is not
+  needed. The model's shell command arrives as a plain string, not wrapped in
+  `powershell -Command`.
+- **A deleted `canonkit-hook.js` fails open, silently.** The adapter wrote its one stderr line
+  (`MODULE_NOT_FOUND`) and exited 0, and the command ran. Codex showed nothing: no line and no
+  warning. Doctor is the only place a broken install is seen, so slice 10's doctor rows are
+  required.
+- **`~/AGENTS.md` from a repo below home: not read.** The model answered "No" when asked for its
+  first heading. That matches the docs (`~/.codex/AGENTS.md`, then the git root down to `cwd`).
+  Slice 12's codex block points at `~/AGENTS.md`.
+- **Trust hash (condition 9).** `/hooks` trust writes
+  `[hooks.state.'<abs>\hooks.json:pre_tool_use:<group>:<hook>'] trusted_hash = "sha256:…"` to
+  `config.toml`. The group with no matcher also got `enabled = true`. The hash is not a plain
+  sha256 of the command or the entry's JSON.
+  - A comment appended to `canonkit-hook.js`, `canonkit-codex.js` and the file the command names
+    left every hash unchanged, and the hook kept running after a restart: **file contents are
+    not covered.**
+  - Changing only group 0's command put the hooks up for review on reopen. The user approved
+    them, group 0's hash changed (`3c11518b…` → `cbda13d3…`), the other three did not, and the
+    hook then ran with the new arguments: **the command is covered.**
+  - For slice 10: with a fixed command, trust is given once. Install prints "run /hooks" only
+    when the entry changes, not when `canonkit/` files change.
+  - For Gard (condition 9): code swapped in `~/.codex/canonkit/` behind a trusted command is not
+    re-reviewed. Weigh this against the same exposure for Claude's hook in `~/.claude/hooks/`.
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).

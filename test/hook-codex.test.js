@@ -5,8 +5,8 @@
  * folder holding exactly HOOK_FILES.codex, under a parent package that says
  * "type": "module" (the condition-5 case: the folder's own package.json must keep
  * both files CommonJS). Input is shaped like the Codex hooks docs describe it
- * (learn.chatgpt.com/docs/hooks.md, read 2026-10-30); the shapes are not yet
- * checked against a real capture, which replaces them with test/fixtures/codex/.
+ * (learn.chatgpt.com/docs/hooks.md, read 2026-10-30), and the real captures in
+ * test/fixtures/codex/ (codex-cli 0.166.0, Windows, slice 7) pin those shapes.
  *
  * Asserted: stdout and exit code. Codex honours a deny and nothing softer, so
  * the adapter prints a deny for an `enforce` kind and nothing for anything else.
@@ -209,6 +209,44 @@ describe("codex adapter: stdout and exit code", () => {
 
 // normalizeCodex in-process: what each call becomes, where stdout cannot show
 // it (the path gates are text in Codex, so they print nothing either way).
+// Real Codex stdin, scrubbed (slice 7). <CWD> and <FAKE_AWS_KEY> are filled in
+// here, so the key is never spelled out in the repository.
+const FIXTURES_DIR = path.join(REPO, "test", "fixtures", "codex");
+const FIXTURES = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith(".json")).sort();
+const fixtureInput = (file) => {
+  const { input } = JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, file), "utf8"));
+  const text = JSON.stringify(input)
+    .split("<CWD>").join(JSON.stringify(PROJ).slice(1, -1))
+    .split("<FAKE_AWS_KEY>").join(FAKE_AWS_KEY);
+  return JSON.parse(text);
+};
+
+describe("codex adapter: real captures (test/fixtures/codex)", () => {
+  test("there are captures for both tools Codex gates", () => {
+    const tools = FIXTURES.map((f) => JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, f), "utf8")).input.tool_name);
+    assert.deepEqual([...new Set(tools)].sort(), ["Bash", "apply_patch"]);
+  });
+  for (const file of FIXTURES) {
+    test(`${file}: the outcome seen in Codex`, () => {
+      const { expect, reasonWord } = JSON.parse(fs.readFileSync(path.join(FIXTURES_DIR, file), "utf8"));
+      const r = spawnAdapter(fixtureInput(file));
+      if (expect === "deny") denied(r, new RegExp(reasonWord));
+      else silent(r);
+    });
+    test(`${file}: the docs-shaped helper sends the same keys`, () => {
+      const real = fixtureInput(file);
+      assert.deepEqual(Object.keys(codexInput(real.tool_name, real.tool_input)).sort(), Object.keys(real).sort());
+    });
+  }
+  test("apply_patch: Codex sends an absolute Windows path, and it is the gated file", () => {
+    const evts = normalizeCodex(fixtureInput("apply-patch-add-cloud-key.json"), "/f");
+    assert.equal(evts.length, 1);
+    assert.equal(evts[0].tool, "Write");
+    assert.equal(evts[0].toolInput.file_path, `${PROJ}\\creds.txt`);
+    assert.match(evts[0].toolInput.content, new RegExp(FAKE_AWS_KEY));
+  });
+});
+
 describe("normalizeCodex: one Codex call into evaluate()'s events", () => {
   const files = (evts) => evts.map((e) => [e.tool, e.toolInput.file_path, e.toolInput.content]);
 

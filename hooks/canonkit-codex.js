@@ -45,11 +45,15 @@ const CODEX_GATE_MODES = Object.freeze({
   'dispatch-log': 'off',
 });
 
-// ---- CODEX'S INPUT, AS ASSUMED (2.2, from the docs; not yet from a capture) ----
-// Every assumption about the shape of Codex's stdin is in this block, so a real
-// capture (slice 7: test/fixtures/codex/) corrects it in one place.
+// ---- CODEX'S INPUT (2.2, from the docs; the first shapes checked on a capture) ----
+// Every assumption about the shape of Codex's stdin is in this block, so a new
+// capture corrects it in one place.
 // Source: learn.chatgpt.com/docs/hooks.md and the PreToolUse input schema
-// (codex-rs/hooks/schema/generated), read 2026-10-30.
+// (codex-rs/hooks/schema/generated), read 2026-10-30. Captured from
+// codex-cli 0.166.0 on Windows (test/fixtures/codex/): the stdin keys below
+// (no agent_id/agent_type on a main-session call), Bash with a string
+// tool_input.command, apply_patch with the patch in tool_input.command and an
+// absolute Windows path after `*** Add File:`. The other shapes are defensive.
 //   stdin    one JSON object: hook_event_name "PreToolUse", tool_name,
 //            tool_input, tool_use_id, cwd, session_id, transcript_path (string
 //            or null), turn_id, model, permission_mode; agent_id/agent_type on a
