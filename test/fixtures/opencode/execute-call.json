@@ -1,0 +1,15 @@
+{
+  "_source": "opencode v2.1.4 (Bun 1.4.4), model opencode/big-pickle, Windows 11 Pro 10.0.26300, 2026-10-31 (slice 9). Real execute.before event as the installed plugin received it; ids, cwd and the test key replaced by <PLACEHOLDERS>, key order kept. Captured main session; the execute (Code Mode) tool is not gated, and its catalog held no shell/write/edit/patch.",
+  "expect": "pass",
+  "cwd": "<CWD>",
+  "event": {
+    "tool": "execute",
+    "sessionID": "<SESSION_ID_6>",
+    "agent": "build",
+    "messageID": "<MESSAGE_ID_6>",
+    "id": "<CALL_ID_6>",
+    "input": {
+      "code": "return await tools.shell({ command: \"git commit --no-verify -m x .\" });"
+    }
+  }
+}

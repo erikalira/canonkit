@@ -1,0 +1,16 @@
+{
+  "_source": "opencode v2.1.4 (Bun 1.4.4), model opencode/big-pickle, Windows 11 Pro 10.0.26300, 2026-10-31 (slice 9). Real execute.before event as the installed plugin received it; ids, cwd and the test key replaced by <PLACEHOLDERS>, key order kept. Captured main session.",
+  "expect": "deny",
+  "reasonWord": "skips the repository",
+  "cwd": "<CWD>",
+  "event": {
+    "tool": "shell",
+    "sessionID": "<SESSION_ID_1>",
+    "agent": "build",
+    "messageID": "<MESSAGE_ID_1>",
+    "id": "<CALL_ID_1>",
+    "input": {
+      "command": "git commit --no-verify -m x ."
+    }
+  }
+}

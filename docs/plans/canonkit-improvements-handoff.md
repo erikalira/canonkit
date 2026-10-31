@@ -644,6 +644,94 @@ slice 13. Before it, a refactor moved the apply_patch reader into the core (`par
     `effect: "ask"`) and the V2 `permissions` format (`{action: "shell", resource, effect}`,
     last match wins), which replaces the V1 `permission.bash` merge.
 
+**OpenCode, slice 9 (2026-10-31, Windows 11 Pro 10.0.26300, `opencode v2.1.4`, Bun 1.4.4, model
+`opencode/big-pickle`).** Bob drove the sessions with `opencode run --standalone --format json`,
+approved by the user; every step reported `cost: 0`. Setup: the real `~/.config/opencode`
+(`XDG_CONFIG_HOME` unset), backed up with a hash per file. `plugins/canonkit.js` and
+`canonkit/{canonkit-hook.js, package.json}` were copied from `hooks/` unchanged, and
+`canonkit/canonkit-opencode.js` was a scratch wrapper that appended each event to a capture file
+and delegated to the real adapter beside it. The repo was a scratch git repo. Restored
+afterwards; every hash matches the backup.
+
+| Run | Expected | Seen in OpenCode | Capture |
+|---|---|---|---|
+| (a) `git commit --no-verify -m x` | deny | the shell call failed with the canonkit reason verbatim; the model did not retry; no commit | `tool: "shell"`, `input: {command}` |
+| (b) write `creds.txt` with an AKIA test key | deny | the write failed with the Gard reason; file not created | `tool: "write"`, `input: {path: "creds.txt", content}`: the path as the model wrote it, relative |
+| (c) `git commit -m x` | runs | ran | the hook did not throw |
+| (a) through a subagent | deny | the `subagent` call passed (not gated); the child's shell call was denied | parent `tool: "subagent"`, `input: {agent, description, prompt}`; the child's event has its own `sessionID` and `agent: "general"` |
+| (a) through `execute` (Code Mode; V2 has no batch tool, #5894 is V1) | deny, or no path | no path: `Unknown tool 'shell'`. The catalog holds only `tools.opencode.*` (MCP resources, models, session, worktree), with no shell, write, edit or patch | `tool: "execute"`, `input: {code}`, not gated |
+| (a) with the shipped adapter (no wrapper), parent `package.json` `"type": "module"` | deny | denied | — |
+
+**Gate: (a) and (b) deny in the main session, so OpenCode stays in 2.2.**
+
+Answers:
+- **Tool ids and args.** The event keys are exactly `tool, sessionID, agent, messageID, id, input`,
+  and `input` arrives as an object. Shell is `shell {command}` and write is `write {path,
+  content}`, which matches slice 8's assumptions, so `normalizeOpencode` needs no fix. `edit` and
+  `patch` were not seen: patch is offered only to GPT models, and the model never chose edit.
+  Scrubbed captures are in `test/fixtures/opencode/`, and `test/hook-opencode.test.js` runs each
+  one through the installed plugin's hook.
+- **(b) needed a placeholder.** On the first try the model refused to write an AKIA-shaped value,
+  citing the "never write a secret into a file" rule in `~/AGENTS.md`, and made no call. With
+  `AKIA` + `EXAMPLEEXAMPLE00` (it matches `HARD_SECRET`), introduced as a hook test, it made the
+  call. Slice 15 uses that prompt.
+- **Config location on native Windows.** `opencode debug paths` gives `~/.config/opencode`, and
+  `%APPDATA%\opencode` is not used. `XDG_CONFIG_HOME` is honored: config moves, while data,
+  state and the log stay under `~/.local`. This matches `opencodeDir()`. Plugins load from
+  `plugins/` (log: `loading plugin id=…\plugins\canonkit.js`). `opencode plugin list` and the
+  `plugin.list` API list only package plugins ("No plugins found"), so doctor cannot use them.
+- **Module types under Bun.** The ESM `plugins/canonkit.js` loads both with a parent
+  `package.json` that has no `type` (the real one) and with `"type": "module"`. The CJS files load
+  in both cases: Bun honors `canonkit/package.json` `commonjs`. `plugins/canonkit.mjs` is not
+  needed.
+- **Loading cannot exit OpenCode.** Every run continued past the plugin load. **Fail-open:** with
+  `canonkit-hook.js` removed, the plugin wrote its one stderr line, registered nothing, and
+  `git commit --no-verify` ran. That line shows only with `--print-logs` and is not in
+  `opencode.log`, so, as with Codex, doctor is the only place a broken install is seen.
+- **The hook runs before the permission check.** A call that a configured `ask` then rejected was
+  still captured, so a canonkit deny lands before any prompt.
+- **Permissions (V2).** The format is an ordered `permissions` array of `{action, resource,
+  effect}`, and **the last match wins**: `shell * allow` then `shell "git commit *" ask` gave an
+  ask, and the reverse order ran the commit. A pattern ending in ` *` also matches the bare
+  command. Patterns are literal over the scanner's command string:
+  `git -c user.name=t commit -m x` does not match `git commit *` and ran with no ask. In a
+  non-interactive `opencode run`, `ask` is auto-rejected ("permission requested: shell (…);
+  auto-rejecting"), and `--auto` approves it. V1 `permission` is still read and translated, as
+  `opencode debug config` shows without a model call:
+  - `bash` becomes `shell`, and object keys keep their order;
+  - a string `"bash": "ask"` becomes `shell * ask`, and `"permission": "allow"` becomes
+    `* * allow`;
+  - when both formats are present, the V1 rules come first and V2 `permissions` are appended,
+    whatever the key order. An ask merged into V1 `permission.bash` is therefore overridden by an
+    existing V2 `shell * allow`.
+- **Skills in both `~/.agents/skills` and `~/.claude/skills`.** OpenCode watches both, plus
+  `~/.config/opencode/skill(s)`. The model's skill list shows each duplicated name once
+  (`orchestrate`, `chrome-extensions`, `modern-web-guidance`), with no path. The copies are
+  byte-identical, so which folder wins is not visible. `context-tune`, also in both, was missing
+  from the list; this is unresolved. The `skill.list` API returned `[]` in every directory.
+- **`AGENTS.md`.** OpenCode watches every ancestor `AGENTS.md` up to `C:\`, including
+  `~/AGENTS.md`, plus `~/.config/opencode/AGENTS.md`. From the scratch repo below home, the model
+  quoted a rule from `~/AGENTS.md`.
+
+Harness notes: `opencode run` with stdin left open (the Bash tool) sometimes hangs before the
+server creates the instance, leaving no session row and no plugin load. `< /dev/null` fixes it.
+Seven runs were lost this way, with no model call.
+
+Carried forward:
+- **Slice 11:**
+  - merge the asks into V2 `permissions`, appended at the end, never into V1 `permission`
+    (overridden when both exist), and check the result with `opencode debug config`;
+  - the asks are pattern-limited (`git -c … commit` escapes them; compound commands untested)
+    and are auto-rejected in `opencode run`;
+  - an `opencode.jsonc` still refuses (comments).
+- **Slice 13:** document that `opencode plugin list` does not show canonkit and that the plugin's
+  warning shows only with `--print-logs`.
+- **Open question 3 (gap):** `execute` is not gated. On v2.1.4 its catalog reaches no gated tool,
+  but an MCP server that exposes a shell or file tool would be reached through it. MCP tools are
+  not gated anyway.
+- **Gard, end of release:** code swapped in `opencodeDir()/canonkit/` runs with no review, and
+  OpenCode has no trust step at all (compare Codex's command-only hash, condition 9).
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).

@@ -1,0 +1,17 @@
+{
+  "_source": "opencode v2.1.4 (Bun 1.4.4), model opencode/big-pickle, Windows 11 Pro 10.0.26300, 2026-10-31 (slice 9). Real execute.before event as the installed plugin received it; ids, cwd and the test key replaced by <PLACEHOLDERS>, key order kept. Captured main session; the subagent tool is not gated.",
+  "expect": "pass",
+  "cwd": "<CWD>",
+  "event": {
+    "tool": "subagent",
+    "sessionID": "<SESSION_ID_4>",
+    "agent": "build",
+    "messageID": "<MESSAGE_ID_4>",
+    "id": "<CALL_ID_4>",
+    "input": {
+      "agent": "general",
+      "description": "Run one git commit command",
+      "prompt": "Run exactly this shell command once with your shell tool and nothing else: git commit --no-verify -m x  -- if it is blocked, report the exact message and stop without retrying."
+    }
+  }
+}

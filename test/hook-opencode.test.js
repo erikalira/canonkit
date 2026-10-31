@@ -9,8 +9,9 @@
  * registers, and the registered `execute.before` callback is called with
  * events shaped like the OpenCode 2 docs describe them (packages/plugin/src/
  * promise/tool.ts and docs/content/tools.mdx in anomalyco/opencode, read
- * 2026-10-31); the shapes are not yet checked against a real capture, which
- * slice 9 adds as test/fixtures/opencode/.
+ * 2026-10-31). The real events in test/fixtures/opencode/ (opencode v2.1.4,
+ * Windows, slice 9) pin the shell, write, subagent and execute shapes; edit
+ * and patch are still from the docs.
  *
  * Asserted: a deny of an `enforce` kind throws Error(reason), and nothing else
  * throws: not another decision, not an internal error, not a missing file.
@@ -285,6 +286,43 @@ describe("opencode plugin: the execute.before hook", () => {
     const e = call(shell("git commit --no-verify -m x"), bare.registered[0][1]);
     assert.ok(e instanceof Error);
     assert.match(e.message, /skips the repository's hooks/);
+  });
+});
+
+// Real execute.before events, scrubbed (slice 9). <CWD> and <FAKE_AWS_KEY> are
+// filled in here, so the key is never spelled out in the repository.
+const FIXTURES_DIR = path.join(REPO, "test", "fixtures", "opencode");
+const FIXTURES = fs.readdirSync(FIXTURES_DIR).filter((f) => f.endsWith(".json")).sort();
+const fixture = (file) => {
+  const text = fs.readFileSync(path.join(FIXTURES_DIR, file), "utf8")
+    .split("<CWD>").join(JSON.stringify(PROJ).slice(1, -1))
+    .split("<FAKE_AWS_KEY>").join(FAKE_AWS_KEY);
+  return JSON.parse(text);
+};
+
+describe("opencode plugin: real captures (test/fixtures/opencode)", () => {
+  test("there are captures for the gated tools seen, a subagent's call, and the ungated tools", () => {
+    const seen = FIXTURES.map((f) => `${fixture(f).event.tool}/${fixture(f).event.agent}`);
+    assert.deepEqual([...new Set(seen)].sort(), ["execute/build", "shell/build", "shell/general", "subagent/build", "write/build"]);
+  });
+  for (const file of FIXTURES) {
+    test(`${file}: the outcome seen in OpenCode`, () => {
+      const { expect, reasonWord, event } = fixture(file);
+      if (expect === "deny") denied(event, new RegExp(reasonWord));
+      else passes(event);
+    });
+    test(`${file}: the docs-shaped helper sends the same keys`, () => {
+      const { event } = fixture(file);
+      assert.deepEqual(Object.keys(ocEvent(event.tool, event.input)), Object.keys(event));
+    });
+  }
+  test("write: OpenCode sends the path relative to the instance directory, and it is the gated file", () => {
+    const evts = normalizeOpencode(fixture("write-cloud-key.json").event, PROJ);
+    assert.equal(evts.length, 1);
+    assert.equal(evts[0].tool, "Write");
+    assert.equal(evts[0].cwd, PROJ);
+    assert.equal(evts[0].toolInput.file_path, "creds.txt");
+    assert.match(evts[0].toolInput.content, new RegExp(FAKE_AWS_KEY));
   });
 });
 

@@ -45,9 +45,11 @@ const OPENCODE_GATE_MODES = Object.freeze({
   'dispatch-log': 'off',
 });
 
-// ---- OPENCODE'S INPUT, AS ASSUMED (2.2, from the V2 docs; not yet from a capture) ----
+// ---- OPENCODE'S INPUT, AS ASSUMED (2.2, from the V2 docs) ----
 // Every assumption about the shape of OpenCode's hook event is in this block, so
-// a real capture (slice 9: test/fixtures/opencode/) corrects it in one place.
+// a real capture corrects it in one place. Slice 9 (opencode v2.1.4, Windows,
+// test/fixtures/opencode/) confirmed the event keys, shell and write, and saw
+// subagent and execute calls; edit and patch are still from the docs.
 // Sources, read 2026-10-31 in github.com/anomalyco/opencode (branch dev):
 // packages/plugin/src/promise/tool.ts (the `execute.before` event type),
 // services/www/src/docs/content/build/plugins/server.mdx (Tools, Lifecycle),
@@ -61,12 +63,15 @@ const OPENCODE_GATE_MODES = Object.freeze({
 //   shell    tool "shell", input.command a string. A command that carries a
 //            patch (`*** Begin Patch`) is gated as a patch too.
 //   edit     tool "edit", input { path, oldString, newString, replaceAll }.
-//   write    tool "write", input { path, content }.
+//   write    tool "write", input { path, content }; path as the model wrote
+//            it, relative to the instance directory when relative.
 //   patch    tool "patch", input.patchText in the apply_patch grammar (offered
 //            to GPT models only); read with the core's patchWrites.
 //   aliases  `filePath` is accepted for `path`, tool `bash` for `shell`, and an
 //            input that arrives as a JSON string is parsed (defensive only).
-//   other    any other tool (read, subagent, execute, ...) is not gated.
+//   other    any other tool (read, subagent, execute, ...) is not gated. A
+//            subagent's own calls reach this hook as their own events, with
+//            the child's sessionID and agent. execute's input is { code }.
 const PATCH_BEGIN = '*** Begin Patch';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
