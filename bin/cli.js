@@ -41,8 +41,8 @@ const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 // {"type":"commonjs"} marker that keeps both CommonJS under a parent package
 // that says "module". installCodexHooks copies it to $CODEX_HOME/canonkit/, the
 // adapter first: the command wired into hooks.json names HOOK_FILES.codex[0].
-// opencode: the same shape as codex, for opencodeDir()/canonkit/. Listed here,
-// not yet installed: OpenCode wiring is a later change (slice 11).
+// opencode: the same shape as codex, for opencodeDir()/canonkit/, copied there
+// by installOpencodeHooks before the plugin that loads them.
 const HOOK_FILES = {
   claude: ["canonkit-hook.js"],
   codex: ["canonkit-codex.js", "canonkit-hook.js", "package.json"],
@@ -382,20 +382,24 @@ async function install(ctx, options = {}) {
   const targets = options.targets ?? DEFAULT_TARGETS;
   const claude = targets.includes("claude");
   const codex = targets.includes("codex");
+  const opencode = targets.includes("opencode");
   // Each harness's wiring is written only for a harness in the install: wiring
-  // one the person said no to would be writing it anyway. OpenCode has no
-  // wiring yet, so with it alone there is nothing --wire-hooks could do.
-  if (wire && !claude && !codex) {
-    throw new Error("--wire-hooks wires the Claude Code and Codex hooks: it needs --claude or --codex in the install (OpenCode has no hook wiring yet)");
-  }
+  // one the person said no to would be writing it anyway.
   const agents = await readAgents();
-  // Before anything is written, for both harnesses: a settings.json or a
-  // hooks.json --wire-hooks would have to guess about stops the whole install,
-  // so a refusal leaves no half-install.
+  // Before anything is written, for every harness: a settings.json, hooks.json
+  // or opencode.json --wire-hooks would have to guess about, or an OpenCode the
+  // plugin cannot run in, stops the whole install, so a refusal leaves no
+  // half-install.
   if (wire && claude) await readSettingsForWiring(settingsPath());
   if (wire && codex) {
     refuseUnquotableCodexPath();
     await readCodexHooksForWiring(codexHooksPath());
+  }
+  if (wire && opencode) {
+    await readOpencodeConfigForWiring();
+    // A dry run starts no program, `opencode --version` included.
+    if (ctx.dryRun) ctx.log("would check that opencode --version is 2 or later (not run in a dry run)");
+    else refuseOpencodeBelow2();
   }
 
   // Claude Code reads ~/.claude/agents only; no verified harness reads
@@ -425,9 +429,9 @@ async function install(ctx, options = {}) {
     await installCodex(ctx, agents, path.join(codexHome(), "agents"));
     await installCodexHooks(ctx, { wire });
   }
-  if (targets.includes("opencode")) {
+  if (opencode) {
     await installOpencode(ctx, agents, opencodeAgentsDir());
-    if (wire) ctx.log("  OpenCode has no hook wiring yet: --wire-hooks wired nothing for it.");
+    await installOpencodeHooks(ctx, { wire });
   }
   if (claude) {
     const planned = await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"), { wire });
@@ -812,11 +816,13 @@ function settingsMention(claudeDir, name) {
  * Editing these files in place is the only workflow they ever had, so an
  * install that silently replaced a divergent copy would destroy the very
  * customization that motivated versioning them. Keep it, then overwrite.
+ * A file is a name, or { from, to } when it lands under another name.
  */
 async function copyKeepingLocal(ctx, fromDir, dest, files) {
   await ctx.mkdir(dest);
-  for (const file of files) {
-    const from = path.join(fromDir, file);
+  for (const entry of files) {
+    const [src, file] = typeof entry === "string" ? [entry, entry] : [entry.from, entry.to];
+    const from = path.join(fromDir, src);
     const to = path.join(dest, file);
     await ctx.mkdir(path.dirname(to));
     if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
@@ -1173,6 +1179,171 @@ async function wireCodexHooksFile(ctx) {
   }
   for (const c of changes) ctx.log(`  ${c}`);
   if (!ctx.dryRun) ctx.log("  Codex skips a new or changed hook until it is trusted: run /hooks in Codex to trust it.");
+}
+
+/* --------------------------------------------------- opencode hook wiring */
+
+const opencodeHooksDir = () => path.join(opencodeDir(), "canonkit");
+const opencodePluginPath = () => path.join(opencodeDir(), OPENCODE_PLUGIN.to);
+const opencodeConfigPath = () => path.join(opencodeDir(), "opencode.json");
+
+// A plugin cannot ask, so the prompt before a commit or a push is config: V2
+// `permissions`, an ordered list where the last matching rule wins (slice 9,
+// opencode v2.1.4). V1 `permission` is never written: OpenCode puts its rules
+// before every V2 one, so an ask there loses to a V2 `shell * allow`. A
+// pattern ending in ` *` also matches the bare command.
+const OPENCODE_ASKS = Object.freeze([
+  Object.freeze({ action: "shell", resource: "git commit *", effect: "ask" }),
+  Object.freeze({ action: "shell", resource: "git push *", effect: "ask" }),
+]);
+const sameRule = (e, r) => isObject(e) && e.action === r.action && e.resource === r.resource && e.effect === r.effect;
+const ruleText = (r) => `${r.action} "${r.resource}" ${r.effect}`;
+// A rule that can decide a shell call: action `shell`, `*`, or a glob matching
+// shell. Its resource is not compared: telling whether `git *` or `npm *`
+// overlaps `git commit *` is pattern against pattern.
+const decidesShell = (e) =>
+  isObject(e) && typeof e.action === "string" && new RegExp(`^${e.action.split("*").map(esc).join(".*")}$`).test("shell");
+const isDeny = (e) => isObject(e) && e.effect === "deny";
+
+/**
+ * The asks a later allow or ask could override, or that are not there at all.
+ * A later deny does not count: it is stricter than the ask, and moving the ask
+ * past it would turn what it denies into a prompt.
+ */
+function asksNotInEffect(list) {
+  const ours = (e) => OPENCODE_ASKS.some((r) => sameRule(e, r));
+  return OPENCODE_ASKS.filter((ask) => {
+    const last = list.findLastIndex((e) => sameRule(e, ask));
+    return last === -1 || list.slice(last + 1).some((e) => decidesShell(e) && !isDeny(e) && !ours(e));
+  });
+}
+
+// Whether the config denies any shell call, in V2 `permissions` or in V1
+// `permission` (OpenCode puts V1 first, so a V1 deny sits before every V2 rule).
+// An ask appended after a deny it overlaps would win over it, and without
+// comparing resources there is no telling which do.
+function deniesShell(data) {
+  if ((Array.isArray(data.permissions) ? data.permissions : []).some((e) => decidesShell(e) && isDeny(e))) return true;
+  const v1 = data.permission;
+  const hasDeny = (v) => v === "deny" || (isObject(v) && Object.values(v).some(hasDeny));
+  return v1 === "deny" || (isObject(v1) && ["bash", "shell", "*"].some((k) => hasDeny(v1[k])));
+}
+
+/**
+ * opencode.json with both asks in effect, what changed, and the asks it left
+ * to the user. An ask that is missing is appended; one a later allow overrides
+ * moves to the end, its earlier copies removed. Only these two rules ever move:
+ * the user's keep their order. Someone who passes --wire-hooks asked for the
+ * prompt, so a later allow that silenced it does not win. Where the config
+ * denies shell calls, nothing is written: appending could undo a deny.
+ */
+function wireOpencodePermissions(data) {
+  const gaps = asksNotInEffect(Array.isArray(data.permissions) ? data.permissions : []);
+  if (gaps.length && deniesShell(data)) return { data, changes: [], left: gaps };
+  const out = structuredClone(data);
+  const list = (out.permissions ??= []);
+  const changes = [];
+  for (const ask of gaps) {
+    const had = list.some((e) => sameRule(e, ask));
+    for (let i = list.length - 1; i >= 0; i--) if (sameRule(list[i], ask)) list.splice(i, 1);
+    list.push({ ...ask });
+    changes.push(`permissions: ${ruleText(ask)} ${had ? "moved to the end, after a rule that allowed shell calls first" : "added at the end"}`);
+  }
+  return { data: out, changes, left: [] };
+}
+
+// What to do by hand when a deny keeps --wire-hooks from writing the asks.
+const asksByHand = (asks) =>
+  `add ${asks.map((r) => JSON.stringify(r)).join(" and ")} to "permissions" yourself, after the rules that allow shell calls and before your deny rules`;
+
+/**
+ * opencode.json for --wire-hooks, or a refusal, the same rule as settings.json:
+ * anything this would have to guess about stops the install before it writes.
+ * An opencode.jsonc refuses too, even beside an opencode.json: its comments
+ * would not survive a rewrite, and which file wins is OpenCode's business.
+ */
+async function readOpencodeConfigForWiring() {
+  const file = opencodeConfigPath();
+  const jsonc = path.join(opencodeDir(), "opencode.jsonc");
+  const label = tilde(file);
+  const refuse = (why, fix = "fix it, then re-run") => new Error(`Refusing --wire-hooks: ${why}. Nothing was written; ${fix}.`);
+  if (existsSync(jsonc)) {
+    throw refuse(`${tilde(jsonc)} exists, and its comments would not survive a rewrite`, `move its settings into ${label} and re-run, or add these at the end of its "permissions" yourself: ${OPENCODE_ASKS.map((r) => JSON.stringify(r)).join(", ")}`);
+  }
+  if (!existsSync(file)) return { text: null, data: {} };
+  const text = await readFile(file, "utf8");
+  let data;
+  try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse(`${label} is not plain JSON (comments or a trailing comma?)`); }
+  if (!isObject(data)) throw refuse(`${label} is not a JSON object`);
+  if (data.permissions !== undefined) {
+    if (!Array.isArray(data.permissions)) throw refuse(`${label} has a "permissions" that is not an array`);
+    if (!data.permissions.every(isObject)) throw refuse(`${label} has a "permissions" entry that is not an object`);
+  }
+  return { text, data };
+}
+
+// The plugin is an OpenCode 2 plugin ({ id, setup }), which OpenCode 1 does not
+// run: wiring it there would be a gate that looks installed and is off. A
+// version that cannot be read refuses for the same reason.
+function refuseOpencodeBelow2() {
+  const refuse = (why, fix) => new Error(`Refusing --wire-hooks: ${why}, and the canonkit plugin runs only in OpenCode 2 or later. Nothing was written; ${fix}, then re-run.`);
+  // PATH entries inside the folder install runs from are skipped (npx puts
+  // <cwd>/node_modules/.bin first, where a planted binary would sit). Run from
+  // home, that would skip %APPDATA%\npm and ~/.local/bin too, so there only
+  // home's node_modules is skipped.
+  const cwd = process.cwd();
+  const toHome = path.relative(cwd, os.homedir());
+  const root = toHome === "" || (!toHome.startsWith("..") && !path.isAbsolute(toHome)) ? path.join(cwd, "node_modules") : cwd;
+  const abs = resolveBin("opencode", { cwd: root });
+  if (!abs) throw refuse("opencode is not on PATH, so its version cannot be checked", "install OpenCode 2 or put it on PATH");
+  const version = binVersion(abs, { project: root });
+  if (!version) throw refuse(`${display(abs, ["--version"])} printed no version`, "check that OpenCode runs");
+  if (Number(version.split(".")[0]) < 2) throw refuse(`OpenCode is ${version}`, "upgrade OpenCode");
+}
+
+/**
+ * The OpenCode hook: HOOK_FILES.opencode into opencodeDir()/canonkit/, then the
+ * plugin into plugins/ (its presence there is the wiring: OpenCode loads every
+ * file in that folder), then with --wire-hooks the asks in opencode.json.
+ * Without --wire-hooks the files are refreshed only where either already is.
+ */
+async function installOpencodeHooks(ctx, { wire = false } = {}) {
+  const dest = opencodeHooksDir();
+  if (!wire && !existsSync(dest) && !existsSync(opencodePluginPath())) return;
+  await copyKeepingLocal(ctx, HOOKS_DIR, dest, HOOK_FILES.opencode);
+  ctx.log(`Installed ${HOOK_FILES.opencode.length} OpenCode hook files -> ${dest}`);
+  await copyKeepingLocal(ctx, HOOKS_DIR, opencodeDir(), [OPENCODE_PLUGIN]);
+  ctx.log(`Installed the OpenCode plugin -> ${opencodePluginPath()} (loaded when OpenCode starts)`);
+  if (wire) await wireOpencodeConfig(ctx);
+}
+
+// The same write as wireCodexHooksFile: backup only on a change, atomic, the
+// file's own formatting kept.
+async function wireOpencodeConfig(ctx) {
+  const file = opencodeConfigPath();
+  const where = tilde(file);
+  const { text, data } = await readOpencodeConfigForWiring();
+  const { data: wired, changes, left } = wireOpencodePermissions(data);
+
+  ctx.log("");
+  if (left.length) {
+    ctx.log(`  ${where} denies shell calls, and an ask after a deny it overlaps wins over it: the git commit/push asks were not added.`);
+    ctx.log(`  To have them, ${asksByHand(left)}.`);
+    return;
+  }
+  if (!changes.length) {
+    ctx.log(`  The git commit/push asks are already in effect in ${where}.`);
+    return;
+  }
+  if (ctx.dryRun) {
+    ctx.log(`would add the git commit/push asks to ${where} (backup first):`);
+  } else {
+    const bak = text === null ? null : await ctx.backup(file);
+    await ctx.writeAtomic(file, serializeSettings(wired, text));
+    ctx.log(`Added the git commit/push asks to ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
+  }
+  for (const c of changes) ctx.log(`  ${c}`);
+  ctx.log("  They match the command as typed (git -c x=y commit is not matched), and opencode run rejects an ask unless --auto.");
 }
 
 async function syncReference(ctx, targets = DEFAULT_TARGETS) {
@@ -1573,6 +1744,47 @@ async function doctor() {
     else if (!own.length) add("FAIL", "codex hook wiring", `no PreToolUse group in ${tilde(hooksFile)} runs ${codexCommand()} — ${fix}`);
     else if (!own.some((g) => g.matcher === CODEX_MATCHER)) add("FAIL", "codex hook wiring", `its PreToolUse matcher is ${JSON.stringify(own[0].matcher ?? null)}, not ${CODEX_MATCHER} — ${fix}`);
     else add("OK", "codex hook wiring", `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`);
+  }
+
+  // opencode hook: checked where either half was installed. As with Codex, a
+  // plugin that cannot load lets every call through, and its one warning shows
+  // only under --print-logs (slice 9), so this is where a broken install is seen.
+  const ocHooks = opencodeHooksDir();
+  const ocPlugin = opencodePluginPath();
+  if (existsSync(ocHooks) || existsSync(ocPlugin)) {
+    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const files = [
+      ...HOOK_FILES.opencode.map((f) => [`canonkit/${f}`, path.join(ocHooks, f), path.join(HOOKS_DIR, f)]),
+      [OPENCODE_PLUGIN.to, ocPlugin, path.join(HOOKS_DIR, OPENCODE_PLUGIN.from)],
+    ];
+    const ocMissing = [], ocStale = [];
+    for (const [name, at, ours] of files) {
+      const b = bytes(at);
+      if (b === null) ocMissing.push(name);
+      else if (!b.equals(readFileSync(ours))) ocStale.push(name);
+    }
+    const where = tilde(opencodeDir());
+    if (ocMissing.length) add("FAIL", "opencode hook files", `missing from ${where}: ${ocMissing.join(", ")} — OpenCode lets every call through; run npx canonkit install --opencode`);
+    else if (ocStale.length) add("FAIL", "opencode hook files", `differ from this package's in ${where}: ${ocStale.join(", ")} — run npx canonkit install --opencode (a local edit is kept as .local.bak)`);
+    else add("OK", "opencode hook files", `${files.length} files in ${where}, same as this package's (OpenCode 2 only)`);
+
+    // The asks are config, not a gate, so a gap is a WARN.
+    const cfg = opencodeConfigPath();
+    const jsonc = path.join(opencodeDir(), "opencode.jsonc");
+    const fix = "run npx canonkit install --opencode --wire-hooks";
+    const raw = text(cfg);
+    let parsed;
+    try { parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, "")); } catch { parsed = undefined; }
+    const list = isObject(parsed) ? parsed.permissions ?? [] : null;
+    if (existsSync(jsonc)) add("WARN", "opencode permissions", `${tilde(jsonc)} exists and doctor does not read it: check that its "permissions" end with ${OPENCODE_ASKS.map(ruleText).join(" and ")}`);
+    else if (raw === null) add("WARN", "opencode permissions", `${tilde(cfg)} does not exist: OpenCode does not ask before git commit/git push — ${fix}`);
+    else if (!Array.isArray(list)) add("WARN", "opencode permissions", `${tilde(cfg)} is not a JSON object with a "permissions" list: cannot check the git commit/push asks`);
+    else {
+      const gaps = asksNotInEffect(list);
+      if (gaps.length && deniesShell(parsed)) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls, and it denies shell calls, so --wire-hooks leaves them to you: ${asksByHand(gaps)}`);
+      else if (gaps.length) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls (the last match wins) — ${fix}`);
+      else add("OK", "opencode permissions", `git commit/git push ask, in effect in ${tilde(cfg)} (as typed: pattern-limited)`);
+    }
   }
 
   // codex reference: Codex does not read ~/AGENTS.md from a repo below home, so

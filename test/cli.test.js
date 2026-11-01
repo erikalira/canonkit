@@ -10,10 +10,10 @@ import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat, rename, cp } from "node:fs/promises";
-import { existsSync, realpathSync } from "node:fs";
+import { existsSync, realpathSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import prompts from "prompts";
 
@@ -23,6 +23,11 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
 
 const CORE = ["archie", "bob", "gard", "perry", "pipe", "pixie", "quinn", "scott", "spencer", "virgo"];
+// What --wire-hooks appends to opencode.json `permissions`, in order.
+const OC_ASKS = [
+  { action: "shell", resource: "git commit *", effect: "ask" },
+  { action: "shell", resource: "git push *", effect: "ask" },
+];
 const SPECIALISTS = ["dana", "echo", "iris", "maya", "nova"];
 
 let sandbox;
@@ -63,9 +68,34 @@ function run(args, { home, cwd, env = {} }) {
 // A developer's own CODEX_HOME would send every Codex write to their real
 // Codex: it is dropped unless the test sets one.
 function isolatedEnv(home, env) {
-  const e = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
+  const base = { ...process.env };
+  // Windows spells it Path: a test's PATH replaces it, never sits beside it.
+  if ("PATH" in env) for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
+  const e = { ...base, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
   if (!("CODEX_HOME" in env)) delete e.CODEX_HOME;
   return e;
+}
+
+/**
+ * The env for a PATH holding only an `opencode` that prints `version` for
+ * --version (null: no opencode at all). --wire-hooks with --opencode reads the
+ * version, and the developer's own OpenCode must not decide a test.
+ */
+async function opencodeOnPath(root, version) {
+  const bin = path.join(root, "oc-bin");
+  await mkdir(bin, { recursive: true });
+  if (version !== null) {
+    const js = path.join(bin, "opencode-version.cjs");
+    await writeFile(js, `process.stdout.write(${JSON.stringify(`${version}\n`)});\n`);
+    if (process.platform === "win32") {
+      await writeFile(path.join(bin, "opencode.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
+    } else {
+      const file = path.join(bin, "opencode");
+      await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+      await chmod(file, 0o755);
+    }
+  }
+  return { PATH: bin };
 }
 
 // Every file under a folder with its bytes: what "wrote nothing" and "is
@@ -254,13 +284,14 @@ describe("install", () => {
     assert.equal(existsSync(path.join(home, ".config")), false);
   });
 
-  test("--claude --opencode --wire-hooks wires Claude Code only, and says OpenCode was not", async () => {
-    const { home } = await scratch("install-claude-opencode-wire");
-    const result = run(["install", "--claude", "--opencode", "--wire-hooks"], { home });
+  test("--claude --opencode --wire-hooks wires both, and nothing under ~/.codex", async () => {
+    const { root, home } = await scratch("install-claude-opencode-wire");
+    const result = run(["install", "--claude", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") });
     assert.equal(result.status, 0, result.out);
     assert.ok(existsSync(path.join(home, ".claude", "settings.json")));
+    assert.ok(existsSync(path.join(home, ".config", "opencode", "plugins", "canonkit.js")));
+    assert.ok(existsSync(path.join(home, ".config", "opencode", "opencode.json")));
     assert.equal(existsSync(path.join(home, ".codex")), false);
-    assert.match(result.out, /OpenCode has no hook wiring yet/);
   });
 
   test("--claude and --codex are refused outside install and reference", async () => {
@@ -293,12 +324,189 @@ describe("install", () => {
     assert.equal(existsSync(path.join(home, ".config")), false);
   });
 
-  test("--wire-hooks with --opencode alone refuses before writing anything", async () => {
-    const { home } = await scratch("install-opencode-wire");
-    const result = run(["install", "--opencode", "--wire-hooks"], { home });
-    assert.equal(result.status, 1, result.out);
-    assert.match(result.out, /needs --claude or --codex/);
+  test("--wire-hooks with --opencode wires the plugin and the asks, and nothing under ~/.claude or ~/.codex", async () => {
+    const { root, home } = await scratch("install-opencode-wire");
+    const result = run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") });
+    assert.equal(result.status, 0, result.out);
+    const oc = path.join(home, ".config", "opencode");
+    const dir = path.join(oc, "canonkit");
+    assert.deepEqual((await readdir(dir)).sort(), [...HOOK_FILES.opencode].sort());
+    for (const f of HOOK_FILES.opencode) {
+      assert.ok((await readFile(path.join(dir, f))).equals(await readFile(path.join(REPO, "hooks", f))), `${f} is not the package's bytes`);
+    }
+    assert.deepEqual(await readdir(path.join(oc, "plugins")), ["canonkit.js"]);
+    assert.ok((await readFile(path.join(oc, "plugins", "canonkit.js"))).equals(await readFile(path.join(REPO, "hooks", "opencode-plugin.mjs"))));
+    assert.deepEqual(JSON.parse(await read(path.join(oc, "opencode.json"))), { permissions: OC_ASKS });
+    assert.equal(existsSync(path.join(home, ".claude")), false, "an OpenCode-only install wrote under ~/.claude");
+    assert.equal(existsSync(path.join(home, ".codex")), false);
+  });
+
+  test("--opencode --wire-hooks refuses before writing anything", async () => {
+    const cases = [
+      ["opencode.jsonc", { version: "v2.1.4", files: { "opencode.jsonc": "{ // mine\n}\n" } }, /opencode\.jsonc exists/],
+      ["invalid JSON", { version: "v2.1.4", files: { "opencode.json": '{ "a": 1, }' } }, /is not plain JSON/],
+      ["not an object", { version: "v2.1.4", files: { "opencode.json": "[]" } }, /is not a JSON object/],
+      ["permissions not a list", { version: "v2.1.4", files: { "opencode.json": '{ "permissions": { "shell": "ask" } }' } }, /"permissions" that is not an array/],
+      ["a permissions entry not an object", { version: "v2.1.4", files: { "opencode.json": '{ "permissions": ["shell"] }' } }, /"permissions" entry that is not an object/],
+      ["OpenCode 1", { version: "1.14.2" }, /OpenCode is 1\.14\.2.*OpenCode 2 or later.*upgrade OpenCode/],
+      ["no version", { version: "opencode dev build" }, /printed no version/],
+      ["not on PATH", { version: null }, /not on PATH.*install OpenCode 2 or put it on PATH/],
+    ];
+    for (const [name, { version, files = {} }, why] of cases) {
+      const { root, home } = await scratch(`install-opencode-wire-refuse-${name.replace(/\W+/g, "-")}`);
+      const oc = path.join(home, ".config", "opencode");
+      await mkdir(oc, { recursive: true });
+      for (const [f, body] of Object.entries(files)) await writeFile(path.join(oc, f), body);
+      const before = await snapshot(home);
+      const result = run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, version) });
+      assert.equal(result.status, 1, `${name}: ${result.out}`);
+      assert.match(result.out, why, name);
+      assert.match(result.out, /Nothing was written/, name);
+      assert.deepEqual(await snapshot(home), before, `${name}: something was written`);
+    }
+  });
+
+  test("--opencode --wire-hooks appends the asks after every rule of the user's, once", async () => {
+    const { root, home } = await scratch("install-opencode-wire-merge");
+    const env = await opencodeOnPath(root, "v2.1.4");
+    const oc = path.join(home, ".config", "opencode");
+    await mkdir(oc, { recursive: true });
+    const file = path.join(oc, "opencode.json");
+    const mine = {
+      $schema: "https://opencode.ai/config.json",
+      permission: { bash: "ask" },
+      permissions: [{ action: "shell", resource: "*", effect: "allow" }, { action: "read", resource: "*", effect: "allow" }],
+      model: "x/y",
+    };
+    const original = JSON.stringify(mine, null, 4) + "\n";
+    await writeFile(file, original);
+
+    const first = run(["install", "--opencode", "--wire-hooks"], { home, env });
+    assert.equal(first.status, 0, first.out);
+    const after = JSON.parse(await read(file));
+    // V1 `permission` is left alone: OpenCode puts it before every V2 rule.
+    assert.deepEqual(after, { ...mine, permissions: [...mine.permissions, ...OC_ASKS] });
+    assert.match(await read(file), /\n {4}"permissions"/, "the file's own indentation was not kept");
+    const baks = (await readdir(oc)).filter((f) => f.endsWith(".bak"));
+    assert.equal(baks.length, 1, baks.join(", "));
+    assert.equal(await read(path.join(oc, baks[0])), original);
+
+    const bytes = await read(file);
+    const second = run(["install", "--opencode", "--wire-hooks"], { home, env });
+    assert.equal(second.status, 0, second.out);
+    assert.match(second.out, /already in effect/);
+    assert.equal(await read(file), bytes);
+    assert.equal((await readdir(oc)).filter((f) => f.endsWith(".bak")).length, 1, "a run that changed nothing made a backup");
+  });
+
+  test("--opencode --wire-hooks moves its asks past a later rule that allows shell calls", async () => {
+    const { root, home } = await scratch("install-opencode-wire-override");
+    const oc = path.join(home, ".config", "opencode");
+    await mkdir(oc, { recursive: true });
+    const allowAll = { action: "*", resource: "*", effect: "allow" };
+    const read1 = { action: "read", resource: "*", effect: "allow" };
+    await writeFile(path.join(oc, "opencode.json"), JSON.stringify({ permissions: [...OC_ASKS, allowAll, read1] }));
+    const result = run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /moved to the end/);
+    assert.deepEqual(JSON.parse(await read(path.join(oc, "opencode.json"))).permissions, [allowAll, read1, ...OC_ASKS]);
+  });
+
+  test("--opencode --wire-hooks --dry-run writes nothing, starts no opencode, and says what it would add", async () => {
+    const { root, home } = await scratch("install-opencode-wire-dry");
+    // No opencode on PATH: a dry run that ran --version would refuse.
+    const result = run(["install", "--opencode", "--wire-hooks", "--dry-run"], { home, env: await opencodeOnPath(root, null) });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /not run in a dry run/);
+    assert.match(result.out, /would add the git commit\/push asks/);
     assert.deepEqual(await readdir(home), []);
+  });
+
+  test("--opencode --wire-hooks never turns a deny into an ask", async () => {
+    const allowAll = { action: "shell", resource: "*", effect: "allow" };
+    const denyForce = { action: "shell", resource: "git push --force*", effect: "deny" };
+    const cases = [
+      // A deny after the asks keeps them in effect: they stay where they are.
+      ["deny after the asks", { permissions: [allowAll, ...OC_ASKS, denyForce] }, /already in effect/],
+      // Appending after a deny would let `git push *` ask win over it.
+      ["deny before where they would go", { permissions: [allowAll, denyForce] }, /were not added[\s\S]*before your deny rules/],
+      ["a deny of every shell call", { permissions: [{ action: "shell", resource: "*", effect: "deny" }] }, /were not added/],
+      // OpenCode puts V1 rules before every V2 one.
+      ["a V1 bash deny", { permission: { bash: { "*": "allow", "git push --force*": "deny" } } }, /were not added/],
+    ];
+    for (const [name, config, said] of cases) {
+      const { root, home } = await scratch(`install-opencode-wire-deny-${name.replace(/\W+/g, "-")}`);
+      const oc = path.join(home, ".config", "opencode");
+      await mkdir(oc, { recursive: true });
+      const file = path.join(oc, "opencode.json");
+      await writeFile(file, JSON.stringify(config));
+      const result = run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") });
+      assert.equal(result.status, 0, `${name}: ${result.out}`);
+      assert.match(result.out, said, name);
+      assert.equal(await read(file), JSON.stringify(config), `${name}: opencode.json was rewritten`);
+      // The gates the plugin enforces are wired either way.
+      assert.ok(existsSync(path.join(oc, "plugins", "canonkit.js")), name);
+    }
+  });
+
+  test("an OpenCode refusal stops the Claude Code half too", async () => {
+    const { root, home } = await scratch("install-claude-opencode-wire-refuse");
+    const oc = path.join(home, ".config", "opencode");
+    await mkdir(oc, { recursive: true });
+    await writeFile(path.join(oc, "opencode.jsonc"), "{}\n");
+    const before = await snapshot(home);
+    const result = run(["install", "--claude", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") });
+    assert.equal(result.status, 1, result.out);
+    assert.deepEqual(await snapshot(home), before);
+  });
+
+  test("--opencode --wire-hooks finds an opencode under home when run from home, never one in the project", async () => {
+    const { home, project } = await scratch("install-opencode-wire-lookup");
+    // %APPDATA%\npm and ~/.local/bin are under home: run from there, they still count.
+    const fromHome = run(["install", "--opencode", "--wire-hooks", "--no-reference"], { home, env: await opencodeOnPath(path.join(home, "AppData"), "v2.1.4") });
+    assert.equal(fromHome.status, 0, fromHome.out);
+    // npx puts <project>/node_modules/.bin first on PATH, where a planted binary sits.
+    const planted = run(["install", "--opencode", "--wire-hooks", "--no-reference"], { home, cwd: project, env: await opencodeOnPath(path.join(project, "node_modules"), "v2.1.4") });
+    assert.equal(planted.status, 1, planted.out);
+    assert.match(planted.out, /not on PATH/);
+  });
+
+  test("a plain --opencode install refreshes the OpenCode hook only where it was wired", async () => {
+    const { root, home } = await scratch("install-opencode-refresh");
+    const oc = path.join(home, ".config", "opencode");
+    assert.equal(run(["install", "--opencode"], { home }).status, 0);
+    assert.equal(existsSync(path.join(oc, "canonkit")), false, "a copy nothing runs was installed");
+    assert.equal(existsSync(path.join(oc, "plugins")), false);
+
+    assert.equal(run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") }).status, 0);
+    const plugin = path.join(oc, "plugins", "canonkit.js");
+    await writeFile(plugin, "// edited\n");
+    await rm(path.join(oc, "canonkit", "canonkit-hook.js"));
+    // No opencode on PATH (a folder of its own, not the one shimmed above): only
+    // --wire-hooks reads the version.
+    const result = run(["install", "--opencode"], { home, env: await opencodeOnPath(path.join(root, "none"), null) });
+    assert.equal(result.status, 0, result.out);
+    assert.ok((await readFile(plugin)).equals(await readFile(path.join(REPO, "hooks", "opencode-plugin.mjs"))));
+    assert.equal(await read(`${plugin}.local.bak`), "// edited\n");
+    assert.ok(existsSync(path.join(oc, "canonkit", "canonkit-hook.js")));
+  });
+
+  test("the installed OpenCode plugin loads under a parent \"type\": \"module\" and denies a real capture", async () => {
+    const { root, home } = await scratch("install-opencode-esm-parent");
+    const oc = path.join(home, ".config", "opencode");
+    await mkdir(oc, { recursive: true });
+    // OpenCode's config folder often holds a package.json for plugin deps.
+    await writeFile(path.join(oc, "package.json"), '{ "type": "module" }\n');
+    assert.equal(run(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") }).status, 0);
+
+    const mod = await import(pathToFileURL(path.join(oc, "plugins", "canonkit.js")).href);
+    assert.deepEqual(Object.keys(mod), ["default"]);
+    const hooks = [];
+    await mod.default.setup({ location: { directory: root }, tool: { hook: async (name, cb) => { hooks.push([name, cb]); } } });
+    assert.deepEqual(hooks.map(([n]) => n), ["execute.before"]);
+    const capture = (f) => JSON.parse(readFileSync(path.join(REPO, "test", "fixtures", "opencode", f), "utf8")).event;
+    assert.throws(() => hooks[0][1](capture("shell-git-commit-no-verify.json")), /skips the repository/);
+    assert.doesNotThrow(() => hooks[0][1](capture("shell-git-commit.json")));
   });
 
   test("is idempotent — a second run changes no bytes", async () => {
@@ -1551,6 +1759,35 @@ describe("doctor", () => {
     const { out, status } = doctor({ home, cwd: project });
     assert.equal(status, 1);
     assert.match(line(out, /^\w+ +opencode agents/), /^FAIL .*quinn.*--opencode/);
+  });
+
+  test("checks the OpenCode hook only where it was wired: files byte for byte, asks in effect", async () => {
+    const { root, home, project } = await ready("doctor-opencode-hook");
+    assert.doesNotMatch(doctor({ home, cwd: project }).out, /opencode (hook files|permissions)/);
+
+    assert.equal(runIn(["install", "--opencode", "--wire-hooks"], { home, env: await opencodeOnPath(root, "v2.1.4") }).status, 0);
+    const oc = path.join(home, ".config", "opencode");
+    let out = doctor({ home, cwd: project }).out;
+    assert.match(line(out, /^\w+ +opencode hook files/), /^OK .*4 files/);
+    assert.match(line(out, /^\w+ +opencode permissions/), /^OK /);
+
+    // A later allow-all silences the asks: the last match wins.
+    const cfg = path.join(oc, "opencode.json");
+    const data = JSON.parse(await read(cfg));
+    data.permissions.push({ action: "*", resource: "*", effect: "allow" });
+    await writeFile(cfg, JSON.stringify(data));
+    assert.match(line(doctor({ home, cwd: project }).out, /^\w+ +opencode permissions/), /^WARN .*git commit.*the last match wins/);
+
+    await writeFile(path.join(oc, "opencode.jsonc"), "{}\n");
+    assert.match(line(doctor({ home, cwd: project }).out, /^\w+ +opencode permissions/), /^WARN .*opencode\.jsonc exists/);
+
+    await writeFile(path.join(oc, "plugins", "canonkit.js"), "// edited\n");
+    assert.match(line(doctor({ home, cwd: project }).out, /^\w+ +opencode hook files/), /^FAIL .*differ.*plugins\/canonkit\.js/);
+
+    await rm(path.join(oc, "canonkit", "canonkit-hook.js"));
+    const res = doctor({ home, cwd: project });
+    assert.equal(res.status, 1);
+    assert.match(line(res.out, /^\w+ +opencode hook files/), /^FAIL .*missing.*canonkit\/canonkit-hook\.js.*lets every call through/);
   });
 
   test("is read-only", async () => {

@@ -10,7 +10,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin } from "../bin/exec.js";
+import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion } from "../bin/exec.js";
 
 const WIN = process.platform === "win32";
 const SEP = WIN ? ";" : ":";
@@ -220,5 +220,31 @@ exec "${process.execPath}" "${path.join(root, "planted.cjs")}"
     const r = runBin(process.execPath, ["reader.cjs"], { cwd: dir, timeout: 10000, capture: true });
     assert.equal(r.error, null);
     assert.match(r.stdout, /eof 0/);
+  });
+});
+
+describe("binVersion", () => {
+  /** A stand-in that prints `out` for --version. */
+  async function printer(dir, name, out) {
+    await mkdir(dir, { recursive: true });
+    const js = path.join(dir, `${name}-version.cjs`);
+    await writeFile(js, `process.stdout.write(${JSON.stringify(out)});\n`);
+    if (WIN) {
+      const file = path.join(dir, `${name}.cmd`);
+      await writeFile(file, `@"${process.execPath}" "${js}" %*\r\n`);
+      return file;
+    }
+    const file = path.join(dir, name);
+    await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+    await chmod(file, 0o755);
+    return file;
+  }
+
+  test("reads x.y.z with or without a leading v, and nothing from a bare word", async () => {
+    const dir = path.join(sandbox, "bin-version");
+    // opencode --version prints v2.1.4; codex prints codex-cli 0.166.0.
+    assert.equal(binVersion(await printer(dir, "vee", "v2.1.4\n")), "2.1.4");
+    assert.equal(binVersion(await printer(dir, "cli", "codex-cli 0.166.0\n")), "0.166.0");
+    assert.equal(binVersion(await printer(dir, "word", "dev2.1.4\n")), null);
   });
 });

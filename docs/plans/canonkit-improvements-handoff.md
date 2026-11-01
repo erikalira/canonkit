@@ -466,7 +466,7 @@ Both harnesses are installed, so condition 7 can be met here. CI already runs `m
 | ~~8~~ | ~~**OpenCode adapter.** `hooks/canonkit-opencode.js` (CJS) holds `normalizeOpencode`, `OPENCODE_GATE_MODES` and `before(input, output)`. The modes are Codex's; `git` is `text` because a plugin cannot ask, and commit/push prompting is config (slice 11). Tool ids follow the docs and slice 9 corrects them. `before` throws `Error(reason)` on deny and swallows every other error, so it fails open. `hooks/opencode-plugin.mjs` is installed as `plugins/canonkit.js`: it uses `createRequire` on `../canonkit/canonkit-opencode.js` and exports only the plugin function. `HOOK_FILES.opencode` is `canonkit/{canonkit-opencode.js, canonkit-hook.js, package.json}` plus the plugin. **Layout delta from the release split**, which listed `canonkit/{canonkit-hook.js, package.json}`: the logic sits in a CJS file beside the core. The plugin file then holds no logic, OpenCode never sees a non-function export, and the tests import CJS as they do for Codex. Tests: deny rows throw and other rows do not; the `.mjs` loads from a temp dir under a parent `"type":"module"` and exports exactly one function. `validate.sh` gains a `node --check` for the `.mjs`.~~ — **done**, 56a251b, 8dae175, 5f29dfd, 2cb9cec | `hooks/canonkit-opencode.js`, `hooks/opencode-plugin.mjs` (new), `bin/cli.js` (`HOOK_FILES`), tests | opus, high |
 | 9 | **OpenCode gate: condition 7. No product code.** The same form as slice 7, driven by the user or by Bob with `opencode run` if the user approves the model calls. Install the files under `opencodeDir()`, in a scratch `XDG_CONFIG_HOME` if OpenCode honors it on Windows (that is itself a check), and capture with a wrapper. Run (a) and (b) from slice 7 in the main session, then (a) from a subagent (task tool) and through the batch tool (#5894, `batch.ts`). Answer: the real tool ids and arg names; where native Windows reads the config (`~/.config`, `%APPDATA%`, `XDG_CONFIG_HOME`); whether Bun honors `canonkit/package.json` `commonjs`; whether loading `canonkit-hook.js` can exit the OpenCode process (it must not); the `permission.bash` pattern syntax and precedence (last match or most specific) for `git commit*`/`git push*` against an existing `"*"` and against a string-valued `permission.bash`; and what OpenCode lists for skills that exist in both `~/.agents/skills` and `~/.claude/skills`. Record the results in the same subsection, with captures in `test/fixtures/opencode/`. **Gate:** if (a) or (b) does not deny in the main session, revert slice 8 and OpenCode leaves 2.2. A miss on subagent or batch calls only becomes a documented gap (open question 3). | this handoff, `test/fixtures/opencode/`, adapter fix if needed | sonnet, high |
 | ~~10~~ | ~~**Codex wiring.** Add `codexHome()` (`$CODEX_HOME` or `~/.codex`) and use it for every Codex path, agents included. With `--wire-hooks` and codex chosen, install copies `HOOK_FILES.codex` to `codexHome()/canonkit/` and merges one PreToolUse entry into `codexHome()/hooks.json` with the fixed command `node "<CODEX_HOME>/canonkit/canonkit-codex.js"`, plus `commandWindows` if slice 7 needs it. The merge refuses an unparseable file before anything is written, writes a dated `.bak` before a change, is idempotent, finds its own entry by command, and never touches other entries. Install prints "run /hooks in Codex to trust it" when the entry changes, and also when any `canonkit/` file changes if slice 7 found that the hash covers required files. A plain install refreshes `canonkit/` only if it exists, so no copy sits inert. Doctor adds Codex rows (files present and identical, entry present with the matcher) when `canonkit/` exists. The `wire && !claude` throw (:368) no longer fires for codex, and `cli.test.js:209` becomes a positive test. Condition-4 test: `install --claude --wire-hooks` writes nothing under `~/.codex` or `~/.config`.~~ — **done**, ee50f08 | `bin/cli.js`, `test/cli.test.js` | opus, high |
-| 11 | **OpenCode wiring.** With `--wire-hooks` and opencode chosen, install writes `opencodeDir()/canonkit/` and `plugins/canonkit.js`, and merges `"git commit*": "ask"` and `"git push*": "ask"` into `opencode.json` `permission.bash` (condition 6: `.bak` first, only missing keys, idempotent). It refuses before writing if `opencode.json` does not parse or an `opencode.jsonc` exists, because comments do not round-trip. A string-valued `permission.bash` is converted or refused according to slice 9's precedence finding. Doctor adds OpenCode rows. `cli.test.js:247` becomes positive. Condition-5 test: the files load under a parent `"type":"module"`. | `bin/cli.js`, `test/cli.test.js` | opus, high |
+| ~~11~~ | ~~**OpenCode wiring.** With `--wire-hooks` and opencode chosen, install writes `opencodeDir()/canonkit/` and `plugins/canonkit.js`, and merges `"git commit*": "ask"` and `"git push*": "ask"` into `opencode.json` `permission.bash` (condition 6: `.bak` first, only missing keys, idempotent). It refuses before writing if `opencode.json` does not parse or an `opencode.jsonc` exists, because comments do not round-trip. A string-valued `permission.bash` is converted or refused according to slice 9's precedence finding. Doctor adds OpenCode rows. `cli.test.js:247` becomes positive. Condition-5 test: the files load under a parent `"type":"module"`.~~ — **done** (uncommitted), replanned on slice 9: V2 `permissions`, not V1 `permission.bash`; see "OpenCode, slice 11" | `bin/cli.js`, `bin/exec.js`, `test/cli.test.js`, `test/exec.test.js` | opus, high |
 | 12 | **Blocks, one commit per harness.** — **Codex half done** (a2c0bff, 1647845); OpenCode half deferred behind 8, 9, 11. New `reference/codex-block.md`, synced to `codexHome()/AGENTS.md`; doctor WARNs if an `AGENTS.override.md` shadows it. It points at `~/AGENTS.md` the way the opencode block does, if slice 7 found Codex does not read that file. In both blocks, `[ENFORCED]` bullets cover only `git-bypass` and `secret-block`, with the annotation, worded "once wired (`--wire-hooks`; doctor checks it)". The OpenCode block adds "prompts on `git commit`/`git push` as typed, pattern-limited", without the marker; everything else is "by judgment". This replaces `opencode-block.md:16-21`. The "Verified on" rows in `docs/hooks.md` are added here from slices 7 and 9, so slice 4's rule stays green. | `reference/codex-block.md` (new), `reference/opencode-block.md`, `bin/cli.js` (`syncReference` :1028-1057, doctor), `docs/hooks.md` | sonnet, medium |
 | 13 | **Docs.** `docs/install.md`: rows :35-36, the refusal sentence at :39, the Codex (:69) and OpenCode (:103) sections with every file and key `--wire-hooks` writes per harness and how to remove each by hand, and the uninstall section (:283). `docs/hooks.md`: the line at :10 that says "Hooks exist only in Claude Code"; the "installed as a single file" sentence (:100) rechecked, since the same file is now copied into up to three places; and a per-harness section covering the gate table, Codex trust and `/hooks`, OpenCode's pattern limits, and the known gaps. README: :43, the enforcement column at :208-209, and :219. CLI text: the menu at `bin/cli.js:348` and usage at :1937/:1954. Write `docs/release-notes/2.2.0.md`, with changelog entries for `--wire-hooks` no longer refused with `--codex`/`--opencode`, `$CODEX_HOME` now honored (agents move for anyone who sets it), the codex block, and manual removal as the rollback. | docs, README, `bin/cli.js` (text only) | sonnet, medium |
 | 14 | `package.json` 2.2.0. | `package.json` | sonnet, low |
@@ -731,6 +731,78 @@ Carried forward:
   not gated anyway.
 - **Gard, end of release:** code swapped in `opencodeDir()/canonkit/` runs with no review, and
   OpenCode has no trust step at all (compare Codex's command-only hash, condition 9).
+
+**OpenCode, slice 11 (2026-11-01, uncommitted; replanned on slice 9 and approved by the user).**
+`npm test` 685, 682 pass, 0 fail, 3 skipped; validate green. `canonkit-hook.test.js` differs from
+`main` by 62 lines, all from `5f29dfd` and `2cb9cec` (Gard P3), not from this slice. "Done when"
+needs that clause reworded, or those rows moved to `hook-core.test.js`.
+
+How it differs from row 11:
+- **The asks go into V2 `permissions`, appended last:** `{action: "shell", resource:
+  "git commit *", effect: "ask"}` and the same for `git push *`. V1 `permission` is never written,
+  so a string `permission.bash` needs no conversion: OpenCode puts V1 rules first.
+- **An ask "in effect"** means no allow or ask rule whose `action` is `shell`, `*` or a glob
+  matching `shell` comes after it. Resources are not compared. Otherwise the ask moves to the end
+  and its earlier copies go (the user's decision). Only these two rules move. The install says so
+  ("moved to the end"), and doctor WARNs on the same test.
+- **A deny is never weakened (Gard P1, also found by Quinn).** The first version appended after
+  any rule. `[shell * allow, shell "git push --force*" deny]` came out with `git push *` ask last,
+  so the force-push deny only asked, and `--auto` let it through. Now:
+  - a later deny does not count as an override, so an ask before a deny stays where it is;
+  - when an ask has to be written and the config denies any shell call, nothing is written. That
+    covers V2 `permissions`, or V1 `permission` as a string or under `bash`, `shell` or `*`. The
+    install prints the two rules for the user to place by hand, before their denies. The plugin is
+    still wired, and doctor's WARN says the same instead of "run --wire-hooks".
+- **Refused before any write (with Claude's and Codex's checks):**
+  - an `opencode.jsonc`, even beside an `opencode.json`;
+  - an `opencode.json` that is not plain JSON or not an object;
+  - a `permissions` that is not an array of objects;
+  - `opencode` not on PATH, a `--version` with no version, or a version below 2 (the user's
+    decision: an unknown version refuses).
+
+  The check uses `resolveBin` and `binVersion` from `bin/exec.js` (no shell, filtered PATH).
+  `binVersion` read no version from `v2.1.4`, because there is no `\b` between `v` and `2`. It now
+  takes a leading `v`, and `exec.test.js` covers it. The PATH root is the folder install runs from,
+  but when that folder is home or above it, only its `node_modules` is used. Gard found that
+  filtering against home dropped `%APPDATA%\npm`, so every install run from `~` refused. A dry run
+  does not start `opencode` (the same promise as `tool add`).
+- **Order:** `canonkit/` first, then `plugins/canonkit.js` (its presence is the wiring), then
+  `opencode.json`. A plain `install --opencode` refreshes both only where either exists, and
+  never reads the version. `copyKeepingLocal` now takes `{from, to}` for the renamed plugin.
+- **Doctor rows,** shown only where either half exists:
+  - `opencode hook files`: the three `canonkit/` files and the plugin, byte for byte; FAIL;
+  - `opencode permissions`: WARN, because the asks are config, not a gate, and also WARN when an
+    `opencode.jsonc` exists, which doctor does not read.
+- The refusal of `--wire-hooks` with `--opencode` alone is gone, and so is the "OpenCode has no
+  hook wiring yet" line.
+
+Checked on `opencode v2.1.4`, with a scratch `HOME` and `XDG_CONFIG_HOME` and no model call. An
+`opencode.json` held V1 `permission.bash {"*": "allow"}` and V2 `[shell * allow]`. After
+`install --opencode --wire-hooks --no-reference`, `opencode debug config` listed `shell * allow`
+(from V1), `shell * allow` (V2), `shell "git commit *" ask` and `shell "git push *" ask`, in that
+order. The asks are last, so they win. The plugin load was not rerun: slice 9 loaded these same
+bytes, and slice 15 repeats it on the shipped build.
+
+Carried forward:
+- **Slice 13:**
+  - `--wire-hooks` with `--opencode` writes `canonkit/`, `plugins/canonkit.js` and two
+    `permissions` entries, plus a dated `opencode.json.canonkit-*.bak`. Removal by hand: delete
+    those files and the two entries.
+  - The usage line still says settings.json only.
+  - Document "OpenCode 2+".
+  - The dated `.bak` files copy `opencode.json` whole, provider keys included, and they pile up.
+  - Doctor reads only the global `opencode.json`; a project's own OpenCode config can silence the
+    asks.
+  - With a deny present, the asks are left for the user to place by hand. If a broad allow comes
+    after their deny, "after the allows, before the denies" cannot be met: tell them to put the asks
+    just before their deny rules (Gard re-review, P3).
+- **Known, from Gard:** on Windows the `opencode.cmd` chain (cmd.exe, node, the binary) may
+  outlive the 30 s timeout. `tool add` has the same issue. It fails closed, because nothing has
+  been written yet.
+- **Gard, end of release:**
+  - the action-only override test and the move;
+  - both refusals and the version check (a planted `opencode` is excluded by `safePathDirs`);
+  - the `.bak` copies whatever `opencode.json` holds.
 
 ### 5. Uninstall
 

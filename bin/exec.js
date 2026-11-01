@@ -219,7 +219,8 @@ function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capt
 }
 
 /**
- * The first x.y.z a binary prints for --version, or null. It runs before the
+ * The first x.y.z a binary prints for --version, or null; a leading `v` is
+ * allowed (`opencode --version` prints `v2.1.4`). It runs before the
  * person has confirmed anything, so it runs from the binary's own directory, not
  * the project: nothing reads project files before consent. (Not the temp dir,
  * which anyone can write to on POSIX.)
@@ -228,7 +229,7 @@ function binVersion(abs, { project, env, platform } = {}) {
   const cwd = path.dirname(abs);
   const r = runBin(abs, ["--version"], { cwd, project: project ?? cwd, env, platform, capture: true, timeout: 30 * 1000 });
   if (r.status !== 0) return null;
-  const m = /\b(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(r.stdout) ?? /\b(\d+\.\d+\.\d+)\b/.exec(r.stderr);
+  const m = /(?:\bv|\b)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(r.stdout) ?? /(?:\bv|\b)(\d+\.\d+\.\d+)\b/.exec(r.stderr);
   return m ? m[1] : null;
 }
 
