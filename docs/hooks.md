@@ -7,21 +7,27 @@ says and what to do when it fires is in the README
 (["When a gate fires"](../README.md#when-a-gate-fires)); this page is how the hook
 is wired, how it fails, and how a project tunes which paths count.
 
-Claude Code has the full hook. Codex has the two deny gates (see Codex below).
-OpenCode gets the agents and the rules, which hold by judgment there.
+Claude Code has the full hook. Codex has the two deny gates, and OpenCode has the
+same two through a plugin, plus two permission asks (see Codex and OpenCode below).
 
-## Codex
+## Codex and OpenCode
 
 Codex gets a hook of its own (`canonkit-codex.js`, wired by `--wire-hooks` into
 `$CODEX_HOME/hooks.json`) that enforces only `git-bypass` and `secret-block`; the
-rest of the rules hold by judgment. The `[ENFORCED]` rules in
-`reference/codex-block.md` are held to this table by `scripts/check-enforced.mjs`:
-a harness with `[ENFORCED]` rules needs a `Verified on` row, a real run in which
-the gate denied.
+rest of the rules hold by judgment. OpenCode 2 gets the same two gates from a
+plugin (`plugins/canonkit.js`, loading `canonkit/canonkit-opencode.js`), and
+`--wire-hooks` also appends `git commit *` and `git push *` asks to
+`opencode.json` `permissions`: config, not a gate, matched on the command as
+typed. Calls made through `execute` and MCP tools are not gated. The
+`[ENFORCED]` rules in `reference/codex-block.md` and
+`reference/opencode-block.md` are held to this table by
+`scripts/check-enforced.mjs`: a harness with `[ENFORCED]` rules needs a
+`Verified on` row, a real run in which the gate denied.
 
 | | Harness | Version | OS | Date | Seen denying |
 | --- | --- | --- | --- | --- | --- |
 | Verified on | codex | codex-cli 0.166.0 | Windows 11 Pro 10.0.26300 | 2026-10-30 | `git commit --no-verify` (Bash); `apply_patch` adding a file with an AWS-key-shaped value |
+| Verified on | opencode | opencode v2.1.4 | Windows 11 Pro 10.0.26300 | 2026-10-31 | `git commit --no-verify` (shell, in the main session and a subagent); `write` of a file with an AWS-key-shaped value |
 
 ## Wiring
 

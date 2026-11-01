@@ -1371,9 +1371,10 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
   }
 
   if (targets.includes("opencode")) {
-    // OpenCode's own block, never the routing one: its [ENFORCED] lines name a
-    // hook OpenCode does not run. Creating this file is also what stops
-    // OpenCode falling back to ~/.claude/CLAUDE.md, rules of your own included.
+    // OpenCode's own block, never the routing one: the routing block's [ENFORCED]
+    // lines name the Claude hook, this one's only the plugin's two deny gates.
+    // Creating this file is also what stops OpenCode falling back to
+    // ~/.claude/CLAUDE.md, rules of your own included.
     const opencodeMd = path.join(opencodeDir(), "AGENTS.md");
     const fallback = !existsSync(opencodeMd) && existsSync(path.join(os.homedir(), ".claude", "CLAUDE.md"));
     await syncBlock(path.join(REFERENCE_DIR, "opencode-block.md"), opencodeMd, OPENCODE, ctx);
@@ -1795,6 +1796,15 @@ async function doctor() {
     const [cStart, cEnd] = CODEX;
     if (text(codexMd)?.includes(cStart) && text(codexMd)?.includes(cEnd)) add("OK", "codex reference", `managed block in ${tilde(codexMd)}`);
     else add("WARN", "codex reference", `no managed block in ${tilde(codexMd)}: Codex does not read ~/AGENTS.md from a repo below home, so it does not see the team's rules — run npx canonkit reference --codex`);
+  }
+
+  // opencode reference: the block says which of OpenCode's rules its plugin
+  // enforces. Checked only where OpenCode was installed for, as above.
+  if (agents.some((a) => existsSync(path.join(opencodeAgentsDir(), `${a.name}.md`)))) {
+    const ocMd = path.join(opencodeDir(), "AGENTS.md");
+    const [oStart, oEnd] = OPENCODE;
+    if (text(ocMd)?.includes(oStart) && text(ocMd)?.includes(oEnd)) add("OK", "opencode reference", `managed block in ${tilde(ocMd)}`);
+    else add("WARN", "opencode reference", `no managed block in ${tilde(ocMd)}: OpenCode does not see which of its rules a plugin enforces — run npx canonkit reference --opencode`);
   }
 
   // codex AGENTS.override.md: Codex reads it in place of AGENTS.md in the same

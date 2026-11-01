@@ -808,8 +808,13 @@ describe("opencode reference block", () => {
 
     const text = await read(ocMd(home));
     assert.match(text, /<!-- agent-team-config:opencode:start -->[\s\S]*<!-- agent-team-config:opencode:end -->/);
-    // Nothing is enforced in OpenCode until a plugin enforces it.
-    assert.doesNotMatch(text, /^- `\[ENFORCED\]`/m);
+    // Only the plugin's two deny gates are marked; the commit/push asks are config.
+    const marked = text.split(/\r?\n/).filter((l) => /^- `\[ENFORCED\]`/.test(l));
+    assert.equal(marked.length, 2);
+    assert.match(text, /enforced-by: git-bypass/);
+    assert.match(text, /enforced-by: secret-block/);
+    assert.match(text, /^- \*\*`git commit` and `git push` prompt as typed, pattern-limited\.\*\*/m);
+    assert.match(text, /`execute` and MCP tools are not gated/);
     assert.doesNotMatch(text, /agent-team-config:routing/);
     assert.match(text, /model of the session/);
     assert.equal(existsSync(path.join(home, ".claude")), false);
@@ -1822,6 +1827,31 @@ describe("doctor", () => {
       const env = { CODEX_HOME: path.join(root, "chome") };
       runIn(["install", "--claude"], { home, env });
       assert.equal(check(doctor({ home, cwd: project, env }).out), "");
+    });
+  });
+
+  describe("the OpenCode reference block", () => {
+    const check = (out) => line(out, /^\w+ +opencode reference:/);
+
+    test("WARNs, without failing, when an OpenCode install lost its block", async () => {
+      const { home, project } = await ready("doctor-opencode-ref-missing");
+      runIn(["install", "--opencode"], { home });
+      await rm(path.join(home, ".config", "opencode", "AGENTS.md"));
+      const { out, status } = doctor({ home, cwd: project });
+      assert.equal(status, 0, out);
+      assert.match(check(out), /^WARN .*AGENTS\.md.*reference --opencode/);
+    });
+
+    test("is OK after a normal OpenCode install", async () => {
+      const { home, project } = await scratch("doctor-opencode-ref-ok");
+      runIn(["install", "--claude", "--opencode"], { home });
+      assert.match(check(doctor({ home, cwd: project }).out), /^OK /);
+    });
+
+    test("says nothing on a Claude-only install", async () => {
+      const { home, project } = await scratch("doctor-opencode-ref-claude");
+      runIn(["install", "--claude"], { home });
+      assert.equal(check(doctor({ home, cwd: project }).out), "");
     });
   });
 

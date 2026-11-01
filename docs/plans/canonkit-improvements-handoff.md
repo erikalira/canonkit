@@ -467,7 +467,7 @@ Both harnesses are installed, so condition 7 can be met here. CI already runs `m
 | 9 | **OpenCode gate: condition 7. No product code.** The same form as slice 7, driven by the user or by Bob with `opencode run` if the user approves the model calls. Install the files under `opencodeDir()`, in a scratch `XDG_CONFIG_HOME` if OpenCode honors it on Windows (that is itself a check), and capture with a wrapper. Run (a) and (b) from slice 7 in the main session, then (a) from a subagent (task tool) and through the batch tool (#5894, `batch.ts`). Answer: the real tool ids and arg names; where native Windows reads the config (`~/.config`, `%APPDATA%`, `XDG_CONFIG_HOME`); whether Bun honors `canonkit/package.json` `commonjs`; whether loading `canonkit-hook.js` can exit the OpenCode process (it must not); the `permission.bash` pattern syntax and precedence (last match or most specific) for `git commit*`/`git push*` against an existing `"*"` and against a string-valued `permission.bash`; and what OpenCode lists for skills that exist in both `~/.agents/skills` and `~/.claude/skills`. Record the results in the same subsection, with captures in `test/fixtures/opencode/`. **Gate:** if (a) or (b) does not deny in the main session, revert slice 8 and OpenCode leaves 2.2. A miss on subagent or batch calls only becomes a documented gap (open question 3). | this handoff, `test/fixtures/opencode/`, adapter fix if needed | sonnet, high |
 | ~~10~~ | ~~**Codex wiring.** Add `codexHome()` (`$CODEX_HOME` or `~/.codex`) and use it for every Codex path, agents included. With `--wire-hooks` and codex chosen, install copies `HOOK_FILES.codex` to `codexHome()/canonkit/` and merges one PreToolUse entry into `codexHome()/hooks.json` with the fixed command `node "<CODEX_HOME>/canonkit/canonkit-codex.js"`, plus `commandWindows` if slice 7 needs it. The merge refuses an unparseable file before anything is written, writes a dated `.bak` before a change, is idempotent, finds its own entry by command, and never touches other entries. Install prints "run /hooks in Codex to trust it" when the entry changes, and also when any `canonkit/` file changes if slice 7 found that the hash covers required files. A plain install refreshes `canonkit/` only if it exists, so no copy sits inert. Doctor adds Codex rows (files present and identical, entry present with the matcher) when `canonkit/` exists. The `wire && !claude` throw (:368) no longer fires for codex, and `cli.test.js:209` becomes a positive test. Condition-4 test: `install --claude --wire-hooks` writes nothing under `~/.codex` or `~/.config`.~~ — **done**, ee50f08 | `bin/cli.js`, `test/cli.test.js` | opus, high |
 | ~~11~~ | ~~**OpenCode wiring.** With `--wire-hooks` and opencode chosen, install writes `opencodeDir()/canonkit/` and `plugins/canonkit.js`, and merges `"git commit*": "ask"` and `"git push*": "ask"` into `opencode.json` `permission.bash` (condition 6: `.bak` first, only missing keys, idempotent). It refuses before writing if `opencode.json` does not parse or an `opencode.jsonc` exists, because comments do not round-trip. A string-valued `permission.bash` is converted or refused according to slice 9's precedence finding. Doctor adds OpenCode rows. `cli.test.js:247` becomes positive. Condition-5 test: the files load under a parent `"type":"module"`.~~ — **done** (uncommitted), replanned on slice 9: V2 `permissions`, not V1 `permission.bash`; see "OpenCode, slice 11" | `bin/cli.js`, `bin/exec.js`, `test/cli.test.js`, `test/exec.test.js` | opus, high |
-| 12 | **Blocks, one commit per harness.** — **Codex half done** (a2c0bff, 1647845); OpenCode half deferred behind 8, 9, 11. New `reference/codex-block.md`, synced to `codexHome()/AGENTS.md`; doctor WARNs if an `AGENTS.override.md` shadows it. It points at `~/AGENTS.md` the way the opencode block does, if slice 7 found Codex does not read that file. In both blocks, `[ENFORCED]` bullets cover only `git-bypass` and `secret-block`, with the annotation, worded "once wired (`--wire-hooks`; doctor checks it)". The OpenCode block adds "prompts on `git commit`/`git push` as typed, pattern-limited", without the marker; everything else is "by judgment". This replaces `opencode-block.md:16-21`. The "Verified on" rows in `docs/hooks.md` are added here from slices 7 and 9, so slice 4's rule stays green. | `reference/codex-block.md` (new), `reference/opencode-block.md`, `bin/cli.js` (`syncReference` :1028-1057, doctor), `docs/hooks.md` | sonnet, medium |
+| 12 | **Blocks, one commit per harness.** — **Codex half done** (a2c0bff, 1647845); **OpenCode half done** (uncommitted; see "OpenCode, slice 12"). New `reference/codex-block.md`, synced to `codexHome()/AGENTS.md`; doctor WARNs if an `AGENTS.override.md` shadows it. It points at `~/AGENTS.md` the way the opencode block does, if slice 7 found Codex does not read that file. In both blocks, `[ENFORCED]` bullets cover only `git-bypass` and `secret-block`, with the annotation, worded "once wired (`--wire-hooks`; doctor checks it)". The OpenCode block adds "prompts on `git commit`/`git push` as typed, pattern-limited", without the marker; everything else is "by judgment". This replaces `opencode-block.md:16-21`. The "Verified on" rows in `docs/hooks.md` are added here from slices 7 and 9, so slice 4's rule stays green. | `reference/codex-block.md` (new), `reference/opencode-block.md`, `bin/cli.js` (`syncReference` :1028-1057, doctor), `docs/hooks.md` | sonnet, medium |
 | 13 | **Docs.** `docs/install.md`: rows :35-36, the refusal sentence at :39, the Codex (:69) and OpenCode (:103) sections with every file and key `--wire-hooks` writes per harness and how to remove each by hand, and the uninstall section (:283). `docs/hooks.md`: the line at :10 that says "Hooks exist only in Claude Code"; the "installed as a single file" sentence (:100) rechecked, since the same file is now copied into up to three places; and a per-harness section covering the gate table, Codex trust and `/hooks`, OpenCode's pattern limits, and the known gaps. README: :43, the enforcement column at :208-209, and :219. CLI text: the menu at `bin/cli.js:348` and usage at :1937/:1954. Write `docs/release-notes/2.2.0.md`, with changelog entries for `--wire-hooks` no longer refused with `--codex`/`--opencode`, `$CODEX_HOME` now honored (agents move for anyone who sets it), the codex block, and manual removal as the rollback. | docs, README, `bin/cli.js` (text only) | sonnet, medium |
 | 14 | `package.json` 2.2.0. | `package.json` | sonnet, low |
 | 15 | **Release gate: the condition-7 record on the shipped build.** Run `npm pack`, then install the tarball with `--codex --wire-hooks` and `--opencode --wire-hooks` (scratch homes, or the real ones with backups). Trust the Codex hook, then repeat (a) and (b) from slices 7 and 9. Update the "Verified on" rows (harness version, OS build, date, the gates seen denying) and the verification record. A harness that does not deny here is reverted (its slices 6/8, 10/11, 12 and its doc lines) before release. | `docs/hooks.md`, this handoff | sonnet, high (the user drives the sessions) |
@@ -610,13 +610,14 @@ therefore has nothing to mark `[ENFORCED]`, and no "Verified on" row can be writ
 "prompts on `git commit`/`git push`" line depends on slice 11. `opencode-block.md:16-21`
 ("Nothing here is enforced") stays true, and `check-enforced.mjs` stays green. The order is now
 8 → 9 → 11 → 12-opencode. If slice 9's gate fails, OpenCode leaves 2.2, as the plan already says.
+Superseded: 8, 9 and 11 are done and slice 12-opencode followed ("OpenCode, slice 12").
 
 **Doctor: WARN on a missing harness block (2026-10-31, decided by the user).** The WARN appears
 only when there is evidence the harness was installed for, meaning a core agent is in its agents
 folder (the same rule as the "opencode agents" rows). That avoids noise for Claude-only users.
 It is a WARN, not a FAIL, until doctor is target-aware (see the backlog above).
 - **Codex** (the block in `codexHome()/AGENTS.md`): implemented after `a2c0bff`.
-- **OpenCode** (the block in `opencodeDir()/AGENTS.md`): goes with slice 12-opencode.
+- **OpenCode** (the block in `opencodeDir()/AGENTS.md`): done with slice 12-opencode.
 
 **Slice 8: OpenCode 2 only (2026-10-31, decided by the user; Archie approved with conditions).**
 This machine runs `opencode v2.1.4` (`@opencode/cli`), and OpenCode 2 does not run V1 plugins:
@@ -732,7 +733,7 @@ Carried forward:
 - **Gard, end of release:** code swapped in `opencodeDir()/canonkit/` runs with no review, and
   OpenCode has no trust step at all (compare Codex's command-only hash, condition 9).
 
-**OpenCode, slice 11 (2026-11-01, uncommitted; replanned on slice 9 and approved by the user).**
+**OpenCode, slice 11 (2026-11-01, commit `7e73fdd`; replanned on slice 9 and approved by the user).**
 `npm test` 685, 682 pass, 0 fail, 3 skipped; validate green. `canonkit-hook.test.js` differs from
 `main` by 62 lines, all from `5f29dfd` and `2cb9cec` (Gard P3), not from this slice. "Done when"
 needs that clause reworded, or those rows moved to `hook-core.test.js`.
@@ -803,6 +804,23 @@ Carried forward:
   - the action-only override test and the move;
   - both refusals and the version check (a planted `opencode` is excluded by `safePathDirs`);
   - the `.bak` copies whatever `opencode.json` holds.
+
+**OpenCode, slice 12 (2026-11-01, uncommitted; plan approved by the user).** `npm test` 691,
+688 pass, 0 fail, 3 skipped; validate green; `check-enforced.mjs` backs 8 `[ENFORCED]` rules.
+- `reference/opencode-block.md`: "Nothing here is enforced" is replaced by `[ENFORCED]` bullets for
+  `git-bypass` (a subagent's calls included, as slice 9 saw) and `secret-block` (`write`, `edit`,
+  `patch`), a "`git commit` and `git push` prompt as typed, pattern-limited" bullet without the
+  marker, and "Everything else holds by judgment", which also names the `execute`/MCP gap
+  (decision 3, the user's call to put it in the block now).
+- Doctor: an `opencode reference` row, OK or WARN, shown only where a core agent is in
+  `opencodeDir()/agents` (decided 2026-10-31).
+- `docs/hooks.md`: the "Verified on" row for opencode from slice 9; the section is now "Codex and
+  OpenCode" (the user's call), and the summary line at :10 no longer says OpenCode holds only by
+  judgment.
+
+Carried forward:
+- **Slice 13:** the per-harness sections in `hooks.md` build on "Codex and OpenCode".
+- **Slice 15:** update the opencode "Verified on" row on the shipped build.
 
 ### 5. Uninstall
 
