@@ -9,25 +9,105 @@ is wired, how it fails, and how a project tunes which paths count.
 
 Claude Code has the full hook. Codex has the two deny gates, and OpenCode has the
 same two through a plugin, plus two permission asks (see Codex and OpenCode below).
+Everything on this page outside that section is about Claude Code.
 
 ## Codex and OpenCode
 
-Codex gets a hook of its own (`canonkit-codex.js`, wired by `--wire-hooks` into
-`$CODEX_HOME/hooks.json`) that enforces only `git-bypass` and `secret-block`; the
-rest of the rules hold by judgment. OpenCode 2 gets the same two gates from a
-plugin (`plugins/canonkit.js`, loading `canonkit/canonkit-opencode.js`), and
-`--wire-hooks` also appends `git commit *` and `git push *` asks to
-`opencode.json` `permissions`: config, not a gate, matched on the command as
-typed. Calls made through `execute` and MCP tools are not gated. The
-`[ENFORCED]` rules in `reference/codex-block.md` and
-`reference/opencode-block.md` are held to this table by
-`scripts/check-enforced.mjs`: a harness with `[ENFORCED]` rules needs a
-`Verified on` row, a real run in which the gate denied.
+Codex and OpenCode 2 each get an adapter that runs the same core as Claude Code
+(`canonkit-hook.js`, copied beside the adapter), and `--wire-hooks` wires it. What
+each harness does with each gate:
+
+| Gate | Claude Code | Codex | OpenCode |
+| --- | --- | --- | --- |
+| `git-bypass`: `--no-verify`, `--no-gpg-sign`, `-c core.hooksPath=...` on git | deny | deny | deny |
+| `secret-block`: an obvious secret written to a file | deny | deny | deny |
+| `git`: confirm before `git commit` / `git push` | ask | by judgment | by judgment, plus a permission ask on the command as typed |
+| `secret-ask`, `high-risk-surface`, `perf-budget`: confirm an edit | ask | by judgment | by judgment |
+| `definition-of-done`: Stop without an independent reviewer | block | not offered | not offered |
+| `context-size`, `dispatch-log` | yes | not offered | not offered |
+
+"By judgment" means the adapter lets the call through and the rule holds only as
+text in that harness's block. Codex and OpenCode write no activity log, so the
+dashboard and the dispatch metrics are Claude Code's alone.
+
+The `[ENFORCED]` rules in `reference/codex-block.md` and
+`reference/opencode-block.md` are held to this page by
+`scripts/check-enforced.mjs`: each one must name a gate the adapter enforces, and
+a harness with `[ENFORCED]` rules needs a `Verified on` row below, a real run in
+which the gate denied.
 
 | | Harness | Version | OS | Date | Seen denying |
 | --- | --- | --- | --- | --- | --- |
 | Verified on | codex | codex-cli 0.166.0 | Windows 11 Pro 10.0.26300 | 2026-10-30 | `git commit --no-verify` (Bash); `apply_patch` adding a file with an AWS-key-shaped value |
 | Verified on | opencode | opencode v2.1.4 | Windows 11 Pro 10.0.26300 | 2026-10-31 | `git commit --no-verify` (shell, in the main session and a subagent); `write` of a file with an AWS-key-shaped value |
+
+What `--wire-hooks` writes for each harness, and how to remove it by hand, is in
+[install.md](install.md#codex-hook---wire-hooks).
+
+### Codex
+
+The hook is one `PreToolUse` group in `$CODEX_HOME/hooks.json` (`~/.codex` when
+`CODEX_HOME` is not set), matcher `Bash|apply_patch`, running
+`node "<CODEX_HOME>/canonkit/canonkit-codex.js"`. A shell call is gated as one
+command. An `apply_patch` call is gated once per file it adds or updates, on its
+`+` lines, and a `*** Move to:` destination counts as a path of its own. The first
+deny wins: Codex shows "Blocked by hook" with canonkit's reason, and the call does
+not run.
+
+**Trust.** Codex skips a new or changed hook until you approve it in `/hooks`,
+and install says so when it changes the group. The trust covers the command, not
+the files it runs: canonkit keeps the command fixed, so you trust it once and a
+later install that refreshes `canonkit/` asks nothing. The reverse is also true:
+code swapped into `$CODEX_HOME/canonkit/` behind a trusted command runs without
+review, as Claude Code's hook in `~/.claude/hooks/` does. `doctor` comparing those
+files byte for byte with the package is what catches it.
+
+**Fails open, silently.** If the adapter cannot run (a missing
+`canonkit-hook.js`, say), it writes one line to stderr and exits 0, and Codex shows
+nothing. Run `npx canonkit doctor` after an install or an upgrade: it is the only
+place a broken Codex hook shows up.
+
+### OpenCode
+
+OpenCode 2 or later only. The plugin, `plugins/canonkit.js`, registers on
+`execute.before` and loads `canonkit/canonkit-opencode.js`. `shell` is gated as
+one command; `write`, `edit` and `patch` are gated as the files they write (`edit`
+and `patch` go through the same code as `write`, but were not seen in a real
+session: the model never chose `edit`, and `patch` is offered to GPT models only). A deny
+throws, so the tool call fails with canonkit's reason. A subagent's calls are
+gated too: the plugin sees the child session's own tool calls. Any other error is
+swallowed, so the plugin fails open: a missing core makes it register nothing,
+with one warning that shows only under `opencode --print-logs`. `opencode plugin
+list` does not show the plugin (it lists package plugins only). As with Codex,
+`doctor` is where a broken install shows up.
+
+OpenCode has no trust step: whatever is in `plugins/` and `canonkit/` runs when
+OpenCode starts.
+
+**The two asks are config, not a gate.** A plugin cannot ask, so the prompt
+before `git commit` and `git push` is two `permissions` rules in `opencode.json`.
+They are pattern-limited:
+
+- they match the command as typed: `git -c user.name=x commit` does not match
+  `git commit *` and runs without a prompt;
+- OpenCode applies the last rule that matches, so a rule added after them can
+  silence them; `doctor` WARNs when that happens in the global `opencode.json`, but
+  does not read a project's own OpenCode config;
+- `opencode run` rejects an ask outright, and `--auto` approves it.
+
+### Known gaps
+
+- **OpenCode `execute` and MCP tools are not gated.** `execute` (Code Mode) reaches
+  no gated tool on v2.1.4, but an MCP server that exposes a shell or a file write
+  is reached through it, or directly, without the plugin seeing it. The OpenCode
+  block says so.
+- **No confirm gates.** Neither adapter can ask, so the confirm before
+  `git commit`, `git push` and edits to gated files holds by judgment, except for
+  OpenCode's pattern-limited asks.
+- **No Stop gate.** "No self-merge on HIGH risk" holds by judgment in both: no
+  hook checks that a reviewer ran after the last edit.
+- **`doctor` is not target-aware yet.** A Codex- or OpenCode-only install still
+  gets `FAIL` rows for the Claude Code agents, block and hook.
 
 ## Wiring
 
@@ -102,13 +182,17 @@ outside the project are not counted as edits.
 `main()` is wrapped in a `catch` that exits with 0, so a syntax error never locks
 up your session. It just turns every gate off, silently. That is why
 `validate.sh` runs `node --check` on every `hooks/*.js`, and why `doctor` runs it
-on the installed copy.
+on the installed copy. The Codex and OpenCode adapters fail open the same way
+(see [Codex and OpenCode](#codex-and-opencode)).
 
 Editing this file in place was always the only workflow it had, and that is how
 it came to exist in a single copy, on a single machine. Versioning it inverts the
-source of truth, so the installer protects that case: if the installed copy
-diverges from the repository's, it is preserved as `canonkit-hook.js.local.bak`
-before being overwritten.
+source of truth, so the installer protects that case: if an installed copy
+diverges from the repository's, it is preserved as `<file>.local.bak` before
+being overwritten. That holds for every copy: `canonkit-hook.js` is now installed
+in up to three places (`~/.claude/hooks/`, `$CODEX_HOME/canonkit/` and
+`~/.config/opencode/canonkit/`), and an edit made in one of them does not reach
+the others.
 
 ## The core: `evaluate(evt, env)`
 
@@ -116,10 +200,11 @@ The gates live in one pure function, `evaluate(evt, env)`, in
 `hooks/canonkit-hook.js`. `main()` is only the Claude Code adapter: stdin,
 `normalizeClaude`, `evaluate`, then it writes the log lines, runs the
 context-size reminder on `UserPromptSubmit`, prints the answer and exits. This
-is an **internal contract** that the 2.2 adapters for other harnesses build on.
-It is not a public API: the hook is installed as a single file, and the shape
-below may change between minor versions (the tests in `test/hook-core.test.js`
-are what hold it).
+is an **internal contract** that the Codex and OpenCode adapters
+(`canonkit-codex.js`, `canonkit-opencode.js`) build on. It is not a public API:
+each adapter is installed beside its own copy of `canonkit-hook.js` from the same
+package, so nothing outside the package calls it, and the shape below may change
+between minor versions (the tests in `test/hook-core.test.js` are what hold it).
 
 - `evt` is the normalized event: `event`, `tool`, `toolInput`, `cwd` (required),
   `session`, `agentId`/`agentType` (set only on a subagent's events), the Stop
@@ -151,7 +236,7 @@ because it is still a decision kind with a mode; `evaluate` never returns it.
 
 ## Events it must be registered for
 
-Registration is checked **per event**: `PreToolUse`, `PostToolUse` (matcher
+In Claude Code, registration is checked **per event**: `PreToolUse`, `PostToolUse` (matcher
 `Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit`
 and `Stop`. A hook wired to only some of them works halfway — the gates fire, so
 nobody goes looking for the dispatch metrics that never get recorded.

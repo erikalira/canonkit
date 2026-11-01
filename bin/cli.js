@@ -363,8 +363,8 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
     // The defaults start checked: Enter alone keeps what install did before the menu.
     choices: [
       { title: "Claude Code", value: "claude", selected: true, description: "~/.claude/agents, hooks, dashboard" },
-      { title: "Codex", value: "codex", selected: true, description: "~/.codex/agents, ~/.agents/skills" },
-      { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills (no hooks)" },
+      { title: "Codex", value: "codex", selected: true, description: "$CODEX_HOME (~/.codex), ~/.agents/skills" },
+      { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills" },
     ],
     min: 1,
     hint: "space toggles, enter confirms",
@@ -2366,7 +2366,7 @@ Usage:
   canonkit install [--no-reference]   install the core team at user level
            [--claude] [--codex]       for these runtimes only (asked in a terminal;
            [--opencode]               default Claude Code and Codex)
-           [--wire-hooks]             also register the hook in ~/.claude/settings.json
+           [--wire-hooks]             also wire the hook of each runtime installed
   canonkit doctor                     check the install; exits 1 on any FAIL
   canonkit reference [--claude] [--codex] [--opencode]
                                       sync only the global reference blocks
@@ -2383,15 +2383,19 @@ Options:
   --codex         install, reference: write for Codex
   --opencode      install, reference: write for OpenCode. Flags combine; none:
                   a terminal shows a menu, a script or CI gets Claude Code and Codex
-  --wire-hooks   install: write the hook's entries into ~/.claude/settings.json
-                  (dated backup first, every other key kept, settings.local.json
-                  never written) and remove the meu-time forwarder once unused
+  --wire-hooks   install: wire the hook of each runtime installed, with a dated
+                  backup of each file it changes and every other key kept.
+                  Claude Code: entries in ~/.claude/settings.json (settings.local.json
+                  never written), and the meu-time forwarder removed once unused.
+                  Codex: a group in $CODEX_HOME/hooks.json; run /hooks in Codex to
+                  trust it. OpenCode 2+: plugins/canonkit.js and two asks in
+                  opencode.json permissions
   --yes           tool add: skip the confirmation prompt
   --with-git-hooks tool add graphify: opt in to automatic Git hooks and merge driver
   -h, --help      show this
   -v, --version   show the package version
 
-Core agents install to ~/.claude/agents (Codex: ~/.codex/agents;
+Core agents install to ~/.claude/agents (Codex: $CODEX_HOME/agents, ~/.codex by default;
 OpenCode: ~/.config/opencode/agents). Specialists install to the current
 project's .claude/, .codex/ and .opencode/agents/ and are registered in its AGENTS.md.
 Tools are never installed by canonkit: a missing one gets its pinned install

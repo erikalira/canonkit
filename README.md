@@ -6,7 +6,8 @@ performance, operations or docs. Before it recommends anything, it rates the ris
 of the change. Small, reversible work stays with your main agent. Changes to auth,
 secrets, migrations or public contracts go to the agent that owns them. In Claude
 Code, hooks enforce the rules that matter most, so they hold even when the model
-forgets them.
+forgets them. Codex and OpenCode get the two that matter most of all: no git hook
+bypass and no secrets written to a file.
 
 Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
 Claude Code reads. For Claude Code, installing is a plain copy. Codex and OpenCode
@@ -40,10 +41,11 @@ npx canonkit install --wire-hooks
 ```
 
 In a terminal, a menu asks which runtimes to install for. Claude Code and Codex
-come pre-selected; OpenCode is opt-in. `--wire-hooks` registers the gate hook in
-`~/.claude/settings.json`. It saves a dated `.bak` first and changes nothing
-else. If you leave the flag out, `install` only prints the JSON for you to paste
-yourself. [What each choice writes](https://github.com/erikalira/canonkit/blob/main/docs/install.md#core-at-user-level).
+come pre-selected; OpenCode is opt-in. `--wire-hooks` wires the gate hook of each
+runtime you chose: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json` (then run
+`/hooks` in Codex once to trust it), and the OpenCode 2 plugin. It saves a dated
+`.bak` of each config file it changes and changes nothing else. If you leave the
+flag out, `install` only prints Claude Code's JSON for you to paste yourself. [What each choice writes](https://github.com/erikalira/canonkit/blob/main/docs/install.md#core-at-user-level).
 
 **Check that it worked:**
 
@@ -161,8 +163,10 @@ Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/doc
 
 ## When a gate fires
 
-Gates only exist in Claude Code. The git, secret, HIGH-risk and performance
-prompts start with `canonkit gate`. The Stop gate starts with `Definition-of-done
+This table is Claude Code. Codex and OpenCode, once wired, enforce only the git
+bypass block and the secret block, with the same reason text
+([which gate does what where](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md#codex-and-opencode)).
+The git, secret, HIGH-risk and performance prompts start with `canonkit gate`. The Stop gate starts with `Definition-of-done
 gate`. The context-size reminder is plain text.
 
 | Gate | Fires when | What to do |
@@ -205,18 +209,20 @@ means a broken hook gives no warning of its own.
 | Runtime | Agents | Rules | Hooks and gates |
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude/agents` | `~/AGENTS.md` + block in `~/.claude/CLAUDE.md` | yes |
-| Codex | `~/.codex/agents/*.toml` | `~/AGENTS.md` | no: the rules hold by judgment |
-| OpenCode (opt-in) | `~/.config/opencode/agents` | block in `~/.config/opencode/AGENTS.md` | no: the rules hold by judgment |
+| Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex`) | `~/AGENTS.md` + block in `$CODEX_HOME/AGENTS.md` | the two deny gates (git bypass, secrets), once wired; the rest by judgment |
+| OpenCode 2 (opt-in) | `~/.config/opencode/agents` | block in `~/.config/opencode/AGENTS.md` | the two deny gates, plus a prompt on `git commit`/`git push` as typed, once wired; the rest by judgment |
 
 How each target is generated, and why OpenCode is opt-in:
 [docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#codex).
+Which gate does what in each runtime:
+[docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md#codex-and-opencode).
 
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `install` | core agents, hook, dashboard, global blocks, skills (`--claude` / `--codex` / `--opencode` skip the menu) |
-| `install --wire-hooks` | the same, and registers the hook in `~/.claude/settings.json` |
+| `install --wire-hooks` | the same, and wires the hook of each runtime installed (Claude Code, Codex, OpenCode) |
 | `doctor` | checks the installation; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |
 | `add <name>...` / `remove <name>...` | specialists in the current project |
@@ -266,7 +272,7 @@ forwarder for the old hook name. See
 | Doc | For |
 | --- | --- |
 | [docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md) | what each install writes, Codex/OpenCode details, specialists, reference blocks and skills, upgrade, uninstall |
-| [docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md) | hook wiring, failure mode, `canonkit.json` rules and glob dialect |
+| [docs/hooks.md](https://github.com/erikalira/canonkit/blob/main/docs/hooks.md) | hook wiring, the gates per runtime, failure mode, `canonkit.json` rules and glob dialect |
 | [docs/telemetry.md](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md) | dispatch metrics, log fields, context contributors, the dashboard |
 | [docs/team.md](https://github.com/erikalira/canonkit/blob/main/docs/team.md) | full roster, domain boundaries, agent conventions, Integration Review |
 | [docs/tools.md](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) | graphify and openspec integration, with their security notes |

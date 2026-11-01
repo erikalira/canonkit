@@ -2,12 +2,12 @@
 
 The team (roster, risk scale, HIGH-risk routing, dispatch rules) is defined in
 `~/AGENTS.md`. Codex does not read that file from a repository below your home
-folder (it loads `~/.codex/AGENTS.md`, then each `AGENTS.md` from the git root
+folder (it loads `$CODEX_HOME/AGENTS.md`, then each `AGENTS.md` from the git root
 down to the working directory), so read `~/AGENTS.md` before dispatching any
 agent. This block holds only what is specific to Codex, and is reinstalled like
 the agents: local rules go outside the markers.
 
-- **The team are Codex subagents** in `~/.codex/agents/`. Ask for one by name.
+- **The team are Codex subagents** in `$CODEX_HOME/agents/` (`~/.codex` by default). Ask for one by name.
 - **Model and effort come from the session.** The agents set no model, so the
   rule "every planned dispatch names its model and effort" does not apply here.
 - `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
