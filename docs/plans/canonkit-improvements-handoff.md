@@ -1141,6 +1141,14 @@ unmeasured; cross-OS CI and publication were not run here.
 
 ### 7. Stack packs, opt-in per project
 
+**Planning started (2026-11-02):** see [stack-packs-design.md](stack-packs-design.md).
+The user selected TypeScript, C++, Java, Python, React and Rust, then added C#
+(`csharp`): seven packs. TypeScript was listed twice and is one pack. This
+overrides the initial two-to-three-pack
+recommendation below. The design starts with Virgo through native Codex
+subagents, using ECC's agents as reference. Implementation has not started;
+behavioral effectiveness is unmeasured and no paid eval is authorized.
+
 Recommendation: ship stacks as **skills** (on-demand, cheap) installed by `canonkit add
 <stack>`, not as new agents. An agent costs a cold start per dispatch and needs an owner,
 authority and boundaries in the roster; a stack's knowledge (idioms, build errors,
