@@ -38,8 +38,8 @@ which the gate denied.
 
 | | Harness | Version | OS | Date | Seen denying |
 | --- | --- | --- | --- | --- | --- |
-| Verified on | codex | codex-cli 0.166.0 | Windows 11 Pro 10.0.26300 | 2026-10-30 | `git commit --no-verify` (Bash); `apply_patch` adding a file with an AWS-key-shaped value |
-| Verified on | opencode | opencode v2.1.4 | Windows 11 Pro 10.0.26300 | 2026-10-31 | `git commit --no-verify` (shell, in the main session and a subagent); `write` of a file with an AWS-key-shaped value |
+| Verified on | codex | codex-cli 0.166.0 | Windows 11 Pro 10.0.26300 | 2026-11-01 | `git commit --no-verify` (Bash); `apply_patch` adding a file with an AWS-key-shaped value; canonkit 2.2.0 from `npm pack`, wired in a `$CODEX_HOME` |
+| Verified on | opencode | opencode v2.1.4 | Windows 11 Pro 10.0.26300 | 2026-11-01 | `git commit --no-verify` (shell, in the main session and a subagent); `write` of a file with an AWS-key-shaped value; canonkit 2.2.0 from `npm pack`, wired in an `$XDG_CONFIG_HOME` |
 
 What `--wire-hooks` writes for each harness, and how to remove it by hand, is in
 [install.md](install.md#codex-hook---wire-hooks).

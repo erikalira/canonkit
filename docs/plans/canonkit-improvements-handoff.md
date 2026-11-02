@@ -469,8 +469,8 @@ Both harnesses are installed, so condition 7 can be met here. CI already runs `m
 | ~~11~~ | ~~**OpenCode wiring.** With `--wire-hooks` and opencode chosen, install writes `opencodeDir()/canonkit/` and `plugins/canonkit.js`, and merges `"git commit*": "ask"` and `"git push*": "ask"` into `opencode.json` `permission.bash` (condition 6: `.bak` first, only missing keys, idempotent). It refuses before writing if `opencode.json` does not parse or an `opencode.jsonc` exists, because comments do not round-trip. A string-valued `permission.bash` is converted or refused according to slice 9's precedence finding. Doctor adds OpenCode rows. `cli.test.js:247` becomes positive. Condition-5 test: the files load under a parent `"type":"module"`.~~ — **done**, 7e73fdd, replanned on slice 9: V2 `permissions`, not V1 `permission.bash`; see "OpenCode, slice 11" | `bin/cli.js`, `bin/exec.js`, `test/cli.test.js`, `test/exec.test.js` | opus, high |
 | ~~12~~ | **Blocks, one commit per harness.** — **done**: Codex half a2c0bff, 1647845; OpenCode half b1582f2. New `reference/codex-block.md`, synced to `codexHome()/AGENTS.md`; doctor WARNs if an `AGENTS.override.md` shadows it. It points at `~/AGENTS.md` the way the opencode block does, if slice 7 found Codex does not read that file. In both blocks, `[ENFORCED]` bullets cover only `git-bypass` and `secret-block`, with the annotation, worded "once wired (`--wire-hooks`; doctor checks it)". The OpenCode block adds "prompts on `git commit`/`git push` as typed, pattern-limited", without the marker; everything else is "by judgment". This replaces `opencode-block.md:16-21`. The "Verified on" rows in `docs/hooks.md` are added here from slices 7 and 9, so slice 4's rule stays green. | `reference/codex-block.md` (new), `reference/opencode-block.md`, `bin/cli.js` (`syncReference` :1028-1057, doctor), `docs/hooks.md` | sonnet, medium |
 | ~~13~~ | **Docs.** — **done** (uncommitted); see "Slice 13, docs". `docs/install.md`: rows :35-36, the refusal sentence at :39, the Codex (:69) and OpenCode (:103) sections with every file and key `--wire-hooks` writes per harness and how to remove each by hand, and the uninstall section (:283). `docs/hooks.md`: the line at :10 that says "Hooks exist only in Claude Code"; the "installed as a single file" sentence (:100) rechecked, since the same file is now copied into up to three places; and a per-harness section covering the gate table, Codex trust and `/hooks`, OpenCode's pattern limits, and the known gaps. README: :43, the enforcement column at :208-209, and :219. CLI text: the menu at `bin/cli.js:348` and usage at :1937/:1954. Write `docs/release-notes/2.2.0.md`, with changelog entries for `--wire-hooks` no longer refused with `--codex`/`--opencode`, `$CODEX_HOME` now honored (agents move for anyone who sets it), the codex block, and manual removal as the rollback. | docs, README, `bin/cli.js` (text only) | sonnet, medium |
-| 14 | `package.json` 2.2.0. | `package.json` | sonnet, low |
-| 15 | **Release gate: the condition-7 record on the shipped build.** Run `npm pack`, then install the tarball with `--codex --wire-hooks` and `--opencode --wire-hooks` (scratch homes, or the real ones with backups). Trust the Codex hook, then repeat (a) and (b) from slices 7 and 9. Update the "Verified on" rows (harness version, OS build, date, the gates seen denying) and the verification record. A harness that does not deny here is reverted (its slices 6/8, 10/11, 12 and its doc lines) before release. | `docs/hooks.md`, this handoff | sonnet, high (the user drives the sessions) |
+| ~~14~~ | ~~`package.json` 2.2.0.~~ — **done** (with `package-lock.json`) | `package.json` | sonnet, low |
+| ~~15~~ | **Release gate: the condition-7 record on the shipped build.** — **done**; see "Slice 15, release gate". Run `npm pack`, then install the tarball with `--codex --wire-hooks` and `--opencode --wire-hooks` (scratch homes, or the real ones with backups). Trust the Codex hook, then repeat (a) and (b) from slices 7 and 9. Update the "Verified on" rows (harness version, OS build, date, the gates seen denying) and the verification record. A harness that does not deny here is reverted (its slices 6/8, 10/11, 12 and its doc lines) before release. | `docs/hooks.md`, this handoff | sonnet, high (the user drives the sessions) |
 
 Reordering: slices 1, 2 and 5 are independent of each other, except that 5's malformed rows
 come after 2. Slice 3 comes before 4, and all of 1-5 come before 6. The Codex track (6, 7, 10)
@@ -591,8 +591,8 @@ row 10:
   OpenCode alone still refuses.
 
 Carried forward:
-- **Slice 15:** the docs name only `~/.codex/hooks.json`. That Codex reads `hooks.json` from
-  `$CODEX_HOME` is assumed; check it with a scratch `CODEX_HOME`.
+- ~~**Slice 15:** the docs name only `~/.codex/hooks.json`. That Codex reads `hooks.json` from
+  `$CODEX_HOME` is assumed; check it with a scratch `CODEX_HOME`.~~ Honored (slice 15).
 - ~~**Slice 13:** the menu text (`~/.codex/agents`) and the `--wire-hooks` usage line
   (settings.json only) are stale.~~ Done in slice 13.
 - **Backlog:** doctor is still Claude-only outside the Codex rows. A Codex-only user gets FAIL
@@ -823,9 +823,9 @@ Carried forward:
 Carried forward:
 - ~~**Slice 13:** the per-harness sections in `hooks.md` build on "Codex and OpenCode".~~ Done in
   slice 13.
-- **Slice 15:** update the opencode "Verified on" row on the shipped build.
+- ~~**Slice 15:** update the opencode "Verified on" row on the shipped build.~~ Done in slice 15.
 
-**Slice 13, docs (2026-11-01, uncommitted; Spencer reviewed after the last edit: approve with
+**Slice 13, docs (2026-11-01, commit `57a8b07`; Spencer reviewed after the last edit: approve with
 fixes, all applied).** `npm test` 691, 688 pass, 0 fail, 3 skipped; validate green.
 - `docs/install.md`: the target table with `$CODEX_HOME` and `$XDG_CONFIG_HOME`; the refusal
   sentence replaced by what `--wire-hooks` does per harness; new "Codex hook" and "OpenCode
@@ -840,9 +840,76 @@ fixes, all applied).** `npm test` 691, 688 pass, 0 fail, 3 skipped; validate gre
   `canonkit-hook.test.js`; Spencer reworded row 8 and decision 4.
 
 Carried forward:
-- **Slice 15 (release blocker, Spencer):** the docs state that Codex reads `hooks.json` from
+- ~~**Slice 15 (release blocker, Spencer):** the docs state that Codex reads `hooks.json` from
   `$CODEX_HOME` (install.md "Codex hook", hooks.md "Codex", README Runtimes, the release notes).
-  If the scratch-`CODEX_HOME` check fails, those four places change before release.
+  If the scratch-`CODEX_HOME` check fails, those four places change before release.~~ Honored
+  (slice 15); the four places stand.
+
+**Slice 15, release gate (2026-11-01, Windows 11 Pro 10.0.26300; plan approved by the user).**
+The shipped build: `npm pack` gave `canonkit-2.2.0.tgz` (37 files, the five `hooks/` files
+included), installed with `npm install --prefix <scratch>/pkg`, and every command below ran that
+copy's `canonkit`, never the repo's `bin/cli.js`. Both harnesses ran in scratch homes, and the
+real ones were not wired: `~/.codex` has no `hooks.json`, and `~/.config/opencode` holds an
+`opencode.jsonc`, which the shipped install refuses (checked with `--dry-run`: "Refusing
+--wire-hooks: ~/.config/opencode/opencode.jsonc exists …", nothing written). Outside the scratch
+homes, install touched only `~/AGENTS.md` ("already current") and the two skills in
+`~/.agents/skills`, rewritten from the same build.
+
+**Codex** (`codex-cli 0.166.0`, model `gpt-5.6-luna`, the user drove the session).
+`CODEX_HOME=<scratch>/codex canonkit install --codex --wire-hooks` wrote `agents/` (10),
+`canonkit/` (3 files), `AGENTS.md` with the block, and `hooks.json` with one
+`Bash|apply_patch` group whose command names `<scratch>/codex/canonkit/canonkit-codex.js`. The user
+ran a fresh `codex login` there (a new token, not a copy; decision 2 holds) and chose the non-admin
+sandbox, as the real config has (`[windows] sandbox = "unelevated"`).
+
+| Run | Expected | Seen in Codex |
+|---|---|---|
+| `/hooks` | the group listed | PreToolUse: Installed 1, Active 1; `config.toml` got `hooks.state.'<scratch>\codex\hooks.json:pre_tool_use:0:0'` with a `trusted_hash` |
+| (a) `git commit --no-verify -m x` | deny | "Blocked by hook", the canonkit reason verbatim; no retry; no commit |
+| (b) `apply_patch` adding `creds.txt` with slice 9's AKIA-shaped placeholder | deny | "Blocked by hook", the Gard reason; file not created |
+| (c) `git commit -m x` | runs | Codex's own approval prompt (not canonkit: `git` is `text`), approved; commit `9023c8f` |
+
+**Gate: (a) and (b) deny, so Codex ships in 2.2.** **`$CODEX_HOME` (the slice 13 blocker):
+honored.** `~/.codex/hooks.json` does not exist, so the hook `/hooks` lists and the denies can
+only come from `$CODEX_HOME/hooks.json`. The four places that state it (install.md, hooks.md,
+README, the release notes) stand.
+
+A long `CODEX_HOME` breaks Codex's background server on Windows, whatever canonkit does: at 188
+characters the socket path is over `SUN_LEN` ("app server did not become ready … path must be
+shorter than SUN_LEN"), and `codex --no-daemon` works around it. Codex also declines to create its
+helper binaries under `%TEMP%` (a warning only).
+
+**OpenCode** (`opencode v2.1.4`, model `opencode/big-pickle`, every step `cost: 0`; Bob's form from
+slice 9, run in this session with the user's approval: `opencode run --standalone --format json
+< /dev/null`). `XDG_CONFIG_HOME=<scratch>/xdg canonkit install --opencode --wire-hooks` wrote
+`agents/`, `canonkit/` (3 files), `plugins/canonkit.js`, `AGENTS.md` and `opencode.json` with
+the two asks "added at the end". `opencode debug paths` gave the scratch config folder,
+`opencode debug config` listed the asks, and `canonkit doctor` gave OK for `opencode agents`,
+`hook files` (4 files, same as the package), `permissions` and `reference`.
+
+| Run | Expected | Seen in OpenCode |
+|---|---|---|
+| (a) `git commit --no-verify -m x` | deny | the shell call failed with the canonkit reason verbatim; no retry; no commit |
+| (a) through a subagent | deny | the `subagent` call passed; the child's shell call got the canonkit reason, exit 1 |
+| (b) `write` of `creds.txt` with the AKIA-shaped placeholder | deny | the write failed with the Gard reason; file not created |
+| (c) `git commit -m x` with `--auto` | runs | ran; commit `ce0f59e` |
+| (c) without `--auto` | the ask, auto-rejected | "permission requested: shell (git commit -m y .); auto-rejecting" |
+
+**Gate: (a) and (b) deny in the main session, so OpenCode ships in 2.2.**
+
+Harness note: this session's own Claude Code hook blocked a Bash command that held the AKIA-shaped
+prompt and redirected output to a file (`secret-block`, as designed). (b) ran with the output piped
+to a parser, not written.
+
+Carried forward:
+- **Docs (Spencer, end of release):** say in install.md "Codex hook" that a long `CODEX_HOME` on
+  Windows needs `codex --no-daemon` (Codex's limit, not canonkit's).
+- **Backlog:** the unexpanded-variable item above also covers a *denied* command. The Bash call
+  `cat > "$S/parse.cjs"` was blocked by `secret-block`, yet the Stop gate kept counting `$S/parse.cjs`
+  as an in-project edit and fired on every later turn of the session.
+- Cleanup: the scratch homes, repos and the tarball were deleted, and `codex logout` was run in
+  the scratch `CODEX_HOME`. The real `~/.codex/config.toml` and every file in `~/.config/opencode`
+  hash as before.
 
 ### 5. Uninstall
 
