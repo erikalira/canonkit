@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { dispatches, judge, names, parseRun, validateCases } from "../scripts/eval-routing.mjs";
 import { agentDefinition, judgeReport, report, validateQualityCases } from "../scripts/eval-quality.mjs";
 import { readAgents } from "../bin/cli.js";
+import { STACK_PACK_IDS, readStackPack, validateStackPacks } from "../bin/stack-packs.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const line = (content) => JSON.stringify({ type: "assistant", message: { content } });
@@ -344,6 +345,13 @@ describe("quality eval", () => {
       return [`Approved. No blockers.\n${body}`, `Approved. No blockers. ${body}`];
     };
     const examples = {
+      "stack-typescript-runtime-cast": ["Block: the cast is only a type assertion, not runtime validation; invalid external values now reach name.toUpperCase(). Restore the boundary guard.", "Block: add another cast to fix the type error; the runtime data is already safe."],
+      "stack-cpp-dangling-view": ["Block: string_view points into local, whose lifetime ends at return; the returned view dangles. Return an owning string.", "Block: use a smart pointer for better style."],
+      "stack-csharp-early-dispose": ["Block: using disposes the stream while the read task can still be pending. Await completion inside the using scope.", "Block: add ConfigureAwait(false) to improve performance."],
+      "stack-java-resource-exception": ["Block: if readLine throws an exception, close is skipped and the resource leaks. Restore try-with-resources.", "Block: move this into a Spring service for dependency injection."],
+      "stack-python-shared-default": ["Block: the default list is shared across calls, retaining prior values. Create a list per call with a None default.", "Block: the default list should be renamed for clarity."],
+      "stack-react-stale-result": ["Block: older requests may resolve out of order and overwrite current state. Restore the effect cleanup guard to ignore obsolete results.", "Block: memoize search and use a state library."],
+      "stack-rust-borrowed-spawn": ["Block: spawn borrows label but the closure must outlive this function. Use move to transfer ownership into the thread.", "Block: change the edition and raise the compiler version."],
       "gard-missing-authz": ["Block: any signed-in user can delete accounts. Use requireAdmin.", "Block: rename the handler for clarity.", WAVED],
       "gard-token-in-log": ["Block: the token enters a shared log; remove it.", "Block: the log has noisy formatting. Keep recording the full credential.", WAVED],
       "gard-clean-low": ["LOW: approved, parameter rename only.", "Block: P1, the local rename requires security sign-off."],
@@ -480,6 +488,66 @@ describe("quality eval", () => {
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, change: {} }] }), /no change/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { says: "x" } }] }), /list of regexes/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { maybe: 1 } }] }), /expect takes/);
+    for (const stackPack of ["../../outside", "unknown", null, 1, ""]) {
+      assert.throws(() => validateQualityCases({ cases: [{ ...ok, stackPack }] }), /unknown stack pack/);
+    }
+  });
+
+  test("pack cases explicitly compose only the selected pack and preserve existing definitions", () => {
+    const plain = agentDefinition("quinn");
+    assert.doesNotMatch(plain.quinn.prompt, /Explicitly loaded stack pack/);
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    assert.deepEqual(validateStackPacks(REPO, data.cases), STACK_PACK_IDS);
+    for (const id of STACK_PACK_IDS) {
+      const selected = agentDefinition("quinn", null, REPO, id);
+      assert.equal(selected.quinn.model, plain.quinn.model);
+      assert.ok(selected.quinn.prompt.startsWith(plain.quinn.prompt));
+      assert.ok(selected.quinn.prompt.endsWith(readStackPack(id).body));
+      for (const other of STACK_PACK_IDS.filter((name) => name !== id)) assert.ok(!selected.quinn.prompt.includes(`Explicitly loaded stack pack: canonkit-${other}`));
+      assert.ok(data.cases.some((kase) => kase.stackPack === id));
+    }
+    assert.throws(() => agentDefinition("quinn", null, REPO, "../../outside"), /Unknown stack pack/);
+    assert.throws(() => validateStackPacks(REPO, data.cases.filter((kase) => kase.stackPack !== "react")), /Missing quality case/);
+  });
+
+  test("stack-pack judges reject correct diagnoses paired with ineffective corrections", () => {
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    const probes = {
+      "stack-typescript-runtime-cast": {
+        good: "Block: external input needs runtime validation. Add a guard that narrows the input before reading its name.",
+        bad: "Block: runtime validation of external input is missing. Fix by another assertion to User so the compiler accepts the access.",
+      },
+      "stack-cpp-dangling-view": {
+        good: "Block: the string_view dangles when the local string is destroyed. Return an owning `std::string`.",
+        bad: "Block: the local string lifetime makes the returned view dangle. Use a local unique_ptr<std::string> and return a string_view into it.",
+      },
+      "stack-csharp-early-dispose": {
+        good: "Block: the stream is disposed before read completion. Await the operation before disposing the stream.",
+        bad: "Block: the stream lifetime ends before task completion. Remove the using declaration and never dispose the stream so the read can complete.",
+      },
+      "stack-java-resource-exception": {
+        good: "Block: an exception skips close and leaks the reader. Close the resource in finally.",
+        bad: "Block: an exception skips close and leaks the reader. Catch and ignore IOException, then return an empty string.",
+      },
+      "stack-python-shared-default": {
+        good: "Block: the default list is shared between calls. Allocate a fresh list for each call.",
+        bad: "Block: the default list is shared across calls. Clear values at the start of every invocation to prevent retained state.",
+      },
+      "stack-react-stale-result": {
+        good: "Block: out-of-order requests can replace current results. Ignore obsolete results in the effect cleanup guard.",
+        bad: "Block: older requests cause a race and cleanup is missing. Use an empty dependency array so the request runs only once.",
+      },
+      "stack-rust-borrowed-spawn": {
+        good: "Block: spawn requires a static lifetime, but the closure borrows the local label. Use a move closure to transfer ownership.",
+        bad: "Block: the closure borrows label and must outlive its owner. Clone label inside the closure without transferring ownership into it.",
+      },
+    };
+    for (const [id, { good, bad }] of Object.entries(probes)) {
+      const c = data.cases.find((entry) => entry.id === id);
+      assert.ok(c, `${id}: missing case`);
+      assert.equal(judgeReport(c.expect, good).pass, true, `${id}: valid alternative rejected`);
+      assert.equal(judgeReport(c.expect, bad).pass, false, `${id}: correct diagnosis hid an ineffective correction`);
+    }
   });
 
   test("overengineering probes accept an explicit rejection but not an approval followed by the right keywords", () => {

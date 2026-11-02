@@ -37,7 +37,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
 | 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
-| 7 | Stack packs, opt-in per project | stack-coverage 5 → 7–8 | Virgo; Scott on scope (MEDIUM) |
+| 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
 | 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
 | 9 | Leftovers, low value now | — | inline (LOW) |
 
@@ -1141,13 +1141,24 @@ unmeasured; cross-OS CI and publication were not run here.
 
 ### 7. Stack packs, opt-in per project
 
-**Planning started (2026-11-02):** see [stack-packs-design.md](stack-packs-design.md).
+**Implemented locally (2026-11-02):** see [stack-packs-design.md](stack-packs-design.md)
+for the design and validation record. Seven project-only skills are available
+through explicit `canonkit add <stack>`, with tracked conservative removal and
+no automatic installation or new agents. They are separate from the core's
+global skills and install manifest. Seven quality cases load pack content
+explicitly; behavioral effectiveness is unmeasured and no paid eval was run.
+The full local suite passed (749 tests before the final judge calibration:
+746 passed, three platform skips, no failures); the affected eval tests then
+passed 25/25. Repository/skill validation and dry-run packaging passed. Archie,
+Gard, Quinn and Spencer approved their final scopes; Integration Review found
+no unresolved blockers. No core reinstall, commit or push was performed.
+
 The user selected TypeScript, C++, Java, Python, React and Rust, then added C#
 (`csharp`): seven packs. TypeScript was listed twice and is one pack. This
 overrides the initial two-to-three-pack
 recommendation below. The design starts with Virgo through native Codex
-subagents, using ECC's agents as reference. Implementation has not started;
-behavioral effectiveness is unmeasured and no paid eval is authorized.
+subagents, using ECC's agents as reference. Publication and cross-OS CI have not
+been performed for this change.
 
 Recommendation: ship stacks as **skills** (on-demand, cheap) installed by `canonkit add
 <stack>`, not as new agents. An agent costs a cold start per dispatch and needs an owner,

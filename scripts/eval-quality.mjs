@@ -30,6 +30,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseAgent } from "../bin/cli.js";
+import { STACK_PACK_IDS, readStackPack, validateStackPacks } from "../bin/stack-packs.js";
 import { TEAM, parseRun, removeTempDir, runClaude, writeFixture } from "./eval-routing.mjs";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -77,6 +78,7 @@ export function validateQualityCases(data, team = TEAM) {
     if (!c.id || ids.has(c.id)) throw new Error(`case id missing or duplicated: ${c.id}`);
     ids.add(c.id);
     if (!team.has(c.agent)) throw new Error(`${c.id}: '${c.agent}' is not an agent this package ships`);
+    if (c.stackPack !== undefined && !STACK_PACK_IDS.includes(c.stackPack)) throw new Error(`${c.id}: unknown stack pack '${c.stackPack}'`);
     if (!c.prompt) throw new Error(`${c.id}: no prompt`);
     if (!["LOW", "MEDIUM", "HIGH"].includes(c.risk)) throw new Error(`${c.id}: risk must be LOW, MEDIUM or HIGH`);
     if (typeof c.fixture !== "object" || !Object.keys(c.fixture).length) throw new Error(`${c.id}: no fixture`);
@@ -93,7 +95,7 @@ export function validateQualityCases(data, team = TEAM) {
  * A/B, from a variant whose body replaces it. The variant keeps the shipped
  * frontmatter unless it carries its own, so only the body is compared.
  */
-export function agentDefinition(name, variantPath = null, repo = REPO) {
+export function agentDefinition(name, variantPath = null, repo = REPO, stackPack = null) {
   const norm = (s) => s.replace(/\r\n/g, "\n");
   const shipped = norm(readFileSync(path.join(repo, "agents", `${name}.md`), "utf8"));
   const agent = parseAgent(`${name}.md`, shipped);
@@ -101,6 +103,10 @@ export function agentDefinition(name, variantPath = null, repo = REPO) {
   if (variantPath) {
     const v = norm(readFileSync(variantPath, "utf8"));
     body = v.startsWith("---\n") ? v.slice(v.indexOf("\n---", 4) + 4).trim() : v.trim();
+  }
+  if (stackPack !== null) {
+    const pack = readStackPack(stackPack, repo);
+    body += `\n\n## Explicitly loaded stack pack: ${pack.name}\n\n${pack.body}`;
   }
   return { [name]: { description: agent.description, prompt: body, model: agent.model } };
 }
@@ -110,7 +116,7 @@ function runCase(kase, run, opts) {
   try {
     writeFixture(dir, kase.fixture, kase.change);
     const defs = path.join(dir, ".eval-agents.json");
-    const def = agentDefinition(kase.agent, opts.variants[kase.agent]);
+    const def = agentDefinition(kase.agent, opts.variants[kase.agent], REPO, kase.stackPack ?? null);
     writeFileSync(defs, JSON.stringify(def));
     const model = opts.model ?? def[kase.agent].model;
     const stream = runClaude(dir, kase.prompt, { ...opts, model }, ["--agents", defs, "--agent", kase.agent]);
@@ -151,6 +157,7 @@ function parseArgs(argv) {
 function main() {
   const opts = parseArgs(process.argv.slice(2));
   const data = validateQualityCases(JSON.parse(readFileSync(CASES, "utf8")));
+  validateStackPacks(REPO, data.cases);
   // --only takes one id or a comma-separated list; an unknown id is an error, not a skip.
   const only = opts.only ? opts.only.split(",").map((s) => s.trim()).filter(Boolean) : null;
   if (only && !only.length) throw new Error("--only needs at least one case id");
@@ -161,7 +168,8 @@ function main() {
   if (opts.dryRun) {
     for (const c of cases) {
       const v = opts.variants[c.agent] ? `  (variant ${path.basename(opts.variants[c.agent])})` : "";
-      console.log(`${c.id.padEnd(24)} ${c.agent.padEnd(7)} ${c.risk.padEnd(6)} ${JSON.stringify(c.expect)}${v}`);
+      const pack = c.stackPack ? `  (stack pack ${c.stackPack}; content supplied explicitly)` : "";
+      console.log(`${c.id.padEnd(24)} ${c.agent.padEnd(7)} ${c.risk.padEnd(6)} ${JSON.stringify(c.expect)}${v}${pack}`);
     }
     console.log(`\n${cases.length} case(s) x ${opts.runs} run(s), at most $${opts.budget} each. Nothing was called.`);
     return 0;

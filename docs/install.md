@@ -1,8 +1,8 @@
 # Installation reference
 
 The README covers the happy path. This page is the detail: what each choice
-writes, how the Codex and OpenCode targets differ, project-level specialists, the
-global reference blocks and skills, and upgrading from an older name.
+writes, how the Codex and OpenCode targets differ, project-level specialists and
+stack packs, global reference blocks and skills, and upgrading from an older name.
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
@@ -39,7 +39,7 @@ larger than that.
 `install` and `reference` also maintain `~/.canonkit/install-manifest.json`.
 It records global artifacts by stable ID, resolved root, harness owners,
 provenance and installed-byte hash. Private configuration snapshots live under
-`~/.canonkit/backups/`. Project specialists, external tool setup and activity
+`~/.canonkit/backups/`. Project specialists and stack packs, external tool setup and activity
 history are not owned by this global manifest. `--no-reference` skips the blocks
 and skills and preserves earlier records for them.
 
@@ -232,10 +232,10 @@ the two `git commit *` and `git push *` ask rules from `permissions`.
 | `install --no-reference` | only the agents, the hooks and the dashboard |
 | `install --claude` / `--codex` / `--opencode` | only for those runtimes, without the menu |
 | `doctor` | read-only check of the installation; exits 1 if any check is `FAIL` |
-| `reference` | only the global blocks and the skills (`--claude`/`--codex`/`--opencode` narrow it; no menu) |
+| `reference` | only the global blocks and core skills (`--claude`/`--codex`/`--opencode` narrow it; no menu; no stack packs) |
 | `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `add <name>...` | specialists in the current project |
-| `remove <name>...` | removes specialists from the current project |
+| `add <name>...` | specialists or stack-pack skills in the current project |
+| `remove <name>...` | removes specialists or tracked stack-pack files from the current project |
 | `list` | the roster and what is installed where (and points to `tool list`) |
 | `tool add <graphify\|openspec>` | runs the tool's setup in this project and records it in `AGENTS.md` (see [tools.md](tools.md)) |
 | `tool remove <name>` | removes the tool from `AGENTS.md` |
@@ -280,6 +280,64 @@ for choosing an agent and not a description of one.
 Removing the last specialist takes the whole block out of `AGENTS.md`. Everything
 outside the markers is preserved, and the script refuses to run inside the
 `canonkit` repository itself or to install a core agent.
+
+## Stack packs, per project
+
+Stack packs are skills, not additional agents. They supply language/framework
+guidance to Bob and Quinn without changing the roster or adding a review verdict.
+Available IDs are `typescript`, `cpp`, `csharp`, `java`, `python`, `react` and
+`rust`. Install only the ones wanted, from the consuming project's directory:
+
+```bash
+npx canonkit add typescript react
+npx canonkit add cpp csharp java python rust
+npx canonkit list
+npx canonkit remove react
+```
+
+Each named pack writes two project-local copies of its `SKILL.md`:
+
+- `.agents/skills/canonkit-<stack>/` for universal discovery;
+- `.claude/skills/canonkit-<stack>/` for Claude Code.
+
+An installed skill is available for selection when relevant; installing it does
+not force a dispatch. React does not implicitly install TypeScript. There is no
+stack detection, download, toolchain/dependency installation or build execution.
+`install`, `reference` and global `uninstall` neither install nor remove project
+packs. Core skills remain in `skills/`; pack sources ship in `stack-packs/`.
+
+`add` and `remove` also accept mixed lists such as `add maya react`. All names
+and pack destinations are checked before any specialist writes. The current
+directory is the project boundary; the command does not search upward for a
+different root. Pack writes refuse HOME, canonkit's own checkout and symlinks or
+junctions below the canonical project boundary.
+
+The project receipt `.canonkit/stack-packs.json` records fixed file IDs and
+installed hashes, independently of the global install manifest. Keep it with
+the installed copies: without it, an existing destination is an untracked
+collision and is preserved. The receipt contains instruction-file metadata,
+not credentials or machine-specific absolute paths. Do not share or version
+temporary lock, recovery-lock or staging files.
+
+Repeating `add` is idempotent when current and updates tracked, unchanged copies.
+A locally edited copy or an untracked destination causes an install/update
+conflict before writes. `remove` deletes only tracked files matching their
+recorded hashes; it may remove an intact copy while preserving an edited one,
+retain the latter's receipt and exit nonzero. Unrelated extra files remain and
+do not make an otherwise completed removal fail.
+
+`list` reports `installed`, `absent`, `partial`, `locally modified`,
+`untracked/collision` or `partial (pending)` without writing or recovering state.
+An installed pack may be from an older package; repeat `add` to update it.
+
+Mutating commands serialize through a project lock and record pending intent
+before changing each file. A retry recognizes the before/after bytes and
+recovers interrupted work; a conflicting third state is preserved for manual
+resolution. A stale lock is recovered only when its process is no longer alive;
+an unrecognized or stranded recovery lock requires inspection. `--dry-run`
+changes no files or directories and refuses a lock or pending operation instead
+of recovering it. No transaction or rollback of legacy specialist writes is
+promised for a mixed request that fails during execution.
 
 ## Global reference blocks and skills
 
@@ -422,7 +480,7 @@ a backup or removing their content.
 Backups can contain secrets. They are private (POSIX permissions, restricted DACLs
 on Windows), never overwritten, and retained after uninstall, along with private
 snapshots and the manifest. Configuration changes also get dated backups beside
-the configuration file. Activity history, project specialists/configs, external
+the configuration file. Activity history, project specialists/packs/configs, external
 tool data and `~/.agents/<core>.md` leftovers are preserved.
 
 Some wiring needs a manual step. Codex groups/handlers stay if removing them would

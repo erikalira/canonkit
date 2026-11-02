@@ -29,6 +29,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest } from "./install-manifest.js";
+import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -1522,6 +1523,26 @@ async function addSpecialists(ctx, names, options = {}) {
   await rebuildProjectBlock(ctx, project, agents, agentsDir, projected);
 }
 
+// Packs contribute instructions to the existing team, not new specialist agents.
+// Validate the whole request before either writer runs; pack preflight also
+// precedes the legacy specialist writer in a mixed request.
+async function changeProject(ctx, names, options) {
+  const agents = await readAgents();
+  const known = new Set(specialists(agents).map((agent) => agent.name));
+  for (const name of names) {
+    if (known.has(name) || STACK_PACK_IDS.includes(name)) continue;
+    if (core(agents).some((agent) => agent.name === name)) throw new Error(`${name} is a core agent — install it with 'npx canonkit install'.`);
+    throw new Error(`Not a domain specialist or stack pack: ${name}\nSpecialists: ${[...known].join(" ")}\nStack packs: ${STACK_PACK_IDS.join(" ")}`);
+  }
+  const packs = names.filter((name) => STACK_PACK_IDS.includes(name));
+  const selected = names.filter((name) => known.has(name));
+  if (!packs.length) { await addSpecialists(ctx, selected, options); return 0; }
+  return new StackPackStore({ dryRun: ctx.dryRun, log: ctx.log }).change(packs, {
+    remove: options.remove,
+    before: async () => { if (selected.length) await addSpecialists(ctx, selected, options); },
+  });
+}
+
 /**
  * Rebuild the managed block in the project's AGENTS.md from what is actually on
  * disk, so the file reflects reality rather than the history of commands.
@@ -1622,6 +1643,9 @@ async function list(ctx) {
 
   ctx.log("");
   ctx.log("Optional tools (graphify, openspec): canonkit tool list");
+  ctx.log("");
+  ctx.log("Stack packs (this project; skills, installed explicitly with canonkit add <stack>)");
+  for (const { pack, state } of await new StackPackStore().list()) ctx.log(`  ${pack.padEnd(12)} ${state}`);
 }
 
 /* ------------------------------------------------------------------ doctor */
@@ -2571,8 +2595,8 @@ Usage:
                                       remove tracked global entries (default: all recorded runtimes)
   canonkit reference [--claude] [--codex] [--opencode]
                                       sync only the global reference blocks
-  canonkit add <name>...              add domain specialists to this project
-  canonkit remove <name>...           remove domain specialists from this project
+  canonkit add <name>...              add specialists or stack-pack skills to this project
+  canonkit remove <name>...           remove specialists or tracked stack-pack skills
   canonkit list                       show the roster and what is installed
   canonkit tool add <tool> [--yes]    run an installed tool's setup here (graphify, openspec)
   canonkit tool remove <tool>         take a tool out of this project's AGENTS.md
@@ -2599,6 +2623,9 @@ Options:
 Core agents install to ~/.claude/agents (Codex: $CODEX_HOME/agents, ~/.codex by default;
 OpenCode: ~/.config/opencode/agents). Specialists install to the current
 project's .claude/, .codex/ and .opencode/agents/ and are registered in its AGENTS.md.
+Stack packs (${STACK_PACK_IDS.join(", ")}) install only when added, to this
+project's .agents/skills/canonkit-<stack>/ and .claude/skills/canonkit-<stack>/.
+They are not agents or part of the core install. Local edits are preserved.
 Tools are never installed by canonkit: a missing one gets its pinned install
 command printed.`;
 }
@@ -2750,8 +2777,7 @@ async function main(argv) {
         console.error(usage());
         return 1;
       }
-      await addSpecialists(ctx, rest, { remove: command === "remove" || flags.includes("--remove") });
-      return 0;
+      return changeProject(ctx, rest, { remove: command === "remove" || flags.includes("--remove") });
     case "list":
       await list(ctx);
       return 0;

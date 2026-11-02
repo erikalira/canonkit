@@ -1,8 +1,9 @@
 # Stack packs — implementation plan
 
-Status: proposed, 2026-11-02. Item 7 of the
+Status: implemented locally, 2026-11-02; behavioral efficacy unmeasured. Item 7 of the
 [improvements handoff](canonkit-improvements-handoff.md#7-stack-packs-opt-in-per-project).
-Planning only: no pack, CLI behavior or installed configuration has changed.
+The user authorized implementation with "continue" after reviewing the plan.
+No core reinstall, release, paid eval, commit or push was performed.
 Virgo prepared the initial plan through a native Codex subagent. The requested
 scope is seven packs: **typescript, cpp, csharp, java, python, react, rust**;
 the repeated TypeScript in the original request is one pack, and C# was added
@@ -21,7 +22,7 @@ npx canonkit list
 npx canonkit remove react
 ```
 
-These are proposed commands, not features already available in 2.3.0.
+These commands are implemented in this checkout; this change has not been released.
 Each add installs only the named packs in the current project. React does not
 implicitly install TypeScript. No stack detection, suggestions or automatic
 installation in this first version. The core install and reference commands
@@ -42,19 +43,19 @@ The working tree was clean on `feat/learning-loop` before this task. The checkou
 remote is `https://github.com/erikalira/canonkit.git`. Existing learning-loop
 work remains the baseline; do not reset, reinstall, or replace it.
 
-Current code establishes the constraints:
+The baseline code established these constraints, which the implementation addresses:
 
 - `bin/cli.js`, `installSkills`: every direct `skills/*/SKILL.md` is installed at
   user scope. `installCatalog` also claims those files for global uninstall.
   Packs need a separate source root, not a new folder beside core skills.
-- `addSpecialists` currently implements `add/remove` for project agents and
+- `addSpecialists` implemented `add/remove` for project agents and
   rebuilds their managed block. Packs must not be treated as specialists.
 - `bin/install-manifest.js` owns the global install receipt. A new project
   receipt must not extend that ownership to project files or reuse arbitrary
   paths from user-controlled state as write authority.
-- `scripts/eval-quality.mjs`, `runCase`: the runner supplies the agent's body,
-  but no pack. A case with language code alone would measure the agent without
-  proving that pack guidance was loaded.
+- `scripts/eval-quality.mjs`, `runCase`: the runner supplied the agent's body,
+  but no pack. The new optional `stackPack` field explicitly loads the selected
+  pack's body; a language fixture alone would not establish that it was loaded.
 - The existing graph identifies `addSpecialists`, `installSkills` and their
   callers, but its line locations predate the current CLI. Current source was
   read to confirm these findings; no graph rebuild was needed.
@@ -70,11 +71,11 @@ code edit. A planning review does not satisfy that implementation gate.
 Scott is not needed to settle stack count: the user explicitly selected seven.
 No new services, dependencies, agents or runtime hooks are proposed.
 
-## Proposed contract and layout
+## Contract and layout
 
-| Concern | Proposal |
+| Concern | Contract |
 | --- | --- |
-| Pack sources | `stack-packs/<stack>/SKILL.md`; add `stack-packs` to `package.json.files`. |
+| Pack sources | `stack-packs/<stack>/SKILL.md`; `package.json.files` includes `stack-packs`. |
 | Installed names | `canonkit-typescript`, `canonkit-cpp`, `canonkit-csharp`, `canonkit-java`, `canonkit-python`, `canonkit-react`, `canonkit-rust`; YAML `name` matches the installed directory. CLI IDs remain the short stack names; C# uses `csharp`. |
 | Universal project target | `.agents/skills/canonkit-<stack>/`, always installed by explicit `add`. |
 | Claude adapter target | `.claude/skills/canonkit-<stack>/`, installed by the same explicit `add`, preserving the existing project add convention of serving multiple harnesses. |
@@ -153,9 +154,9 @@ Do not copy ECC's blanket MUST BE USED dispatch rules, universal severity tables
 arbitrary function-size gates, or links to skills canonkit does not ship.
 Retain attribution and comply with the source license if text is adapted.
 
-## Acceptance and verification plan
+## Acceptance and verification
 
-| Observable acceptance | Offline evidence to add |
+| Observable acceptance | Verification method |
 | --- | --- |
 | Seven named packs ship, all outside the core install. | Validate pack metadata/catalog and `npm pack --dry-run` contents; isolated `install` and `reference` tests prove no pack appears at HOME or in the current project. |
 | Explicit add affects only requested packs and current project. | Exercise each pack with temporary HOME/project; compare both target copies and repeat add; compare a second project and HOME before/after. Prove `add react` does not add TypeScript. |
@@ -166,7 +167,7 @@ Retain attribution and comply with the source license if text is adapted.
 | Quality cases actually load the selected content. | Add optional `stackPack` to quality-case metadata; validate against the catalog and compose the selected SKILL body explicitly into the eval agent's instructions. Cases without it retain existing definitions. Unknown IDs fail before launching a model. |
 | Claims match evidence. | Record offline results separately from behavioral effectiveness. No score increase or claim of successful automatic skill selection follows from a dry run or a regex judge. |
 
-Proposed initial quality fixtures, refined with Quinn before implementation:
+Initial quality fixtures:
 
 - TypeScript: unchecked external data asserted as a domain type; the answer must
   identify the runtime boundary and reject a cast-only correction.
@@ -199,7 +200,7 @@ its existing offline conventions. Do not run paid evals. Behavioral efficacy
 stays **unmeasured** until separately authorized. No actual core reinstall,
 commit, push or release is part of this plan's execution authorization.
 
-## Implementation order and review
+## Implementation sequence and review requirements
 
 1. Apply Archie's accepted CLI/layout/ownership decisions from this plan; route
    material deviations back to Archie before changing the contract.
@@ -243,12 +244,59 @@ unsupported generated-agent model or change the user's installation.
   installation names, examples, acceptance counts and quality fixtures now
   include it. This local planning amendment changes no architectural contract
   and does not claim a new specialist review or behavioral measurement.
-- Integration Review: no contradiction remains between Virgo's proposal,
+- Planning Integration Review: no contradiction remained between Virgo's proposal,
   Archie's conditions and Spencer's documentary review. The separate source
   root prevents accidental core installation; one catalog and a small project
   receipt support explicit installation/removal without new agents or services.
-  No implementation readiness or behavioral improvement is claimed.
-- Document checks: local Markdown link targets exist, no trailing whitespace in
-  the new plan, and `git diff --check` passes. Changes are limited to this plan
-  and the item-7 status/link in the handoff.
-- Implementation, pack validation, CLI tests and behavioral evals: not run.
+  That planning review did not claim implementation readiness or behavioral improvement.
+- At planning close, local Markdown link targets existed, no trailing whitespace
+  was found and `git diff --check` passed. Changes at that stage were limited to
+  this plan and the item-7 status/link in the handoff.
+
+## Implementation record
+
+The local implementation adds `bin/stack-packs.js`, the seven source skills,
+project CLI integration, package distribution, explicit quality-case loading,
+seven fixtures and offline validation/contract tests. Existing specialist,
+global install and global uninstall paths retain their ownership boundaries.
+Pack staging files live under `.canonkit/`, so an interrupted atomic copy does
+not strand temporary files in an untracked skill directory.
+
+- Bob implemented the code and tests as the sole checkout writer, then stopped
+  edits before independent review. Root updated the documentation afterward.
+- The 41 focused stack-pack/eval tests passed. Repository validation passed;
+  all seven skills also passed `skill-creator`'s `quick_validate.py` using an
+  existing local Python environment, without installing dependencies.
+- The quality runner's dry run validated 55 cases, including seven supplied-pack
+  cases, without calling a model. Behavioral efficacy remains unmeasured.
+- Archie independently reviewed the final code as `gpt-6.1-sol`/`high` and
+  approved the contract, layout, recovery and explicit-content eval boundary.
+- Gard independently approved the write/removal boundary as
+  `gpt-6.1-sol`/`high`, including a separate TEMP reproduction of cross-pack
+  interrupted removal, subsequent installation and extra-file preservation.
+- The full suite passed before the final judge calibration: 749 tests,
+  746 passed, three platform skips and no failures. Windows junctions were
+  tested; file-symlink creation was unavailable in this environment. Cross-OS
+  CI was not run here.
+- Quinn found four judges accepting a correct diagnosis with a wrong fix.
+  Root strengthened the correction signals and added seven negative probes
+  plus valid alternatives, including Markdown formatting. The affected
+  `test/eval.test.js` suite then passed 25/25. Quinn independently checked the
+  final delta and approved it; installer code did not change during this fix.
+- `npm pack --dry-run --offline` confirmed 48 package files, including all seven
+  source `SKILL.md` files and `bin/stack-packs.js`. No package was published.
+- Final repository validation passed again after the judge changes, using Git
+  Bash and an existing Python installation through a process-local function.
+  No host configuration was changed. `git diff --check` and checks of 19 local
+  documentation link targets passed.
+- Spencer reviewed README, installation, eval, maintenance, plan and handoff
+  documentation against the final implementation as `gpt-6.1-sol`/`medium`:
+  approved, no documentary blockers.
+- Final Integration Review: Archie, Gard, Quinn and Spencer agree on scope and
+  evidence. File ownership, explicit opt-in and core separation remain intact;
+  the judge correction changes neither installation behavior nor authority.
+  The end-to-end CLI/file lifecycle and offline checks are covered, with no
+  unresolved handoff or blocker. The change is ready for user review in this
+  checkout. Behavioral efficacy, native skill selection, publication and
+  cross-OS CI remain unmeasured or unperformed as stated above. No paid eval,
+  core reinstall, commit or push was performed.

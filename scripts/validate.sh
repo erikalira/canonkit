@@ -327,6 +327,26 @@ while IFS=$'\t' read -r status detail; do
   if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
 done < "$TMP"
 
+head_ "Stack packs"
+
+if command -v node >/dev/null 2>&1; then
+  node --input-type=module - > "$TMP" 2>&1 <<'JS'
+import { readFileSync } from "node:fs";
+import { validateStackPacks } from "./bin/stack-packs.js";
+try {
+  const cases = JSON.parse(readFileSync("evals/quality-cases.json", "utf8")).cases;
+  const ids = validateStackPacks(process.cwd(), cases);
+  console.log(`OK\t${ids.length} project-only stack packs have valid metadata and quality cases`);
+} catch (err) { console.log(`FAIL\t${err.message}`); }
+JS
+  while IFS=$'\t' read -r status detail; do
+    [ -z "${status:-}" ] && continue
+    if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+  done < "$TMP"
+else
+  fail "node is required to validate stack packs"
+fi
+
 head_ "Escalation graph"
 
 python3 - > "$TMP" <<'PY'
@@ -451,6 +471,11 @@ if command -v node >/dev/null 2>&1; then
   else
     fail "bin/install-manifest.js: syntax error"
   fi
+  if node --check bin/stack-packs.js 2>/dev/null; then
+    pass "bin/stack-packs.js parses"
+  else
+    fail "bin/stack-packs.js: syntax error"
+  fi
 
   # A hook that fails open is the right runtime behaviour: main() sits in a catch
   # that exits 0, so a broken hook never bricks a session. It is also why a broken
@@ -495,7 +520,7 @@ if command -v node >/dev/null 2>&1; then
 import { readFileSync } from "node:fs";
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const shipped = new Set(pkg.files ?? []);
-for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "tools"]) {
+for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "stack-packs", "tools"]) {
   if (!shipped.has(dir)) console.log(`FAIL\tpackage.json files[] omits ${dir}/ — the published CLI would not find it`);
 }
 if (pkg.bin?.canonkit !== "bin/cli.js") console.log("FAIL\tpackage.json bin does not point at bin/cli.js");

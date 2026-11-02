@@ -1135,6 +1135,178 @@
         ],
         "maxLines": 20
       }
+    },
+    {
+      "id": "stack-typescript-runtime-cast",
+      "stackPack": "typescript",
+      "fixture": {
+        "src/user.ts": "type User = { name: string };\nexport function readName(value: unknown): string {\n  if (!value || typeof value !== \"object\" || !(\"name\" in value) || typeof value.name !== \"string\") throw new Error(\"Invalid user\");\n  return value.name.toUpperCase();\n}\n"
+      },
+      "change": {
+        "src/user.ts": "type User = { name: string };\nexport function readName(value: unknown): string {\n  return (value as User).name.toUpperCase();\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "runtime|untrusted|external",
+          "(?:restore|add|keep|need|use)[^\\n]{0,60}(?:validat|guard|narrow)|(?:validat|guard|narrow)[^\\n]{0,60}(?:boundary|external|input|value)"
+        ],
+        "notSays": [
+          "(?:fix|solve|repair)[^\\n]{0,50}(?:by|with) (?:another |a )?(?:cast|assertion)"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-cpp-dangling-view",
+      "stackPack": "cpp",
+      "fixture": {
+        "src/name.cpp": "#include <string>\nstd::string name() {\n  std::string local = \"hello\";\n  return local;\n}\n"
+      },
+      "change": {
+        "src/name.cpp": "#include <string>\n#include <string_view>\nstd::string_view name() {\n  std::string local = \"hello\";\n  return local;\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "dangl|lifetime|destroy|expired",
+          "string_view|view|local",
+          "\\breturn\\s+(?:an?\\s+)?(?:owning\\s+)?`?(?:std::)?string\\b(?!_view)|(?:restore|keep)\\s+(?:the\\s+)?(?:original\\s+)?(?:owning\\s+)?`?(?:std::)?string\\b(?!_view)|use\\s+`?(?:std::)?string\\b[^\\n.]{0,30}return type"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-csharp-early-dispose",
+      "stackPack": "csharp",
+      "fixture": {
+        "src/Reader.cs": "using System.IO;\nusing System.Threading.Tasks;\npublic static class Reader {\n  // The async read can remain pending after ReadAsync returns.\n  public static async Task<int> ReadAsync(string path, byte[] buffer) {\n    using var stream = File.OpenRead(path);\n    return await stream.ReadAsync(buffer, 0, buffer.Length);\n  }\n}\n"
+      },
+      "change": {
+        "src/Reader.cs": "using System.IO;\nusing System.Threading.Tasks;\npublic static class Reader {\n  // The async read can remain pending after ReadAsync returns.\n  public static Task<int> ReadAsync(string path, byte[] buffer) {\n    using var stream = File.OpenRead(path);\n    return stream.ReadAsync(buffer, 0, buffer.Length);\n  }\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "dispos|clos(?:e|ed)|lifetime",
+          "await|complet",
+          "await[^\\n.]{0,60}(?:inside|within)[^\\n.]{0,30}(?:using|scope)|(?:restore|keep|retain|add)[^\\n.]{0,30}(?:async\\s*[/+&]\\s*)?await|await[^\\n.]{0,60}before[^\\n.]{0,30}(?:dispos|clos)|(?:dispos|clos)[^\\n.]{0,40}after[^\\n.]{0,30}(?:await|complet)"
+        ],
+        "notSays": [
+          "(?:use|fix with|replace with)\\s+\\.?Result\\b"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-java-resource-exception",
+      "stackPack": "java",
+      "fixture": {
+        "src/Reader.java": "import java.io.*;\nclass Reader {\n  String first(String path) throws IOException {\n    try (BufferedReader input = new BufferedReader(new FileReader(path))) {\n      return input.readLine();\n    }\n  }\n}\n"
+      },
+      "change": {
+        "src/Reader.java": "import java.io.*;\nclass Reader {\n  String first(String path) throws IOException {\n    BufferedReader input = new BufferedReader(new FileReader(path));\n    String line = input.readLine();\n    input.close();\n    return line;\n  }\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "exception|throw|failure",
+          "try.with.resources|finally|leak|clos(?:e|ed)|cleanup",
+          "try.with.resources|try\\s*\\(|finally"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-python-shared-default",
+      "stackPack": "python",
+      "fixture": {
+        "src/tags.py": "def tags(value, values=None):\n    if values is None:\n        values = []\n    values.append(value)\n    return values\n"
+      },
+      "change": {
+        "src/tags.py": "def tags(value, values=[]):\n    values.append(value)\n    return values\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "default",
+          "shar|across calls|between calls|subsequent|persist",
+          "\\bNone\\b|(?:new|fresh|separate)[^\\n.]{0,30}list[^\\n.]{0,40}(?:per|each|every)[ -]?call|(?:per|each|every)[ -]?call[^\\n.]{0,40}(?:new|fresh|separate)[^\\n.]{0,30}list"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-react-stale-result",
+      "stackPack": "react",
+      "fixture": {
+        "src/Results.jsx": "import { useEffect, useState } from \"react\";\nexport function Results({ query, search }) {\n  const [result, setResult] = useState(null);\n  useEffect(() => {\n    let active = true;\n    search(query).then(value => { if (active) setResult(value); });\n    return () => { active = false; };\n  }, [query, search]);\n  return <div>{result}</div>;\n}\n"
+      },
+      "change": {
+        "src/Results.jsx": "import { useEffect, useState } from \"react\";\nexport function Results({ query, search }) {\n  const [result, setResult] = useState(null);\n  useEffect(() => {\n    search(query).then(setResult);\n  }, [query, search]);\n  return <div>{result}</div>;\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "stale|out.of.order|older|obsolete|race",
+          "cleanup|abort|cancel|ignor|active|guard",
+          "\\b(?:restore|add|keep|use)\\b[^\\n.]{0,50}(?:cleanup|guard|active flag)|\\b(?:ignor|abort|cancel)[^\\n.]{0,60}(?:obsolete|outdated|stale|older|request|response|result)"
+        ],
+        "notSays": [
+          "(?:fix|solve)[^\\n]{0,50}(?:empty dependency|remove.*dependenc)"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
+    },
+    {
+      "id": "stack-rust-borrowed-spawn",
+      "stackPack": "rust",
+      "fixture": {
+        "src/lib.rs": "pub fn submit() -> std::thread::JoinHandle<()> {\n    let label = String::from(\"ready\");\n    std::thread::spawn(move || println!(\"{label}\"))\n}\n"
+      },
+      "change": {
+        "src/lib.rs": "pub fn submit() -> std::thread::JoinHandle<()> {\n    let label = String::from(\"ready\");\n    std::thread::spawn(|| println!(\"{label}\"))\n}\n"
+      },
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "prompt": "Review the uncommitted change. Identify the concrete regression and the smallest correction consistent with the existing project. Do not change code.",
+      "expect": {
+        "says": [
+          "borrow|lifetime|outlive|static",
+          "move|own",
+          "(?:restore|add|use)\\s+(?:an?\\s+)?`?move`?\\s+(?:closure|keyword)|\\bmove\\s*\\|\\||transfer[^\\n.]{0,40}ownership[^\\n.]{0,40}(?:into|to)[^\\n.]{0,20}(?:closure|thread|task)"
+        ],
+        "notSays": [
+          "(?:fix|solve|repair)[^\\n]{0,40}(?:leak|unsafe)"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24
+      }
     }
   ]
 }

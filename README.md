@@ -161,6 +161,27 @@ veto. When you do, the agent records the open risk and keeps helping. Who owns
 what at the boundaries, the conventions every agent follows, and the Integration
 Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/docs/team.md).
 
+## Stack packs, per project
+
+Add language or framework guidance when a project needs it:
+
+```bash
+cd my-project
+npx canonkit add typescript react
+npx canonkit add csharp
+npx canonkit list
+npx canonkit remove react
+```
+
+Available packs: **typescript, cpp, csharp, java, python, react, rust**. Each is
+a skill for the existing team, installed only when named. React and TypeScript
+are independent. Packs never come with the core install or install a toolchain.
+
+Copies go to the project's `.agents/skills/canonkit-<stack>/` and
+`.claude/skills/canonkit-<stack>/`. Local edits and unrelated files are preserved;
+repeating `add` updates intact copies. Details, recovery and removal are in
+[docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#stack-packs-per-project).
+
 ## When a gate fires
 
 This table is Claude Code. Codex and OpenCode, once wired, enforce only the git
@@ -226,7 +247,7 @@ Which gate does what in each runtime:
 | `doctor` | checks the installation; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |
 | `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `add <name>...` / `remove <name>...` | specialists in the current project |
+| `add <name>...` / `remove <name>...` | specialists or stack-pack skills in the current project |
 | `list` | the roster and what is installed where |
 | `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) in the current project |
 
