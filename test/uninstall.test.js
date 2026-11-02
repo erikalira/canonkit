@@ -197,6 +197,45 @@ test("Claude unwiring keeps unrelated handlers, matchers, settings and later use
   assert.equal(existsSync(path.join(home, ".claude", "hooks", "canonkit-hook.js")), false);
 });
 
+for (const harness of ["claude", "codex", "opencode"]) {
+  for (const preexisting of [false, true]) {
+    test(`${harness} JSON observation preserves snapshot evidence after unrelated edits (${preexisting ? "modified" : "created"})`, async (t) => {
+      const { home, root } = await scratch(t);
+      const env = harness === "opencode" ? await opencodeBin(root) : {};
+      const dir = harness === "opencode" ? path.join(home, ".config", "opencode") : path.join(home, `.${harness}`);
+      const name = harness === "claude" ? "settings.json" : harness === "codex" ? "hooks.json" : "opencode.json";
+      const config = path.join(dir, name);
+      const id = `${harness}:json:${name}`;
+      if (preexisting) await put(config, JSON.stringify({ model: "original", personal: { keep: true } }));
+      const install = ["install", `--${harness}`, "--wire-hooks", "--no-reference"];
+      ok(run(home, install, env));
+      const recorded = (await manifest(home)).entries[id];
+      assert.equal(recorded.provenance, preexisting ? "modified" : "created");
+
+      const edited = JSON.parse(await readFile(config, "utf8"));
+      edited.model = "later-choice";
+      edited.personal = { keep: "later edit" };
+      await writeFile(config, JSON.stringify(edited));
+      const beforeReinstall = await snapshot(home);
+      ok(run(home, install, env));
+      const observed = (await manifest(home)).entries[id];
+      const afterReinstall = await snapshot(home);
+      ok(run(home, ["uninstall", `--${harness}`], env));
+
+      assert.deepEqual(observed, recorded, "observation must preserve the recorded snapshot/hash pair and provenance");
+      assert.deepEqual(afterReinstall, beforeReinstall, "a no-op reinstall must not change files, receipts or private snapshots");
+      const after = JSON.parse(await readFile(config, "utf8"));
+      assert.equal(after.model, "later-choice");
+      assert.deepEqual(after.personal, { keep: "later edit" });
+      if (harness === "opencode") assert.deepEqual(after.permissions, []);
+      else assert.doesNotMatch(JSON.stringify(after.hooks), /canonkit-(?:hook|codex)\.js/);
+      const payload = path.join(dir, harness === "claude" ? "hooks" : "canonkit", harness === "claude" ? "canonkit-hook.js" : `canonkit-${harness}.js`);
+      assert.equal(existsSync(payload), false, "the harness must not be retained by inconsistent snapshot evidence");
+      assert.deepEqual((await manifest(home)).entries, {});
+    });
+  }
+}
+
 test("Codex removes its trailing group but retains interleaved wiring and runtime without shifting trust", async (t) => {
   const { home } = await scratch(t);
   ok(run(home, ["install", "--codex", "--wire-hooks"]));

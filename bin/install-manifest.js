@@ -337,6 +337,9 @@ export class InstallManifest {
     if (old?.provenance === "observed" && changed) entry.provenance = "modified";
     if (old?.backup) entry.backup = old.backup;
     if (spec.kind === "json" && old) {
+      // This hash authenticates afterSnapshot, not later unrelated user edits.
+      // Observing without a write must preserve that recorded pair.
+      if (!changed) entry.hash = old.hash;
       for (const key of ["beforeSnapshot", "beforeHash", "afterSnapshot"]) if (old[key] !== undefined) entry[key] = old[key];
     }
     if (this.dryRun) { this.log(`would track ${spec.id} (${entry.provenance})`); return; }
