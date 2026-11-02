@@ -61,8 +61,8 @@ e não torne a consulta obrigatória em toda tarefa.
 3. Inspecionar CLI, instalação, hooks, testes e CI apenas no que afetar a proposta.
 4. Identificar o que já existe e produzir uma lista curta de lacunas reais.
 5. Implementar somente os ajustes necessários. Não criar CLI, schema, serviço ou
-   camada de persistência por antecipação; a proposta durável existente é o ponto
-   de partida para a auditoria.
+   camada de persistência por antecipação; reutilizar o formato da proposta
+   existente, com registro na issue ou em documento local, sem duplicação obrigatória.
 
 ## 4. Fluxo de aprendizado
 
@@ -89,6 +89,38 @@ remoção.**
 Usar as fontes canônicas apropriadas em `agents/`, `reference/`, `skills/` ou no
 `canonkit.json` do projeto. Não corrigir cópias geradas da instalação como se fossem
 a fonte: uma reinstalação pode sobrescrevê-las.
+
+### Propostas gerais via GitHub Issues
+
+Issues são o canal padrão para propor melhorias gerais do CanonKit,
+independentemente de quem as identificou, inclusive a mantenedora. O destino da
+mudança define o caminho; não é necessário detectar a identidade do usuário.
+Preferências pessoais e necessidades restritas a um projeto seguem a autorização
+do responsável por aquele ambiente e não exigem issue no CanonKit.
+
+Quando houver uma oportunidade concreta e generalizável:
+
+1. Oferecer a preparação de uma proposta concisa e sanitizada, com problema,
+   exemplo sintético, alvo canônico, mudança sugerida e evidências disponíveis.
+   Medições ausentes permanecem explícitas; abrir uma issue não exige que a
+   melhoria comportamental já esteja comprovada.
+2. Apresentar o título, o corpo e o repositório de destino ao usuário e obter
+   autorização explícita para publicar esse conteúdo antes de enviá-lo.
+3. Se houver integração disponível e autorização aplicável, abrir a issue e
+   retornar seu link. Caso contrário, disponibilizar o rascunho para envio manual.
+4. Usar a issue como registro da proposta, evidências e decisões. Não exigir
+   outro arquivo local com o mesmo conteúdo; o rascunho pode ser temporário.
+
+Oferecer uma contribuição somente quando houver um problema concreto e
+potencialmente generalizável. Apresentar o convite em um momento natural de
+conclusão ou revisão, sem interromper o trabalho por pequenas observações. A contribuição é opcional; se o usuário recusar ou não responder, não insistir nem publicar, e continuar o fluxo normal de trabalho. Encontrar uma oportunidade não autoriza publicação.
+Não enviar memórias pessoais, logs brutos ou informações privadas para a issue.
+
+A abertura de uma issue não aprova nem garante a incorporação da melhoria. A
+mantenedora pode solicitar evidências, adaptar, aceitar ou rejeitar a proposta.
+Autorizar o envio é distinto de aprovar o diff concreto, sua implementação,
+instalação ou publicação em uma nova versão. A incorporação ao kit distribuído
+depende da aprovação da mantenedora e das validações proporcionais ao risco.
 
 ## 5. Proporcionalidade, evidência e validação
 
@@ -133,6 +165,9 @@ consulta efetiva pelo modelo ou eliminação definitiva de um comportamento.
   comprovam decisão humana. Registrar a decisão efetivamente fornecida para o diff.
 - Preparar ou aprovar uma proposta não autoriza automaticamente avaliação paga,
   instalação, commit ou push. Manter as autorizações de cada ação separadas.
+- Qualquer usuário pode propor uma melhoria geral por issue; somente a mantenedora
+  ou quem ela autorizar decide sua incorporação ao CanonKit distribuído. Essa
+  decisão não se confunde com a autonomia do usuário sobre seu ambiente pessoal.
 
 Não rotular convenções seguidas pelo modelo como garantias técnicas. Qualquer
 limitação de enforcement deve permanecer explícita.
@@ -159,9 +194,13 @@ exigir que a pessoa leia a skill inteira para entender como usar o fluxo.
 
 ## 8. Auditoria, privacidade e revisão periódica
 
-Reutilizar a proposta durável e sua allowlist de evidências sanitizadas. Registrar
-apenas o necessário: hipótese, alvo canônico, diff, casos, resultados agregados,
-revisões, decisão humana, revisão aplicada, custo de contexto e datas de manutenção.
+Reutilizar o template existente e sua allowlist de evidências sanitizadas, adaptando
+o registro ao estágio e ao risco da proposta. A issue pode ser o registro durável
+completo, sem cópia local obrigatória; sem envio, usar documento local quando
+necessário. Registrar apenas o necessário e disponível: hipótese, alvo canônico,
+diff, casos, resultados agregados, revisões, decisão humana, revisão aplicada,
+custo de contexto e datas de manutenção. Campos ainda não aplicáveis não exigem
+uma nova etapa para abrir uma issue.
 
 Não persistir transcrições, comandos brutos, segredos, identificadores de sessão,
 caminhos de logs ou dados privados desnecessários. Correções e decisões humanas
@@ -217,6 +256,11 @@ Verificar, conforme o caminho afetado:
   operacional, recuperação de lições ou injeção via SessionStart.
 - O registro permite identificar evidência, revisão, autorização e alvo de
   reversão sem incluir dados privados indevidos.
+- Propostas gerais usam o mesmo caminho de contribuição para qualquer usuário;
+  o envio depende da revisão do conteúdo e de autorização explícita. Recusar ou
+  não poder publicar mantém o fluxo local, sem exigir issue ou registro duplicado.
+- Uma issue aberta não é tratada como aprovação da mantenedora, autorização de
+  implementação ou evidência de melhoria comportamental.
 - Expiração e arquivamento não provocam alteração automática das instruções.
 - Cópias instaladas e fontes são distinguidas; instalação e desinstalação
   preservam arquivos do usuário nos cenários afetados.
