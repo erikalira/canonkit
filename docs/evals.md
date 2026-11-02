@@ -154,8 +154,9 @@ reviews the diff in plan mode. The cases include defects in code, tests, scope
 proposals, performance evidence, operational plans, documentation and team
 configuration, plus defect-free controls to detect an invented block on LOW.
 
-The corpus has **45 cases for the 10 core agents** (7 original, 26 from Phase 3,
-4 from Phase 7, 3 from the reviewer pre-report gate and 5 from review-noise). Each core has
+The corpus has **48 cases for the 10 core agents** (7 original, 26 from Phase 3,
+4 from Phase 7, 3 from the reviewer pre-report gate, 5 from review-noise and
+3 from the learning loop). Each core has
 `kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
 no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
 guarded or compatible, where the right report approves with no finding; it is not
@@ -218,6 +219,36 @@ arguments: call the script directly and quote the list, as in
   commands or model behavior. Real measurement stays manual, with `--runs 3` and
   `--save`, before attributing results to the agents. The bodies and the runner
   were not changed in that expansion.
+
+### Learning-loop cases
+
+`virgo-learning-unknown`, `virgo-learning-evidence` and `virgo-learning-clean`
+review synthetic lesson proposals. They cover inferred human approval and false
+positives, insufficient before/after evidence, and a clean proposal that keeps
+unknowns and awaits evidence. Offline calibration checks representative correct
+and incorrect reports, including incorrect recommendations with expected words.
+It validates the lexical judge contract, not the model's behavior. No paid run
+of these cases has been performed.
+
+The quality runner supplies the checkout Virgo body but uses the installed
+skills and global blocks. These cases ask for the `learning-loop` skill if
+available. Record whether and which skill was available when comparing runs;
+without it, the result measures the agent's review rather than the skill.
+`--variant` changes only the body and does not test skill selection, its
+installation, or a changed managed block. A controlled installation or validated
+isolation method needs separate authorization. Native Codex and OpenCode behavior
+remains unmeasured by this Claude runner.
+
+For each proposed instruction change, retain the fixed target case and judge,
+baseline and candidate revisions, matching model/settings, and a protected
+control. Require at least three answered runs on each side for each target and
+control. Baseline must fail the target and candidate must hold it, with the
+control holding on both sides, using `ceil(2n/3)` as the hold threshold. Report
+all attempts and errors; never selectively retry or discard valid answers. The
+runner can report a hold with one answered run, so its exit code alone does not
+satisfy the learning-loop requirement. Unavailable or incomplete comparisons
+leave a lesson awaiting evidence. See the [guide](learning-loop.md) and
+[design criteria](plans/learning-loop-design.md#acceptance-and-evaluation).
 
 ### Results: lean bodies (2026-10-18)
 

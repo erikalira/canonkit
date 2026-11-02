@@ -1,13 +1,15 @@
 # Learning loop — design proposal
 
-Status: design only, 2026-11-02. Item 6 of the
+Status: manual workflow implemented locally, 2026-11-02; behavioral efficacy
+unmeasured. Item 6 of the
 [handoff](canonkit-improvements-handoff.md#6-learning-loop-the-users-view-of-memory).
 The proposed workflow changes team instructions or project configuration through
 reviewable source diffs; it does not create a memory service. Its new process is
 MEDIUM risk: an incorrect lesson can change shared behavior. A particular diff
 may be HIGH and follows the existing owner and independent-review rules. Quinn
-reviewed the acceptance criteria below; implementation planning and
-behavioral evidence remain pending.
+reviewed the acceptance criteria below. The user subsequently authorized
+implementation; individual lessons still require their own evidence and
+authorization. See the implementation record below.
 
 ## Evidence available today
 
@@ -239,3 +241,49 @@ There is no SessionStart injection, transcript ingestion, autonomous promotion,
 new CLI, telemetry schema, dependency or storage service in this design. The
 rejection of automatic handoff injection remains in
 [`ecc-lessons-handoff.md`](ecc-lessons-handoff.md).
+
+## Implementation record (2026-11-02)
+
+The on-demand [learning-loop skill](../../skills/learning-loop/SKILL.md) and
+[proposal template](../../skills/learning-loop/proposal-template.md) implement
+the manual workflow. Virgo's body points to the skill. The existing skill copier
+and install catalog include both files without installer or hook changes; no
+new CLI, runtime service, telemetry schema or dependency was added. The
+[user guide](../learning-loop.md) covers invocation and the proposal lifecycle.
+
+Three synthetic quality cases cover unknown human outcomes, insufficient
+evidence and a clean pending proposal. The existing judge is unchanged. During
+independent review, Quinn identified accepted wrong recommendations and a
+rejected correct negation; the new case expectations and calibration now cover
+those examples in both directions. Quinn approved offline implementation quality
+after the final correction. This is lexical calibration, not a model run or
+evidence that a lesson improved behavior. The other design scenarios remain
+manual review criteria; the three cases do not automate all twelve.
+
+The default Claude source profile is now **2,026 words**: managed blocks
+1,300 + 366, ten core agent descriptions 273, and three skill descriptions 87.
+That is a 19-word increase from the design baseline, leaving 474 words below
+the anchor. The new source-profile test guards the 2,500-word ceiling; the skill
+body and template load on demand. A fresh installed-profile audit and behavioral
+comparison remain unmeasured. No real user-level installation, paid eval, commit
+or push was performed.
+
+Verification: focused eval calibration 23/23 and scratch installation/uninstall
+plus context-budget checks 2/2 passed. Both existing runners' dry-runs loaded
+23 routing and 48 quality cases without model calls. `validate.sh` passed with
+15 agents, and `npm pack --dry-run --json` included both new skill files among
+40 package files. The full suite finished with **731 tests: 728 passed, 3 skipped,
+0 failed** (213.7 seconds, Windows). The final eval-calibration delta also passed
+its focused 23-test run. The optional skill
+creator Python validator could not run because its environment lacks PyYAML;
+the repository's skill/frontmatter validator passed. Initial attempts to start
+Node/Bash checks in the sandbox failed on process creation; the successful checks
+used the permitted execution context instead.
+
+Spencer approved the documentation against the final workflow. Root's
+Integration Review found the skill, template, installation lifecycle, tests and
+guide consistent: no conflicting owner decisions, automatic changes or missing
+handoff responsibilities. Offline implementation is ready for review. Behavioral
+efficacy, native-harness model comparisons and publication remain unverified;
+they are not implied by the passing suite. The existing cross-OS CI matrix was
+not run locally.

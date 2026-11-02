@@ -65,6 +65,10 @@ Before suggesting a commit, always run `scripts/validate.sh`, `git status`, `git
 
 ## Work protocol
 
+For a requested manual learning loop, use the `learning-loop` skill to investigate
+evidence and prepare a reviewable proposal; a request for the workflow does not
+authorize a future lesson or its application.
+
 To create or modify an agent:
 
 1. Confirm the scope (one of the two places under Default scope).

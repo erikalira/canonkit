@@ -36,7 +36,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
 | 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
 | 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
-| 6 | Learning loop: lessons → evaluated instruction changes | memory 5 → 10 | Virgo + Quinn (MEDIUM) |
+| 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project | stack-coverage 5 → 7–8 | Virgo; Scott on scope (MEDIUM) |
 | 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
 | 9 | Leftovers, low value now | — | inline (LOW) |
@@ -1115,6 +1115,29 @@ not executed. No commit or push was made.
 Root's Integration Review found the design and acceptance criteria consistent:
 unknown outcomes remain unknown, expiry requires a manual decision, and promotion
 requires evidence and authorization. Implementation and behavioral measurement remain pending.
+
+**Implementation (2026-11-02; subsequently authorized by the user):** the
+on-demand `learning-loop` skill, proposal template and Virgo pointer implement
+the manual workflow. The existing installer/catalog handles both files; no
+hook, CLI, runtime service or dependency changes. Three synthetic quality cases
+and calibrated correct/incorrect reports exercise evidence handling without
+paid model calls. Quinn approved offline quality after correcting concrete
+lexical false accepts/rejects. The source-derived default Claude profile is
+2,026 words, guarded by a 2,500-word test. Installation/uninstall is tested in
+scratch homes only. Full verification and remaining limits are recorded in the
+[design note's implementation record](learning-loop-design.md#implementation-record-2026-11-02);
+behavioral improvement remains unmeasured, and no memory score is claimed.
+No real installation, paid eval, commit or push was performed.
+
+**Final offline verification:** `npm test` completed with 731 tests, 728 passed,
+3 skipped and 0 failed (213.7 seconds, Windows); the final eval-calibration delta
+also passed 23 focused tests. Git Bash `validate.sh` passed with 15 agents, both
+eval dry-runs made no model calls, and the package dry-run included both skill
+files among 40 entries. Whitespace and relative-link checks passed. Quinn
+approved offline quality and Spencer approved documentary consistency. Root's
+Integration Review found no contradictory recommendations or remaining offline
+blocker. The behavioral comparison and actual installed-profile audit remain
+unmeasured; cross-OS CI and publication were not run here.
 
 ### 7. Stack packs, opt-in per project
 

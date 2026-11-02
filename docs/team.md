@@ -95,6 +95,13 @@ the ones that can be checked mechanically (see [maintaining.md](maintaining.md#v
   installation, not only by reading discipline: if the domain does not exist in
   the project, the agent is not there.
 
+## Learning loop
+
+For changes motivated by a mistake, Virgo uses the on-demand `learning-loop`
+skill to prepare a sanitized proposal and Quinn reviews the eval evidence.
+The [learning-loop guide](learning-loop.md) explains the proposal, authorization
+and expiry rules.
+
 ## Integration Review
 
 Specialized reviews each optimize their own dimension. That produces one specific

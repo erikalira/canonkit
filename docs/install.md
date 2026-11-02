@@ -227,7 +227,7 @@ the two `git commit *` and `git push *` ask rules from `permissions`.
 
 | Command | What it does |
 | --- | --- |
-| `install` | core at user level + hooks + dashboard + global reference blocks + the `orchestrate` and `context-tune` skills |
+| `install` | core at user level + hooks + dashboard + global reference blocks + the `orchestrate`, `context-tune` and `learning-loop` skills |
 | `install --wire-hooks` | the same, and wires the hook of each runtime installed: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, the OpenCode plugin (see [hooks.md](hooks.md)) |
 | `install --no-reference` | only the agents, the hooks and the dashboard |
 | `install --claude` / `--codex` / `--opencode` | only for those runtimes, without the menu |
@@ -327,6 +327,11 @@ rule in `AGENTS.md` that every session loads. That is why it weighs nothing per
 session: Claude Code does not put the description of a skill with
 `disable-model-invocation: true` in context, and Codex does not pick it on its
 own because of `allow_implicit_invocation: false` in `agents/openai.yaml`.
+
+The `learning-loop` skill investigates mistakes on demand and produces a
+sanitized proposal, source diff and eval plan. Its proposal template travels
+with the skill. It does not inject lessons at session start or apply changes
+automatically; see [learning from mistakes](learning-loop.md).
 
 `AGENTS.md` is runtime-neutral and is the only definition of the team. The
 routing block keeps only what is Claude Code mechanics (hooks and what they
@@ -460,7 +465,7 @@ installed:
   [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
   `~/.claude/CLAUDE.md`, `$CODEX_HOME/AGENTS.md` and `~/.config/opencode/AGENTS.md`;
-- the `orchestrate` and `context-tune` folders in `~/.claude/skills` and
+- the `orchestrate`, `context-tune` and `learning-loop` folders in `~/.claude/skills` and
   `~/.agents/skills` (Codex and OpenCode read the latter);
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
   `meu-time-hook.js` forwarder next to it, after checking and updating references

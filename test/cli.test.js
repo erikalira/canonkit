@@ -583,6 +583,27 @@ describe("install", () => {
 describe("orchestrate skill", () => {
   const skillPath = (home, root) => path.join(home, root, "skills", "orchestrate", "SKILL.md");
 
+  test("default Claude source instruction profile stays within 2500 words", async () => {
+    // Source-derived default profile: the two managed blocks, core agent
+    // descriptions and every shipped skill description. There are currently no
+    // default command descriptions or kit-installed MCP instructions; update
+    // this profile if installation adds either. On-demand bodies are excluded.
+    const words = (s) => s.trim().split(/\s+/).filter(Boolean).length;
+    const blocks = await Promise.all(["agents-block.md", "routing-block.md"].map((f) => read(path.join(REPO, "reference", f))));
+    const agents = (await readAgents()).filter((a) => a.tier === "core");
+    const skillDirs = await readdir(path.join(REPO, "skills"), { withFileTypes: true });
+    const descriptions = [];
+    for (const entry of skillDirs.filter((e) => e.isDirectory())) {
+      const skill = await read(path.join(REPO, "skills", entry.name, "SKILL.md"));
+      const description = skill.match(/^description:\s*(.+)$/m);
+      assert.ok(description, `${entry.name}: missing description`);
+      descriptions.push(description[1]);
+    }
+    const counts = [...blocks.map(words), ...agents.map((a) => words(a.description)), ...descriptions.map(words)];
+    const total = counts.reduce((a, b) => a + b, 0);
+    assert.ok(total <= 2500, `default Claude source profile: ${total} words, limit 2500`);
+  });
+
   test("install writes the skill for Claude Code and for Codex", async () => {
     const { home } = await scratch("skill-install");
     assert.equal(run(["install"], { home }).status, 0);
@@ -628,6 +649,23 @@ describe("orchestrate skill", () => {
         const dest = path.join(home, root, "skills", "context-tune", file);
         assert.equal(await read(dest), await read(path.join(src, file)), `${root}/${file} differs from the repo`);
       }
+    }
+  });
+
+  test("learning-loop and its proposal template install and uninstall together", async () => {
+    const { home } = await scratch("skill-learning-loop");
+    assert.equal(run(["install"], { home }).status, 0);
+    for (const root of [".claude", ".agents"]) {
+      for (const file of ["SKILL.md", "proposal-template.md"]) {
+        assert.equal(await read(path.join(home, root, "skills", "learning-loop", file)),
+          await read(path.join(REPO, "skills", "learning-loop", file)));
+      }
+    }
+    const result = run(["uninstall"], { home });
+    assert.equal(result.status, 0, result.out);
+    for (const root of [".claude", ".agents"]) {
+      assert.equal(existsSync(path.join(home, root, "skills", "learning-loop", "SKILL.md")), false);
+      assert.equal(existsSync(path.join(home, root, "skills", "learning-loop", "proposal-template.md")), false);
     }
   });
 

@@ -282,6 +282,7 @@ forwarder for the old hook name. See
 | [docs/tools.md](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) | graphify and openspec integration, with their security notes |
 | [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
 | [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
+| [docs/learning-loop.md](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md) | investigate mistakes and propose evaluated instruction changes |
 | [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License
