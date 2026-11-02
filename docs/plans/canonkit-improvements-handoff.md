@@ -35,7 +35,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
 | 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
-| 5 | `canonkit uninstall` with tracked entries — **implemented locally**, 2.3.0 not published; validation below | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
+| 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: lessons → evaluated instruction changes | memory 5 → 10 | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project | stack-coverage 5 → 7–8 | Virgo; Scott on scope (MEDIUM) |
 | 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
@@ -1080,6 +1080,12 @@ notes are prepared but unpublished; the 3.0 deletion remains a separate release.
 
 ### 6. Learning loop (the user's view of memory)
 
+**Next-session handoff (2026-11-02):** item 5 is merged into `main` through
+PR #26 (`1e566fd`). The working tree was clean at that commit. The user reports
+that the release Actions run is in progress; npm publication has not been
+verified. Design work for item 6 can proceed independently. Start with the design
+note below; do not run paid evals, commit or push without the user's approval.
+
 Goal: learn from mistakes by changing instructions, not by storing memories. Constraints:
 - **Signals, not transcripts.** Use what is already logged or measured: gate events per
   rule (`events.jsonl`; a gate that keeps firing on false alarms is a lesson), eval
@@ -1097,6 +1103,18 @@ Goal: learn from mistakes by changing instructions, not by storing memories. Con
   already decided.
 Start with a design note, not code. Dispatch: Virgo, opus, high (structural); Quinn,
 sonnet, medium on the eval-backed acceptance rule.
+
+**Design note (2026-11-02):** [Learning loop — design proposal](learning-loop-design.md)
+records the available signals, local log snapshot, privacy boundary, manual proposal
+lifecycle, expiry policy and context budget. Virgo drafted it and Quinn reviewed the
+eval-backed acceptance criteria using native Codex subagents. Human gate approval or
+decline cannot be inferred from the existing records. The proposal remains design only;
+no implementation or paid eval is authorized by the note. Existing eval dry-runs loaded
+23 routing and 45 quality cases without model calls; new acceptance cases are proposed,
+not executed. No commit or push was made.
+Root's Integration Review found the design and acceptance criteria consistent:
+unknown outcomes remain unknown, expiry requires a manual decision, and promotion
+requires evidence and authorization. Implementation and behavioral measurement remain pending.
 
 ### 7. Stack packs, opt-in per project
 
