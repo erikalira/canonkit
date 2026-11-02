@@ -163,21 +163,34 @@ Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/doc
 
 ## Stack packs, per project
 
-Add language or framework guidance when a project needs it:
+**Optional skills** add language and framework guidance to the existing team.
+Choose the packs your project uses; each is installed separately from the core.
+
+| Stack | Guidance | Install in your project |
+| --- | --- | --- |
+| [TypeScript](stack-packs/typescript/SKILL.md) | Type safety, async boundaries and module/build diagnostics | `npx canonkit add typescript` |
+| [C++](stack-packs/cpp/SKILL.md) | Resource ownership, lifetimes, concurrency and compiler/linker diagnostics | `npx canonkit add cpp` |
+| [C# / .NET](stack-packs/csharp/SKILL.md) | Nullability, async/resource lifetimes and solution/project builds | `npx canonkit add csharp` |
+| [Java](stack-packs/java/SKILL.md) | Resources, concurrency and Maven/Gradle diagnostics | `npx canonkit add java` |
+| [Python](stack-packs/python/SKILL.md) | Runtime data, mutable state, resources, async and environments | `npx canonkit add python` |
+| [React](stack-packs/react/SKILL.md) | Hooks, state/effects, hydration and configured framework boundaries | `npx canonkit add react` |
+| [Rust](stack-packs/rust/SKILL.md) | Ownership, lifetimes, async/unsafe invariants and Cargo diagnostics | `npx canonkit add rust` |
+| [Go](stack-packs/go/SKILL.md) | Errors, goroutines/channels and module/workspace builds | `npx canonkit add go` |
+| [Kotlin](stack-packs/kotlin/SKILL.md) | Nullability, coroutines/Flow and JVM/Android/multiplatform builds | `npx canonkit add kotlin` |
+| [Swift](stack-packs/swift/SKILL.md) | ARC, actors/concurrency and SwiftPM/Xcode diagnostics | `npx canonkit add swift` |
+
+Run these commands from your project. You can add several packs at once, inspect
+what is installed and remove a pack when you stop using it:
 
 ```bash
 cd my-project
 npx canonkit add typescript react
-npx canonkit add csharp
-npx canonkit add go kotlin swift
 npx canonkit list
 npx canonkit remove react
 ```
 
-Available packs: **typescript, cpp, csharp, java, python, react, rust, go, kotlin,
-swift**. Each is a skill for the existing team, installed only when named.
-React and TypeScript
-are independent. Packs never come with the core install or install a toolchain.
+React and TypeScript are independent. Adding a pack installs its instructions;
+it does not install compilers, runtimes or project dependencies.
 
 Copies go to the project's `.agents/skills/canonkit-<stack>/` and
 `.claude/skills/canonkit-<stack>/`. Local edits and unrelated files are preserved;
