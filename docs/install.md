@@ -36,6 +36,13 @@ larger than that.
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | more than one | the sum; the `~/AGENTS.md` block goes in with any choice |
 
+`install` and `reference` also maintain `~/.canonkit/install-manifest.json`.
+It records global artifacts by stable ID, resolved root, harness owners,
+provenance and installed-byte hash. Private configuration snapshots live under
+`~/.canonkit/backups/`. Project specialists, external tool setup and activity
+history are not owned by this global manifest. `--no-reference` skips the blocks
+and skills and preserves earlier records for them.
+
 `--wire-hooks` wires the hook of every runtime in the install, and only those:
 Claude Code's in `~/.claude/settings.json`, Codex's in `$CODEX_HOME/hooks.json`,
 OpenCode's as a plugin. What each one writes, and how to remove it, is in its
@@ -66,9 +73,10 @@ without a valid `tier` does not install: it fails, instead of assuming a default
 — both possible defaults are wrong, one installs the agent everywhere and the
 other hides it.
 
-The installers also **remove** specialists left over at user level from earlier
-installs; a forgotten copy there is available in every project and defeats the
-rule. Only names this repository owns are touched.
+The installers report and preserve specialists left over at user level without
+tracked provenance. Such a copy remains available in every project: inspect it
+and remove it yourself if it should be project-only. Its name alone does not
+prove that canonkit owns it.
 
 ## Codex
 
@@ -225,6 +233,7 @@ the two `git commit *` and `git push *` ask rules from `permissions`.
 | `install --claude` / `--codex` / `--opencode` | only for those runtimes, without the menu |
 | `doctor` | read-only check of the installation; exits 1 if any check is `FAIL` |
 | `reference` | only the global blocks and the skills (`--claude`/`--codex`/`--opencode` narrow it; no menu) |
+| `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
 | `add <name>...` | specialists in the current project |
 | `remove <name>...` | removes specialists from the current project |
 | `list` | the roster and what is installed where (and points to `tool list`) |
@@ -300,7 +309,10 @@ rule does not vanish when the skill is not loaded. The skill is installed in
 `~/.claude/skills/orchestrate/` (Claude Code) and in `~/.agents/skills/orchestrate/`
 (Codex reads skills from `$HOME/.agents/skills`, per OpenAI's official skills
 documentation). A diverged copy is preserved as `<file>.local.bak` before being
-overwritten. The installer copies every file in the skill's folder, not only
+overwritten; existing backups stay intact and the next gets `.local-1.bak`,
+`.local-2.bak`, and so on. Core agents, hooks and dashboard files have the same
+protection. Edited OpenCode plugins are backed up under `~/.canonkit/backups/`,
+outside the auto-loaded `plugins/` directory. The installer copies every file in the skill's folder, not only
 `SKILL.md`.
 
 The `context-tune` skill is a different kind: **it only runs when you call it**
@@ -348,7 +360,11 @@ the history, oldest first, and removes the old one) and replaces
 `meu-time-hook.js` with a forwarder to `canonkit-hook.js`, which is never removed:
 a project's `.claude/settings.json` may still run it, and `install` has no way to
 find it. Point every `settings.json` at `canonkit-hook.js` and delete the
-forwarder. Handling of the old name goes away in 2.0.
+forwarder. `--wire-hooks` updates the global settings, but keeps the forwarder
+because other projects cannot be enumerated. Its updates are tracked and its
+previous bytes are backed up. Uninstall retains Claude's runtime while that
+forwarder remains. Activity history keeps the existing move/merge migration and
+is always preserved by uninstall.
 
 ## Upgrading from 2.0: leftover `~/.agents/*.md`
 
@@ -373,7 +389,66 @@ canonkit installs skills now.
 
 ## Uninstalling
 
-There is no `uninstall` command. To remove canonkit by hand, delete what the
+```bash
+npx canonkit uninstall --dry-run       # preview all recorded harnesses
+npx canonkit uninstall --codex         # only the recorded Codex installation
+npx canonkit uninstall                # all recorded harnesses; no install defaults/menu
+```
+
+Uninstall uses the manifest, not filenames alone. It detaches owned configuration
+before removing executable files. Unrelated settings, handlers, matchers and
+permission rules stay; it never restores a whole old configuration over later
+changes. Shared roster/skills stay until their last recorded harness is removed.
+Use the same `HOME`, `CODEX_HOME` and `XDG_CONFIG_HOME` as the installation.
+A changed root is reported and preserved, never followed from a saved path.
+Global tracking refuses symbolic links/junctions in destination paths, including
+a linked `HOME`; use physical installation roots. It does not replace or follow
+an instruction-file symlink to an unapproved target.
+
+Unchanged owned files are removed individually; edited owned files first get an exclusive
+`.local.bak` (numbered if necessary). A managed block is removed between its exact
+markers, preserving every byte outside, including BOM, whitespace and mixed line
+endings. Edited blocks are backed up first. Missing artifacts are safe to retry;
+duplicate or incomplete markers stop removal of that harness. Only empty artifact
+subdirectories are removed. Instruction/configuration files can remain empty.
+Artifacts recorded as `observed` remain intact, including edits, without creating
+a backup or removing their content.
+
+Backups can contain secrets. They are private (POSIX permissions, restricted DACLs
+on Windows), never overwritten, and retained after uninstall, along with private
+snapshots and the manifest. Configuration changes also get dated backups beside
+the configuration file. Activity history, project specialists/configs, external
+tool data and `~/.agents/<core>.md` leftovers are preserved.
+
+Some wiring needs a manual step. Codex groups/handlers stay if removing them would
+shift another hook's trust index; manually remove them and review `/hooks`, then
+retry. OpenCode rules that install moved rather than appended stay until their
+original order can be resolved manually. Preexisting or edited wiring, wrappers,
+known project references, legacy forwarders and invalid configuration can also
+keep a harness and its runtime intact. Other projects are not scanned. Removing
+OpenCode's block leaves its instruction file in place, so it does not silently
+switch back to Claude's fallback rules.
+
+Exit status is 0 when selected tracked claims were handled, including observed
+files that were preserved; 1 means manual cleanup or a retained harness remains.
+Other selected harnesses can still be removed. Retry after resolving the reported
+condition. An interrupted write has a persistent intent: the next real command
+checks the actual before/after hashes and recovers it. Conflicting bytes, an
+unknown manifest version, an active lock, or an ambiguous state stop changes.
+`--dry-run` writes no files or locks and starts no subprocesses; pending recovery
+must be resolved by a real command first.
+
+**Upgrading from 2.2 or earlier:** there is no earlier manifest to infer ownership
+from. Uninstall reports manual cleanup and removes nothing without a manifest.
+Reinstalling with this version records identical preexisting artifacts as
+`observed`, and preserves them on uninstall. Artifacts actually replaced by that
+installation have their previous content backed up and are tracked as `modified`.
+Identical preexisting wiring remains observed too, so its runtime can require
+manual cleanup. There is no automatic adoption or force-delete option.
+
+### Manual cleanup for pre-manifest installations and reported leftovers
+
+Inspect and remove what the
 table under [Core, at user level](#core-at-user-level) lists for the runtimes you
 installed:
 
@@ -388,7 +463,8 @@ installed:
 - the `orchestrate` and `context-tune` folders in `~/.claude/skills` and
   `~/.agents/skills` (Codex and OpenCode read the latter);
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
-  `meu-time-hook.js` forwarder next to it;
+  `meu-time-hook.js` forwarder next to it, after checking and updating references
+  in the relevant global/project settings; other projects are not enumerated;
 - the canonkit hook entries in `~/.claude/settings.json`. Remove them by hand: the
   `.bak` that `--wire-hooks` wrote is a fallback, and restoring it also undoes any
   change you made to `settings.json` after it was written;

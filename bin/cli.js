@@ -28,6 +28,7 @@ import os from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
+import { InstallManifest } from "./install-manifest.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -329,7 +330,10 @@ async function syncBlock(blockPath, targetPath, markers, ctx) {
   const original = existsSync(targetPath) ? await readFile(targetPath, "utf8") : "";
   const { text, action } = applyBlock(original, blockText, markers);
 
-  if (text === original) return ctx.log(`already current: ${targetPath}`);
+  if (text === original) {
+    await ctx.manifest?.observe(targetPath);
+    return ctx.log(`already current: ${targetPath}`);
+  }
   await ctx.write(targetPath, text);
   ctx.log(`${action} ${targetPath}`);
 }
@@ -419,6 +423,7 @@ async function install(ctx, options = {}) {
     for (const agent of specialists(agents)) {
       const stray = path.join(dest, `${agent.name}.md`);
       if (existsSync(stray)) {
+        if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
         await ctx.remove(stray);
         ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
       }
@@ -467,6 +472,7 @@ async function installCodex(ctx, agents, dest) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.toml`);
     if (existsSync(stray)) {
+      if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.toml`);
     }
@@ -514,6 +520,7 @@ async function installOpencode(ctx, agents, dest) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.md`);
     if (existsSync(stray)) {
+      if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
     }
@@ -607,15 +614,18 @@ const LOG_TAIL_BYTES = 1024 * 1024;
 
 async function upgradeFromMeuTime(ctx, claudeDir, { wire = false, planned = null } = {}) {
   const notes = [];
+  // History is user data, never an uninstall-owned artifact. Keep the existing
+  // migration's merge/rollback guarantees without claiming ownership of logs.
+  const history = ctx.historyContext ?? ctx;
 
   const oldLog = path.join(claudeDir, LEGACY.log);
   const newLog = path.join(claudeDir, "canonkit-activity");
   if (existsSync(oldLog)) {
     if (existsSync(newLog)) {
-      notes.push(...(await mergeLegacyLog(ctx, oldLog, newLog)));
+      notes.push(...(await mergeLegacyLog(history, oldLog, newLog)));
     } else {
       try {
-        await ctx.move(oldLog, newLog);
+        await history.move(oldLog, newLog);
         notes.push(`moved ~/.claude/${LEGACY.log} -> ~/.claude/canonkit-activity (history kept)`);
       } catch (err) {
         // A file held open (a running dashboard on Windows) blocks the move. The
@@ -630,11 +640,12 @@ async function upgradeFromMeuTime(ctx, claudeDir, { wire = false, planned = null
   if (existsSync(oldHook)) {
     const current = await readFile(oldHook, "utf8");
     if (!current.includes(FORWARDER_MARK)) {
-      await ctx.copy(oldHook, `${oldHook}.local.bak`);
+      if (!ctx.manifest) await ctx.copy(oldHook, `${oldHook}.local.bak`);
       notes.push(`previous ${LEGACY.hook} kept as ${LEGACY.hook}.local.bak`);
     }
     const next = forwarderFor(current);
     if (next !== current) await ctx.write(oldHook, next);
+    else await ctx.manifest?.observe(oldHook);
     if (wire) {
       const retire = retireForwarder(ctx, claudeDir, oldHook, next, planned);
       if (retire.remove) await ctx.remove(oldHook);
@@ -794,6 +805,9 @@ function retireForwarder(ctx, claudeDir, file, content, planned) {
       ...unreadable.map((f) => `kept ${shown}: could not read ${slash(f)}, which may still run it.`),
     ]);
   }
+  if (ctx.manifest) {
+    return keep([`kept ${shown}: other projects cannot be enumerated. Point their .claude/settings.json at canonkit-hook.js, then delete the forwarder manually.`]);
+  }
   if (ctx.dryRun) return keep([`would remove ${shown}: no settings file in sight runs it any more.`]);
   return {
     remove: true,
@@ -825,7 +839,7 @@ async function copyKeepingLocal(ctx, fromDir, dest, files) {
     const from = path.join(fromDir, src);
     const to = path.join(dest, file);
     await ctx.mkdir(path.dirname(to));
-    if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
+    if (!ctx.manifest && existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
       await ctx.copy(to, `${to}.local.bak`);
       ctx.log(`  ${file} differed — previous copy kept as ${file}.local.bak`);
     }
@@ -1051,6 +1065,7 @@ async function wireHooks(ctx, dest) {
     ctx.log(`    the hook runs twice there (every gate asks twice): remove the wrapper or point it elsewhere.`);
   }
   if (JSON.stringify(wired) === JSON.stringify(data)) {
+    await ctx.manifest?.observe(file);
     ctx.log(`  ${HOOK} is already wired in ~/.claude/settings.json.`);
     return null;
   }
@@ -1167,6 +1182,7 @@ async function wireCodexHooksFile(ctx) {
   ctx.log("");
   for (const n of notes) ctx.log(`  ${n}`);
   if (JSON.stringify(wired) === JSON.stringify(data)) {
+    await ctx.manifest?.observe(file);
     ctx.log(`  ${CODEX_ADAPTER} is already wired in ${where}.`);
     return;
   }
@@ -1332,6 +1348,7 @@ async function wireOpencodeConfig(ctx) {
     return;
   }
   if (!changes.length) {
+    await ctx.manifest?.observe(file);
     ctx.log(`  The git commit/push asks are already in effect in ${where}.`);
     return;
   }
@@ -1833,7 +1850,7 @@ async function doctor() {
   const runBy = running.map(slash).join(", ");
   const unread = unreadable.length ? `; could not read ${unreadable.map(slash).join(", ")}` : "";
   if (existsSync(forwarder)) {
-    add("WARN", "forwarder", `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json and removes it once nothing in sight runs it`);
+    add("WARN", "forwarder", `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json; check other projects, then remove the forwarder manually`);
   } else if (running.length) {
     add("FAIL", "forwarder", `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`);
   } else if (unreadable.length) {
@@ -2359,6 +2376,188 @@ async function toolCommand(ctx, [sub, ...names], flags) {
 
 /* -------------------------------------------------------------------- main */
 
+// Only this catalog authorizes global destinations. A path found in a manifest
+// is checked against it, never used as authority to read, write or delete.
+// Before retiring a distributed artifact, retain its descriptor here (including
+// owners/markers/undo). Old receipts must remain readable; never learn a path
+// from the manifest to compensate for a removed package file.
+const RETIRED_GLOBAL_ARTIFACTS = [];
+async function installCatalog(agents) {
+  const roots = { home: path.resolve(os.homedir()), claude: path.join(os.homedir(), ".claude"),
+    codex: codexHome(), opencode: path.resolve(opencodeDir()), skills: path.join(os.homedir(), ".agents", "skills") };
+  const catalog = [];
+  const add = (root, relative, kind, owners, extra = {}) => {
+    relative = relative.split(path.sep).join("/");
+    catalog.push({ id: `${root}:${kind}:${relative}`, root, relative, kind, owners, public: kind === "file", ...extra });
+  };
+  for (const harness of TARGETS) {
+    for (const agent of core(agents)) add(harness, `agents/${agent.name}.${harness === "codex" ? "toml" : "md"}`, "file", [harness]);
+    for (const file of HOOK_FILES[harness]) add(harness, `${harness === "claude" ? "hooks" : "canonkit"}/${file}`, "file", [harness]);
+  }
+  add("opencode", OPENCODE_PLUGIN.to, "file", ["opencode"], { plugin: true });
+  add("claude", "hooks/meu-time-hook.js", "file", ["claude"]);
+  for (const file of await filesUnder(DASHBOARD_DIR)) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
+  for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)) {
+    if (!existsSync(path.join(SKILLS_DIR, name, "SKILL.md"))) continue;
+    for (const file of await filesUnder(path.join(SKILLS_DIR, name))) {
+      add("claude", `skills/${name}/${file}`, "file", ["claude"]);
+      add("skills", `${name}/${file}`, "file", ["codex", "opencode"]);
+    }
+  }
+  add("home", "AGENTS.md", "block", TARGETS, { markers: ROSTER });
+  for (const [harness, file, markers] of [["claude", "CLAUDE.md", ROUTING], ["codex", "AGENTS.md", CODEX], ["opencode", "AGENTS.md", OPENCODE]]) {
+    add(harness, file, "block", [harness], { markers });
+  }
+  add("claude", "settings.json", "json", ["claude"], { undo: (before, after, current) => unwireTrackedHooks(before, after, current, "claude") });
+  add("codex", "hooks.json", "json", ["codex"], { undo: (before, after, current) => unwireTrackedHooks(before, after, current, "codex") });
+  add("opencode", "opencode.json", "json", ["opencode"], { undo: unwireTrackedPermissions });
+  for (const entry of RETIRED_GLOBAL_ARTIFACTS) {
+    if (!catalog.some((current) => current.id === entry.id)) catalog.push(entry);
+  }
+  return { roots, catalog };
+}
+
+const equalJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function configuration(bytes) {
+  if (bytes === null) return {};
+  let value;
+  try { value = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, "")); } catch { throw new Error("Configuration is not valid JSON; runtime retained"); }
+  if (!isObject(value)) throw new Error("Configuration is not a JSON object; runtime retained");
+  return value;
+}
+
+function unwireTrackedHooks(beforeBytes, afterBytes, currentBytes, harness) {
+  const before = configuration(beforeBytes), after = configuration(afterBytes), current = configuration(currentBytes);
+  const ours = harness === "claude" ? isOurHook : isOurCodexHook;
+  const handlers = (data) => {
+    if (data.hooks !== undefined && !isObject(data.hooks)) throw new Error("Invalid hooks object; runtime retained");
+    const out = [];
+    for (const [event, groups] of Object.entries(data.hooks ?? {})) {
+      if (!Array.isArray(groups)) throw new Error("Invalid hook event; runtime retained");
+      groups.forEach((group, gi) => {
+        if (Array.isArray(group?.hooks)) group.hooks.forEach((hook, hi) => { if (ours(hook)) out.push({ event, gi, hi, hook }); });
+      });
+    }
+    return out;
+  };
+  // Existing hooks may have been renamed, moved, deduplicated or widened by
+  // install. Without an unambiguous inverse they and their runtime stay.
+  if (handlers(before).length) throw new Error("Hook wiring predates its recorded change; restore it manually before uninstalling this runtime");
+  const installed = handlers(after);
+  const present = handlers(current);
+  for (const entry of present) {
+    if (!installed.some((record) => record.event === entry.event && equalJson(record.hook, entry.hook))) throw new Error("Hook wiring was edited; runtime retained");
+  }
+  for (const record of installed) {
+    if (present.filter((entry) => entry.event === record.event && equalJson(entry.hook, record.hook)).length >
+        installed.filter((entry) => entry.event === record.event && equalJson(entry.hook, record.hook)).length) throw new Error("Duplicate hook ownership is ambiguous; runtime retained");
+  }
+  const removed = new Set(present.map(({ event, gi, hi }) => `${event}:${gi}:${hi}`));
+  if (harness === "codex") {
+    for (const [event, groups] of Object.entries(current.hooks ?? {})) {
+      groups.forEach((group, gi) => {
+        const hooks = Array.isArray(group?.hooks) ? group.hooks : [];
+        const mine = hooks.map((_, hi) => removed.has(`${event}:${gi}:${hi}`));
+        if (!mine.some(Boolean)) return;
+        if (hooks.some((_, hi) => !mine[hi] && mine.slice(0, hi).some(Boolean))) throw new Error("Removing this Codex handler would shift another hook's trust index; remove it manually and review /hooks");
+        if (mine.every(Boolean) && groups.slice(gi + 1).some((g, offset) =>
+          Array.isArray(g?.hooks) && g.hooks.some((_, hi) => !removed.has(`${event}:${gi + offset + 1}:${hi}`)))) {
+          throw new Error("Removing this Codex group would shift another hook's trust index; remove it manually and review /hooks");
+        }
+      });
+    }
+  }
+  const out = structuredClone(current);
+  for (const [event, groups] of Object.entries(out.hooks ?? {})) {
+    out.hooks[event] = groups.flatMap((group, gi) => {
+      if (!Array.isArray(group?.hooks)) return [group];
+      const hooks = group.hooks.filter((_, hi) => !removed.has(`${event}:${gi}:${hi}`));
+      if (hooks.length === group.hooks.length) return [group];
+      if (hooks.length) return [{ ...group, hooks }];
+      const installedGroup = installed.find((entry) => entry.event === event && equalJson(after.hooks[event][entry.gi], group));
+      if (!installedGroup) throw new Error("Hook group metadata was edited; runtime retained");
+      return [];
+    });
+  }
+  return Buffer.from(serializeSettings(out, currentBytes.toString("utf8")));
+}
+
+function unwireTrackedPermissions(beforeBytes, afterBytes, currentBytes) {
+  const before = configuration(beforeBytes), after = configuration(afterBytes), current = configuration(currentBytes);
+  for (const data of [before, after, current]) {
+    if (data.permissions !== undefined && !Array.isArray(data.permissions)) throw new Error("Invalid OpenCode permissions; runtime retained");
+  }
+  const old = before.permissions ?? [], installed = after.permissions ?? [], list = current.permissions ?? [];
+  if (!equalJson(installed.slice(0, old.length), old)) throw new Error("OpenCode moved preexisting permission rules; restore their order manually before uninstalling");
+  const added = installed.slice(old.length);
+  if (added.some((rule) => !OPENCODE_ASKS.some((ask) => equalJson(ask, rule)) || old.some((ruleBefore) => sameRule(ruleBefore, rule)))) {
+    throw new Error("OpenCode permission provenance is ambiguous; runtime retained");
+  }
+  for (const rule of added) {
+    if (list.filter((entry) => equalJson(entry, rule)).length > 1) throw new Error("Duplicate OpenCode ask ownership is ambiguous; runtime retained");
+  }
+  const out = structuredClone(current);
+  if (out.permissions) out.permissions = list.filter((rule) => !added.some((entry) => equalJson(entry, rule)));
+  return Buffer.from(serializeSettings(out, currentBytes.toString("utf8")));
+}
+
+async function globalManifest(ctx, targets) {
+  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log });
+}
+
+async function trackedGlobal(ctx, targets, action) {
+  const manifest = await globalManifest(ctx, targets);
+  try {
+    await manifest.load();
+    return await action(manifest.wrap(ctx));
+  } finally { await manifest.close(); }
+}
+
+async function uninstallGlobal(ctx, flags) {
+  const manifest = await globalManifest(ctx, []);
+  await manifest.load();
+  const selected = TARGETS.filter((target) => flags.includes(`--${target}`));
+  manifest.targets = selected.length ? selected : [...new Set(Object.values(manifest.data.entries).flatMap((entry) => entry.owners))];
+  const referenceFiles = {
+    claude: [settingsPath(), path.join(os.homedir(), ".claude", "settings.local.json"),
+      path.join(process.cwd(), ".claude", "settings.json"), path.join(process.cwd(), ".claude", "settings.local.json"),
+      ...[process.env.CLAUDE_PROJECT_DIR].filter(Boolean).flatMap((dir) => [path.join(dir, ".claude", "settings.json"), path.join(dir, ".claude", "settings.local.json")])],
+    codex: [codexHooksPath(), path.join(codexHome(), "config.toml"), path.join(process.cwd(), ".codex", "hooks.json"), path.join(process.cwd(), ".codex", "config.toml")],
+    opencode: [opencodeConfigPath(), path.join(opencodeDir(), "opencode.jsonc"), path.join(process.cwd(), "opencode.json"), path.join(process.cwd(), "opencode.jsonc")],
+  };
+  try {
+    return await manifest.uninstall({ references: async (harness, projected) => {
+      const residual = [];
+      for (const file of new Set(referenceFiles[harness])) {
+        let text;
+        try { text = projected.has(file) ? projected.get(file).toString("utf8") : await readFile(file, "utf8"); }
+        catch (err) { if (err.code === "ENOENT") continue; throw new Error(`Cannot inspect reference file ${file}`); }
+        if (harness === "opencode" && file.endsWith(".jsonc")) { residual.push(file); continue; }
+        // Refuse invalid user-scope JSON even when it no longer contains a
+        // recognizable command. Its intended references cannot be established.
+        if (file.endsWith(".json")) configuration(Buffer.from(text));
+        const names = harness === "codex" ? /canonkit-(?:codex|hook)\.js/ : harness === "opencode" ? /canonkit-(?:opencode|hook)\.js|plugins[\\/]canonkit\.js/ : /(?:canonkit|meu-time)-hook\.js/;
+        if (names.test(text)) residual.push(file);
+      }
+      if (harness === "claude" && existsSync(path.join(os.homedir(), ".claude", "hooks", LEGACY.hook))) residual.push("legacy meu-time forwarder (other projects may use it)");
+      if (harness === "opencode") {
+        const plugins = path.join(opencodeDir(), "plugins");
+        let files;
+        try { files = await readdir(plugins, { withFileTypes: true }); }
+        catch (err) { if (err.code !== "ENOENT") throw new Error(`Cannot inspect ${plugins}`); files = []; }
+        for (const entry of files) {
+          if (entry.name === "canonkit.js") continue;
+          if (!entry.isFile()) { residual.push(path.join(plugins, entry.name)); continue; }
+          const file = path.join(plugins, entry.name);
+          const text = await readFile(file, "utf8");
+          if (/canonkit-(?:opencode|hook)\.js|\.\.[\\/]canonkit[\\/]/.test(text)) residual.push(file);
+        }
+      }
+      return residual;
+    } });
+  } finally { await manifest.close(); }
+}
+
 function usage() {
   return `canonkit — a versioned agent team for Claude Code, Codex and OpenCode
 
@@ -2368,6 +2567,8 @@ Usage:
            [--opencode]               default Claude Code and Codex)
            [--wire-hooks]             also wire the hook of each runtime installed
   canonkit doctor                     check the install; exits 1 on any FAIL
+  canonkit uninstall [--claude] [--codex] [--opencode]
+                                      remove tracked global entries (default: all recorded runtimes)
   canonkit reference [--claude] [--codex] [--opencode]
                                       sync only the global reference blocks
   canonkit add <name>...              add domain specialists to this project
@@ -2379,14 +2580,14 @@ Usage:
 
 Options:
   --dry-run       report what would change without writing (or running) anything
-  --claude        install, reference: write for Claude Code
-  --codex         install, reference: write for Codex
-  --opencode      install, reference: write for OpenCode. Flags combine; none:
+  --claude        install, reference, uninstall: select Claude Code
+  --codex         install, reference, uninstall: select Codex
+  --opencode      install, reference, uninstall: select OpenCode. Flags combine; install/reference without flags:
                   a terminal shows a menu, a script or CI gets Claude Code and Codex
   --wire-hooks   install: wire the hook of each runtime installed, with a dated
                   backup of each file it changes and every other key kept.
                   Claude Code: entries in ~/.claude/settings.json (settings.local.json
-                  never written), and the meu-time forwarder removed once unused.
+                  never written). Legacy meu-time forwarders are kept for manual removal.
                   Codex: a group in $CODEX_HOME/hooks.json; run /hooks in Codex to
                   trust it. OpenCode 2+: plugins/canonkit.js and two asks in
                   opencode.json permissions
@@ -2514,8 +2715,8 @@ async function main(argv) {
     console.error("--wire-hooks is only valid for: canonkit install");
     return 1;
   }
-  if (TARGETS.some((t) => flags.includes(`--${t}`)) && command !== "install" && command !== "reference") {
-    console.error("--claude, --codex and --opencode are only valid for: canonkit install, canonkit reference");
+  if (TARGETS.some((t) => flags.includes(`--${t}`)) && !["install", "reference", "uninstall"].includes(command)) {
+    console.error("--claude, --codex and --opencode are only valid for: canonkit install, canonkit reference, canonkit uninstall");
     return 1;
   }
 
@@ -2526,15 +2727,21 @@ async function main(argv) {
         console.error("Cancelled: nothing was installed.");
         return 1;
       }
-      await install(ctx, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets });
+      await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
       return 0;
     }
+    case "uninstall":
+      if (rest.length || flags.some((flag) => !["--dry-run", "--claude", "--codex", "--opencode"].includes(flag))) throw new Error("uninstall accepts only --dry-run and harness selection flags");
+      return uninstallGlobal(ctx, flags);
     case "doctor":
       return doctor();
     case "reference":
       // No menu here: reference is the re-sync after editing a block, run
       // from scripts as often as by hand.
-      await syncReference(ctx, await chooseTargets(flags, { interactive: false }));
+      {
+        const targets = await chooseTargets(flags, { interactive: false });
+        await trackedGlobal(ctx, targets, (tracked) => syncReference(tracked, targets));
+      }
       return 0;
     case "add":
     case "remove":
