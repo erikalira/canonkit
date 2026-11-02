@@ -84,8 +84,9 @@ list` does not show the plugin (it lists package plugins only). As with Codex,
 OpenCode has no trust step: whatever is in `plugins/` and `canonkit/` runs when
 OpenCode starts.
 
-**The two asks are config, not a gate.** A plugin cannot ask, so the prompt
-before `git commit` and `git push` is two `permissions` rules in `opencode.json`.
+**The two asks are config, not a gate.** Canonkit's plugin implements only the
+deny gates; the prompt before `git commit` and `git push` comes from two
+`permissions` rules in `opencode.json`.
 They are pattern-limited:
 
 - they match the command as typed: `git -c user.name=x commit` does not match

@@ -8,8 +8,10 @@ agent. This block holds only what is specific to Codex, and is reinstalled like
 the agents: local rules go outside the markers.
 
 - **The team are Codex subagents** in `$CODEX_HOME/agents/` (`~/.codex` by default). Ask for one by name.
-- **Model and effort come from the session.** The agents set no model, so the
-  rule "every planned dispatch names its model and effort" does not apply here.
+- **Generated agents set model and effort.** The installer maps each agent's
+  frontmatter to `model` and `model_reasoning_effort` in its TOML. Name the
+  intended model and effort in a dispatch plan; check what the runtime actually
+  runs rather than assuming it inherits the session's settings.
 - `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
   a hook denies `--no-verify`, `--no-gpg-sign` and `-c core.hooksPath=...` on
   git commands. <!-- enforced-by: git-bypass -->

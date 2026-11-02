@@ -116,6 +116,11 @@ Codex reads that file instead and the block is not loaded; `doctor` WARNs.
 
 ### Codex hook (`--wire-hooks`)
 
+On Windows, a long `CODEX_HOME` can make Codex's background server fail with
+"path must be shorter than SUN_LEN". Start Codex with `codex --no-daemon` in
+that case. This is a Codex socket-path limit, not a canonkit limit; it was seen
+during the 2.2 release gate.
+
 With `--wire-hooks`, install writes:
 
 | What | Where |
@@ -276,14 +281,16 @@ without touching any agent:
 npx canonkit reference
 ```
 
-It syncs **two blocks** (three with `--opencode`), because each runtime reads
-different things:
+It syncs the shared roster and one block for each selected runtime: **three
+blocks** for the default Claude Code and Codex install, four with OpenCode too.
+Each runtime reads different things:
 
 | Repository file | Goes to | Read by | Content |
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex and Claude Code | the whole team: who exists, blocking authority, HIGH routing, dispatch rules |
 | `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | only what is specific to Claude: the pointer to `~/AGENTS.md` and the hooks' `[ENFORCED]` rules |
-| `reference/opencode-block.md` | `~/.config/opencode/AGENTS.md` | OpenCode | only what is specific to OpenCode: the pointer to `~/AGENTS.md`, model taken from the session, nothing `[ENFORCED]` |
+| `reference/codex-block.md` | `$CODEX_HOME/AGENTS.md` | Codex | the pointer to `~/AGENTS.md`, generated model and effort, and the hook's two `[ENFORCED]` deny gates once wired |
+| `reference/opencode-block.md` | `~/.config/opencode/AGENTS.md` (`$XDG_CONFIG_HOME/opencode` if set) | OpenCode | the pointer to `~/AGENTS.md`, model taken from the session, and the plugin's two `[ENFORCED]` deny gates once wired |
 
 Alongside the blocks goes the `orchestrate` skill (`skills/orchestrate/SKILL.md`),
 which holds what only matters at orchestration time: the rationale for naming
