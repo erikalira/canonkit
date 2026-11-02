@@ -285,12 +285,14 @@ outside the markers is preserved, and the script refuses to run inside the
 
 Stack packs are skills, not additional agents. They supply language/framework
 guidance to Bob and Quinn without changing the roster or adding a review verdict.
-Available IDs are `typescript`, `cpp`, `csharp`, `java`, `python`, `react` and
-`rust`. Install only the ones wanted, from the consuming project's directory:
+Available IDs are `typescript`, `cpp`, `csharp`, `java`, `python`, `react`, `rust`,
+`go`, `kotlin` and `swift`. Install only the ones wanted, from the consuming
+project's directory:
 
 ```bash
 npx canonkit add typescript react
 npx canonkit add cpp csharp java python rust
+npx canonkit add go kotlin swift
 npx canonkit list
 npx canonkit remove react
 ```

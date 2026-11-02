@@ -5,9 +5,11 @@ Status: implemented locally, 2026-11-02; behavioral efficacy unmeasured. Item 7 
 The user authorized implementation with "continue" after reviewing the plan.
 No core reinstall, release, paid eval, commit or push was performed.
 Virgo prepared the initial plan through a native Codex subagent. The requested
-scope is seven packs: **typescript, cpp, csharp, java, python, react, rust**;
-the repeated TypeScript in the original request is one pack, and C# was added
-by the user's follow-up. This explicit choice supersedes the handoff's
+scope is ten packs: **typescript, cpp, csharp, java, python, react, rust, go,
+kotlin, swift**. The repeated TypeScript in the original request is one pack,
+and C# was added
+by the user's follow-up. Go, Kotlin and Swift were then explicitly added in a
+further request. This explicit choice supersedes the handoff's
 recommendation to start with two or three.
 
 ## Intended behavior
@@ -18,6 +20,7 @@ From a consuming project:
 npx canonkit add typescript
 npx canonkit add react
 npx canonkit add cpp csharp java python rust
+npx canonkit add go kotlin swift
 npx canonkit list
 npx canonkit remove react
 ```
@@ -68,7 +71,7 @@ the project or consuming a forged receipt; Quinn reviews acceptance coverage and
 changes to validation/evals. Independent review must follow the last relevant
 code edit. A planning review does not satisfy that implementation gate.
 
-Scott is not needed to settle stack count: the user explicitly selected seven.
+Scott is not needed to settle stack count: the user explicitly selected ten.
 No new services, dependencies, agents or runtime hooks are proposed.
 
 ## Contract and layout
@@ -76,7 +79,7 @@ No new services, dependencies, agents or runtime hooks are proposed.
 | Concern | Contract |
 | --- | --- |
 | Pack sources | `stack-packs/<stack>/SKILL.md`; `package.json.files` includes `stack-packs`. |
-| Installed names | `canonkit-typescript`, `canonkit-cpp`, `canonkit-csharp`, `canonkit-java`, `canonkit-python`, `canonkit-react`, `canonkit-rust`; YAML `name` matches the installed directory. CLI IDs remain the short stack names; C# uses `csharp`. |
+| Installed names | `canonkit-typescript`, `canonkit-cpp`, `canonkit-csharp`, `canonkit-java`, `canonkit-python`, `canonkit-react`, `canonkit-rust`, `canonkit-go`, `canonkit-kotlin`, `canonkit-swift`; YAML `name` matches the installed directory. CLI IDs remain the short stack names; C# uses `csharp`. |
 | Universal project target | `.agents/skills/canonkit-<stack>/`, always installed by explicit `add`. |
 | Claude adapter target | `.claude/skills/canonkit-<stack>/`, installed by the same explicit `add`, preserving the existing project add convention of serving multiple harnesses. |
 | Project receipt | `.canonkit/stack-packs.json`, versioned metadata with catalog IDs, hashes for each owned target file and a minimal pending operation. Paths are derived from the shipped catalog, not accepted from the receipt. No transcript or backup of unrelated content. |
@@ -127,7 +130,7 @@ Archie's planning review accepted the layout and scope and required the lock,
 pending intent and state distinctions above. Amend this plan if implementation
 reveals a materially different contract rather than maintaining a second design.
 
-## Seven skill contents and ECC reference
+## Ten skill contents and ECC reference
 
 Reference inspected on 2026-11-02:
 [ECC agents at revision b38be6a](https://github.com/affaan-m/ECC/tree/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents).
@@ -143,6 +146,9 @@ than importing reviewer identities or their complete prompts.
 | Python | Use the declared Python version/environment/tooling; distinguish type annotations from runtime validation; avoid shared mutable defaults, preserve context-manager cleanup and error propagation, and check blocking operations in async paths. | [python-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/python-reviewer.md) |
 | React | Follow the installed React/framework/bundler versions; cover hook rules, stale closures, effect cleanup, state identity, list keys, hydration and semantic interactions. RSC/client boundaries apply only where supported/configured; JSX projects do not require TypeScript. No memoization mandate without evidence. | [react-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/react-reviewer.md), [react-build-resolver](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/react-build-resolver.md) |
 | Rust | Honor edition, MSRV, workspace, lockfile and feature selection; reason about ownership/lifetimes, error propagation, async blocking/cancellation and unsafe invariants. Do not treat cloning, panicking, unsafe code or an edition upgrade as default compiler fixes. | [rust-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/rust-reviewer.md), [rust-build-resolver](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/rust-build-resolver.md) |
+| Go | Honor modules/workspaces, toolchain, tags and CGO; preserve error identity and useful context; trace goroutine/channel ownership, cancellation/completion, synchronization and loop-scoped cleanup. Scope SQL/process/TLS/filesystem guidance to the real boundary. | [go-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/go-reviewer.md), [go-build-resolver](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/go-build-resolver.md) |
+| Kotlin | Honor Gradle/Kotlin/Java baselines and multiplatform source sets; cover platform nullability, smart casts, structured coroutines, cancellation, dispatcher contracts and Flow state/lifetimes. Android/Compose/security guidance applies only when those boundaries are present. | [kotlin-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/kotlin-reviewer.md), [kotlin-build-resolver](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/kotlin-build-resolver.md) |
+| Swift | Honor language mode, isolation settings, deployment targets, package pins and actual SwiftPM/Xcode routes; cover ARC captures, recoverable errors, Sendable boundaries, actor reentrancy and cooperative cancellation. Preserve signing and Apple-specific security configuration. | [swift-reviewer](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/swift-reviewer.md), [swift-build-resolver](https://github.com/affaan-m/ECC/blob/b38be6a7f6350964d59328b52f0624e1d1d552d1/agents/swift-build-resolver.md) |
 
 Each pack starts with specific `name`/`description`, a short implementation and
 diagnostic workflow, concrete pitfalls, relevant checks and the Bob/Quinn
@@ -158,12 +164,12 @@ Retain attribution and comply with the source license if text is adapted.
 
 | Observable acceptance | Verification method |
 | --- | --- |
-| Seven named packs ship, all outside the core install. | Validate pack metadata/catalog and `npm pack --dry-run` contents; isolated `install` and `reference` tests prove no pack appears at HOME or in the current project. |
+| Ten named packs ship, all outside the core install. | Validate pack metadata/catalog and `npm pack --dry-run` contents; isolated `install` and `reference` tests prove no pack appears at HOME or in the current project. |
 | Explicit add affects only requested packs and current project. | Exercise each pack with temporary HOME/project; compare both target copies and repeat add; compare a second project and HOME before/after. Prove `add react` does not add TypeScript. |
 | Existing specialists and mixed lists work. | Preserve existing specialist tests; cover add/remove for `maya react`, unknown/core names and full-request validation before writes. |
 | Dry run has no side effects. | Compare tree and file bytes before/after add/remove, including absent destinations and conflicts. |
 | Install/update/removal preserves local ownership. | Test edited/untracked files, extra files, corrupt/forged receipts, symlinks/junctions, partial targets, interrupted writes and retry, lock contention and recovery. Assert external sentinel files remain unchanged. |
-| Every pack has at least one meaningful quality case. | Add seven fixtures, validate schema, verify pack inclusion in the agent definition, and test judges against a detecting answer and plausible incorrect answers. |
+| Every pack has at least one meaningful quality case. | Thirteen fixtures cover ten packs, including three benign controls. Validate schema, verify pack inclusion in the agent definition, and test judges against a detecting answer and plausible incorrect answers. |
 | Quality cases actually load the selected content. | Add optional `stackPack` to quality-case metadata; validate against the catalog and compose the selected SKILL body explicitly into the eval agent's instructions. Cases without it retain existing definitions. Unknown IDs fail before launching a model. |
 | Claims match evidence. | Record offline results separately from behavioral effectiveness. No score increase or claim of successful automatic skill selection follows from a dry run or a regex judge. |
 
@@ -184,6 +190,15 @@ Initial quality fixtures:
   input changes; the answer must address ordering/cleanup, not suppress deps.
 - Rust: a spawned task borrows state that cannot outlive its owner; the answer
   must establish correct ownership/lifetime without leaking or using unsafe.
+- Go: changing `%w` to `%v` removes inspectable error identity; the correction
+  must retain the caller's `errors.Is` contract and contextual message. A benign
+  direct-error rename checks that wrapping is not demanded for every return.
+- Kotlin: a broad catch turns cancellation into a successful fallback; the
+  correction must propagate cancellation while retaining ordinary-error handling.
+  A plain JVM refactor checks that Android or Clean Architecture is not imposed.
+- Swift: moving a state update across `await` permits actor reentrancy to violate
+  availability; the correction must reserve before suspension or revalidate
+  afterward. A synchronous capture rename checks that weak self is not universal.
 
 These measure behavior with explicitly supplied content. They do not measure
 native Codex discovery or prove the pack improves the base model; a future
@@ -206,7 +221,7 @@ commit, push or release is part of this plan's execution authorization.
    material deviations back to Archie before changing the contract.
 2. Add the small pack catalog and project add/remove/list path, receipt and
    preservation tests, retaining specialist behavior.
-3. Write all seven skills; add package distribution and metadata checks.
+3. Write all ten skills; add package distribution and metadata checks.
 4. Prepare quality fixtures and optional pack-content loading; Quinn reviews
    schema/judge/coverage changes. Run the offline checks above.
 5. Update README, `docs/install.md`, `docs/evals.md`, `docs/maintaining.md` and
@@ -253,7 +268,7 @@ unsupported generated-agent model or change the user's installation.
   was found and `git diff --check` passed. Changes at that stage were limited to
   this plan and the item-7 status/link in the handoff.
 
-## Implementation record
+## Initial seven-pack implementation record
 
 The local implementation adds `bin/stack-packs.js`, the seven source skills,
 project CLI integration, package distribution, explicit quality-case loading,
@@ -300,3 +315,54 @@ not strand temporary files in an untracked skill directory.
   checkout. Behavioral efficacy, native skill selection, publication and
   cross-OS CI remain unmeasured or unperformed as stated above. No paid eval,
   core reinstall, commit or push was performed.
+
+## Go, Kotlin and Swift expansion (2026-11-02)
+
+The user explicitly requested these three additions after the initial seven.
+This is a MEDIUM configuration/content expansion through the existing catalog:
+the engine, CLI dispatch, receipt schema, install paths and global ownership
+contract did not change. No new agent, dependency or automatic installation was
+introduced. Virgo was the sole code writer; root updated documentation after
+Virgo stopped editing.
+
+- Added `stack-packs/go/SKILL.md`, `stack-packs/kotlin/SKILL.md` and
+  `stack-packs/swift/SKILL.md` with the six ECC reviewer/resolver references
+  pinned above and official language references. Guidance covers errors,
+  ownership/concurrency, toolchains/build diagnostics and relevant security
+  boundaries without universal wrapping, architecture or weak-capture mandates.
+- Added one positive case and one benign control per new pack. The corpus now
+  has 61 cases, 13 with explicit pack content; the previous 55 cases are
+  semantically unchanged. Offline calibration includes incorrect fixes after a
+  correct diagnosis, valid reformulations, negations and Markdown.
+- The 43 focused stack-pack/eval tests passed. After final judge calibration,
+  the affected eval suite passed 25/25. The new coexistence test starts with
+  React installed, preserves its bytes/hashes when adding the three packs and
+  removes Kotlin without disturbing React, Go or Swift. Existing lifecycle tests
+  also exercise every catalog ID and isolate all ten packs from global commands.
+- All three new skills passed `quick_validate.py`; repository validation passed.
+  Quality dry-run validated all 61 cases without model calls. Offline dry-run
+  packaging confirmed 51 files and all ten source `SKILL.md` files.
+- The full suite from the initial seven-pack implementation above was not rerun
+  for this catalog/content expansion. No Go/Kotlin/Swift toolchain was executed;
+  the fixtures and judges were checked offline. Behavioral efficacy, native skill
+  discovery and cross-OS execution remain unmeasured for these additions.
+- Quinn's independent review found two wrong fixes accepted by the lexical
+  judges (wrapping cancellation and rechecking a cached actor snapshot), plus
+  two valid reformulations rejected. Root added those exact probes and refined
+  only the new expectations/calibration. The affected eval suite passed 25/25;
+  Quinn rechecked the four probes and approved after the final code edit.
+- Gard independently checked the three security sections against official
+  references and approved their platform/version limits, process/path handling,
+  Android exposure and Apple storage/transport guidance. No security blocker.
+- Repository validation passed again after the final judge edits. Package
+  distribution and the existing install engine were unaffected by those edits.
+- Spencer independently compared the five updated documents with the final
+  catalog, skills and cases: approved, with no documentary blockers. The record
+  distinguishes historical full-suite results from this expansion's focused
+  checks and makes no claim of complete ECC parity or measured effectiveness.
+- Integration Review: Virgo's implementation and Quinn/Gard/Spencer reviews
+  agree. The three additions use the existing extension point, retain project
+  opt-in and owner boundaries, and preserve old receipts and cases. Calibration
+  fixes do not change the installation contract. No unresolved blocker or handoff
+  remains; the local change is ready for user review. No paid eval, core reinstall,
+  commit, push or publication was performed.

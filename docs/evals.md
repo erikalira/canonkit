@@ -154,9 +154,9 @@ reviews the diff in plan mode. The cases include defects in code, tests, scope
 proposals, performance evidence, operational plans, documentation and team
 configuration, plus defect-free controls to detect an invented block on LOW.
 
-The corpus has **55 cases for the 10 core agents** (7 original, 26 from Phase 3,
+The corpus has **61 cases for the 10 core agents** (7 original, 26 from Phase 3,
 4 from Phase 7, 3 from the reviewer pre-report gate, 5 from review-noise and
-3 from the learning loop and 7 for stack packs). Each core has
+3 from the learning loop and 13 for stack packs). Each core has
 `kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
 no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
 guarded or compatible, where the right report approves with no finding; it is not
@@ -222,9 +222,15 @@ arguments: call the script directly and quote the list, as in
 
 ### Stack-pack cases
 
-Seven `stack-*` cases use Quinn with an optional `stackPack` ID: TypeScript
+Thirteen `stack-*` cases cover ten packs and use Quinn with an optional
+`stackPack` ID: TypeScript
 runtime validation, C++ dangling views, C# early disposal, Java resource cleanup,
-Python shared defaults, React stale results and Rust spawned-task ownership.
+Python shared defaults, React stale results, Rust spawned-task ownership, Go
+error identity, Kotlin cancellation and Swift actor reentrancy. The Go, Kotlin
+and Swift additions also have benign controls: direct error propagation, a plain
+JVM null-handling refactor and a synchronous strong capture. They check that
+review does not require universal error wrapping, an unrelated architecture or
+weak captures without a lifetime problem.
 The runner validates the ID against the shipped catalog and appends that pack's
 checkout `SKILL.md` body explicitly to the eval agent's instructions. Existing
 cases without `stackPack` retain their original definitions. Dry-run output
@@ -232,7 +238,9 @@ identifies the pack supplied to each case.
 
 The fixtures need no language toolchains for offline schema/judge checks.
 Tests cover pack inclusion, catalog coverage and representative correct and
-incorrect reports. A dry run calls no model; neither it nor lexical calibration
+incorrect reports, including correct diagnoses with ineffective corrections,
+negations and Markdown formatting. A dry run calls no model; neither it nor
+lexical calibration
 proves that the guidance improves behavior. **No paid stack-pack run has been
 performed.** These cases measure review with supplied content, not native skill
 discovery, installation or Codex/OpenCode behavior. A future efficacy comparison

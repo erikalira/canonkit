@@ -1307,6 +1307,161 @@
         "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
         "maxLines": 24
       }
+    },
+    {
+      "id": "stack-go-error-identity",
+      "stackPack": "go",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "go.mod": "module fixture\n\ngo 1.20\n",
+        "read.go": "package fixture\nimport (\"fmt\"; \"os\")\n// Callers rely on errors.Is(err, os.ErrNotExist).\nfunc Load(path string) ([]byte, error) {\n  data, err := os.ReadFile(path)\n  if err != nil { return nil, fmt.Errorf(\"load %s: %w\", path, err) }\n  return data, nil\n}\n"
+      },
+      "change": {
+        "read.go": "package fixture\nimport (\"fmt\"; \"os\")\n// Callers rely on errors.Is(err, os.ErrNotExist).\nfunc Load(path string) ([]byte, error) {\n  data, err := os.ReadFile(path)\n  if err != nil { return nil, fmt.Errorf(\"load %s: %v\", path, err) }\n  return data, nil\n}\n"
+      },
+      "prompt": "Review the uncommitted change. Callers must still identify os.ErrNotExist using errors.Is while retaining the load context. Identify the concrete regression and smallest correction. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24,
+        "says": [
+          "errors\\.Is|unwrap|(?:error|sentinel)[ -]?identity",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:(?:use|restore|keep|replace[^\\n.]{0,25}with)\\s+[*\\x60]*(?:the\\s+)?%w\\b|(?:change|switch)[^\\n.]{0,50}%v[^\\n.]{0,30}\\bto\\s+[*\\x60]*%w\\b)"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:do not|don't|never)\\s+(?:use|restore|keep)\\s+[*\\x60]*%w",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:use|switch to|replace[^\\n.]{0,25}with)\\s+(?:an?\\s+)?(?:error\\s+)?(?:string|text)\\s+compar"
+        ]
+      }
+    },
+    {
+      "id": "stack-go-direct-error-bait",
+      "stackPack": "go",
+      "agent": "quinn",
+      "risk": "LOW",
+      "kind": "bait",
+      "fixture": {
+        "read.go": "package fixture\nimport \"os\"\nfunc Load(path string) ([]byte, error) { return os.ReadFile(path) }\n"
+      },
+      "change": {
+        "read.go": "package fixture\nimport \"os\"\nfunc Load(filename string) ([]byte, error) { return os.ReadFile(filename) }\n"
+      },
+      "prompt": "Review this parameter rename. Load intentionally passes os.ReadFile's results through unchanged; callers inspect errors.Is. Report a concrete regression if present. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?:approved|approve|LOW\\b|clean|no (?:issue|finding|concern))",
+        "maxLines": 15,
+        "says": [
+          "(?:unchanged|preserv|pass.through|direct)[^\\n.]{0,65}(?:error|result)|(?:error|result)[^\\n.]{0,65}(?:unchanged|preserv)"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:must|need to|should|add|require|wrap|use)[^\\n.]{0,45}(?:%w|fmt\\.Errorf|wrapp)"
+        ]
+      }
+    },
+    {
+      "id": "stack-kotlin-cancellation",
+      "stackPack": "kotlin",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "src/Loader.kt": "import kotlinx.coroutines.CancellationException\nsuspend fun load(fetch: suspend () -> String): String = try {\n    fetch()\n} catch (e: CancellationException) {\n    throw e\n} catch (e: Exception) {\n    \"offline\"\n}\n"
+      },
+      "change": {
+        "src/Loader.kt": "import kotlinx.coroutines.CancellationException\nsuspend fun load(fetch: suspend () -> String): String = try {\n    fetch()\n} catch (e: Exception) {\n    \"offline\"\n}\n"
+      },
+      "prompt": "Review the uncommitted change. Cancellation of fetch must propagate to the caller; ordinary fetch failures still return offline. Identify the concrete regression and smallest correction. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24,
+        "says": [
+          "CancellationException",
+          "swallow|fallback|cancel(?:led|lation)",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:(?:rethrow|propagate|restore[^\\n.]{0,25}rethrow(?:ing)?)\\s+[*\\x60]*(?:the\\s+)?(?:original\\s+)?CancellationException\\b|restore[^\\n.]{0,60}\\bcatch\\b[^\\n.]{0,70}\\bthrow\\s+[*\\x60]*e\\b[^\\n.]{0,20}\\bunchanged\\b)"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:do not|don't|never)\\s+(?:rethrow|propagate)[^\\n.]{0,30}CancellationException",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:swallow|ignore|convert)[^\\n.]{0,35}(?:CancellationException|cancellation)",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:wrap(?:ping)?\\s+[*\\x60]*(?:CancellationException|it)\\b|(?:propagate|rethrow)[^\\n.]{0,65}\\bby\\s+wrapp)"
+        ]
+      }
+    },
+    {
+      "id": "stack-kotlin-jvm-null-bait",
+      "stackPack": "kotlin",
+      "agent": "quinn",
+      "risk": "LOW",
+      "kind": "bait",
+      "fixture": {
+        "src/Names.kt": "fun normalized(raw: String?): String = raw?.trim().orEmpty()\n"
+      },
+      "change": {
+        "src/Names.kt": "fun normalized(raw: String?): String {\n    val trimmed = raw?.trim().orEmpty()\n    return trimmed\n}\n"
+      },
+      "prompt": "Review the uncommitted change in a plain JVM library with no Android, Compose or architectural layer requirement. The function must trim non-null values and map null to an empty string. Report a concrete regression if present. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?:approved|approve|LOW\\b|clean|no (?:issue|finding|concern))",
+        "maxLines": 15,
+        "says": [
+          "null|equivalent|unchanged"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:must|need to|should|add|introduce|require)[^\\n.]{0,70}(?:Clean Architecture|UseCase|Compose|Android|!!)"
+        ]
+      }
+    },
+    {
+      "id": "stack-swift-actor-reentrancy",
+      "stackPack": "swift",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "Sources/Stock.swift": "actor Stock {\n    private var available = 1\n    func reserve(after pause: @Sendable () async -> Void) async -> Bool {\n        guard available > 0 else { return false }\n        available -= 1\n        await pause()\n        return true\n    }\n}\n"
+      },
+      "change": {
+        "Sources/Stock.swift": "actor Stock {\n    private var available = 1\n    func reserve(after pause: @Sendable () async -> Void) async -> Bool {\n        guard available > 0 else { return false }\n        await pause()\n        available -= 1\n        return true\n    }\n}\n"
+      },
+      "prompt": "Review the uncommitted change. At most one concurrent caller may reserve the single item; pause may suspend and allow another call. Identify the concrete regression and a small correction preserving async behavior. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|P1|request(ed)? changes|do not merge|not approv)",
+        "maxLines": 24,
+        "says": [
+          "reentran|interleav|two (?:calls|callers)|negative|over.?reserv",
+          "await|suspen",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:(?:(?:move|perform)\\s+(?:the\\s+)?(?:decrement|reservation|state update)|(?:reserve|decrement|update)\\b)[^\\n.]{0,70}\\bbefore\\s+[*\\x60]*(?:the\\s+)?(?:await|suspen)|(?:recheck|revalidate|check again)[^\\n.]{0,70}\\bafter\\s+[*\\x60]*(?:the\\s+)?(?:await|suspen))"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:do not|don't|never)\\s+(?:move|reserve|decrement|recheck|revalidate)[^\\n.]{0,70}(?:await|suspen)",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:use|add|mark|apply)[^\\n.]{0,50}(?:@MainActor|nonisolated|@unchecked\\s+Sendable)",
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:recheck|revalidate|check again)\\s+(?:the\\s+)?(?:cached|captured|local)\\s+(?:(?:available|availability)\\s+)?(?:snapshot|state|value)\\b"
+        ]
+      }
+    },
+    {
+      "id": "stack-swift-strong-capture-bait",
+      "stackPack": "swift",
+      "agent": "quinn",
+      "risk": "LOW",
+      "kind": "bait",
+      "fixture": {
+        "Sources/Title.swift": "final class Title {\n    let prefix = \"Hello \"\n    func names(_ values: [String]) -> [String] {\n        values.map { self.prefix + $0 }\n    }\n}\n"
+      },
+      "change": {
+        "Sources/Title.swift": "final class Title {\n    let prefix = \"Hello \"\n    func names(_ values: [String]) -> [String] {\n        values.map { value in self.prefix + value }\n    }\n}\n"
+      },
+      "prompt": "Review the closure-parameter rename. This synchronous Array.map does not store its closure, and the owner must prefix every value. Report a concrete regression if present. Do not edit code.",
+      "expect": {
+        "firstLine": "^(?:approved|approve|LOW\\b|clean|no (?:issue|finding|concern))",
+        "maxLines": 15,
+        "says": [
+          "synchronous|non.?escaping|not stored|does not (?:store|escape)|no (?:retain|reference) cycle"
+        ],
+        "notSays": [
+          "(?:^|[.!?:]\\s+|\\n\\s*(?:[-*]\\s+)?)(?:must|need to|should|add|introduce|require|use|replace)[^\\n.]{0,55}(?:weak\\s+self|unowned\\s+self|\\[weak|\\[unowned)"
+        ]
+      }
     }
   ]
 }

@@ -1142,20 +1142,24 @@ unmeasured; cross-OS CI and publication were not run here.
 ### 7. Stack packs, opt-in per project
 
 **Implemented locally (2026-11-02):** see [stack-packs-design.md](stack-packs-design.md)
-for the design and validation record. Seven project-only skills are available
+for the design and validation record. Ten project-only skills are available
 through explicit `canonkit add <stack>`, with tracked conservative removal and
 no automatic installation or new agents. They are separate from the core's
-global skills and install manifest. Seven quality cases load pack content
+global skills and install manifest. Thirteen quality cases load pack content
 explicitly; behavioral effectiveness is unmeasured and no paid eval was run.
-The full local suite passed (749 tests before the final judge calibration:
+For the initial seven packs, the full local suite passed (749 tests before the final judge calibration:
 746 passed, three platform skips, no failures); the affected eval tests then
 passed 25/25. Repository/skill validation and dry-run packaging passed. Archie,
 Gard, Quinn and Spencer approved their final scopes; Integration Review found
-no unresolved blockers. No core reinstall, commit or push was performed.
+no unresolved blockers in that implementation. The subsequent Go/Kotlin/Swift
+expansion passed 43 focused tests, with 25/25 eval tests after final calibration;
+its three skill files, repository validation and ten-pack distribution passed.
+Its final reviews are recorded in the linked expansion record. No core reinstall,
+commit or push was performed.
 
 The user selected TypeScript, C++, Java, Python, React and Rust, then added C#
-(`csharp`): seven packs. TypeScript was listed twice and is one pack. This
-overrides the initial two-to-three-pack
+(`csharp`), Go, Kotlin and Swift: ten packs. TypeScript was listed twice and is
+one pack. This overrides the initial two-to-three-pack
 recommendation below. The design starts with Virgo through native Codex
 subagents, using ECC's agents as reference. Publication and cross-OS CI have not
 been performed for this change.

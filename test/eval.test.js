@@ -345,6 +345,18 @@ describe("quality eval", () => {
       return [`Approved. No blockers.\n${body}`, `Approved. No blockers. ${body}`];
     };
     const examples = {
+      "stack-go-error-identity": ["Block: %v loses error identity, so errors.Is cannot find os.ErrNotExist. Restore `%w` to keep the load context and underlying error.", "Block: error identity is lost, but compare error strings instead.", WAVED],
+      "stack-go-direct-error-bait": ["Approved: results and error identity are unchanged by the parameter rename.", "Block: every direct error return must use fmt.Errorf wrapping.",
+        { good: ["**Approved.** The pass-through preserves the error for errors.Is; no wrapper is required."],
+          bad: ["Approved: error identity is unchanged. Must add fmt.Errorf wrapping on every error."] }],
+      "stack-kotlin-cancellation": ["Block: the broad catch swallows CancellationException and returns the offline fallback. Rethrow CancellationException before handling ordinary failures.", "Block: CancellationException reaches the fallback. Use GlobalScope to avoid cancellation.", WAVED],
+      "stack-kotlin-jvm-null-bait": ["Approved: equivalent null and trimming behavior; the local val changes no contract.", "Block: nullable input requires replacing this library with Clean Architecture and Android UseCases.",
+        { good: ["## Approved\nNull still becomes an empty string, and other values are trimmed."],
+          bad: ["Approved: equivalent null behavior. Add Clean Architecture layers before merging."] }],
+      "stack-swift-actor-reentrancy": ["Block: actor reentrancy lets two callers see the same availability across await and over-reserve. Move the decrement before await.", "Block: await allows actor reentrancy. Add @MainActor to serialize the whole async operation.", WAVED],
+      "stack-swift-strong-capture-bait": ["Approved: this synchronous map does not store the closure and creates no retain cycle.", "Block: every closure capturing self requires weak self.",
+        { good: ["**Approved.** The nonescaping map completes synchronously; the rename preserves all values."],
+          bad: ["Approved: synchronous map creates no retain cycle. Use [weak self] to avoid strong captures."] }],
       "stack-typescript-runtime-cast": ["Block: the cast is only a type assertion, not runtime validation; invalid external values now reach name.toUpperCase(). Restore the boundary guard.", "Block: add another cast to fix the type error; the runtime data is already safe."],
       "stack-cpp-dangling-view": ["Block: string_view points into local, whose lifetime ends at return; the returned view dangles. Return an owning string.", "Block: use a smart pointer for better style."],
       "stack-csharp-early-dispose": ["Block: using disposes the stream while the read task can still be pending. Await completion inside the using scope.", "Block: add ConfigureAwait(false) to improve performance."],
@@ -513,6 +525,40 @@ describe("quality eval", () => {
   test("stack-pack judges reject correct diagnoses paired with ineffective corrections", () => {
     const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
     const probes = {
+      "stack-go-error-identity": {
+        good: "**Block.**\n- Replace `%v` with **`%w`** so errors.Is can inspect the wrapped error without dropping context.",
+        moreGood: ["Block: errors.Is cannot inspect the error identity. Change the formatter from %v to %w to preserve error identity and context."],
+        bad: "Block: %v loses error identity and errors.Is no longer works. Use string comparison for os.ErrNotExist.",
+        moreBad: [
+          "Block: errors.Is loses the sentinel identity. Do not restore %w; return the error text instead.",
+          "Block: errors.Is loses the sentinel identity. Never use `%w`; keep %v and ignore not-found errors.",
+          "Block: errors.Is loses the sentinel identity. Fix: use %v to retain error identity.",
+          "Block: errors.Is loses the sentinel identity. Use %wrong to preserve wrapping.",
+        ],
+      },
+      "stack-kotlin-cancellation": {
+        good: "## Block\nThe fallback swallows cancellation. Rethrow **`CancellationException`** before the broad catch handles ordinary exceptions.",
+        moreGood: ["Block: the broad catch swallows CancellationException into the fallback. Restore the dedicated cancellation catch before the fallback and throw e unchanged."],
+        bad: "Block: CancellationException is swallowed by the broad catch and becomes a fallback. Use CoroutineExceptionHandler to log it.",
+        moreBad: [
+          "Block: CancellationException is swallowed by the fallback. Do not rethrow CancellationException; log and return offline.",
+          "Block: CancellationException is swallowed by the fallback. Never propagate `CancellationException`; return offline instead.",
+          "Block: CancellationException is swallowed by the fallback. Convert cancellation into an ordinary successful result.",
+          "Block: CancellationException is swallowed by the fallback. Rethrow CancellationExceptionLogger in the logger and keep the fallback.",
+          "Block: the catch swallows CancellationException into the fallback. Propagate CancellationException by wrapping it in RuntimeException and throwing that wrapper.",
+        ],
+      },
+      "stack-swift-actor-reentrancy": {
+        good: "**Block.** Reentrancy across await can over-reserve. Recheck availability after `await` immediately before decrementing with no further suspension.",
+        bad: "Block: actor reentrancy across await allows two callers to reserve one item. Capture available in a local let before await, then decrement afterward.",
+        moreBad: [
+          "Block: actor reentrancy across await allows over-reservation. Do not move the decrement before await; actors already serialize operations.",
+          "Block: actor reentrancy across await permits two callers. Use @MainActor to serialize the entire function.",
+          "Block: actor reentrancy across await permits two callers. Add @unchecked Sendable to make the actor safe.",
+          "Block: actor reentrancy across await permits two callers. Move the guard before await and leave the decrement afterward.",
+          "Block: actor reentrancy across await allows two callers to over-reserve. Recheck the cached availability snapshot after await, then decrement the actor state.",
+        ],
+      },
       "stack-typescript-runtime-cast": {
         good: "Block: external input needs runtime validation. Add a guard that narrows the input before reading its name.",
         bad: "Block: runtime validation of external input is missing. Fix by another assertion to User so the compiler accepts the access.",
@@ -542,11 +588,11 @@ describe("quality eval", () => {
         bad: "Block: the closure borrows label and must outlive its owner. Clone label inside the closure without transferring ownership into it.",
       },
     };
-    for (const [id, { good, bad }] of Object.entries(probes)) {
+    for (const [id, { good, bad, moreBad = [], moreGood = [] }] of Object.entries(probes)) {
       const c = data.cases.find((entry) => entry.id === id);
       assert.ok(c, `${id}: missing case`);
-      assert.equal(judgeReport(c.expect, good).pass, true, `${id}: valid alternative rejected`);
-      assert.equal(judgeReport(c.expect, bad).pass, false, `${id}: correct diagnosis hid an ineffective correction`);
+      for (const g of [good, ...moreGood]) assert.equal(judgeReport(c.expect, g).pass, true, `${id}: valid alternative rejected: ${g}`);
+      for (const b of [bad, ...moreBad]) assert.equal(judgeReport(c.expect, b).pass, false, `${id}: correct diagnosis hid an ineffective correction: ${b}`);
     }
   });
 

@@ -169,12 +169,14 @@ Add language or framework guidance when a project needs it:
 cd my-project
 npx canonkit add typescript react
 npx canonkit add csharp
+npx canonkit add go kotlin swift
 npx canonkit list
 npx canonkit remove react
 ```
 
-Available packs: **typescript, cpp, csharp, java, python, react, rust**. Each is
-a skill for the existing team, installed only when named. React and TypeScript
+Available packs: **typescript, cpp, csharp, java, python, react, rust, go, kotlin,
+swift**. Each is a skill for the existing team, installed only when named.
+React and TypeScript
 are independent. Packs never come with the core install or install a toolchain.
 
 Copies go to the project's `.agents/skills/canonkit-<stack>/` and

@@ -6,7 +6,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const STACK_PACK_IDS = Object.freeze(["typescript", "cpp", "csharp", "java", "python", "react", "rust"]);
+export const STACK_PACK_IDS = Object.freeze(["typescript", "cpp", "csharp", "java", "python", "react", "rust", "go", "kotlin", "swift"]);
 const TARGETS = Object.freeze({ agents: ".agents", claude: ".claude" });
 const HASH = /^[a-f0-9]{64}$/;
 const digest = (bytes) => bytes === null ? null : createHash("sha256").update(bytes).digest("hex");
