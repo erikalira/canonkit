@@ -265,6 +265,18 @@ while IFS=$'	' read -r status detail; do
   if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
 done < "$TMP"
 
+# Every [ENFORCED] rule in a block must name gates that exist and are enforced
+# by that block's adapter (scripts/check-enforced.mjs).
+if command -v node >/dev/null 2>&1; then
+  node "$REPO_ROOT/scripts/check-enforced.mjs" > "$TMP" 2>&1 || true
+  while IFS=$'	' read -r status detail; do
+    [ -z "${status:-}" ] && continue
+    if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+  done < "$TMP"
+else
+  warn "node not found — skipped the [ENFORCED] fitness check"
+fi
+
 head_ "Skills"
 
 # A skill is the on-demand half of the reference: the roster keeps one always-on
@@ -454,6 +466,14 @@ if command -v node >/dev/null 2>&1; then
       fail "$hook: does not run — hooks fail open, so this silently disables every gate"
     fi
     rm -rf "$hook_home"
+  done
+
+  # The OpenCode plugin entry is ESM and loads ../canonkit/ only where it is
+  # installed, so it cannot be run from here; test/hook-opencode.test.js imports
+  # it from an installed layout. This catches a syntax error before the tests run.
+  for plugin in hooks/*.mjs; do
+    [ -e "$plugin" ] || continue
+    if node --check "$plugin" 2>/dev/null; then pass "$plugin parses"; else fail "$plugin: syntax error"; fi
   done
 
   # The dashboard is CommonJS for the same reason as the hooks, and is only ever

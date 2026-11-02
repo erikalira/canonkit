@@ -43,10 +43,11 @@
  * variable and no home-directory lookup. What it needs from outside comes in
  * `env` (see claudeEnv). It reads the activity log and the project's
  * .claude/canonkit.json as input; the log lines it would write come back in
- * `logs` as { file, record }, written by the adapter. Its one write is the
- * context-band state (contextReminder): the reminder is only given when that
- * state persisted, or it would repeat every turn. `main()` is the Claude Code
- * adapter: stdin -> normalizeClaude -> evaluate -> log writes, output, exit.
+ * `logs` as { file, record }, written by the adapter. It writes nothing.
+ * `main()` is the Claude Code adapter: stdin -> normalizeClaude -> evaluate ->
+ * log writes -> on UserPromptSubmit, the context-size reminder (contextReminder:
+ * it parses Claude's transcript and persists band state, so it is the adapter's)
+ * -> output, exit.
  * The core stays in this file on purpose: a top-level require of a sibling
  * would throw at load, outside run()'s try, and turn every gate off for an
  * install that copied only this file.
@@ -231,86 +232,6 @@ function subagentTranscript(parentTranscript, agentId) {
   return path.join(parentTranscript.replace(/\.jsonl$/, ''), 'subagents', `agent-${agentId}.jsonl`);
 }
 
-// ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
-// Enforced half of the "New session when the subject changes" rule. A long session is
-// re-read in full on every turn, so the cost of bundling unrelated jobs grows
-// silently; this puts the size in front of the model when it crosses a band.
-// Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
-// session_id + transcript_path; stdout
-//   {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
-// adds context alongside the prompt and exit 0 never blocks it. The transcript is
-// written asynchronously, so the figure can lag one turn — fine for a reminder.
-// The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
-// CANONKIT_CONTEXT_BANDS (comma-separated token counts; "off" disables). The
-// pre-rename MEU_TIME_CONTEXT_BANDS is still read when the new one is unset.
-const DEFAULT_BANDS = [100000, 150000, 200000];
-const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
-const BANDS_FILE = 'context-bands.json'; // inside env.logDir
-const MAX_TRACKED_SESSIONS = 50;
-
-// raw: env.contextBands, the variable's value as the adapter read it.
-function contextBands(raw) {
-  if (typeof raw !== 'string' || raw.trim() === '') return DEFAULT_BANDS;
-  if (/^(off|0|none)$/i.test(raw.trim())) return [];
-  const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
-  return bands.length ? [...new Set(bands)].sort((a, b) => a - b) : DEFAULT_BANDS;
-}
-
-// Context size = what the most recent main-chain API call consumed as input.
-// Read from the end only: transcripts reach several MB.
-function currentContextTokens(file) {
-  let fd;
-  try {
-    fd = fs.openSync(file, 'r');
-    const size = fs.fstatSync(fd).size;
-    const len = Math.min(size, TAIL_BYTES);
-    const buf = Buffer.alloc(len);
-    fs.readSync(fd, buf, 0, len, size - len);
-    const lines = buf.toString('utf8').split('\n');
-    for (let i = lines.length - 1; i >= 0; i--) {
-      if (!lines[i].includes('"usage"')) continue;
-      let e;
-      try { e = JSON.parse(lines[i]); } catch (_) { continue; } // first line may be cut mid-entry
-      const u = e && e.type === 'assistant' && !e.isSidechain && e.message && e.message.usage;
-      if (!u || typeof u !== 'object') continue;
-      const total = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
-      if (total > 0) return total;
-    }
-  } catch (_) { /* unreadable: do nothing */ } finally {
-    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
-  }
-  return null;
-}
-
-function contextReminder(evt, env, log) {
-  const session = evt.session;
-  const bands = contextBands(env.contextBands);
-  if (!bands.length || !session || !env.logDir || typeof evt.transcriptPath !== 'string') return null;
-  const tokens = currentContextTokens(evt.transcriptPath);
-  if (tokens === null) return null;
-
-  const bandsFile = path.join(env.logDir, BANDS_FILE);
-  let state = {};
-  try { state = JSON.parse(fs.readFileSync(bandsFile, 'utf8')) || {}; } catch (_) {}
-  const reached = bands.filter((b) => tokens >= b).pop() || 0; // 0: below every band
-  const last = num(state[session]);
-  // Below every band (e.g. after /compact) the record is dropped so the next climb reminds again.
-  if (reached === 0 && !(session in state)) return null;
-  if (reached !== 0 && reached <= last) return null;
-
-  if (reached === 0) delete state[session]; else state[session] = reached;
-  const keys = Object.keys(state);
-  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACKED_SESSIONS))) delete state[k];
-  try {
-    fs.mkdirSync(env.logDir, { recursive: true });
-    fs.writeFileSync(bandsFile, JSON.stringify(state));
-  } catch (_) { /* cannot persist: skip the reminder rather than repeat it every turn */ return null; }
-  if (reached === 0) return null;
-
-  log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(evt.cwd) });
-  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff, and end with the new session's opening prompt in a fenced block, ready to paste (rule 'New session when the subject changes').`;
-}
-
 // Agents that count as an independent reviewer for the definition-of-done gate.
 // perry is here because he owns performance budgets: the rule says only Perry
 // loosens one, and until now the gate that enforces "reviewed by someone" had
@@ -347,7 +268,9 @@ function realish(p) {
 // ~/.claude counts as inside: the hooks and settings there gate every project,
 // so a probe on them is never only a probe. Any failure counts as inside too,
 // and so does a missing env.home: unable to rule ~/.claude out, the gate counts.
+// So does an empty cwd (none was given): there is no project to be outside of.
 function onProject(fp, cwd, env) {
+  if (!cwd) return true;
   try {
     const real = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
     const file = real(path.resolve(normalizePath(cwd), normalizePath(fp)));
@@ -834,6 +757,16 @@ const CMD_PREFIX_VALUE = new Set(['-u', '-g', '-n', '-s', '-k', '-C', '-I']);
 // here-string leaves an empty token so `-m @'...'@` still has its value. A
 // `$( )` or `( )` is its own command and leaves a `()` token in the one around
 // it, so `-m $(cat msg) --no-verify` keeps both the value and the flag.
+// Adapter boundary: recognize the two grammars the core supports, independently
+// of the host OS. Unknown names use the caller's declared native fallback;
+// without a platform, null means this is not a recognized shell wrapper.
+function shellTool(shell, platform) {
+  const name = typeof shell === 'string' ? shell.replace(/\\/g, '/').split('/').pop().toLowerCase() : '';
+  if (/^(?:powershell|pwsh)(?:\.exe)?$/.test(name)) return 'PowerShell';
+  if (/^(?:bash|sh|zsh|dash|ash|ksh)(?:\.exe)?$/.test(name)) return 'Bash';
+  return platform ? (platform === 'win32' ? 'PowerShell' : 'Bash') : null;
+}
+
 function shellSegments(cmd, tool) {
   const esc = tool === 'PowerShell' ? '`' : '\\';
   const src = String(cmd)
@@ -956,9 +889,78 @@ function gitBypass({ sub, config, args }) {
   return null;
 }
 
+// ---- PATCH TEXT (for the adapters; evaluate() never calls it) ----
+// The apply_patch grammar Codex's apply_patch and OpenCode's patch tool share.
+// One reader for both adapters, so a secret cannot slip past one and not the
+// other. Each adapter turns the result into its own Write events.
+// The file headers: `+` lines are content; ` ` and `-` lines, `@@` hunk headers
+// and `*** End of File` are not. The path is `[\s\S]+`, not `.+`: `.` stops at
+// U+2028, U+2029 and a CR, which both tools' parsers keep inside a path, and a
+// header the gate cannot read hides the `+` lines under it. No `m` flag: `$`
+// must be the end of the line, never a line break inside the path.
+const PATCH_HEADER = /^\*\*\* (Add File|Update File|Delete File|Move to): ([\s\S]+)$/;
+// The line is trimmed as Codex's parser trims it (Rust's str::trim): its
+// White_Space set has U+0085, which JS trim() and \s leave. A header the gate
+// does not trim away is not a header to it, and its path escapes the path gates.
+const PATCH_TRIM = /^[\s\u0085]+|[\s\u0085]+$/g;
+
+// The patch read once: `files` is one { path, content } per file it writes, in
+// patch order (an Update with a Move to gives two: the source, then the
+// destination with the same content; a Delete gives its path with no content).
+// `orphan` is every `+` line no file owns: before the first header, or after a
+// Delete File. The tools reject or ignore those, but the gate cannot know what
+// a given parser does with them, so they are kept for the scan.
+function readPatch(text) {
+  const files = [];
+  const orphan = [];
+  let current = null;
+  for (const raw of String(text).split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const m = PATCH_HEADER.exec(line.replace(PATCH_TRIM, ''));
+    if (m) {
+      const [, op, p] = m;
+      if (op === 'Move to') {
+        if (current && current.op === 'Update File') current.moveTo = p.trim();
+        continue;
+      }
+      current = { op, path: p.trim(), lines: [] };
+      files.push(current);
+      continue;
+    }
+    if (!line.startsWith('+')) continue;
+    if (current && current.op !== 'Delete File') current.lines.push(line.slice(1));
+    else orphan.push(line.slice(1));
+  }
+  const out = [];
+  for (const f of files) {
+    const content = f.lines.join('\n');
+    out.push({ path: f.path, content });
+    if (f.moveTo) out.push({ path: f.moveTo, content });
+  }
+  return { files: out, orphan };
+}
+
+// One { path, content } per file the patch writes (readPatch's files).
+function parsePatch(text) {
+  return readPatch(text).files;
+}
+
+// What the gate scans in a patch: the files it writes, plus the `+` lines no
+// file owns as one entry under no path (only the content scan can act on it:
+// no path gate matches ''). A text that holds no file header still has its
+// whole content returned, under no path: a shape the parser misread must not
+// cost the hard-secret deny.
+function patchWrites(text) {
+  const { files, orphan } = readPatch(text);
+  if (!files.length) return text ? [{ path: '', content: String(text) }] : [];
+  return orphan.length ? [...files, { path: '', content: orphan.join('\n') }] : files;
+}
+
 // ---- THE CORE: evaluate(evt, env) ----
-// Every kind evaluate() can return besides null (a plain allow). Each is also
-// the `kind` of the gate line it logs, so a decision and its log line join.
+// Every kind a decision can carry besides null (a plain allow). Each is also
+// the `kind` of the gate line logged with it, so a decision and its log line
+// join. evaluate() returns all of them but context-size, which the Claude
+// adapter decides after it (contextReminder).
 const GATE_KINDS = Object.freeze([
   'git-bypass', // deny: skipping the repository's hooks or signing
   'secret-block', // deny: a high-confidence secret written to a file
@@ -967,11 +969,18 @@ const GATE_KINDS = Object.freeze([
   'perf-budget', // ask: a performance-budget file
   'high-risk-surface', // ask: auth/secret/migration/contract paths, and canonkit.json
   'definition-of-done', // block: Stop with a gated edit and no reviewer after it
-  'context-size', // allow, with the reminder as reason
+  'context-size', // allow, with the reminder as reason (Claude adapter only)
+]);
+
+// What an adapter records without deciding anything: no allow/ask/deny/block
+// attaches to it, so it has no row in a decision table. It still belongs in every
+// mode map, because an `[ENFORCED]` line can promise it ("every dispatch is logged").
+const RECORD_KINDS = Object.freeze([
+  'dispatch-log', // every subagent dispatch, with its model, effort, tokens and duration
 ]);
 
 // What each adapter does with each kind, declared next to the adapter so a test
-// can hold it to GATE_KINDS and validate can hold an `[ENFORCED]` line to it.
+// can hold it to GATE_KINDS and RECORD_KINDS and validate can hold an `[ENFORCED]` line to it.
 //   enforce  the harness acts on the decision itself: refuses, prompts, blocks
 //            the stop, or injects the note
 //   text     surfaced as text only; the model decides
@@ -987,6 +996,7 @@ const CLAUDE_GATE_MODES = Object.freeze({
   'high-risk-surface': 'enforce',
   'definition-of-done': 'enforce',
   'context-size': 'enforce',
+  'dispatch-log': 'enforce',
 });
 
 // evt, the normalized event (normalizeClaude builds it from Claude Code's input):
@@ -1006,7 +1016,8 @@ const CLAUDE_GATE_MODES = Object.freeze({
 //   legacyLogDir  the pre-rename log folder, read only (optional)
 //   projectDir    the project root, or undefined/'' for none
 //   home          the user's home folder, or null when unknown
-//   contextBands  the raw CANONKIT_CONTEXT_BANDS value (optional)
+// (claudeEnv also carries contextBands, the raw CANONKIT_CONTEXT_BANDS value,
+// for the adapter's contextReminder; evaluate() does not read it.)
 // Returns { decision, kind, reason, logs }: kind is one of GATE_KINDS or null,
 // logs is [{ file, record }] with file a name inside env.logDir and record the
 // complete JSON line. Fails open by itself: an error is an allow that still
@@ -1028,8 +1039,12 @@ function decide(evt, env, logs) {
   const eventName = evt.event || '';
   const tool = evt.tool || '';
   const ti = evt.toolInput || {};
-  const cwd = evt.cwd;
+  // A missing or non-string cwd must not cost the denies (path.basename throws on
+  // it, and evaluate() fails open): '' means no project, so no project config is
+  // read and every file counts as in-project, the stricter side.
+  const cwd = typeof evt.cwd === 'string' ? evt.cwd : '';
   const project = path.basename(cwd);
+  const configHere = () => (cwd ? configFor(cwd, env.projectDir, env.home) : { ...loadConfig('', null, ''), project: null });
   // Tags every event for per-session queries.
   const session = evt.session || '';
   const agentId = safeId(evt.agentId);
@@ -1096,10 +1111,9 @@ function decide(evt, env, logs) {
 
   // ---- OBSERVABILITY (never blocks) ----
   if (eventName === 'UserPromptSubmit') {
+    // The context-size reminder is decided after this, by the Claude adapter (main).
     log({ event: 'prompt', project });
-    let note = null;
-    try { note = contextReminder(evt, env, log); } catch (_) { /* fail-open */ }
-    return note ? allow('context-size', note) : allow();
+    return allow();
   }
   if (eventName === 'SubagentStop') {
     // Logged on the first stop only: a stop hook that continues the agent fires
@@ -1249,7 +1263,7 @@ function decide(evt, env, logs) {
     }
     if (targets.length) {
       // The first config read on this path: every deny is above.
-      const cfg = configFor(cwd, env.projectDir, env.home);
+      const cfg = configHere();
       const rels = targets.map((t) => cfg.rel(t));
       // Waived only when every target is a test file: one test target among
       // several must not carry a credential into the others.
@@ -1293,7 +1307,7 @@ function decide(evt, env, logs) {
       }
     }
     // The first config read on this path: the deny is above.
-    const cfg = configFor(cwd, env.projectDir, env.home);
+    const cfg = configHere();
     const rel = cfg.rel(fp);
     if (SOFT_SECRET.test(content) && !isTestFile(rel)) {
       logGate({ kind: 'secret-ask', file: fp, project, tool }, [fp]);
@@ -1362,6 +1376,89 @@ function claudeOutput({ decision, kind, reason }) {
   return null;
 }
 
+// ---- CONTEXT-SIZE REMINDER (UserPromptSubmit) ----
+// Enforced half of the "New session when the subject changes" rule. A long session is
+// re-read in full on every turn, so the cost of bundling unrelated jobs grows
+// silently; this puts the size in front of the model when it crosses a band.
+// Contract (docs: code.claude.com/docs/en/hooks, checked 2026-10-15): stdin carries
+// session_id + transcript_path; stdout
+//   {"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}
+// adds context alongside the prompt and exit 0 never blocks it. The transcript is
+// written asynchronously, so the figure can lag one turn — fine for a reminder.
+// The 100k first band is a STARTING GUESS, not a measured threshold: tune it with
+// CANONKIT_CONTEXT_BANDS (comma-separated token counts; "off" disables). The
+// pre-rename MEU_TIME_CONTEXT_BANDS is still read when the new one is unset.
+// Part of the Claude adapter, not the core: it parses Claude Code's transcript and
+// keeps its band state in env.logDir. main() runs it after evaluate(), which
+// writes nothing.
+const DEFAULT_BANDS = [100000, 150000, 200000];
+const TAIL_BYTES = 512 * 1024; // the last assistant entry is always near the end
+const BANDS_FILE = 'context-bands.json'; // inside env.logDir
+const MAX_TRACKED_SESSIONS = 50;
+
+// raw: env.contextBands, the variable's value as the adapter read it.
+function contextBands(raw) {
+  if (typeof raw !== 'string' || raw.trim() === '') return DEFAULT_BANDS;
+  if (/^(off|0|none)$/i.test(raw.trim())) return [];
+  const bands = raw.split(',').map((x) => Number(x.trim())).filter((n) => Number.isFinite(n) && n > 0);
+  return bands.length ? [...new Set(bands)].sort((a, b) => a - b) : DEFAULT_BANDS;
+}
+
+// Context size = what the most recent main-chain API call consumed as input.
+// Read from the end only: transcripts reach several MB.
+function currentContextTokens(file) {
+  let fd;
+  try {
+    fd = fs.openSync(file, 'r');
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, TAIL_BYTES);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString('utf8').split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (!lines[i].includes('"usage"')) continue;
+      let e;
+      try { e = JSON.parse(lines[i]); } catch (_) { continue; } // first line may be cut mid-entry
+      const u = e && e.type === 'assistant' && !e.isSidechain && e.message && e.message.usage;
+      if (!u || typeof u !== 'object') continue;
+      const total = num(u.input_tokens) + num(u.cache_read_input_tokens) + num(u.cache_creation_input_tokens);
+      if (total > 0) return total;
+    }
+  } catch (_) { /* unreadable: do nothing */ } finally {
+    if (fd !== undefined) try { fs.closeSync(fd); } catch (_) {}
+  }
+  return null;
+}
+
+function contextReminder(evt, env, log) {
+  const session = evt.session;
+  const bands = contextBands(env.contextBands);
+  if (!bands.length || !session || !env.logDir || typeof evt.transcriptPath !== 'string') return null;
+  const tokens = currentContextTokens(evt.transcriptPath);
+  if (tokens === null) return null;
+
+  const bandsFile = path.join(env.logDir, BANDS_FILE);
+  let state = {};
+  try { state = JSON.parse(fs.readFileSync(bandsFile, 'utf8')) || {}; } catch (_) {}
+  const reached = bands.filter((b) => tokens >= b).pop() || 0; // 0: below every band
+  const last = num(state[session]);
+  // Below every band (e.g. after /compact) the record is dropped so the next climb reminds again.
+  if (reached === 0 && !(session in state)) return null;
+  if (reached !== 0 && reached <= last) return null;
+
+  if (reached === 0) delete state[session]; else state[session] = reached;
+  const keys = Object.keys(state);
+  for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TRACKED_SESSIONS))) delete state[k];
+  try {
+    fs.mkdirSync(env.logDir, { recursive: true });
+    fs.writeFileSync(bandsFile, JSON.stringify(state));
+  } catch (_) { /* cannot persist: skip the reminder rather than repeat it every turn */ return null; }
+  if (reached === 0) return null;
+
+  log({ event: 'gate', kind: 'context-size', tokens, band: reached, project: path.basename(evt.cwd) });
+  return `This session's context is at ~${Math.round(tokens / 1000)}k tokens. If the request does not depend on what came before, suggest a new session with a handoff, and end with the new session's opening prompt in a fenced block, ready to paste (rule 'New session when the subject changes').`;
+}
+
 function main() {
   let raw = '';
   try { raw = fs.readFileSync(0, 'utf8'); } catch (_) {}
@@ -1369,9 +1466,17 @@ function main() {
   try { input = JSON.parse(raw || '{}'); } catch (_) {}
 
   const env = claudeEnv();
-  const result = evaluate(normalizeClaude(input, process.cwd()), env);
+  const evt = normalizeClaude(input, process.cwd());
+  const result = evaluate(evt, env);
   for (const line of result.logs) writeLog(env.logDir, line);
-  const out = claudeOutput(result);
+  // After the logs: events.jsonl keeps the order prompt, then gate. Its own try,
+  // so a failed reminder costs only the reminder.
+  let note = null;
+  if (evt.event === 'UserPromptSubmit') {
+    const log = (event) => writeLog(env.logDir, { file: EVENTS_FILE, record: { ts: Date.now(), session: evt.session, ...event } });
+    try { note = contextReminder(evt, env, log); } catch (_) { /* fail-open */ }
+  }
+  const out = claudeOutput(note ? allow('context-size', note) : result);
   if (out) process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }
@@ -1382,7 +1487,8 @@ function run() {
 
 module.exports = {
   run, projectConfig, globMatcher, normalizePath,
-  evaluate, normalizeClaude, GATE_KINDS, CLAUDE_GATE_MODES,
+  evaluate, normalizeClaude, GATE_KINDS, RECORD_KINDS, CLAUDE_GATE_MODES,
+  parsePatch, patchWrites, shellTool,
 };
 
 // Run as the hook itself, or through the pre-rename meu-time-hook.js forwarder.

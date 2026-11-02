@@ -1,0 +1,17 @@
+{
+  "_source": "opencode v2.1.4 (Bun 1.4.4), model opencode/big-pickle, Windows 11 Pro 10.0.26300, 2026-10-31 (slice 9). Real execute.before event as the installed plugin received it; ids, cwd and the test key replaced by <PLACEHOLDERS>, key order kept. Captured main session.",
+  "expect": "deny",
+  "reasonWord": "high-confidence secret",
+  "cwd": "<CWD>",
+  "event": {
+    "tool": "write",
+    "sessionID": "<SESSION_ID_2>",
+    "agent": "build",
+    "messageID": "<MESSAGE_ID_2>",
+    "id": "<CALL_ID_2>",
+    "input": {
+      "path": "creds.txt",
+      "content": "aws_access_key_id = <FAKE_AWS_KEY>\n"
+    }
+  }
+}

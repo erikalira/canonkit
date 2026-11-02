@@ -1,0 +1,18 @@
+{
+  "_source": "codex-cli 0.166.0, Windows 11 Pro 10.0.26300, 2026-10-30 (slice 7). Real PreToolUse stdin; ids, transcript path, cwd and the test key replaced by <PLACEHOLDERS>, key order kept.",
+  "expect": "silent",
+  "input": {
+    "session_id": "<SESSION_ID>",
+    "turn_id": "<TURN_ID>",
+    "transcript_path": "<TRANSCRIPT_PATH>",
+    "cwd": "<CWD>",
+    "hook_event_name": "PreToolUse",
+    "model": "gpt-5.6-luna",
+    "permission_mode": "default",
+    "tool_name": "Bash",
+    "tool_input": {
+      "command": "git status"
+    },
+    "tool_use_id": "<TOOL_USE_ID>"
+  }
+}

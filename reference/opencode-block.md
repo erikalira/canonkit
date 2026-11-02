@@ -13,9 +13,15 @@ is reinstalled like the agents: local rules go outside the markers.
   one runs on the model of the session that dispatches it. The rule "every
   planned dispatch names its model and effort" does not apply here: there is
   nothing to name, and a plan that names one promises what will not run.
-- **Nothing here is enforced.** In Claude Code a hook backs some of the team's
-  rules; OpenCode runs no such hook, so they hold only by judgment, and no
-  rule here is marked `[ENFORCED]`. Before `git commit` or `git push`, ask.
-  Never write a secret into a file. Do not close a change to a HIGH-risk surface
-  on your own review: an independent reviewer weighs in after the last edit
-  ("No self-merge on HIGH risk" in `~/AGENTS.md`).
+- `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
+  a plugin denies `--no-verify`, `--no-gpg-sign` and `-c core.hooksPath=...` on
+  git commands, a subagent's included. <!-- enforced-by: git-bypass -->
+- `[ENFORCED]` **Obvious secrets are blocked.** Once wired (`--wire-hooks`; doctor checks it),
+  a plugin denies a file write (`write`, `edit`, `patch`) that contains one. <!-- enforced-by: secret-block -->
+- **`git commit` and `git push` prompt as typed, pattern-limited.** Once wired, two
+  `permissions` rules make OpenCode ask before a command that starts that way; a
+  rewritten form (`git -c … commit`) escapes them, and `opencode run` rejects the ask.
+- **Everything else holds by judgment**, not by a hook. Before any other commit or
+  push, ask. Calls made through `execute` and MCP tools are not gated. Do not close
+  a change to a HIGH-risk surface on your own review: an independent reviewer
+  weighs in after the last edit ("No self-merge on HIGH risk" in `~/AGENTS.md`).

@@ -32,13 +32,17 @@ larger than that.
 | Choice | Writes |
 | --- | --- |
 | Claude Code | `~/.claude/agents`, hooks, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills` |
-| Codex | `~/.codex/agents/*.toml`, `~/.agents/skills` |
-| OpenCode | `~/.config/opencode/agents/*.md`, block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` (no hooks) |
+| Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
+| OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | more than one | the sum; the `~/AGENTS.md` block goes in with any choice |
 
-`--wire-hooks` registers the Claude Code hook, so it is refused on an install
-without Claude Code. `doctor` checks the Claude Code half and, if there are
-canonkit agents in `~/.config/opencode/agents`, those too.
+`--wire-hooks` wires the hook of every runtime in the install, and only those:
+Claude Code's in `~/.claude/settings.json`, Codex's in `$CODEX_HOME/hooks.json`,
+OpenCode's as a plugin. What each one writes, and how to remove it, is in its
+section below. Before anything is written, it refuses the whole install if it
+would have to guess: a config file that does not parse, a Codex path it cannot
+quote, or an OpenCode older than 2. `doctor` checks the Claude Code half and adds
+Codex and OpenCode rows where canonkit has written something for them.
 
 From a clone, the scripts still work — they are wrappers around the same
 `bin/cli.js`:
@@ -68,7 +72,12 @@ rule. Only names this repository owns are touched.
 
 ## Codex
 
-The same core also goes to `~/.codex/agents/<name>.toml`, in the custom-agent
+Every Codex path is under `$CODEX_HOME`, or `~/.codex` when it is not set; this
+page writes `$CODEX_HOME` for both. Before 2.2 canonkit always wrote `~/.codex`,
+so if you set `CODEX_HOME`, the agents now go where Codex reads them, and the old
+copies in `~/.codex/agents` are yours to delete (the 10 core names only).
+
+The same core also goes to `$CODEX_HOME/agents/<name>.toml`, in the custom-agent
 format Codex reads: `name`, `description`, `developer_instructions`, plus `model`
 and `model_reasoning_effort`. The instructions are the body of the same
 `agents/<name>.md` — there is no second editable copy. Before this, the only thing
@@ -100,6 +109,44 @@ so deleting it is not an installer's decision.
 Scaffolding (`.gitignore`, `.github/`), directories and your own agents raise no
 warning. A warning that fires on `.gitignore` teaches you to ignore warnings.
 
+The block in `$CODEX_HOME/AGENTS.md` (`reference/codex-block.md`) is Codex's own.
+Codex does not read `~/AGENTS.md` from a repository below your home folder, so
+the block points the model at it. If an `AGENTS.override.md` sits beside it,
+Codex reads that file instead and the block is not loaded; `doctor` WARNs.
+
+### Codex hook (`--wire-hooks`)
+
+On Windows, a long `CODEX_HOME` can make Codex's background server fail with
+"path must be shorter than SUN_LEN". Start Codex with `codex --no-daemon` in
+that case. This is a Codex socket-path limit, not a canonkit limit; it was seen
+during the 2.2 release gate.
+
+With `--wire-hooks`, install writes:
+
+| What | Where |
+| --- | --- |
+| `canonkit-codex.js`, `canonkit-hook.js`, `package.json` | `$CODEX_HOME/canonkit/` |
+| one `PreToolUse` group, matcher `Bash\|apply_patch`, command `node "<CODEX_HOME>/canonkit/canonkit-codex.js"` | `$CODEX_HOME/hooks.json` |
+| the previous `hooks.json`, only when it changes | `hooks.json.canonkit-<timestamp>.bak` beside it |
+
+Codex skips a new or changed hook until you trust it: run `/hooks` in Codex once
+after the install. The trust covers the command, not the files it runs, so a
+later install that refreshes `canonkit/` asks for nothing; it asks again only if
+the command changes (for example, after you set `CODEX_HOME`). The other entries
+in `hooks.json` are never touched, and nothing of yours moves, because Codex keys
+trust by position.
+
+Install refuses before writing anything if `hooks.json` does not parse, or if the
+`$CODEX_HOME` path holds `"`, `$` or a backtick: the shell Codex runs the command
+through would expand it, and a hook that cannot start fails without a word. A
+plain install (no `--wire-hooks`) refreshes `canonkit/` only if it already
+exists, so no copy sits there unused. `doctor` FAILs if those files differ from
+the package's or the group is missing.
+
+To remove it by hand: delete `$CODEX_HOME/canonkit/`, and delete the group whose
+command names `canonkit-codex.js` from `hooks.json`. Restoring the `.bak` also
+works, but it undoes any change you made to `hooks.json` after it was written.
+
 ## OpenCode
 
 With `--opencode` (or checked in the menu), the core goes to
@@ -115,8 +162,8 @@ model of the agent that called it — the session's model always applies. That i
 why the rule "every dispatch names its model and effort" does not apply there.
 
 The block in `~/.config/opencode/AGENTS.md` (`reference/opencode-block.md`) is its
-own: it points to `~/AGENTS.md` and says nothing is `[ENFORCED]` in OpenCode —
-there is no hook there yet, the rules hold by judgment. Creating that file ends
+own: it points to `~/AGENTS.md` and marks the two gates the plugin enforces once
+wired; every other rule holds by judgment. Creating that file ends
 OpenCode's fallback to `~/.claude/CLAUDE.md`; the installer warns when that
 happens, so you can copy over any rules of yours that should keep applying there.
 
@@ -126,12 +173,54 @@ for specialists left at user level (removed) and for old copies of the
 repository's agents (reported, never removed — here they load as a second agent,
 since OpenCode reads every `.md` in the folder).
 
+### OpenCode plugin (`--wire-hooks`)
+
+The plugin is an OpenCode 2 plugin, and OpenCode 1 does not run it. Install
+checks `opencode --version` first and refuses if `opencode` is not on PATH, prints
+no version, or is older than 2. With `--wire-hooks`, install writes (all under
+`~/.config/opencode`, or `$XDG_CONFIG_HOME/opencode`):
+
+| What | Where |
+| --- | --- |
+| `canonkit-opencode.js`, `canonkit-hook.js`, `package.json` | `canonkit/` |
+| the plugin, which loads `../canonkit/canonkit-opencode.js` | `plugins/canonkit.js` |
+| two rules appended to `permissions`: `{"action": "shell", "resource": "git commit *", "effect": "ask"}` and the same for `git push *` | `opencode.json` |
+| the previous `opencode.json`, only when it changes | `opencode.json.canonkit-<timestamp>.bak` beside it |
+
+OpenCode loads every file in `plugins/`, so the plugin's presence is the wiring;
+there is no trust step. `opencode plugin list` does not show it (that list holds
+package plugins only). The two asks are config, not a gate: OpenCode applies the
+last rule that matches, so they go at the end. If a later rule of yours allows
+shell calls, install moves the asks after it and says so. V1 `permission` is
+never written.
+
+When your config denies some shell calls, install writes no asks, because an ask
+appended after a deny it overlaps would turn that deny into a prompt. It prints
+the two rules for you to place by hand: after the rules that allow shell calls
+and before your deny rules. If an allow comes after your deny, put the asks just
+before your deny rules.
+
+Install refuses before writing anything if an `opencode.jsonc` exists (its
+comments would not survive a rewrite), if `opencode.json` is not plain JSON or not
+an object, or if its `permissions` is not an array of objects. A plain install
+refreshes `canonkit/` and the plugin only where either already exists. `doctor`
+FAILs if those files differ from the package's, and WARNs if the asks are not in
+effect. It reads only the global `opencode.json`, so a project's own OpenCode
+config can override the asks without `doctor` noticing.
+
+Each `.bak` is a whole copy of `opencode.json`, provider keys included, and a new
+one is written on every change: delete the old ones, and keep them out of a
+dotfiles repository.
+
+To remove it by hand: delete `plugins/canonkit.js` and `canonkit/`, and delete
+the two `git commit *` and `git push *` ask rules from `permissions`.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `install` | core at user level + hooks + dashboard + global reference blocks + the `orchestrate` and `context-tune` skills |
-| `install --wire-hooks` | the same, and registers the hook in `~/.claude/settings.json` (see [hooks.md](hooks.md)) |
+| `install --wire-hooks` | the same, and wires the hook of each runtime installed: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, the OpenCode plugin (see [hooks.md](hooks.md)) |
 | `install --no-reference` | only the agents, the hooks and the dashboard |
 | `install --claude` / `--codex` / `--opencode` | only for those runtimes, without the menu |
 | `doctor` | read-only check of the installation; exits 1 if any check is `FAIL` |
@@ -192,14 +281,16 @@ without touching any agent:
 npx canonkit reference
 ```
 
-It syncs **two blocks** (three with `--opencode`), because each runtime reads
-different things:
+It syncs the shared roster and one block for each selected runtime: **three
+blocks** for the default Claude Code and Codex install, four with OpenCode too.
+Each runtime reads different things:
 
 | Repository file | Goes to | Read by | Content |
 | --- | --- | --- | --- |
 | `reference/agents-block.md` | `~/AGENTS.md` | Codex and Claude Code | the whole team: who exists, blocking authority, HIGH routing, dispatch rules |
 | `reference/routing-block.md` | `~/.claude/CLAUDE.md` | Claude Code | only what is specific to Claude: the pointer to `~/AGENTS.md` and the hooks' `[ENFORCED]` rules |
-| `reference/opencode-block.md` | `~/.config/opencode/AGENTS.md` | OpenCode | only what is specific to OpenCode: the pointer to `~/AGENTS.md`, model taken from the session, nothing `[ENFORCED]` |
+| `reference/codex-block.md` | `$CODEX_HOME/AGENTS.md` | Codex | the pointer to `~/AGENTS.md`, generated model and effort, and the hook's two `[ENFORCED]` deny gates once wired |
+| `reference/opencode-block.md` | `~/.config/opencode/AGENTS.md` (`$XDG_CONFIG_HOME/opencode` if set) | OpenCode | the pointer to `~/AGENTS.md`, model taken from the session, and the plugin's two `[ENFORCED]` deny gates once wired |
 
 Alongside the blocks goes the `orchestrate` skill (`skills/orchestrate/SKILL.md`),
 which holds what only matters at orchestration time: the rationale for naming
@@ -287,13 +378,13 @@ table under [Core, at user level](#core-at-user-level) lists for the runtimes yo
 installed:
 
 - the agent files canonkit owns in `~/.claude/agents`,
-  `~/.codex/agents` and `~/.config/opencode/agents` (only the 10 core names; your
+  `$CODEX_HOME/agents` and `~/.config/opencode/agents` (only the 10 core names; your
   own agents there are untouched by canonkit and should stay);
 - if you upgraded from 2.0, the leftover `~/.agents/<agent>.md` copies, one file
   at a time as described in
   [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
-  `~/.claude/CLAUDE.md` and `~/.config/opencode/AGENTS.md`;
+  `~/.claude/CLAUDE.md`, `$CODEX_HOME/AGENTS.md` and `~/.config/opencode/AGENTS.md`;
 - the `orchestrate` and `context-tune` folders in `~/.claude/skills` and
   `~/.agents/skills` (Codex and OpenCode read the latter);
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
@@ -301,6 +392,14 @@ installed:
 - the canonkit hook entries in `~/.claude/settings.json`. Remove them by hand: the
   `.bak` that `--wire-hooks` wrote is a fallback, and restoring it also undoes any
   change you made to `settings.json` after it was written;
+- if you wired Codex: `$CODEX_HOME/canonkit/` and the `canonkit-codex.js` group in
+  `$CODEX_HOME/hooks.json` ([Codex hook](#codex-hook---wire-hooks));
+- if you wired OpenCode: `plugins/canonkit.js`, `canonkit/` and the two ask rules
+  in `opencode.json` `permissions`, all under `~/.config/opencode` (or
+  `$XDG_CONFIG_HOME/opencode`) ([OpenCode plugin](#opencode-plugin---wire-hooks));
+- the dated `.canonkit-<timestamp>.bak` copies beside `settings.json`,
+  `hooks.json` and `opencode.json`, once you no longer need them: each holds the
+  whole file, secrets included;
 - `~/.claude/canonkit-dashboard/` and, if you no longer want the history,
   `~/.claude/canonkit-activity/`;
 - per project: `npx canonkit remove <name>` for each specialist,

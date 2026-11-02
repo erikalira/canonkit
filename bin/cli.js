@@ -37,9 +37,21 @@ const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
 // "every .js in the folder": the folder will also hold other adapters' files and
 // shared code, and a stray file must not land in a runtime that does not run it.
 // The claude list is exactly what 2.0 copied. Another adapter adds its own key.
+// codex: the adapter, a byte-identical copy of the core it requires, and the
+// {"type":"commonjs"} marker that keeps both CommonJS under a parent package
+// that says "module". installCodexHooks copies it to $CODEX_HOME/canonkit/, the
+// adapter first: the command wired into hooks.json names HOOK_FILES.codex[0].
+// opencode: the same shape as codex, for opencodeDir()/canonkit/, copied there
+// by installOpencodeHooks before the plugin that loads them.
 const HOOK_FILES = {
   claude: ["canonkit-hook.js"],
+  codex: ["canonkit-codex.js", "canonkit-hook.js", "package.json"],
+  opencode: ["canonkit-opencode.js", "canonkit-hook.js", "package.json"],
 };
+// The OpenCode 2 plugin entry: an ESM file that loads ../canonkit/canonkit-opencode.js.
+// Kept out of HOOK_FILES because its destination differs (opencodeDir()/plugins/,
+// where OpenCode loads every file as a plugin) and it is not CommonJS.
+const OPENCODE_PLUGIN = Object.freeze({ from: "opencode-plugin.mjs", to: "plugins/canonkit.js" });
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
@@ -69,6 +81,7 @@ const HOOK_EVENTS = {
 const ROSTER = ["<!-- agent-team-config:start -->", "<!-- agent-team-config:end -->"];
 const ROUTING = ["<!-- agent-team-config:routing:start -->", "<!-- agent-team-config:routing:end -->"];
 const OPENCODE = ["<!-- agent-team-config:opencode:start -->", "<!-- agent-team-config:opencode:end -->"];
+const CODEX = ["<!-- agent-team-config:codex:start -->", "<!-- agent-team-config:codex:end -->"];
 const PROJECT_SPECIALISTS = [
   "<!-- agent-team-config:specialists:start -->",
   "<!-- agent-team-config:specialists:end -->",
@@ -171,6 +184,11 @@ async function summaries() {
 }
 
 /* ------------------------------------------------------------------- codex */
+
+// Codex's own home: $CODEX_HOME when set, else ~/.codex. Every user-level Codex
+// path hangs off it, agents included, so setting it moves them; the
+// project-scoped .codex/agents that `add` writes is relative to the project.
+const codexHome = () => path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
 
 /**
  * Codex reads standalone TOML files from ~/.codex/agents (personal) and
@@ -345,8 +363,8 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
     // The defaults start checked: Enter alone keeps what install did before the menu.
     choices: [
       { title: "Claude Code", value: "claude", selected: true, description: "~/.claude/agents, hooks, dashboard" },
-      { title: "Codex", value: "codex", selected: true, description: "~/.codex/agents, ~/.agents/skills" },
-      { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills (no hooks)" },
+      { title: "Codex", value: "codex", selected: true, description: "$CODEX_HOME (~/.codex), ~/.agents/skills" },
+      { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills" },
     ],
     min: 1,
     hint: "space toggles, enter confirms",
@@ -363,13 +381,26 @@ async function install(ctx, options = {}) {
   const wire = options.wireHooks === true;
   const targets = options.targets ?? DEFAULT_TARGETS;
   const claude = targets.includes("claude");
-  // The hook and settings.json are Claude Code's; wiring them for an install
-  // without Claude Code would write the one runtime the person said no to.
-  if (wire && !claude) throw new Error("--wire-hooks registers the Claude Code hook: it needs Claude Code in the install");
+  const codex = targets.includes("codex");
+  const opencode = targets.includes("opencode");
+  // Each harness's wiring is written only for a harness in the install: wiring
+  // one the person said no to would be writing it anyway.
   const agents = await readAgents();
-  // Before anything is written: a settings.json --wire-hooks would have to
-  // guess about stops the whole install, so a refusal leaves no half-install.
-  if (wire) await readSettingsForWiring(settingsPath());
+  // Before anything is written, for every harness: a settings.json, hooks.json
+  // or opencode.json --wire-hooks would have to guess about, or an OpenCode the
+  // plugin cannot run in, stops the whole install, so a refusal leaves no
+  // half-install.
+  if (wire && claude) await readSettingsForWiring(settingsPath());
+  if (wire && codex) {
+    refuseUnquotableCodexPath();
+    await readCodexHooksForWiring(codexHooksPath());
+  }
+  if (wire && opencode) {
+    await readOpencodeConfigForWiring();
+    // A dry run starts no program, `opencode --version` included.
+    if (ctx.dryRun) ctx.log("would check that opencode --version is 2 or later (not run in a dry run)");
+    else refuseOpencodeBelow2();
+  }
 
   // Claude Code reads ~/.claude/agents only; no verified harness reads
   // ~/.agents/<agent>.md, so install no longer writes it (doctor warns on leftovers).
@@ -394,8 +425,14 @@ async function install(ctx, options = {}) {
     }
   }
 
-  if (targets.includes("codex")) await installCodex(ctx, agents, path.join(os.homedir(), ".codex", "agents"));
-  if (targets.includes("opencode")) await installOpencode(ctx, agents, opencodeAgentsDir());
+  if (codex) {
+    await installCodex(ctx, agents, path.join(codexHome(), "agents"));
+    await installCodexHooks(ctx, { wire });
+  }
+  if (opencode) {
+    await installOpencode(ctx, agents, opencodeAgentsDir());
+    await installOpencodeHooks(ctx, { wire });
+  }
   if (claude) {
     const planned = await installHooks(ctx, path.join(os.homedir(), ".claude", "hooks"), { wire });
     await upgradeFromMeuTime(ctx, path.join(os.homedir(), ".claude"), { wire, planned });
@@ -410,7 +447,9 @@ async function install(ctx, options = {}) {
   ctx.log("");
   ctx.log("Core installed. Domain specialists are per project:");
   ctx.log("  cd <project> && npx canonkit add <name>");
-  // doctor checks the Claude Code half: the agents, the blocks and the hook.
+  // doctor checks the Claude Code half (the agents, the blocks and the hook),
+  // plus the Codex hook where one is installed. Without Claude Code its rows
+  // would all FAIL, so a Codex-only install is not pointed at it.
   if (claude) ctx.log("Check the install (agents, blocks, hook wiring, config): npx canonkit doctor");
 }
 
@@ -777,11 +816,13 @@ function settingsMention(claudeDir, name) {
  * Editing these files in place is the only workflow they ever had, so an
  * install that silently replaced a divergent copy would destroy the very
  * customization that motivated versioning them. Keep it, then overwrite.
+ * A file is a name, or { from, to } when it lands under another name.
  */
 async function copyKeepingLocal(ctx, fromDir, dest, files) {
   await ctx.mkdir(dest);
-  for (const file of files) {
-    const from = path.join(fromDir, file);
+  for (const entry of files) {
+    const [src, file] = typeof entry === "string" ? [entry, entry] : [entry.from, entry.to];
+    const from = path.join(fromDir, src);
     const to = path.join(dest, file);
     await ctx.mkdir(path.dirname(to));
     if (existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
@@ -873,12 +914,15 @@ async function reportHookWiring(ctx, dest, files) {
  * permissions, env and model; anything this would have to guess about — not
  * JSON, not an object, a `hooks` or an event of the wrong shape — stops the
  * install before it writes anything. Messages name key paths, never values.
+ * Codex's hooks.json has the same shape under `hooks` and gets the same rule.
  */
-async function readSettingsForWiring(file) {
+const readSettingsForWiring = (file) => readHooksFileForWiring(file, "~/.claude/settings.json");
+
+async function readHooksFileForWiring(file, label) {
   if (!existsSync(file)) return { text: null, data: {} };
   const text = await readFile(file, "utf8");
   const refuse = (why) =>
-    new Error(`Refusing --wire-hooks: ~/.claude/settings.json ${why}. Nothing was written; fix it, then re-run.`);
+    new Error(`Refusing --wire-hooks: ${label} ${why}. Nothing was written; fix it, then re-run.`);
   let data;
   try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse("is not valid JSON"); }
   if (!isObject(data)) throw refuse("is not a JSON object");
@@ -1023,6 +1067,285 @@ async function wireHooks(ctx, dest) {
   return ctx.dryRun ? { file, text: after } : null;
 }
 
+/* ------------------------------------------------------ codex hook wiring */
+
+// One group. Slice 7 (codex-cli 0.166.0) saw a shell call fire `Bash` and an
+// apply_patch call fire both `apply_patch` and `Edit|Write`: these two names
+// cover every call the adapter gates, and adding Edit|Write would run it twice.
+const CODEX_MATCHER = "Bash|apply_patch";
+const CODEX_ADAPTER = HOOK_FILES.codex[0];
+const codexHooksDir = () => path.join(codexHome(), "canonkit");
+const codexHooksPath = () => path.join(codexHome(), "hooks.json");
+// Fixed, absolute, quoted. Codex's /hooks trust covers the command and not the
+// files it runs (slice 7), so a command that never changes is trusted once and
+// a refresh of canonkit/ asks for nothing. No commandWindows: Codex runs this
+// through powershell.exe, where `node "<path>"` works as it does in sh.
+const codexCommand = () => `node "${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}"`;
+const readCodexHooksForWiring = (file) => readHooksFileForWiring(file, tilde(file));
+
+// Inside double quotes sh and PowerShell still expand `$` and a backtick, and a
+// `"` ends the quote: a CODEX_HOME holding one would run another path or none,
+// and Codex says nothing when a hook cannot start. Refused before any write.
+function refuseUnquotableCodexPath() {
+  const dir = slash(codexHooksDir());
+  if (/["$`]/.test(dir)) {
+    throw new Error(`Refusing --wire-hooks: the Codex hook path ${dir} holds ", $ or a backtick, which the shell Codex runs it through would expand. Nothing was written; set CODEX_HOME to a plain path, then re-run.`);
+  }
+}
+
+// Exactly `node <path>/canonkit-codex.js`, quoted or not, the same shape rule as
+// EXACT_HOOK_COMMAND: a command that wraps the adapter is the user's.
+const EXACT_CODEX_COMMAND =
+  /^\s*node\s+(?:"(?:[^"$`]*[\\/])?canonkit-codex\.js"|'(?:[^']*[\\/])?canonkit-codex\.js'|(?:[^\s"';|&$`()<>]*[\\/])?canonkit-codex\.js)\s*$/;
+const isOurCodexHook = (h) => isObject(h) && h.type === "command" && typeof h.command === "string" && EXACT_CODEX_COMMAND.test(h.command);
+
+/**
+ * hooks.json with the adapter wired, what changed and what was left, by key
+ * path. Codex keys trust by position (`hooks.json:pre_tool_use:<group>:<hook>`
+ * in config.toml), so nothing of the user's moves: a new group goes last, an
+ * existing one of ours is fixed where it stands, a second one is reported and
+ * left (removing it would shift every index after it), and a group shared with
+ * the user's hooks keeps its matcher (changing it would change when theirs run).
+ */
+function wireCodexHooks(data, command) {
+  const out = structuredClone(data);
+  out.hooks ??= {};
+  const groups = (out.hooks.PreToolUse ??= []);
+  const handlersOf = (g) => (isObject(g) && Array.isArray(g.hooks) ? g.hooks : []);
+  const mine = groups.flatMap((g, i) => handlersOf(g).flatMap((h, j) => (isOurCodexHook(h) ? [[i, j]] : [])));
+  const changes = [];
+  const notes = [];
+
+  if (!mine.length) {
+    groups.push({ matcher: CODEX_MATCHER, hooks: [{ type: "command", command }] });
+    return { data: out, changes: ["hooks.PreToolUse: added"], notes };
+  }
+  const [i, j] = mine.find(([g, h]) => groups[g].hooks[h].command === command) ?? mine[0];
+  const group = groups[i];
+  if (group.hooks[j].command !== command) {
+    group.hooks[j] = { ...group.hooks[j], command };
+    changes.push(`hooks.PreToolUse[${i}]: command now runs ${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}`);
+  }
+  if (group.matcher !== CODEX_MATCHER) {
+    if (group.hooks.length === 1) {
+      group.matcher = CODEX_MATCHER;
+      changes.push(`hooks.PreToolUse[${i}]: matcher set to ${CODEX_MATCHER}`);
+    } else {
+      notes.push(`hooks.PreToolUse[${i}]: shared with other hooks, so its matcher is left as is — give ${CODEX_ADAPTER} a group of its own with matcher ${CODEX_MATCHER}`);
+    }
+  }
+  for (const [g, h] of mine) {
+    if (g !== i || h !== j) notes.push(`hooks.PreToolUse[${g}].hooks[${h}]: a second ${CODEX_ADAPTER} hook, left in place (removing it would shift the trust of the hooks after it) — remove it yourself`);
+  }
+  return { data: out, changes, notes };
+}
+
+/**
+ * The Codex hook: HOOK_FILES.codex into $CODEX_HOME/canonkit/, and with
+ * --wire-hooks the group in $CODEX_HOME/hooks.json, after the files so the
+ * command never names a file that is not there yet. Without --wire-hooks only a
+ * folder that already exists is refreshed: a copy nothing runs is one more place
+ * a gate looks present and is off.
+ */
+async function installCodexHooks(ctx, { wire = false } = {}) {
+  const dest = codexHooksDir();
+  if (!wire && !existsSync(dest)) return;
+  await copyKeepingLocal(ctx, HOOKS_DIR, dest, HOOK_FILES.codex);
+  ctx.log(`Installed ${HOOK_FILES.codex.length} Codex hook files -> ${dest}`);
+  if (wire) await wireCodexHooksFile(ctx);
+}
+
+// The same write as wireHooks: backup only on a change, atomic, the file's
+// own formatting kept. Trust is the one difference: Codex skips a new or
+// changed hook until /hooks approves it, so the line is printed only then.
+async function wireCodexHooksFile(ctx) {
+  const file = codexHooksPath();
+  const where = tilde(file);
+  const { text, data } = await readCodexHooksForWiring(file);
+  const { data: wired, changes, notes } = wireCodexHooks(data, codexCommand());
+
+  ctx.log("");
+  for (const n of notes) ctx.log(`  ${n}`);
+  if (JSON.stringify(wired) === JSON.stringify(data)) {
+    ctx.log(`  ${CODEX_ADAPTER} is already wired in ${where}.`);
+    return;
+  }
+  if (ctx.dryRun) {
+    ctx.log(`would wire ${CODEX_ADAPTER} into ${where} (backup first):`);
+  } else {
+    const bak = text === null ? null : await ctx.backup(file);
+    await ctx.writeAtomic(file, serializeSettings(wired, text));
+    ctx.log(`Wired ${CODEX_ADAPTER} into ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
+  }
+  for (const c of changes) ctx.log(`  ${c}`);
+  if (!ctx.dryRun) ctx.log("  Codex skips a new or changed hook until it is trusted: run /hooks in Codex to trust it.");
+}
+
+/* --------------------------------------------------- opencode hook wiring */
+
+const opencodeHooksDir = () => path.join(opencodeDir(), "canonkit");
+const opencodePluginPath = () => path.join(opencodeDir(), OPENCODE_PLUGIN.to);
+const opencodeConfigPath = () => path.join(opencodeDir(), "opencode.json");
+
+// A plugin cannot ask, so the prompt before a commit or a push is config: V2
+// `permissions`, an ordered list where the last matching rule wins (slice 9,
+// opencode v2.1.4). V1 `permission` is never written: OpenCode puts its rules
+// before every V2 one, so an ask there loses to a V2 `shell * allow`. A
+// pattern ending in ` *` also matches the bare command.
+const OPENCODE_ASKS = Object.freeze([
+  Object.freeze({ action: "shell", resource: "git commit *", effect: "ask" }),
+  Object.freeze({ action: "shell", resource: "git push *", effect: "ask" }),
+]);
+const sameRule = (e, r) => isObject(e) && e.action === r.action && e.resource === r.resource && e.effect === r.effect;
+const ruleText = (r) => `${r.action} "${r.resource}" ${r.effect}`;
+// A rule that can decide a shell call: action `shell`, `*`, or a glob matching
+// shell. Its resource is not compared: telling whether `git *` or `npm *`
+// overlaps `git commit *` is pattern against pattern.
+const decidesShell = (e) =>
+  isObject(e) && typeof e.action === "string" && new RegExp(`^${e.action.split("*").map(esc).join(".*")}$`).test("shell");
+const isDeny = (e) => isObject(e) && e.effect === "deny";
+
+/**
+ * The asks a later allow or ask could override, or that are not there at all.
+ * A later deny does not count: it is stricter than the ask, and moving the ask
+ * past it would turn what it denies into a prompt.
+ */
+function asksNotInEffect(list) {
+  const ours = (e) => OPENCODE_ASKS.some((r) => sameRule(e, r));
+  return OPENCODE_ASKS.filter((ask) => {
+    const last = list.findLastIndex((e) => sameRule(e, ask));
+    return last === -1 || list.slice(last + 1).some((e) => decidesShell(e) && !isDeny(e) && !ours(e));
+  });
+}
+
+// Whether the config denies any shell call, in V2 `permissions` or in V1
+// `permission` (OpenCode puts V1 first, so a V1 deny sits before every V2 rule).
+// An ask appended after a deny it overlaps would win over it, and without
+// comparing resources there is no telling which do.
+function deniesShell(data) {
+  if ((Array.isArray(data.permissions) ? data.permissions : []).some((e) => decidesShell(e) && isDeny(e))) return true;
+  const v1 = data.permission;
+  const hasDeny = (v) => v === "deny" || (isObject(v) && Object.values(v).some(hasDeny));
+  return v1 === "deny" || (isObject(v1) && ["bash", "shell", "*"].some((k) => hasDeny(v1[k])));
+}
+
+/**
+ * opencode.json with both asks in effect, what changed, and the asks it left
+ * to the user. An ask that is missing is appended; one a later allow overrides
+ * moves to the end, its earlier copies removed. Only these two rules ever move:
+ * the user's keep their order. Someone who passes --wire-hooks asked for the
+ * prompt, so a later allow that silenced it does not win. Where the config
+ * denies shell calls, nothing is written: appending could undo a deny.
+ */
+function wireOpencodePermissions(data) {
+  const gaps = asksNotInEffect(Array.isArray(data.permissions) ? data.permissions : []);
+  if (gaps.length && deniesShell(data)) return { data, changes: [], left: gaps };
+  const out = structuredClone(data);
+  const list = (out.permissions ??= []);
+  const changes = [];
+  for (const ask of gaps) {
+    const had = list.some((e) => sameRule(e, ask));
+    for (let i = list.length - 1; i >= 0; i--) if (sameRule(list[i], ask)) list.splice(i, 1);
+    list.push({ ...ask });
+    changes.push(`permissions: ${ruleText(ask)} ${had ? "moved to the end, after a rule that allowed shell calls first" : "added at the end"}`);
+  }
+  return { data: out, changes, left: [] };
+}
+
+// What to do by hand when a deny keeps --wire-hooks from writing the asks.
+const asksByHand = (asks) =>
+  `add ${asks.map((r) => JSON.stringify(r)).join(" and ")} to "permissions" yourself, after the rules that allow shell calls and before your deny rules`;
+
+/**
+ * opencode.json for --wire-hooks, or a refusal, the same rule as settings.json:
+ * anything this would have to guess about stops the install before it writes.
+ * An opencode.jsonc refuses too, even beside an opencode.json: its comments
+ * would not survive a rewrite, and which file wins is OpenCode's business.
+ */
+async function readOpencodeConfigForWiring() {
+  const file = opencodeConfigPath();
+  const jsonc = path.join(opencodeDir(), "opencode.jsonc");
+  const label = tilde(file);
+  const refuse = (why, fix = "fix it, then re-run") => new Error(`Refusing --wire-hooks: ${why}. Nothing was written; ${fix}.`);
+  if (existsSync(jsonc)) {
+    throw refuse(`${tilde(jsonc)} exists, and its comments would not survive a rewrite`, `move its settings into ${label} and re-run, or add these at the end of its "permissions" yourself: ${OPENCODE_ASKS.map((r) => JSON.stringify(r)).join(", ")}`);
+  }
+  if (!existsSync(file)) return { text: null, data: {} };
+  const text = await readFile(file, "utf8");
+  let data;
+  try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse(`${label} is not plain JSON (comments or a trailing comma?)`); }
+  if (!isObject(data)) throw refuse(`${label} is not a JSON object`);
+  if (data.permissions !== undefined) {
+    if (!Array.isArray(data.permissions)) throw refuse(`${label} has a "permissions" that is not an array`);
+    if (!data.permissions.every(isObject)) throw refuse(`${label} has a "permissions" entry that is not an object`);
+  }
+  return { text, data };
+}
+
+// The plugin is an OpenCode 2 plugin ({ id, setup }), which OpenCode 1 does not
+// run: wiring it there would be a gate that looks installed and is off. A
+// version that cannot be read refuses for the same reason.
+function refuseOpencodeBelow2() {
+  const refuse = (why, fix) => new Error(`Refusing --wire-hooks: ${why}, and the canonkit plugin runs only in OpenCode 2 or later. Nothing was written; ${fix}, then re-run.`);
+  // PATH entries inside the folder install runs from are skipped (npx puts
+  // <cwd>/node_modules/.bin first, where a planted binary would sit). Run from
+  // home, that would skip %APPDATA%\npm and ~/.local/bin too, so there only
+  // home's node_modules is skipped.
+  const cwd = process.cwd();
+  const toHome = path.relative(cwd, os.homedir());
+  const root = toHome === "" || (!toHome.startsWith("..") && !path.isAbsolute(toHome)) ? path.join(cwd, "node_modules") : cwd;
+  const abs = resolveBin("opencode", { cwd: root });
+  if (!abs) throw refuse("opencode is not on PATH, so its version cannot be checked", "install OpenCode 2 or put it on PATH");
+  const version = binVersion(abs, { project: root });
+  if (!version) throw refuse(`${display(abs, ["--version"])} printed no version`, "check that OpenCode runs");
+  if (Number(version.split(".")[0]) < 2) throw refuse(`OpenCode is ${version}`, "upgrade OpenCode");
+}
+
+/**
+ * The OpenCode hook: HOOK_FILES.opencode into opencodeDir()/canonkit/, then the
+ * plugin into plugins/ (its presence there is the wiring: OpenCode loads every
+ * file in that folder), then with --wire-hooks the asks in opencode.json.
+ * Without --wire-hooks the files are refreshed only where either already is.
+ */
+async function installOpencodeHooks(ctx, { wire = false } = {}) {
+  const dest = opencodeHooksDir();
+  if (!wire && !existsSync(dest) && !existsSync(opencodePluginPath())) return;
+  await copyKeepingLocal(ctx, HOOKS_DIR, dest, HOOK_FILES.opencode);
+  ctx.log(`Installed ${HOOK_FILES.opencode.length} OpenCode hook files -> ${dest}`);
+  await copyKeepingLocal(ctx, HOOKS_DIR, opencodeDir(), [OPENCODE_PLUGIN]);
+  ctx.log(`Installed the OpenCode plugin -> ${opencodePluginPath()} (loaded when OpenCode starts)`);
+  if (wire) await wireOpencodeConfig(ctx);
+}
+
+// The same write as wireCodexHooksFile: backup only on a change, atomic, the
+// file's own formatting kept.
+async function wireOpencodeConfig(ctx) {
+  const file = opencodeConfigPath();
+  const where = tilde(file);
+  const { text, data } = await readOpencodeConfigForWiring();
+  const { data: wired, changes, left } = wireOpencodePermissions(data);
+
+  ctx.log("");
+  if (left.length) {
+    ctx.log(`  ${where} denies shell calls, and an ask after a deny it overlaps wins over it: the git commit/push asks were not added.`);
+    ctx.log(`  To have them, ${asksByHand(left)}.`);
+    return;
+  }
+  if (!changes.length) {
+    ctx.log(`  The git commit/push asks are already in effect in ${where}.`);
+    return;
+  }
+  if (ctx.dryRun) {
+    ctx.log(`would add the git commit/push asks to ${where} (backup first):`);
+  } else {
+    const bak = text === null ? null : await ctx.backup(file);
+    await ctx.writeAtomic(file, serializeSettings(wired, text));
+    ctx.log(`Added the git commit/push asks to ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
+  }
+  for (const c of changes) ctx.log(`  ${c}`);
+  ctx.log("  They match the command as typed (git -c x=y commit is not matched), and opencode run rejects an ask unless --auto.");
+}
+
 async function syncReference(ctx, targets = DEFAULT_TARGETS) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
   await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
@@ -1040,10 +1363,18 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
     await syncBlock(path.join(REFERENCE_DIR, "routing-block.md"), claudeMd, ROUTING, ctx);
   }
 
+  if (targets.includes("codex")) {
+    // Codex does not load ~/AGENTS.md from a repository below home, so its own
+    // block (in $CODEX_HOME/AGENTS.md) points at it. Its [ENFORCED] lines name
+    // the Codex hook, not the Claude one.
+    await syncBlock(path.join(REFERENCE_DIR, "codex-block.md"), path.join(codexHome(), "AGENTS.md"), CODEX, ctx);
+  }
+
   if (targets.includes("opencode")) {
-    // OpenCode's own block, never the routing one: its [ENFORCED] lines name a
-    // hook OpenCode does not run. Creating this file is also what stops
-    // OpenCode falling back to ~/.claude/CLAUDE.md, rules of your own included.
+    // OpenCode's own block, never the routing one: the routing block's [ENFORCED]
+    // lines name the Claude hook, this one's only the plugin's two deny gates.
+    // Creating this file is also what stops OpenCode falling back to
+    // ~/.claude/CLAUDE.md, rules of your own included.
     const opencodeMd = path.join(opencodeDir(), "AGENTS.md");
     const fallback = !existsSync(opencodeMd) && existsSync(path.join(os.homedir(), ".claude", "CLAUDE.md"));
     await syncBlock(path.join(REFERENCE_DIR, "opencode-block.md"), opencodeMd, OPENCODE, ctx);
@@ -1380,6 +1711,107 @@ async function doctor() {
     add("FAIL", "hook wiring", `not registered with the required matcher under: ${gaps.map(([e]) => e).join(", ")} — run npx canonkit install --wire-hooks`);
   } else {
     add("OK", "hook wiring", `registered with its matcher under ${Object.keys(HOOK_EVENTS[HOOK]).join(", ")}`);
+  }
+
+  // codex hook: checked where it was installed, which only --wire-hooks starts.
+  // Required, not a nicety: a Codex hook that cannot load lets every call through
+  // and Codex shows nothing (slice 7), so this is the one place it is seen. Bytes,
+  // not text: the files are copies, and any difference is not this package's code.
+  const codexDir = codexHooksDir();
+  if (existsSync(codexDir)) {
+    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const cxMissing = [], cxStale = [];
+    for (const f of HOOK_FILES.codex) {
+      const b = bytes(path.join(codexDir, f));
+      if (b === null) cxMissing.push(f);
+      else if (!b.equals(readFileSync(path.join(HOOKS_DIR, f)))) cxStale.push(f);
+    }
+    const where = tilde(codexDir);
+    if (cxMissing.length) add("FAIL", "codex hook files", `missing from ${where}: ${cxMissing.join(", ")} — Codex lets every call through; run npx canonkit install --codex`);
+    else if (cxStale.length) add("FAIL", "codex hook files", `differ from this package's in ${where}: ${cxStale.join(", ")} — run npx canonkit install --codex (a local edit is kept as .local.bak)`);
+    else add("OK", "codex hook files", `${HOOK_FILES.codex.length} files in ${where}, same as this package's`);
+
+    const hooksFile = codexHooksPath();
+    const fix = "run npx canonkit install --codex --wire-hooks";
+    const raw = text(hooksFile);
+    let parsed;
+    try { parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, "")); } catch { parsed = undefined; }
+    // Found by the exact command install writes: one naming another copy runs
+    // files these rows did not check.
+    const own = (Array.isArray(parsed?.hooks?.PreToolUse) ? parsed.hooks.PreToolUse : [])
+      .filter((g) => isObject(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isObject(h) && h.type === "command" && h.command === codexCommand()));
+    if (raw === null) add("FAIL", "codex hook wiring", `${tilde(hooksFile)} does not exist: Codex never runs the hook — ${fix}`);
+    else if (parsed === undefined) add("FAIL", "codex hook wiring", `${tilde(hooksFile)} is not valid JSON: Codex cannot read its hooks`);
+    else if (!own.length) add("FAIL", "codex hook wiring", `no PreToolUse group in ${tilde(hooksFile)} runs ${codexCommand()} — ${fix}`);
+    else if (!own.some((g) => g.matcher === CODEX_MATCHER)) add("FAIL", "codex hook wiring", `its PreToolUse matcher is ${JSON.stringify(own[0].matcher ?? null)}, not ${CODEX_MATCHER} — ${fix}`);
+    else add("OK", "codex hook wiring", `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`);
+  }
+
+  // opencode hook: checked where either half was installed. As with Codex, a
+  // plugin that cannot load lets every call through, and its one warning shows
+  // only under --print-logs (slice 9), so this is where a broken install is seen.
+  const ocHooks = opencodeHooksDir();
+  const ocPlugin = opencodePluginPath();
+  if (existsSync(ocHooks) || existsSync(ocPlugin)) {
+    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const files = [
+      ...HOOK_FILES.opencode.map((f) => [`canonkit/${f}`, path.join(ocHooks, f), path.join(HOOKS_DIR, f)]),
+      [OPENCODE_PLUGIN.to, ocPlugin, path.join(HOOKS_DIR, OPENCODE_PLUGIN.from)],
+    ];
+    const ocMissing = [], ocStale = [];
+    for (const [name, at, ours] of files) {
+      const b = bytes(at);
+      if (b === null) ocMissing.push(name);
+      else if (!b.equals(readFileSync(ours))) ocStale.push(name);
+    }
+    const where = tilde(opencodeDir());
+    if (ocMissing.length) add("FAIL", "opencode hook files", `missing from ${where}: ${ocMissing.join(", ")} — OpenCode lets every call through; run npx canonkit install --opencode`);
+    else if (ocStale.length) add("FAIL", "opencode hook files", `differ from this package's in ${where}: ${ocStale.join(", ")} — run npx canonkit install --opencode (a local edit is kept as .local.bak)`);
+    else add("OK", "opencode hook files", `${files.length} files in ${where}, same as this package's (OpenCode 2 only)`);
+
+    // The asks are config, not a gate, so a gap is a WARN.
+    const cfg = opencodeConfigPath();
+    const jsonc = path.join(opencodeDir(), "opencode.jsonc");
+    const fix = "run npx canonkit install --opencode --wire-hooks";
+    const raw = text(cfg);
+    let parsed;
+    try { parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, "")); } catch { parsed = undefined; }
+    const list = isObject(parsed) ? parsed.permissions ?? [] : null;
+    if (existsSync(jsonc)) add("WARN", "opencode permissions", `${tilde(jsonc)} exists and doctor does not read it: check that its "permissions" end with ${OPENCODE_ASKS.map(ruleText).join(" and ")}`);
+    else if (raw === null) add("WARN", "opencode permissions", `${tilde(cfg)} does not exist: OpenCode does not ask before git commit/git push — ${fix}`);
+    else if (!Array.isArray(list)) add("WARN", "opencode permissions", `${tilde(cfg)} is not a JSON object with a "permissions" list: cannot check the git commit/push asks`);
+    else {
+      const gaps = asksNotInEffect(list);
+      if (gaps.length && deniesShell(parsed)) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls, and it denies shell calls, so --wire-hooks leaves them to you: ${asksByHand(gaps)}`);
+      else if (gaps.length) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls (the last match wins) — ${fix}`);
+      else add("OK", "opencode permissions", `git commit/git push ask, in effect in ${tilde(cfg)} (as typed: pattern-limited)`);
+    }
+  }
+
+  // codex reference: Codex does not read ~/AGENTS.md from a repo below home, so
+  // its team rules live in its own block. Checked only where Codex was
+  // installed for — any core agent in its agents folder says it was.
+  if (agents.some((a) => existsSync(path.join(codexHome(), "agents", `${a.name}.toml`)))) {
+    const codexMd = path.join(codexHome(), "AGENTS.md");
+    const [cStart, cEnd] = CODEX;
+    if (text(codexMd)?.includes(cStart) && text(codexMd)?.includes(cEnd)) add("OK", "codex reference", `managed block in ${tilde(codexMd)}`);
+    else add("WARN", "codex reference", `no managed block in ${tilde(codexMd)}: Codex does not read ~/AGENTS.md from a repo below home, so it does not see the team's rules — run npx canonkit reference --codex`);
+  }
+
+  // opencode reference: the block says which of OpenCode's rules its plugin
+  // enforces. Checked only where OpenCode was installed for, as above.
+  if (agents.some((a) => existsSync(path.join(opencodeAgentsDir(), `${a.name}.md`)))) {
+    const ocMd = path.join(opencodeDir(), "AGENTS.md");
+    const [oStart, oEnd] = OPENCODE;
+    if (text(ocMd)?.includes(oStart) && text(ocMd)?.includes(oEnd)) add("OK", "opencode reference", `managed block in ${tilde(ocMd)}`);
+    else add("WARN", "opencode reference", `no managed block in ${tilde(ocMd)}: OpenCode does not see which of its rules a plugin enforces — run npx canonkit reference --opencode`);
+  }
+
+  // codex AGENTS.override.md: Codex reads it in place of AGENTS.md in the same
+  // folder, so the synced codex block is never loaded while it exists.
+  const override = path.join(codexHome(), "AGENTS.override.md");
+  if (existsSync(override)) {
+    add("WARN", "codex AGENTS.override.md", `${tilde(override)} exists: Codex reads it instead of ${tilde(path.join(codexHome(), "AGENTS.md"))}, so the codex block is not loaded — move its rules into the override or remove the override`);
   }
 
   // log: where every gate and dispatch is recorded; the Stop gate reads it. Checked
@@ -1934,7 +2366,7 @@ Usage:
   canonkit install [--no-reference]   install the core team at user level
            [--claude] [--codex]       for these runtimes only (asked in a terminal;
            [--opencode]               default Claude Code and Codex)
-           [--wire-hooks]             also register the hook in ~/.claude/settings.json
+           [--wire-hooks]             also wire the hook of each runtime installed
   canonkit doctor                     check the install; exits 1 on any FAIL
   canonkit reference [--claude] [--codex] [--opencode]
                                       sync only the global reference blocks
@@ -1951,15 +2383,19 @@ Options:
   --codex         install, reference: write for Codex
   --opencode      install, reference: write for OpenCode. Flags combine; none:
                   a terminal shows a menu, a script or CI gets Claude Code and Codex
-  --wire-hooks   install: write the hook's entries into ~/.claude/settings.json
-                  (dated backup first, every other key kept, settings.local.json
-                  never written) and remove the meu-time forwarder once unused
+  --wire-hooks   install: wire the hook of each runtime installed, with a dated
+                  backup of each file it changes and every other key kept.
+                  Claude Code: entries in ~/.claude/settings.json (settings.local.json
+                  never written), and the meu-time forwarder removed once unused.
+                  Codex: a group in $CODEX_HOME/hooks.json; run /hooks in Codex to
+                  trust it. OpenCode 2+: plugins/canonkit.js and two asks in
+                  opencode.json permissions
   --yes           tool add: skip the confirmation prompt
   --with-git-hooks tool add graphify: opt in to automatic Git hooks and merge driver
   -h, --help      show this
   -v, --version   show the package version
 
-Core agents install to ~/.claude/agents (Codex: ~/.codex/agents;
+Core agents install to ~/.claude/agents (Codex: $CODEX_HOME/agents, ~/.codex by default;
 OpenCode: ~/.config/opencode/agents). Specialists install to the current
 project's .claude/, .codex/ and .opencode/agents/ and are registered in its AGENTS.md.
 Tools are never installed by canonkit: a missing one gets its pinned install
@@ -2145,6 +2581,8 @@ export {
   summaries,
   codexAgent,
   CODEX_MODELS,
+  HOOK_FILES,
+  OPENCODE_PLUGIN,
   opencodeAgent,
   replaceProjectBlock,
   readProjectBlock,
