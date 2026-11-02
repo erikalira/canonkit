@@ -946,6 +946,24 @@ only documentation changed in this pass. No additional harness sessions or commi
   canonkit Codex entries interleaved with a user hook to protect trust indices; Gard's probe
   confirmed the current behavior. Neither follow-up blocks this release review.
 
+**Pre-publish routing eval, partial (2026-11-02).** On `d3084cc`,
+`npm run eval -- --runs 3` attempted all 69 runs with the session default
+`claude-opus-5-5` and default US$ 0.50 budget. The unchanged judge reported
+8/10 measured cases held, two failed (`graphify-dirty-current` and
+`graphify-dirty-unrelated`), and 13 cases unmeasured. There were 25 valid runs
+(21 pass, 4 fail), six budget cutoffs and 38 weekly-limit errors. The CLI reported
+the weekly reset as November 3 at 04:00, America/Sao_Paulo.
+
+The user chose to continue with the available evidence; no further model calls
+were made. Offline inspection found that the two dirty-current answers omitted
+the explicit `.` from `graphify update .`, while the two dirty-unrelated answers
+correctly avoided rebuilding but omitted the literal query/report named by the
+case. The automated result remains failed/incomplete, and unanswered cases carry
+no behavioral evidence. Offline `--rescore` reproduced the result without model
+calls. The eval judge, expectations and product code were not
+changed. Full results and the single-valid-answer caveat are in
+[docs/evals.md](../evals.md#results-220-pre-publish-partial-2026-11-02).
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).

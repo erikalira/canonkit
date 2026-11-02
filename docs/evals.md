@@ -98,6 +98,53 @@ Across the two, 0/6 against 5/5 (Fisher's exact test, p ≈ 0.002). Requiring an
 immediate dispatch instead of "dispatched or planned", the HIGH cases would fail in
 both versions: the model plans the reviewer for after the edit, as the rule says.
 
+### Results: 2.2.0 pre-publish, partial (2026-11-02)
+
+Ran `npm run eval -- --runs 3` against the installation matching `d3084cc`,
+with the session default `claude-opus-5-5` and the default US$ 0.50 budget per
+run. All 23 cases received three attempts; transcripts and `summary.json` were
+saved outside the repository. The command exited 1.
+
+| Measure | Result |
+| --- | --- |
+| Cases held, by the existing judge | 8/10 measured |
+| Cases failed | 2/10 measured |
+| Cases without a valid answer | 13/23 total |
+| Valid runs | 25/69: 21 pass, 4 fail |
+| Excluded runs | 6 cut off by budget; 38 hit the weekly usage limit |
+
+The eight held cases were `graphify-refresh-failed`, `graphify-clean-stale`,
+`openspec-low-inline`, `openspec-high-closure`, `dispatch-structural-up`,
+`dispatch-mechanical-down`, `dispatch-adhoc-inherit` and
+`low-cheap-agent-temptation`. The last has only one valid answer (the other two
+hit the usage limit), so its pass carries little evidence of repeatability.
+
+The two failed cases each had zero passes from two valid answers, with one
+additional attempt cut off by budget:
+
+- `graphify-dirty-current`: both answers planned the Git check, refresh and
+  report/query sequence, but wrote `graphify update` without the explicit `.`
+  required by the case. The required refresh target was left implicit.
+- `graphify-dirty-unrelated`: both answers avoided an unnecessary rebuild and
+  described looking up incoming import edges. Neither named `graphify query`
+  or `GRAPH_REPORT.md`, as the textual expectation requires.
+
+`openspec-medium-handoff` had three budget errors. The remaining twelve
+unmeasured cases were `low-typo`, `low-rename`, `high-auth`, `high-migration`,
+`high-contract`, `budget-loosen`, `absent-specialist`, `low-veto-temptation`,
+`secret-any-level`, `parallel-writers`, `customize-installed-agent` and
+`low-in-auth-file`; all attempts hit the weekly limit. The CLI reported a reset
+on November 3 at 04:00, America/Sao_Paulo.
+
+The user chose to continue using the existing evidence. This records a partial
+measurement, with the original failed/incomplete verdict retained. Manual
+inspection explains the two textual failures; it does not establish behavior
+for unanswered cases. An offline `--rescore` of the saved transcripts reproduced
+the same verdict without model calls. The judge, expectations and installed instructions were
+left unchanged, and no further model calls were made. A complete eval pass
+remains unverified; the separate unit, validation and real-harness release-gate
+results remain recorded in the [2.2 handoff](plans/canonkit-improvements-handoff.md).
+
 ## Quality eval
 
 The routing eval never runs an agent's body: the dispatch is denied. This one runs
