@@ -117,6 +117,30 @@ into a file you already had — `~/AGENTS.md`, `~/.claude/CLAUDE.md`, a project'
 tarball carries `bin/`, `agents/`, `reference/`, `hooks/`, `dashboard/`, `skills/`,
 `tools/`, the README and LICENSE. These checks belong to the clone.
 
+## Global install receipts
+
+`bin/install-manifest.js` implements the schema-1 global manifest, exclusive lock,
+one pending operation, private backups and recovery. `installCatalog()` in the CLI
+is the closed destination allowlist, derived from shipped artifacts. Manifest paths
+never grant write authority. Keep provenance across repeat installs; preexisting
+identical files remain observed, and shared owners are released individually.
+Activity history is user data outside the uninstall-owned artifacts.
+
+When removing or renaming a distributed artifact, retain its descriptor (ID, root,
+relative path, owners and any markers/undo function) in
+`RETIRED_GLOBAL_ARTIFACTS`. Add an upgrade fixture that loads the previous manifest,
+preserves its receipt and uninstalls the retired artifact. A schema change requires
+an explicit migration; unsupported schemas and unrecognized IDs refuse writes.
+Never broaden the allowlist using paths read from a manifest.
+
+The lifecycle tests are `test/uninstall.test.js`. Keep tests for interruptions at
+intent/mutation boundaries, concurrent config edits after preflight, protected
+backups, shared owners and per-harness wiring. Final unwiring changes require
+independent security review. Paid routing/quality evals are not needed for uninstall.
+
+Do not commit a user's `~/.canonkit/` state or `.local*.bak`/dated config backups.
+They can contain private configuration and credentials.
+
 ## Do not version
 
 - tokens, `.env`, auth profiles, credentials

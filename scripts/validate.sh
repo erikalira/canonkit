@@ -446,6 +446,11 @@ if command -v node >/dev/null 2>&1; then
   else
     fail "bin/cli.js: syntax error"
   fi
+  if node --check bin/install-manifest.js 2>/dev/null; then
+    pass "bin/install-manifest.js parses"
+  else
+    fail "bin/install-manifest.js: syntax error"
+  fi
 
   # A hook that fails open is the right runtime behaviour: main() sits in a catch
   # that exits 0, so a broken hook never bricks a session. It is also why a broken

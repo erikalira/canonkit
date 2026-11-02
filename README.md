@@ -225,6 +225,7 @@ Which gate does what in each runtime:
 | `install --wire-hooks` | the same, and wires the hook of each runtime installed (Claude Code, Codex, OpenCode) |
 | `doctor` | checks the installation; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |
+| `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
 | `add <name>...` / `remove <name>...` | specialists in the current project |
 | `list` | the roster and what is installed where |
 | `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) in the current project |
@@ -259,8 +260,11 @@ never records prompt text, results or commands.
 path keeps triggering the gate for no reason, add it to `highRisk.exclude` (see
 [When a gate fires](#when-a-gate-fires)).
 
-**How do I uninstall?** There is no `uninstall` command yet. The files to delete
-and the blocks to remove are listed in
+**How do I uninstall?** Run `npx canonkit uninstall --dry-run` to preview, then
+`npx canonkit uninstall` (or select harnesses with flags). It uses the install
+manifest, backs up edited owned artifacts, preserves observed artifacts intact
+and keeps content outside managed
+blocks. Pre-manifest installations and ambiguous wiring need manual cleanup; see
 [docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#uninstalling).
 
 **I'm upgrading from `meu-time`.** `install` migrates the log folder and leaves a

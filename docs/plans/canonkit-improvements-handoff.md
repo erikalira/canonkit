@@ -35,7 +35,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
 | 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
-| 5 | `canonkit uninstall` with tracked entries | install 7 → 10 | Bob, Gard reviews (MEDIUM) |
+| 5 | `canonkit uninstall` with tracked entries — **implemented locally**, 2.3.0 not published; validation below | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: lessons → evaluated instruction changes | memory 5 → 10 | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project | stack-coverage 5 → 7–8 | Virgo; Scott on scope (MEDIUM) |
 | 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
@@ -1013,6 +1013,70 @@ that removes only what the manifest owns, keeps local edits (`.local.bak`) and t
 text outside the markers, and unwires the hook from settings.json. Removing hook wiring is
 a gate change: Gard reviews. Pairs with item 4 (the manifest should know every target).
 Dispatch: Bob, sonnet, high; Gard, sonnet, medium review.
+
+**Implementation (2026-11-02; user approved the plan; 2.3.0, not published).**
+Risk is HIGH for the persistent destination contract and gate removal. Archie
+approved a single local module, `bin/install-manifest.js`, integrated with global
+`install` and `reference`. Native Codex subagents use `gpt-6.1-terra` here because
+the installed profiles' `gpt-5.6` is unavailable on this ChatGPT account.
+
+- `~/.canonkit/install-manifest.json`, schema 1: stable IDs, closed destination
+  catalog, resolved roots, shared owners, provenance (`created`, `modified`,
+  `observed`) and hashes. Identical pre-manifest artifacts remain observed, not
+  automatically adopted. Private before/after config snapshots hold the evidence
+  outside the manifest; no config values are logged.
+- Exclusive lock and one persistent intent before each file mutation, followed
+  by a result. Recovery compares actual bytes with before/after hashes; conflicts
+  refuse. Backups use exclusive creation and private POSIX permissions/Windows
+  DACLs, without overwriting an earlier backup. OpenCode plugin backups stay
+  outside auto-loaded `plugins/`.
+- `uninstall` without flags selects all recorded harnesses; target flags filter.
+  Shared roster/skills stay for surviving owners. Files are removed individually;
+  edits get backups and block removal preserves outside bytes exactly. Project
+  specialists/tools, history and backups are not uninstall-owned artifacts.
+- Configuration is detached before payload removal. Claude preserves unrelated
+  handlers/matchers; Codex refuses trust-index shifts; OpenCode undoes appended
+  owned asks and refuses ambiguous restoration of moved preexisting rules. Known
+  remaining references/invalid configuration retain the affected harness and
+  return 1. No project-wide scan or force/adopt behavior.
+- Archie's migration decision: keep the existing activity move/merge as user
+  data, outside uninstall ownership. Track forwarder refresh with backup, but
+  preserve it for manual removal because other projects may use it. Untracked
+  global specialists are preserved/reported. `~/.agents/<core>.md` cleanup remains
+  exclusively 3.0, including byte-identical files.
+- The closed catalog must retain retired descriptors when later releases remove
+  or rename a shipped artifact; maintainers must add an upgrade fixture. Unknown
+  IDs/schemas refuse changes rather than accepting paths from receipts.
+
+The first 22 lifecycle cases passed. Gard and Quinn then independently identified
+the same stale-preflight JSON overwrite: a config edited between preflight and
+commit could be overwritten. The fix pins the input bytes, checks them after
+reference inspection and before application, and adds a deterministic regression
+case that edits config inside the inspection callback. That case and reinstall
+idempotence passed after the fix. A final adjustment makes forwarder dry-run
+messages match real preservation; linked global roots are refused and tested
+without mutation, with the physical-root requirement documented.
+
+**Final evidence (2026-11-02, Windows, working tree):**
+- `npm test`: 723 tests, 720 passed, 3 skipped, 0 failed (197.1 seconds).
+  Includes 23 new lifecycle cases. The focused forwarder pass was 12/12.
+- `npm run validate` using Git Bash (the default `bash` resolved to WSL and
+  refused to start in the sandbox): all checks passed, 15 agents.
+- `npm pack --dry-run --json`: 38 packaged files; both `bin/cli.js` and the new
+  `bin/install-manifest.js` included. `git diff --check` passed.
+- Gard approved security and Archie approved the contract after the final code
+  edit. Quinn approved the final code conditional on the full suite finishing
+  green; the result above satisfies that condition. Spencer approved the final
+  documentation after qualifying observed artifacts and manual forwarder removal.
+- Root's Integration Review found no contradictory recommendations or remaining
+  blocker: unknown ownership/references retain data and the dependent runtime;
+  shared owners, recovery and uninstall order agree with the documented scope.
+  Future catalog retirement still requires explicit descriptors and upgrade
+  fixtures. Linux/macOS behavior is covered by the portable tests but was not
+  executed locally; the existing CI matrix remains the cross-OS gate.
+
+No paid eval, commit, push or publication was run. Version 2.3.0 and its release
+notes are prepared but unpublished; the 3.0 deletion remains a separate release.
 
 ### 6. Learning loop (the user's view of memory)
 

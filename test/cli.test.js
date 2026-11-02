@@ -487,7 +487,10 @@ describe("install", () => {
     const result = run(["install", "--opencode"], { home, env: await opencodeOnPath(path.join(root, "none"), null) });
     assert.equal(result.status, 0, result.out);
     assert.ok((await readFile(plugin)).equals(await readFile(path.join(REPO, "hooks", "opencode-plugin.mjs"))));
-    assert.equal(await read(`${plugin}.local.bak`), "// edited\n");
+    const backupDir = path.join(home, ".canonkit", "backups");
+    const copies = await Promise.all((await readdir(backupDir)).map((file) => read(path.join(backupDir, file))));
+    assert.ok(copies.includes("// edited\n"), "the edited plugin is preserved outside the auto-loaded plugins folder");
+    assert.equal(existsSync(`${plugin}.local.bak`), false);
     assert.ok(existsSync(path.join(oc, "canonkit", "canonkit-hook.js")));
   });
 
@@ -533,9 +536,8 @@ describe("install", () => {
     assert.equal(await read(path.join(home, ".claude", "CLAUDE.md")), first.claude);
   });
 
-  test("removes a specialist left at user level by an earlier install", async () => {
-    // A leftover copy is available in every project and silently defeats the
-    // per-project rule. Removing it is what actually enforces the split.
+  test("reports and preserves an untracked specialist left at user level", async () => {
+    // No manifest proves ownership of this preexisting copy or its local edits.
     const { home } = await scratch("install-stray");
     const dest = path.join(home, ".claude", "agents");
     await mkdir(dest, { recursive: true });
@@ -544,7 +546,8 @@ describe("install", () => {
 
     const result = run(["install"], { home });
     assert.equal(result.status, 0, result.out);
-    assert.equal(existsSync(path.join(dest, "maya.md")), false);
+    assert.equal(await read(path.join(dest, "maya.md")), "stale copy");
+    assert.match(result.out, /preserved untracked global specialist/);
     // Anything this repo does not own is left alone.
     assert.ok(existsSync(path.join(dest, "unrelated.md")));
   });
@@ -710,14 +713,14 @@ describe("codex custom agents", () => {
     assert.ok(existsSync(path.join(dest, ".gitignore")));
   });
 
-  test("does not leave a specialist at user level", async () => {
+  test("preserves an untracked specialist at user level", async () => {
     const { home } = await scratch("codex-stray");
     const dest = path.join(home, ".codex", "agents");
     await mkdir(dest, { recursive: true });
     await writeFile(path.join(dest, "maya.toml"), "name = \"maya\"");
 
     assert.equal(run(["install", "--no-reference"], { home }).status, 0);
-    assert.equal(existsSync(path.join(dest, "maya.toml")), false);
+    assert.equal(await read(path.join(dest, "maya.toml")), "name = \"maya\"");
   });
 });
 
@@ -797,13 +800,13 @@ describe("opencode agents", () => {
     assert.ok(existsSync(path.join(ocDir(home), ".gitignore")));
   });
 
-  test("does not leave a specialist at user level", async () => {
+  test("preserves an untracked specialist at user level", async () => {
     const { home } = await scratch("opencode-stray");
     await mkdir(ocDir(home), { recursive: true });
     await writeFile(path.join(ocDir(home), "maya.md"), "stale");
 
     assert.equal(run(["install", "--opencode", "--no-reference"], { home }).status, 0);
-    assert.equal(existsSync(path.join(ocDir(home), "maya.md")), false);
+    assert.equal(await read(path.join(ocDir(home), "maya.md")), "stale");
   });
 });
 
@@ -1054,13 +1057,13 @@ describe("hooks", () => {
       assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask", "the forwarder does not gate");
     });
 
-    test("an older forwarder that only require()d the hook is refreshed, not backed up", async () => {
+    test("an untracked older forwarder is refreshed with its previous bytes preserved", async () => {
       const { home } = await scratch("upgrade-stale-forwarder");
       await mkdir(claude(home, "hooks"), { recursive: true });
       await writeFile(oldHook(home), "// canonkit-forwarder: old\nrequire('./canonkit-hook.js');\n");
       run(["install", "--no-reference"], { home });
       assert.match(await read(oldHook(home)), /require\('\.\/canonkit-hook\.js'\)\.run\(\)/);
-      assert.ok(!existsSync(oldHook(home) + ".local.bak"), "a forwarder is not the user's edit");
+      assert.equal(await read(oldHook(home) + ".local.bak"), "// canonkit-forwarder: old\nrequire('./canonkit-hook.js');\n");
       const r = gate(home, oldHook(home));
       assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask");
     });
@@ -1466,16 +1469,16 @@ describe("install --wire-hooks", () => {
       for (const [f, v] of Object.entries(settings)) await writeFile(f.startsWith(home) ? f : claudeDir(home, f), JSON.stringify(v));
     };
 
-    test("is removed once the settings it can see no longer run it", async () => {
+    test("is kept for manual removal even when visible settings no longer run it", async () => {
       const { home } = await scratch("forwarder-gone");
       await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
       const { out, status } = runIn(["install", "--no-reference", "--wire-hooks"], { home });
       assert.equal(status, 0, out);
-      assert.ok(!existsSync(FORWARDER(home)), "the forwarder must go");
+      assert.ok(existsSync(FORWARDER(home)), "unknown projects may still run the forwarder");
       assert.ok(existsSync(FORWARDER(home) + ".local.bak"), "a pre-forwarder copy stays backed up");
       // Other projects' settings cannot be seen from here: say what that means.
-      assert.match(out, /removed .*meu-time-hook\.js/);
-      assert.match(out, /a project's \.claude\/settings\.json that still runs it now runs nothing/);
+      assert.match(out, /kept .*meu-time-hook\.js/);
+      assert.match(out, /other projects cannot be enumerated/);
       assert.match(out, /canonkit doctor/);
     });
 
@@ -1514,26 +1517,26 @@ describe("install --wire-hooks", () => {
       assert.doesNotMatch(out, /\bremoved .*meu-time-hook\.js/, "a dry run never claims the deletion");
     });
 
-    test("--dry-run judges the settings it would write, and says it would remove it", async () => {
+    test("--dry-run projects the rewiring and keeps the forwarder, matching a real install", async () => {
       const { home } = await scratch("forwarder-dry-planned");
       await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
       const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home });
-      assert.match(out, /would remove .*meu-time-hook\.js/);
+      assert.match(out, /kept .*meu-time-hook\.js/);
+      assert.match(out, /other projects cannot be enumerated/);
+      assert.doesNotMatch(out, /would remove .*meu-time-hook\.js/);
       assert.ok(existsSync(FORWARDER(home)));
     });
 
-    test("--dry-run under a HOME reached through a link still says it would remove it", async () => {
-      // HOME's settings.json is also cwd's, named by its realpath (macOS: HOME
-      // under /var, cwd under /private/var). The planned bytes must stand in for
-      // both names, or the file on disk "still runs it". cwd is given as the
-      // realpath because Windows does not resolve a junction in process.cwd().
+    test("--dry-run refuses a linked HOME without changing the physical installation", async () => {
       const { root, home } = await scratch("forwarder-dry-linked");
       await seed(home, { "settings.json": { hooks: { Stop: [legacyEntry()] } } });
       const linked = path.join(root, "home-link");
       await symlink(home, linked, process.platform === "win32" ? "junction" : "dir");
-      const { out } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home: linked, cwd: home });
-      assert.match(out, /would remove .*meu-time-hook\.js/, out);
-      assert.doesNotMatch(out, /still runs meu-time-hook\.js/, out);
+      const before = await snapshot(home);
+      const { out, status } = runIn(["install", "--no-reference", "--wire-hooks", "--dry-run"], { home: linked, cwd: home });
+      assert.equal(status, 1, out);
+      assert.match(out, /symbolic link or junction/, out);
+      assert.deepEqual(await snapshot(home), before);
       assert.ok(existsSync(FORWARDER(home)));
     });
 
