@@ -46,6 +46,12 @@ What `--wire-hooks` writes for each harness, and how to remove it by hand, is in
 
 ### Codex
 
+The Codex/OpenCode "Verified on" rows above describe the November 1 tarball,
+before PR #25's shell-dialect correction. The correction has installed-adapter
+regressions and a separate model-free OpenCode API check, recorded in the
+[handoff](plans/canonkit-improvements-handoff.md). Its conversational/subagent
+gate has not been rerun.
+
 The hook is one `PreToolUse` group in `$CODEX_HOME/hooks.json` (`~/.codex` when
 `CODEX_HOME` is not set), matcher `Bash|apply_patch`, running
 `node "<CODEX_HOME>/canonkit/canonkit-codex.js"`. A shell call is gated as one
@@ -53,6 +59,12 @@ command. An `apply_patch` call is gated once per file it adds or updates, on its
 `+` lines, and a `*** Move to:` destination counts as a path of its own. The first
 deny wins: Codex shows "Blocked by hook" with canonkit's reason, and the call does
 not run.
+
+`Bash` is Codex's matcher name, not a shell dialect. For captured string commands,
+the adapter assumes PowerShell on native Windows and Bash on POSIX; the hook
+does not report the resolved executable. Defensive argv inputs with a recognized
+Bash or PowerShell wrapper preserve that wrapper's dialect. Custom shells hidden
+behind the canonical string input cannot be distinguished by this hook.
 
 **Trust.** Codex skips a new or changed hook until you approve it in `/hooks`,
 and install says so when it changes the group. The trust covers the command, not
@@ -70,15 +82,24 @@ place a broken Codex hook shows up.
 ### OpenCode
 
 OpenCode 2 or later only. The plugin, `plugins/canonkit.js`, registers on
-`execute.before` and loads `canonkit/canonkit-opencode.js`. `shell` is gated as
-one command; `write`, `edit` and `patch` are gated as the files they write (`edit`
+tool `execute.before` and shell `create.before`, and loads
+`canonkit/canonkit-opencode.js`. Shell commands are checked once, using the
+executable and working directory resolved by OpenCode in `shell.create.before`.
+This preserves Bash escaping even on Windows, and PowerShell escaping on any
+host. `execute.before` skips shell calls; `write`, `edit` and `patch` are gated
+as the files they write (`edit`
 and `patch` go through the same code as `write`, but were not seen in a real
-session: the model never chose `edit`, and `patch` is offered to GPT models only). A deny
-throws, so the tool call fails with canonkit's reason. A subagent's calls are
+session: the model never chose `edit`, and `patch` is offered to GPT models only).
+A file-tool deny throws with canonkit's reason. A shell deny throws before spawn;
+in the model-free v2.1.4 API check it returned HTTP 500 with an empty body and
+the server remained healthy. Presentation of that shell error in the model's
+conversation has not been reverified after this correction. A subagent's calls are
 gated too: the plugin sees the child session's own tool calls. Any other error is
 swallowed, so the plugin fails open: a missing core makes it register nothing,
 with one warning that shows only under `opencode --print-logs`. `opencode plugin
-list` does not show the plugin (it lists package plugins only). As with Codex,
+list` does not show the plugin (it lists package plugins only). Registration
+failures are reported separately for shell and file gates; one failure leaves
+the other domain registered. As with Codex,
 `doctor` is where a broken install shows up.
 
 OpenCode has no trust step: whatever is in `plugins/` and `canonkit/` runs when
@@ -98,6 +119,9 @@ They are pattern-limited:
 
 ### Known gaps
 
+- The core supports Bash and PowerShell grammars. Unknown resolved shell names,
+  including `cmd.exe`, use the native fallback; they do not have a dedicated
+  parser. Codex's canonical string input cannot identify a hidden custom shell.
 - **OpenCode `execute` and MCP tools are not gated.** `execute` (Code Mode) reaches
   no gated tool on v2.1.4, but an MCP server that exposes a shell or a file write
   is reached through it, or directly, without the plugin seeing it. The OpenCode

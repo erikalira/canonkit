@@ -757,6 +757,16 @@ const CMD_PREFIX_VALUE = new Set(['-u', '-g', '-n', '-s', '-k', '-C', '-I']);
 // here-string leaves an empty token so `-m @'...'@` still has its value. A
 // `$( )` or `( )` is its own command and leaves a `()` token in the one around
 // it, so `-m $(cat msg) --no-verify` keeps both the value and the flag.
+// Adapter boundary: recognize the two grammars the core supports, independently
+// of the host OS. Unknown names use the caller's declared native fallback;
+// without a platform, null means this is not a recognized shell wrapper.
+function shellTool(shell, platform) {
+  const name = typeof shell === 'string' ? shell.replace(/\\/g, '/').split('/').pop().toLowerCase() : '';
+  if (/^(?:powershell|pwsh)(?:\.exe)?$/.test(name)) return 'PowerShell';
+  if (/^(?:bash|sh|zsh|dash|ash|ksh)(?:\.exe)?$/.test(name)) return 'Bash';
+  return platform ? (platform === 'win32' ? 'PowerShell' : 'Bash') : null;
+}
+
 function shellSegments(cmd, tool) {
   const esc = tool === 'PowerShell' ? '`' : '\\';
   const src = String(cmd)
@@ -1478,7 +1488,7 @@ function run() {
 module.exports = {
   run, projectConfig, globMatcher, normalizePath,
   evaluate, normalizeClaude, GATE_KINDS, RECORD_KINDS, CLAUDE_GATE_MODES,
-  parsePatch, patchWrites,
+  parsePatch, patchWrites, shellTool,
 };
 
 // Run as the hook itself, or through the pre-rename meu-time-hook.js forwarder.

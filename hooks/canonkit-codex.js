@@ -12,7 +12,7 @@
  * only for the kinds CODEX_GATE_MODES marks `enforce`; every other kind is left
  * to the codex-block text and the model's judgment.
  *
- * ONE CALL, SEVERAL EVENTS. A shell call is one Bash event. An apply_patch call
+ * ONE CALL, SEVERAL EVENTS. A shell call is one native-shell event. An apply_patch call
  * is one Write event per file it touches, so the per-file gates see each file:
  * Add File and Update File carry their `+` lines as content, a Move to
  * destination is gated as a file of its own, and Delete File gives the path
@@ -61,8 +61,10 @@ const CODEX_GATE_MODES = Object.freeze({
 //   shell    tool_name "Bash" (shell and unified exec both "match as Bash");
 //            tool_input.command is a string. Defensively also: the names in
 //            SHELL_TOOLS, tool_input.cmd, a bare string tool_input, and an argv
-//            array (a trailing `-c`/`-lc`/`-Command` script is taken as the
-//            command, anything else is joined with spaces).
+//            array (a recognized shell wrapper's trailing `-c`/`-lc`/`-Command`
+//            script preserves its dialect; other argv is joined with spaces).
+//            String inputs report no dialect: native Windows assumes PowerShell,
+//            POSIX assumes Bash. The canonical name Bash is not a dialect hint.
 //   patch    tool_name "apply_patch" ("hook input still reports tool_name:
 //            apply_patch"; Edit and Write are matcher aliases, not names).
 //            tool_input.command is the patch text, "*** Begin Patch" ...
@@ -71,22 +73,25 @@ const CODEX_GATE_MODES = Object.freeze({
 //            tool_input, and a shell command that carries a patch (the
 //            `apply_patch <<'EOF'` form), which is gated as both.
 //   other    any other tool, or any event but PreToolUse (or none), is not gated.
-const SHELL_TOOLS = new Set(['Bash', 'shell', 'local_shell', 'exec_command', 'unified_exec']);
+const SHELL_TOOLS = new Set(['Bash', 'PowerShell', 'shell', 'local_shell', 'exec_command', 'unified_exec']);
 const PATCH_TOOLS = new Set(['apply_patch', 'Edit', 'Write']);
-const SCRIPT_FLAG = /^-(c|lc|ic|Command)$/i;
 const PATCH_BEGIN = '*** Begin Patch';
 
 const isObj = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v) => (typeof v === 'string' ? v : '');
 
-function shellCommand(ti) {
+function shellInput(ti, tool, platform) {
   const cmd = typeof ti === 'string' ? ti : isObj(ti) ? (ti.command ?? ti.cmd) : undefined;
-  if (typeof cmd === 'string') return cmd;
+  const native = tool === 'PowerShell' ? tool : core().shellTool('', platform);
+  if (typeof cmd === 'string') return { command: cmd, tool: native };
   if (Array.isArray(cmd) && cmd.every((a) => typeof a === 'string')) {
     const n = cmd.length;
-    return n >= 3 && SCRIPT_FLAG.test(cmd[n - 2]) ? cmd[n - 1] : cmd.join(' ');
+    const wrapped = core().shellTool(cmd[0]);
+    const script = n >= 3 && (wrapped === 'PowerShell' ? /^-Command$/i : /^-(?:c|lc|ic)$/i).test(cmd[n - 2]);
+    if (wrapped && script) return { command: cmd[n - 1], tool: wrapped };
+    return { command: cmd.join(' '), tool: native };
   }
-  return '';
+  return { command: '', tool: native };
 }
 
 function patchText(ti) {
@@ -117,7 +122,7 @@ function patchEvents(text, base) {
 }
 
 // Codex's hook input into evaluate()'s events: none, one, or one per file.
-function normalizeCodex(input, fallbackCwd) {
+function normalizeCodex(input, fallbackCwd, { platform = process.platform } = {}) {
   if (!isObj(input)) return [];
   const event = str(input.hook_event_name);
   if (event !== 'PreToolUse' && event !== '') return [];
@@ -133,8 +138,11 @@ function normalizeCodex(input, fallbackCwd) {
     transcriptPath: input.transcript_path,
   };
   if (SHELL_TOOLS.has(tool)) {
-    const command = shellCommand(ti);
-    const shell = { ...base, tool: 'Bash', toolInput: { command } };
+    // Bash is Codex's canonical hook name, not evidence of a POSIX shell.
+    // Captured string inputs omit the dialect: use the native platform policy.
+    // An explicit argv wrapper carries both its script and its real dialect.
+    const { command, tool: dialect } = shellInput(ti, tool, platform);
+    const shell = { ...base, tool: dialect, toolInput: { command } };
     return command.includes(PATCH_BEGIN) ? [shell, ...patchEvents(command, base)] : [shell];
   }
   if (PATCH_TOOLS.has(tool)) {

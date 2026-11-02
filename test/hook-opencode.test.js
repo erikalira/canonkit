@@ -65,7 +65,8 @@ before(async () => {
   await mkdir(PROJ);
   const { ctx, registered } = fakeCtx();
   await (await importPlugin()).default.setup(ctx);
-  HOOK = registered[0][1];
+  HOOK = registered.find(([name]) => name === "execute.before")[1];
+  SHELL_HOOK = registered.find(([name]) => name === "shell.create.before")[1];
 });
 after(async () => {
   await rm(ROOT, { recursive: true, force: true });
@@ -80,6 +81,7 @@ function fakeCtx(location = { directory: PROJ }) {
   const ctx = {
     location,
     tool: { hook: async (name, callback) => { registered.push([name, callback]); return { dispose() {} }; } },
+    shell: { hook: async (name, callback) => { registered.push([`shell.${name}`, callback]); return { dispose() {} }; } },
   };
   return { ctx, registered };
 }
@@ -96,9 +98,11 @@ async function withStderr(fn) {
   }
 }
 
-// The execute.before callback the installed plugin registers (set up in the
-// one root before(), after the install folder exists).
+// The two callbacks registered by the installed plugin. Shell tool captures
+// supply the command; the synthetic runtime invocation below supplies the
+// resolved shell contract, which those older tool captures did not contain.
 let HOOK;
+let SHELL_HOOK;
 
 // An OpenCode 2 `execute.before` event with every field the type declares.
 const ocEvent = (tool, input) => ({ tool, sessionID: "S-OC", agent: "build", messageID: "M-1", id: "call-1", input });
@@ -106,8 +110,15 @@ const shell = (command) => ocEvent("shell", { command });
 const patch = (...ops) => ocEvent("patch", { patchText: ["*** Begin Patch", ...ops, "*** End Patch", ""].join("\n") });
 
 // What calling the hook did: the error it threw, or null.
-const call = (event, hook = HOOK) => {
-  try { hook(event); return null; } catch (e) { return e; }
+const call = (event, hook) => {
+  try {
+    if (!hook && (event?.tool === "shell" || event?.tool === "bash")) {
+      let input = event.input;
+      try { if (typeof input === "string") input = JSON.parse(input); } catch (_) { input = null; }
+      SHELL_HOOK({ command: input?.command, cwd: PROJ, shell: process.platform === "win32" ? "powershell.exe" : "/bin/bash" });
+    } else (hook ?? HOOK)(event);
+    return null;
+  } catch (e) { return e; }
 };
 const denied = (event, kindWord) => {
   const e = call(event);
@@ -137,10 +148,10 @@ describe("opencode plugin: the installed layout", () => {
     assert.equal(typeof mod.default.setup, "function");
   });
 
-  test("setup registers exactly one hook, execute.before", async () => {
+  test("setup registers separate file and resolved-shell hooks", async () => {
     const { ctx, registered } = fakeCtx();
     const [, err] = await withStderr(async () => (await importPlugin()).default.setup(ctx));
-    assert.deepEqual(registered.map(([name]) => name), ["execute.before"]);
+    assert.deepEqual(registered.map(([name]) => name), ["execute.before", "shell.create.before"]);
     assert.equal(err, "");
   });
 
@@ -171,13 +182,19 @@ describe("opencode plugin: the installed layout", () => {
     assert.match(err, /cannot load/);
   });
 
-  test("a context with no tool domain: setup does not throw, one line on stderr", async () => {
-    const [, err] = await withStderr(async () => (await importPlugin()).default.setup({ location: { directory: PROJ } }));
-    assert.match(err, /cannot register the execute\.before hook/);
-  });
+  for (const [domain, coverage, retained] of [["tool", "file", "shell.create.before"], ["shell", "shell", "execute.before"]]) {
+    test(`a missing ${domain} domain leaves the other gate registered`, async () => {
+      const { ctx, registered } = fakeCtx();
+      delete ctx[domain];
+      const [, err] = await withStderr(async () => (await importPlugin()).default.setup(ctx));
+      assert.deepEqual(registered.map(([name]) => name), [retained]);
+      assert.match(err, new RegExp(`OpenCode ${coverage} gates are off`));
+      assert.equal(err.trim().split("\n").length, 1);
+    });
+  }
 });
 
-describe("opencode plugin: the execute.before hook", () => {
+describe("opencode plugin: file and shell gates", () => {
   test("shell: a git hook bypass throws the reason", () => {
     denied(shell("git commit --no-verify -m x"), /skips the repository's hooks/);
   });
@@ -271,21 +288,56 @@ describe("opencode plugin: the execute.before hook", () => {
     assert.equal(e.message, reason);
   });
 
-  test("ctx.location.directory is read on every call, and a missing one still denies", async () => {
+  test("ctx.location.directory is read for file calls; a missing cwd still denies", async () => {
     let reads = 0;
     const location = { get directory() { reads++; return PROJ; } };
     const { ctx, registered } = fakeCtx(location);
     await (await importPlugin()).default.setup(ctx);
     const hook = registered[0][1];
-    assert.equal(call(shell("ls"), hook), null);
-    assert.equal(call(shell("ls"), hook), null);
+    assert.equal(call(ocEvent("write", { path: "a.txt", content: "a" }), hook), null);
+    assert.equal(call(ocEvent("write", { path: "b.txt", content: "b" }), hook), null);
     assert.equal(reads, 2);
 
     const bare = fakeCtx(undefined);
     await (await importPlugin()).default.setup(bare.ctx);
-    const e = call(shell("git commit --no-verify -m x"), bare.registered[0][1]);
+    const e = call(ocEvent("write", { path: "a.txt", content: FAKE_AWS_KEY }), bare.registered[0][1]);
+    assert.ok(e instanceof Error);
+    assert.match(e.message, /high-confidence secret/);
+  });
+});
+
+describe("opencode plugin: resolved shell dialect", () => {
+  const invoke = (command, shell, extra = {}) => {
+    try { SHELL_HOOK({ command, shell, cwd: PROJ, ...extra }); return null; } catch (e) { return e; }
+  };
+  test("an absolute Windows git path is denied with the runtime's PowerShell", () => {
+    const e = invoke(String.raw`C:\Tools\Git\bin\git.exe commit --no-verify -m fix`, "C:\\PowerShell\\pwsh.exe");
     assert.ok(e instanceof Error);
     assert.match(e.message, /skips the repository's hooks/);
+  });
+  test("resolved Bash preserves escaped quotes on every host", () => {
+    assert.equal(invoke(String.raw`git commit -m "docs: escaped \" quote --no-verify"`, "/bin/bash"), null);
+    assert.match(invoke(String.raw`git com\mit --no-verify`, "/bin/bash").message, /skips the repository's hooks/);
+  });
+  test("shells are evaluated once, with the invocation's cwd and resolved dialect", () => {
+    const installedCore = requireCjs(path.join(INSTALL, "canonkit", "canonkit-hook.js"));
+    const real = installedCore.evaluate;
+    const seen = [];
+    installedCore.evaluate = (evt) => { seen.push(evt); return { decision: "allow" }; };
+    try {
+      assert.equal(call(shell("git status"), HOOK), null);
+      assert.equal(seen.length, 0);
+      assert.equal(invoke("git status", "/bin/bash", { cwd: "/actual-shell-cwd" }), null);
+      assert.equal(seen.length, 1);
+      assert.equal(seen[0].cwd, "/actual-shell-cwd");
+      assert.equal(seen[0].tool, "Bash");
+    } finally { installedCore.evaluate = real; }
+  });
+  test("malformed invocations and getters fail open", () => {
+    for (const invocation of [null, undefined, 42, {}, { get command() { throw new Error("broken"); } }]) {
+      assert.doesNotThrow(() => SHELL_HOOK(invocation));
+    }
+    assert.equal(call({ get tool() { throw new Error("broken"); } }, HOOK), null);
   });
 });
 
@@ -331,10 +383,25 @@ describe("opencode plugin: real captures (test/fixtures/opencode)", () => {
 describe("normalizeOpencode: one OpenCode event into evaluate()'s events", () => {
   const files = (evts) => evts.map((e) => [e.tool, e.toolInput.file_path, e.toolInput.content ?? e.toolInput.new_string]);
 
-  test("a shell call is one Bash event with the session's fields", () => {
+  test("a shell call keeps session fields and uses the native fallback without runtime metadata", () => {
     assert.deepEqual(normalizeOpencode(shell("git status"), PROJ), [{
-      event: "PreToolUse", cwd: PROJ, session: "S-OC", toolUseId: "call-1", tool: "Bash", toolInput: { command: "git status" },
+      event: "PreToolUse", cwd: PROJ, session: "S-OC", toolUseId: "call-1", tool: process.platform === "win32" ? "PowerShell" : "Bash", toolInput: { command: "git status" },
     }]);
+  });
+
+  test("resolved shell wins over platform and tool-input hints", () => {
+    const absolute = String.raw`C:\Tools\Git\bin\git.exe commit --no-verify`;
+    const benign = String.raw`git commit -m "docs: escaped \" quote --no-verify"`;
+    for (const [platform, shell, command, tool, decision] of [
+      ["linux", "pwsh.exe", absolute, "PowerShell", "deny"],
+      ["win32", "/bin/bash", benign, "Bash", "ask"],
+      ["win32", undefined, absolute, "PowerShell", "deny"],
+      ["linux", {}, "git commit --no-verify", "Bash", "deny"],
+    ]) {
+      const [evt] = normalizeOpencode(ocEvent("shell", { command, shell: "ignored" }), PROJ, { shell, platform });
+      assert.equal(evt.tool, tool);
+      assert.equal(evaluate(evt, { logDir: null, home: ROOT }).decision, decision);
+    }
   });
 
   test("edit, write and patch map to Edit and Write events", () => {
@@ -437,9 +504,9 @@ describe("opencode plugin: sealed", () => {
       process.stdout.write = () => { seen.stdout++; return true; };
       const mod = await import(process.argv[1]);
       const hooks = [];
-      await mod.default.setup({ location: { directory: process.argv[2] }, tool: { hook: async (n, cb) => { hooks.push(cb); } } });
+      await mod.default.setup({ location: { directory: process.argv[2] }, tool: { hook: async (n, cb) => { hooks.push(cb); } }, shell: { hook: async (n, cb) => { hooks.push(cb); } } });
       seen.hooks = hooks.length;
-      try { hooks[0]({ tool: "shell", sessionID: "S", id: "c", input: { command: "git commit --no-verify -m x" } }); } catch (e) { seen.denied = e instanceof Error; }
+      try { hooks[1]({ command: "git commit --no-verify -m x", cwd: process.argv[2], shell: "/bin/bash" }); } catch (e) { seen.denied = e instanceof Error; }
       try { hooks[0]({ tool: "write", sessionID: "S", id: "c", input: { path: "src/auth/x.ts", content: "a" } }); seen.passed = true; } catch (_) {}
       out(JSON.stringify(seen));
     `;
@@ -450,7 +517,7 @@ describe("opencode plugin: sealed", () => {
       cwd: PROJ, env, encoding: "utf8",
     });
     assert.equal(r.status, 0, r.stderr);
-    assert.deepEqual(JSON.parse(r.stdout), { exits: 0, stdout: 0, denied: true, passed: true, hooks: 1 });
+    assert.deepEqual(JSON.parse(r.stdout), { exits: 0, stdout: 0, denied: true, passed: true, hooks: 2 });
     assert.equal(r.stderr, "");
     assert.deepEqual(fs.readdirSync(ROOT).sort(), before);
     assert.ok(!fs.existsSync(path.join(ROOT, ".claude")));

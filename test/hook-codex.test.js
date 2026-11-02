@@ -128,6 +128,23 @@ describe("codex adapter: the installed layout", () => {
 });
 
 describe("codex adapter: stdout and exit code", () => {
+  test("a Windows absolute git path cannot bypass the deny gate", () => {
+    for (const command of [
+      String.raw`C:\Tools\Git\bin\git.exe commit --no-verify -m fix`,
+      String.raw`C:\Tools\Git\bin\git.exe commit --no-gpg-sign -m fix`,
+      String.raw`C:\Tools\Git\bin\git.exe -c core.hooksPath=off commit -m fix`,
+      String.raw`& 'C:\Program Files\Git\bin\git.exe' commit --no-verify -m fix`,
+    ]) {
+      const input = process.platform === "win32" ? command : ["powershell.exe", "-NoProfile", "-Command", command];
+      denied(spawnAdapter(codexInput("Bash", { command: input })), /skips the repository's hooks/);
+    }
+  });
+
+  test("a Bash argv wrapper preserves escaped quotes in a benign message", () => {
+    const command = String.raw`git commit -m "docs: escaped \" quote --no-verify"`;
+    silent(spawnAdapter(codexInput("Bash", { command: ["/bin/bash", "-lc", command] })));
+  });
+
   test("Bash: a git hook bypass is denied", () => {
     denied(spawnAdapter(bash("git commit --no-verify -m x")), /skips the repository's hooks/);
   });
@@ -263,12 +280,39 @@ describe("codex adapter: real captures (test/fixtures/codex)", () => {
 describe("normalizeCodex: one Codex call into evaluate()'s events", () => {
   const files = (evts) => evts.map((e) => [e.tool, e.toolInput.file_path, e.toolInput.content]);
 
-  test("a Bash call is one Bash event with the session's fields", () => {
+  test("a canonical Bash call uses the native dialect and keeps the session's fields", () => {
     const evts = normalizeCodex(bash("git status"), "/fallback");
     assert.deepEqual(evts, [{
-      event: "PreToolUse", tool: "Bash", toolInput: { command: "git status" }, cwd: PROJ, session: "S-CODEX",
+      event: "PreToolUse", tool: process.platform === "win32" ? "PowerShell" : "Bash", toolInput: { command: "git status" }, cwd: PROJ, session: "S-CODEX",
       toolUseId: "call-1", agentId: undefined, agentType: undefined, transcriptPath: null,
     }]);
+  });
+
+  test("native fallback, explicit wrappers and malformed hints choose one grammar", () => {
+    const absolute = String.raw`C:\Tools\Git\bin\git.exe commit --no-verify -m fix`;
+    const benign = String.raw`git commit -m "docs: escaped \" quote --no-verify"`;
+    for (const [platform, ti, expected, decision] of [
+      ["win32", { command: absolute }, "PowerShell", "deny"],
+      ["linux", { command: "git commit --no-verify" }, "Bash", "deny"],
+      ["win32", { command: ["C:\\Git\\bin\\bash.exe", "-lc", benign] }, "Bash", "ask"],
+      ["linux", { command: ["C:\\PowerShell\\pwsh.exe", "-NoProfile", "-Command", absolute] }, "PowerShell", "deny"],
+      ["win32", { command: absolute, shell: "/bin/bash" }, "PowerShell", "deny"],
+      ["win32", { command: absolute, shell: {} }, "PowerShell", "deny"],
+    ]) {
+      const [evt] = normalizeCodex(codexInput("Bash", ti), "/fallback", { platform });
+      assert.equal(evt.tool, expected);
+      assert.equal(evaluate(evt, { logDir: null, home: ROOT }).decision, decision);
+    }
+    const [explicit] = normalizeCodex(codexInput("PowerShell", { command: absolute }), "/f", { platform: "linux" });
+    assert.equal(explicit.tool, "PowerShell");
+    assert.equal(evaluate(explicit, { logDir: null, home: ROOT }).decision, "deny");
+    for (const argv of [["echo", "-c", "git commit --no-verify"], ["not-bash", "-lc", "git commit --no-verify"]]) {
+      const [evt] = normalizeCodex(codexInput("Bash", { command: argv }), "/f", { platform: "linux" });
+      assert.equal(evt.toolInput.command, argv.join(" "));
+      const result = evaluate(evt, { logDir: null, home: ROOT });
+      assert.equal(result.decision, "ask"); // raw git confirmation, never an enforce deny
+      assert.equal(codexOutput(result), null);
+    }
   });
 
   test("an apply_patch call is one Write event per file, + lines as content", () => {

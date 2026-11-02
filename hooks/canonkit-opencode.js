@@ -2,12 +2,13 @@
  * canonkit — the OpenCode adapter for the hook's core (OpenCode 2 only).
  *
  * Loaded in-process by the plugin (hooks/opencode-plugin.mjs, installed as
- * plugins/canonkit.js), which registers onExecuteBefore on OpenCode's
- * `execute.before` tool hook. Runs event -> normalizeOpencode -> evaluate()
+ * plugins/canonkit.js), which registers file gates on tool `execute.before`
+ * and onShellCreate on `shell.create.before`. Runs event -> normalizeOpencode -> evaluate()
  * (canonkit-hook.js, installed beside this file) -> a throw or nothing.
  *
- * WHAT OPENCODE CAN ENFORCE FROM HERE. A throw in `execute.before` refuses the
- * call, and the error's message is what the model sees. There is no softer
+ * WHAT OPENCODE CAN ENFORCE FROM HERE. A throw in either before-hook refuses the
+ * call. File-tool errors carry the reason; shell-error presentation depends on
+ * OpenCode's hook bridge. There is no softer
  * answer from this hook, so only the kinds OPENCODE_GATE_MODES marks `enforce`
  * throw; every other kind is left to the opencode-block text and the model's
  * judgment (commit/push prompting is OpenCode permission config, slice 11).
@@ -61,7 +62,11 @@ const OPENCODE_GATE_MODES = Object.freeze({
 //            id (the call id), input (the tool's arguments, typed unknown). No
 //            cwd: the plugin passes ctx.location.directory, '' when missing.
 //   shell    tool "shell", input.command a string. A command that carries a
-//            patch (`*** Begin Patch`) is gated as a patch too.
+//            patch (`*** Begin Patch`) is gated as a patch too. In the plugin,
+//            shell.create.before supplies the resolved shell and actual cwd;
+//            execute.before skips shell calls so no wrong-dialect check runs first.
+// Source for the resolved invocation: OpenCode v2.1.4 packages/core/src/shell.ts
+// and packages/plugin/src/promise/shell.ts, inspected 2026-11-02.
 //   edit     tool "edit", input { path, oldString, newString, replaceAll }.
 //   write    tool "write", input { path, content }; path as the model wrote
 //            it, relative to the instance directory when relative.
@@ -92,7 +97,7 @@ function inputOf(input) {
 }
 
 // One OpenCode hook event into evaluate()'s events: none, one, or one per file.
-function normalizeOpencode(event, cwd) {
+function normalizeOpencode(event, cwd, { shell, platform = process.platform } = {}) {
   if (!isObj(event)) return [];
   const tool = str(event.tool);
   const input = inputOf(event.input);
@@ -107,8 +112,8 @@ function normalizeOpencode(event, cwd) {
 
   if (tool === 'shell' || tool === 'bash') {
     const command = str(input.command);
-    const shell = { ...base, tool: 'Bash', toolInput: { command } };
-    return command.includes(PATCH_BEGIN) ? [shell, ...patchEvents(command)] : [shell];
+    const evt = { ...base, tool: core.shellTool(shell, platform), toolInput: { command } };
+    return command.includes(PATCH_BEGIN) ? [evt, ...patchEvents(command)] : [evt];
   }
   if (tool === 'edit') {
     return [{ ...base, tool: 'Edit', toolInput: { file_path: pathOf(input), new_string: str(input.newString) } }];
@@ -135,13 +140,13 @@ function opencodeDecision({ decision, kind, reason } = {}) {
   return String(reason || 'canonkit gate: blocked.');
 }
 
-// The `execute.before` hook. Throws Error(reason) on the first deny of an
+// Shared file/resolved-shell evaluation. Throws Error(reason) on the first deny of an
 // `enforce` kind; returns on everything else, internal errors included.
-function onExecuteBefore(event, cwd) {
+function onExecuteBefore(event, cwd, options) {
   let reason = null;
   try {
     const env = opencodeEnv();
-    for (const evt of normalizeOpencode(event, cwd)) {
+    for (const evt of normalizeOpencode(event, cwd, options)) {
       reason = opencodeDecision(core.evaluate(evt, env));
       if (reason) break; // the first deny wins
     }
@@ -151,4 +156,17 @@ function onExecuteBefore(event, cwd) {
   if (reason) throw new Error(reason);
 }
 
-module.exports = { normalizeOpencode, opencodeDecision, onExecuteBefore, OPENCODE_GATE_MODES };
+// The shell runtime has resolved the executable here; tool.execute.before has
+// only a generic shell name and cannot distinguish Bash from PowerShell.
+function onShellCreate(invocation) {
+  let event, cwd, shell;
+  try {
+    if (!isObj(invocation)) return;
+    event = { tool: 'shell', input: { command: invocation.command } };
+    cwd = invocation.cwd;
+    shell = invocation.shell;
+  } catch (_) { return; }
+  onExecuteBefore(event, cwd, { shell });
+}
+
+module.exports = { normalizeOpencode, opencodeDecision, onExecuteBefore, onShellCreate, OPENCODE_GATE_MODES };

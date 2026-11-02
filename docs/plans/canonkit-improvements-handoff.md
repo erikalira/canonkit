@@ -964,6 +964,47 @@ calls. The eval judge, expectations and product code were not
 changed. Full results and the single-valid-answer caveat are in
 [docs/evals.md](../evals.md#results-220-pre-publish-partial-2026-11-02).
 
+**PR #25, shell-dialect correction (2026-11-02; after `218d7ae`).** The reviewer
+reported that a native Windows absolute `git.exe` path with `--no-verify` was
+allowed by both adapters: normalizing it as Bash consumed its backslashes.
+The same event using the PowerShell grammar denied. The user authorized the fix.
+
+- A pure `shellTool` helper in the existing core identifies recognized shell
+  executable names. `evaluate()`, its tokenizer and `HOOK_FILES` stay unchanged.
+- Codex's canonical `Bash` string input omits the dialect. Its declared fallback
+  is PowerShell on native Windows, Bash on POSIX. Recognized argv wrappers keep
+  their script and dialect together; undocumented `input.shell` hints are ignored.
+- OpenCode uses resolved `invocation.shell` and `invocation.cwd` in
+  `shell.create.before`; `execute.before` retains file gates and skips shells.
+  Shell-carried patches remain gated. Registration failures are isolated by
+  domain, with separate diagnostics. Unknown shells/cmd use a documented native
+  fallback rather than a dedicated parser.
+- Regression tests cover absolute/quoted Windows git paths, hook and signing
+  bypasses, Bash escaped quotes on Windows, PowerShell on POSIX, wrapper identity,
+  invocation cwd, no double evaluation, independent registration failures,
+  malformed inputs and the installed ESM/CommonJS layout.
+- Local checks: `npm test` **700 total, 697 pass, 0 fail, 3 skipped**;
+  `npm run validate` green with Git Bash. The historical Claude test remains
+  unchanged by this correction.
+- **Real OpenCode v2.1.4 bridge, zero model calls:** a loopback server with scratch
+  HOME/XDG paths loaded the current plugin; requests waited for `canonkit` to be
+  active. In PowerShell, the absolute-path bypass was rejected before spawn. In
+  Git Bash on Windows, an escaped-command bypass was rejected and the benign
+  escaped-quote message was allowed (git then exited 128 in the non-repository).
+  Both rejects returned HTTP 500 with an empty body; neither execution marker
+  was created. Benign commands before/after exited 0, and the server stayed
+  healthy. Test servers were stopped. Reports are retained in the scratch area.
+  This resolves the bridge-containment question, not conversational error UX.
+- Gard approved security after examining the bridge evidence; Quinn approved
+  coverage after the installed-plugin integration test was updated; Archie
+  approved the final boundaries; Spencer approved the updated docs. Root's
+  Integration Review found no conflicting recommendations; the direct-API
+  error presentation and conversational verification limits remain explicit.
+  Their reviews do not claim a new model-session gate. The November 1 slice 15
+  records and "Verified on" dates remain historical;
+  the post-correction conversational/subagent gate was not rerun. No new routing
+  eval, commit or publication was performed.
+
 ### 5. Uninstall
 
 Today only the settings.json `.bak` undoes the core install (`docs/install.md:265-287`).

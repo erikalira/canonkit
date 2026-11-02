@@ -491,7 +491,7 @@ describe("install", () => {
     assert.ok(existsSync(path.join(oc, "canonkit", "canonkit-hook.js")));
   });
 
-  test("the installed OpenCode plugin loads under a parent \"type\": \"module\" and denies a real capture", async () => {
+  test("the installed OpenCode plugin loads under parent ESM and gates captured commands with resolved shell metadata", async () => {
     const { root, home } = await scratch("install-opencode-esm-parent");
     const oc = path.join(home, ".config", "opencode");
     await mkdir(oc, { recursive: true });
@@ -502,11 +502,20 @@ describe("install", () => {
     const mod = await import(pathToFileURL(path.join(oc, "plugins", "canonkit.js")).href);
     assert.deepEqual(Object.keys(mod), ["default"]);
     const hooks = [];
-    await mod.default.setup({ location: { directory: root }, tool: { hook: async (name, cb) => { hooks.push([name, cb]); } } });
-    assert.deepEqual(hooks.map(([n]) => n), ["execute.before"]);
+    await mod.default.setup({
+      location: { directory: root },
+      tool: { hook: async (name, cb) => { hooks.push([name, cb]); } },
+      shell: { hook: async (name, cb) => { hooks.push([`shell.${name}`, cb]); } },
+    });
+    assert.deepEqual(hooks.map(([n]) => n), ["execute.before", "shell.create.before"]);
     const capture = (f) => JSON.parse(readFileSync(path.join(REPO, "test", "fixtures", "opencode", f), "utf8")).event;
-    assert.throws(() => hooks[0][1](capture("shell-git-commit-no-verify.json")), /skips the repository/);
-    assert.doesNotThrow(() => hooks[0][1](capture("shell-git-commit.json")));
+    // The original captures are tool events. The shell invocation contract is
+    // synthetic here, with the executable/cwd that OpenCode resolves at runtime.
+    const invocation = (f) => ({ command: capture(f).input.command, cwd: root, shell: "powershell.exe" });
+    assert.doesNotThrow(() => hooks[0][1](capture("shell-git-commit-no-verify.json")));
+    assert.throws(() => hooks[1][1](invocation("shell-git-commit-no-verify.json")), /skips the repository/);
+    assert.doesNotThrow(() => hooks[1][1](invocation("shell-git-commit.json")));
+    assert.throws(() => hooks[0][1]({ tool: "write", input: { path: "key.pem", content: "-----BEGIN RSA PRIVATE " + "KEY-----" } }), /high-confidence secret/);
   });
 
   test("is idempotent — a second run changes no bytes", async () => {
