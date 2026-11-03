@@ -119,6 +119,12 @@ before(async () => {
     perfBudgets: ["perf/limits.yml"],
   });
   fx.badJson = await proj("bad-json", "{ \"highRisk\": { \"exclude\": [\"**\"] ");
+  fx.optIn = await proj("opt-in", {
+    highRisk: { include: ["eslint.config.*", "vitest.config.*"], exclude: ["eslint.config.*"] },
+  });
+  fx.optInNested = path.join(fx.optIn, "packages", "demo");
+  await mkdir(path.join(fx.optInNested, ".claude"), { recursive: true });
+  await writeFile(path.join(fx.optInNested, ".claude", "canonkit.json"), "{}");
   fx.dirConfig = await proj("dir-config");
   await mkdir(path.join(fx.dirConfig, ".claude", "canonkit.json"));
 
@@ -440,6 +446,43 @@ describe("a missing or non-string cwd still denies", () => {
 // test/hook-opencode.test.js the plugin's hook).
 const P = () => fx.plain;
 const C = () => fx.cfg;
+
+describe("configured paths have a neutral confirmation message", () => {
+  for (const [label, event] of [
+    ["direct edit", () => editAt(fx.optIn, "eslint.config.js")],
+    ["file write", () => editAt(fx.optIn, "vitest.config.ts", "x", "Write")],
+    ["shell write", () => shell(fx.optIn, "echo x > eslint.config.js")],
+    ["PowerShell write", () => shell(fx.optIn, "Set-Content vitest.config.ts x", "PowerShell")],
+    ["nested filename match", () => editAt(fx.optIn, "packages/ui/eslint.config.js")],
+    ["root include under a nested config", () => ({ ...editAt(fx.optIn, "eslint.config.js"), cwd: fx.optInNested })],
+  ]) {
+    test(label, () => {
+      const r = evaluate(event(), envFor(fx.optIn));
+      assert.equal(r.decision, "ask");
+      assert.equal(r.kind, "high-risk-surface");
+      assert.match(r.reason, /protected by the project's highRisk\.include/);
+      assert.match(r.reason, /routing and review rules for the affected area/);
+      assert.match(r.reason, /which checks/);
+      assert.match(r.reason, /rollback/);
+      assert.match(r.reason, /highRisk\.exclude cannot override it/);
+      assert.doesNotMatch(r.reason, /auth\/secret|Archie\/Gard|is a HIGH-risk surface/);
+      assert.equal(r.logs.find((l) => l.record.kind === r.kind)?.record.rule, "include");
+    });
+  }
+
+  test("lint/test configs are opt-in and default HIGH-risk paths retain their message", () => {
+    for (const evt of [editAt(fx.plain, "eslint.config.js"), shell(fx.plain, "echo x > vitest.config.ts")]) {
+      assert.equal(evaluate(evt, envFor(fx.plain)).decision, "allow");
+    }
+    for (const evt of [editAt(fx.plain, "src/auth/session.ts"), shell(fx.plain, "echo x > src/auth/session.ts")]) {
+      const r = evaluate(evt, envFor(fx.plain));
+      assert.equal(r.decision, "ask");
+      assert.match(r.reason, /HIGH-risk surface \(auth\/secret\/migration\/contract\)/);
+      assert.match(r.reason, /Archie\/Gard review/);
+    }
+  });
+});
+
 const PARITY = [
   // git-bypass
   { name: "git commit --no-verify", evt: () => shell(P(), "git commit --no-verify -m wip"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" }, opencode: { decision: "deny", kind: "git-bypass" } } },

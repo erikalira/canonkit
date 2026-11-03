@@ -439,6 +439,14 @@ function highRisk(rel, cfg, fp) {
   return ex ? { excludedBy: ex.glob } : { rule };
 }
 
+// Includes can protect lint/test configuration as well as HIGH-risk surfaces.
+// Keep the gate and its record kind; describe the project's choice without
+// assigning every configured path to Archie/Gard or calling it auth/secret code.
+function includedPathReason(fp, command = false) {
+  const action = command ? `this command writes "${path.basename(fp)}", which is` : `"${path.basename(fp)}" is`;
+  return `canonkit gate: ${action} protected by the project's highRisk.include configuration. Follow the routing and review rules for the affected area. Before confirming, state: why the change is needed, which checks protect the affected behavior, and the rollback if it is wrong. To change this configured protection, edit highRisk.include in .claude/canonkit.json; highRisk.exclude cannot override it.`;
+}
+
 // ---- GLOBS ----
 // gitignore-like, not gitignore: a glob with a `/` matches the path relative to
 // the project, one without matches the file name at any depth. `*` and `?` stay
@@ -1354,6 +1362,7 @@ function decide(evt, env, logs) {
         const verdict = highRisk(rels[i], cfg, t);
         if (verdict && verdict.rule) {
           logGate({ kind: 'high-risk-surface', file: t, rule: verdict.rule, project, tool }, [t]);
+          if (verdict.rule === 'include') return askFor('high-risk-surface', includedPathReason(t, true));
           return askFor('high-risk-surface', `canonkit gate: this command writes "${path.basename(t)}", a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
         }
         if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: t, glob: verdict.excludedBy, project, tool }, [t]);
@@ -1391,6 +1400,7 @@ function decide(evt, env, logs) {
     const verdict = highRisk(rel, cfg, fp);
     if (verdict && verdict.rule) {
       logGate({ kind: 'high-risk-surface', file: fp, rule: verdict.rule, project, tool }, [fp]);
+      if (verdict.rule === 'include') return askFor('high-risk-surface', includedPathReason(fp));
       return askFor('high-risk-surface', `canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
     }
     // Not a gate: the dashboard shows what a project's config kept quiet.

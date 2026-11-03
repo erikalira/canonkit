@@ -303,6 +303,66 @@ project in `.claude/canonkit.json`:
 
 Editing `canonkit.json` itself is a gate.
 
+### Optional editor schema
+
+[reference/canonkit.schema.json](../reference/canonkit.schema.json) provides
+completion, descriptions and structural diagnostics. It ships in the npm package;
+using it does not require changing or reinstalling the hook. For example, with
+CanonKit installed as a local npm dependency, associate it in VS Code's
+`.vscode/settings.json` (merge with existing settings):
+
+```json
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["/.claude/canonkit.json"],
+      "url": "./node_modules/canonkit/reference/canonkit.schema.json"
+    }
+  ]
+}
+```
+
+For a source checkout, use `./reference/canonkit.schema.json` instead. Without a
+local dependency, copy the schema from the package or checkout to
+`.claude/canonkit.schema.json` and use `./.claude/canonkit.schema.json` as the URL.
+Schema association is an editor setting; do not add `$schema` to `canonkit.json`,
+where it is an unknown key. VS Code documents this association in
+[JSON schemas and settings](https://code.visualstudio.com/docs/languages/json#_json-schemas-and-settings).
+
+The schema uses JSON Schema draft-07. All configuration keys remain optional,
+including `version`; `{}` uses the defaults. Unknown keys are highlighted by the
+editor but remain **WARN**, not FAIL, in `canonkit doctor`. The hook still ignores
+them and applies known entries. The schema checks shapes, version and list/string
+limits, but cannot check the file's byte size or runtime catch-all exclusion
+rules (especially unions of excludes); doctor and the hook remain authoritative.
+The hook's 200-character glob limit counts UTF-16 code units, while JSON Schema
+counts Unicode code points, so a glob with supplementary characters may reach
+the runtime limit earlier.
+
+### Protecting lint and test configuration
+
+Projects can opt in through `highRisk.include`; CanonKit adds no default list:
+
+```json
+{
+  "version": 1,
+  "highRisk": {
+    "include": ["eslint.config.*", "vitest.config.*"],
+    "exclude": []
+  }
+}
+```
+
+These filename globs also reach nested folders. Add a path with `/` to anchor a
+pattern at the project root. For configured includes, the confirmation message
+names the project's protection and asks for the reason, validation and rollback,
+without classifying every lint/test file as auth or assigning it to Archie/Gard.
+The affected area's routing and review rules still apply. `include` wins over
+`exclude`; change the include list to remove a configured gate. The event kind
+remains `high-risk-surface`, including the existing Stop review check. This is a
+Claude Code confirmation gate; Codex and OpenCode retain the by-judgment behavior
+in the adapter table above.
+
 ### Where it is read
 
 In the nearest folder walking up from the session's cwd, stopping at

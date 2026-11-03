@@ -7,10 +7,11 @@ One job per session: each item is independent.
 
 **Status (2026-11-03):** items 1–5 are implemented for the 2.x scope; item 5 is
 merged through PR #26. Items 6 and 7 are implemented in the repository, with
-local verification recorded below. Item 8 is **implemented and verified locally**.
-**Next: item 9.** The README Runtimes correction in item 8 was already delivered by item 4.
+local verification recorded below. Items 8 and 9 are **implemented and verified locally**;
+their validation and limits are recorded below. The README Runtimes correction
+in item 8 was already delivered by item 4.
 
-Remaining follow-ups outside item 9: the item 4 deletion of
+Remaining follow-ups after items 1–9: the item 4 deletion of
 byte-identical `~/.agents/<core>.md` copies is reserved for 3.0; behavioral
 efficacy for items 6 and 7 remains unmeasured; release/publication and cross-OS
 verification retain the limits recorded below. The recorded 2.3.0 publication
@@ -49,7 +50,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
 | 8 | Small fixes from the audit — **implemented and verified locally**; reviews recorded below | clarity, rationale, routing, consistency, observability, enforcement gap (not re-scored) | root; Virgo, Quinn, Gard, Spencer reviews (MEDIUM hook/validator) |
-| 9 | Leftovers, low value now — **next** | — | inline (LOW) |
+| 9 | Optional editor schema and configured-path message/example — **implemented and verified locally** | — | root; Quinn + Spencer reviews (MEDIUM hook regression risk) |
 
 ### 1. CI on three OS
 
@@ -1276,17 +1277,61 @@ rerun. No real install, paid eval, commit, push or publication was run.
 
 ### 9. Leftovers (low value now)
 
-**Status (2026-11-03):** next, after the locally verified item 8. The JSON Schema is optional;
-changing unknown-key diagnostics from WARN to FAIL remains a decision, not an
-approved behavior change.
+**Implementation (2026-11-03; user requested item 9):** implemented locally.
+The scope is MEDIUM for the shared hook's confirmation-message regression risk.
+Unknown-key diagnostics remain **WARN**, not FAIL; any change to that policy
+remains a separate decision.
 
-- `canonkit.json` schema: mostly done — the hook validates keys, version and types
-  (`projectConfig` in `hooks/canonkit-hook.js`) and doctor WARNs on every ignored entry
-  (`bin/cli.js`). Left: an optional JSON Schema file for editor completion; maybe
-  FAIL instead of WARN on unknown keys.
-- Lint/test config as a gated path: already possible with `highRisk.include`; what is
-  missing is a neutral gate message (today it says "HIGH-risk surface (auth/secret/...)")
-  and a docs example. No default list.
+- Added optional `reference/canonkit.schema.json`, shipped through the existing
+  npm `reference/` inclusion. Draft-07 describes the existing optional keys,
+  version 1, types, nonblank globs and list/string limits. It does not alter the
+  parser, install destinations or dependencies. Editor diagnostics reject unknown
+  properties; runtime behavior remains ignore-and-WARN. Runtime catch-all exclude
+  checks (including unions), the file byte limit and the UTF-16/code-point length
+  difference remain explicit schema limitations.
+- Documented VS Code `json.schemas` association, with local-dependency, source
+  checkout and copied-schema paths. No `$schema` metadata key is added to the
+  runtime configuration. The association follows the linked official VS Code
+  documentation; interactive completion/diagnostics in an editor were not run.
+- `highRisk.include` matches now get a neutral reason for direct and shell writes:
+  the project's configured protection, the affected area's routing/review rules,
+  reason for the change, checks and rollback. The message explains that removing
+  configured protection requires changing `include`, which `exclude` cannot
+  override. Built-in surface messages, decisions, ordering, event kind/rule,
+  Stop review behavior and harness gate maps remain unchanged.
+- Added an opt-in lint/test example without a default list. New tests exercise
+  direct edits/writes, Bash/PowerShell, nested filename matches and root includes
+  under nested configs, include precedence, unchanged defaults, real Claude hook
+  process output, documented configuration examples and schema/runtime key/limit
+  consistency. These assertions do not constitute a JSON Schema validator run.
+
+**Verification (2026-11-03, Windows):**
+
+- Focused `test/hook-core.test.js` and `test/canonkit-hook.test.js` passed after
+  the final code/test edit. Full `npm test` then passed: **832 tests, 829 passed,
+  3 skipped, 0 failed**, 204.5 seconds. No code or tests changed after that run.
+- Git Bash `scripts/validate.sh --quiet` passed, 15 agents. Tests and Git Bash
+  needed execution outside the sandbox because it blocked process/pipe creation.
+- `npm pack --dry-run --json` passed: **53 files**, including the schema.
+  `git diff --check` passed. No always-loaded instruction text changed.
+- Quinn approved quality conditional on the focused tests passing; that run
+  passed. Spencer approved documentary consistency; the requested final full-suite
+  result and review state are recorded here. Both dispatches requested
+  native Codex `gpt-6.1-terra`, effort medium; reviewers could not independently
+  observe the resolved runtime model/effort.
+- Root's Integration Review found no contradictory recommendation or unresolved
+  implementation blocker: the schema remains optional editor assistance, runtime
+  validation and WARN behavior are unchanged, and the neutral text preserves
+  configured protection, routing rules, logs and harness behavior. The remaining
+  verification limits are explicit above, and the full local suite passed.
+
+No real installation, paid eval, commit, push, publication or cross-OS CI was run.
+
+**Incidental finding — Graphify index/tooling drift (confirmed, not changed):**
+`graphify-out/graph.json` still returns old `meu-time-hook.js` symbol locations;
+the installed Graphify CLI also reports version 0.9.63 against skill 0.9.76.
+Current sources were used for item 9. Refreshing the graph or installed tooling
+is outside this task.
 
 ## Parameters this list does not move
 
@@ -1309,11 +1354,10 @@ Proposed in the audit, not applied (rubric stays 1.0.0):
 
 ## First step for the next session
 
-Start item 9. Read `projectConfig` and the HIGH-risk gate messages in
-`hooks/canonkit-hook.js`, the doctor diagnostics in `bin/cli.js`, and the
-configuration examples in `docs/hooks.md`. Propose the optional editor JSON
-Schema and neutral message/example work before editing. Keep unknown-key WARN
-versus FAIL as an explicit decision, and do not add a default lint/test gate list.
+Items 1–9 have their implementation records above. Choose an explicit remaining
+follow-up; do not reopen completed implementation merely because behavioral
+measurement or publication is still pending. Unknown-key WARN versus FAIL remains
+a separate policy decision, and no default lint/test gate list was added.
 
 Keep the 3.0 deletion, release verification and behavioral measurements as
 explicit follow-ups. Real-model evals spend credit and require the user's
