@@ -5,10 +5,20 @@ average 7.7; `evals/audits/2026-10-29-ecc.json`, 4.9; rubric `evals/instruction-
 1.0.0) plus the open items left by the ECC comparison (`docs/plans/ecc-lessons-handoff.md`).
 One job per session: each item is independent.
 
-**Status (2026-10-29):** items 1 and 2 are done and merged (PRs #19, #20, #21);
-canonkit 2.0.0 is published from CI with provenance. The repository is now public and
-named **`erikalira/canonkit`** (was `erikalira/agent-team-config`; GitHub redirects the old
-URLs, but new links use the new name). Next: item 3.
+**Status (2026-11-03):** items 1–5 are implemented for the 2.x scope; item 5 is
+merged through PR #26. Items 6 and 7 are implemented in the repository, with
+local verification recorded below. **Next: item 8, then item 9.** The README
+Runtimes correction in item 8 was already delivered by item 4.
+
+Remaining follow-ups outside those two batches: the item 4 deletion of
+byte-identical `~/.agents/<core>.md` copies is reserved for 3.0; behavioral
+efficacy for items 6 and 7 remains unmeasured; release/publication and cross-OS
+verification retain the limits recorded below. The recorded 2.3.0 publication
+has not been verified in this handoff. Completing the implementation does not
+claim the target rubric scores. Earlier dated entries remain historical records.
+
+The repository is public and named **`erikalira/canonkit`** (was
+`erikalira/agent-team-config`; new links use the new name).
 
 ## Decisions already made by the user
 
@@ -34,12 +44,12 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 1 | ~~CI on Linux, macOS, Windows~~ — **done**, PR #19 | kit-ci 5 → 10 | Pipe (MEDIUM) |
 | 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
-| 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
+| 4 | Universal layout + enforcement outside Claude Code — **implemented for 2.x**; deletion of old identical agent copies deferred to 3.0 | portability 6 → 9–10 | Archie + Gard (HIGH) |
 | 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
-| 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
-| 9 | Leftovers, low value now | — | inline (LOW) |
+| 8 | Small fixes from the audit — **next**; Runtimes docs already corrected by item 4 | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
+| 9 | Leftovers, low value now — **pending**, after item 8 | — | inline (LOW) |
 
 ### 1. CI on three OS
 
@@ -1178,26 +1188,37 @@ Dispatch: Virgo, sonnet, medium; Scott, sonnet, low only if scope is contested.
 
 ### 8. Small fixes from the audit (one LOW batch)
 
-- clarity: define "trivial" (`reference/agents-block.md:80`).
-- rationale: give a reason for the dependency-routing rule (`:61`) and for no-self-merge
-  (`:76-80`).
-- consistency: the README roster (`README.md:127-138`) drifted from
-  `reference/agents-block.md:20-31`; generate it or check it in `scripts/validate.sh`.
+**Status (2026-11-03):** this is the next implementation batch. The portability
+documentation subtask is complete; the remaining subtasks below are pending.
+Use section and symbol names to locate code; the original audit's line numbers
+have shifted after items 4–7.
+
+- clarity: define "trivial" in `reference/agents-block.md`, under "No self-merge on HIGH risk".
+- rationale: give a reason for the dependency-routing rule and for no-self-merge
+  in `reference/agents-block.md`.
+- consistency: prevent drift between the README roster and the core roster in
+  `reference/agents-block.md`; generate it or check it in `scripts/validate.sh`.
 - routing: a short non-trigger in each description. Measure context-cost after: it adds
   words to every session.
 - observability: stop logging the dispatch description (`task`, 200 chars) and the first
   80 chars of gated commands, or make them opt-in.
 - enforcement gap (score is 10, the gap is real): `shellWriteTargets`
-  (`hooks/canonkit-hook.js:785-795`) misses `cp`, `mv`, `sed -i`, `Copy-Item`,
+  in `hooks/canonkit-hook.js` misses `cp`, `mv`, `sed -i`, `Copy-Item`,
   `Move-Item`. Hook change: Quinn reviews after the edit.
-- portability docs: the README Runtimes table says "no" for Codex/OpenCode; say the
-  harness supports hooks and canonkit does not ship them yet (until item 4 lands).
+- portability docs — **done through item 4:** the README Runtimes table now
+  describes the shipped Codex/OpenCode deny gates and their limits. Keep it
+  aligned with the adapter maps; the original "does not ship them yet" wording
+  no longer applies.
 
 ### 9. Leftovers (low value now)
 
+**Status (2026-11-03):** pending, after item 8. The JSON Schema is optional;
+changing unknown-key diagnostics from WARN to FAIL remains a decision, not an
+approved behavior change.
+
 - `canonkit.json` schema: mostly done — the hook validates keys, version and types
-  (`hooks/canonkit-hook.js:740-771`) and doctor WARNs on every ignored entry
-  (`bin/cli.js:1400`). Left: an optional JSON Schema file for editor completion; maybe
+  (`projectConfig` in `hooks/canonkit-hook.js`) and doctor WARNs on every ignored entry
+  (`bin/cli.js`). Left: an optional JSON Schema file for editor completion; maybe
   FAIL instead of WARN on unknown keys.
 - Lint/test config as a gated path: already possible with `highRisk.include`; what is
   missing is a neutral gate message (today it says "HIGH-risk surface (auth/secret/...)")
@@ -1207,7 +1228,8 @@ Dispatch: Virgo, sonnet, medium; Scott, sonnet, low only if scope is contested.
 
 Already at 10, guard them: proportionality, context-cost, governance, enforcement,
 human-docs. Items 6, 7 and the non-triggers in 8 all add text — re-measure context-cost.
-self-measurement (8): record a full run of the 40-case quality corpus as data (pairs with 3).
+self-measurement (8): record a full run of the current quality corpus as data (pairs with 3);
+the original 40-case count predates the additional cases. Preserve the limits of partial runs.
 scope-focus (9): decide whether `skills/context-tune` belongs in the core.
 
 ## Rubric follow-ups (instruction-audit, not canonkit)
@@ -1223,7 +1245,14 @@ Proposed in the audit, not applied (rubric stays 1.0.0):
 
 ## First step for the next session
 
-Item 3 (review-noise), once this branch is merged to main. Read `docs/evals.md`,
-`evals/quality-cases.json` (the `bait` cases) and `agents/perry.md`, propose the plan
-before editing, and leave the real-model run (`npm run eval:quality`, spends credit) for
-the user to start by hand.
+Start item 8. Read `reference/agents-block.md`, the agent descriptions, the README
+roster and Runtimes table, `scripts/validate.sh`, and the logging and
+`shellWriteTargets` code in `hooks/canonkit-hook.js`. Propose the bounded batch
+before editing; account for the portability subtask already delivered by item 4.
+Measure context-cost after instruction changes and obtain Quinn's review after
+the hook edit. Then address item 9's optional schema and neutral gate-message/docs work.
+
+Keep the 3.0 deletion, release verification and behavioral measurements as
+explicit follow-ups. Real-model evals spend credit and require the user's
+authorization; no paid eval, commit, push or publication is authorized by this
+status update.
