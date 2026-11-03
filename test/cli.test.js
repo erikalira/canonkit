@@ -583,13 +583,12 @@ describe("install", () => {
 describe("orchestrate skill", () => {
   const skillPath = (home, root) => path.join(home, root, "skills", "orchestrate", "SKILL.md");
 
-  test("default Claude source instruction profile stays within 2500 words", async () => {
+  test("default source instruction profiles stay within 2500 words", async () => {
     // Source-derived default profile: the two managed blocks, core agent
     // descriptions and every shipped skill description. There are currently no
     // default command descriptions or kit-installed MCP instructions; update
     // this profile if installation adds either. On-demand bodies are excluded.
     const words = (s) => s.trim().split(/\s+/).filter(Boolean).length;
-    const blocks = await Promise.all(["agents-block.md", "routing-block.md"].map((f) => read(path.join(REPO, "reference", f))));
     const agents = (await readAgents()).filter((a) => a.tier === "core");
     const skillDirs = await readdir(path.join(REPO, "skills"), { withFileTypes: true });
     const descriptions = [];
@@ -599,10 +598,65 @@ describe("orchestrate skill", () => {
       assert.ok(description, `${entry.name}: missing description`);
       descriptions.push(description[1]);
     }
-    const counts = [...blocks.map(words), ...agents.map((a) => words(a.description)), ...descriptions.map(words)];
-    const total = counts.reduce((a, b) => a + b, 0);
-    assert.ok(total <= 2500, `default Claude source profile: ${total} words, limit 2500`);
+    for (const [runtime, adapter] of [["Claude", "routing"], ["Codex", "codex"], ["OpenCode", "opencode"]]) {
+      const blocks = await Promise.all(["agents-block.md", `${adapter}-block.md`].map((f) => read(path.join(REPO, "reference", f))));
+      const counts = [...blocks.map(words), ...agents.map((a) => words(a.description)), ...descriptions.map(words)];
+      const total = counts.reduce((a, b) => a + b, 0);
+      assert.ok(total <= 2500, `default ${runtime} source profile: ${total} words, limit 2500`);
+    }
   });
+
+  for (const [runtime, root] of [["claude", ".claude"], ["codex", ".agents"], ["opencode", ".agents"]]) {
+    test(`incidental-finding procedure distributes and preserves user files for ${runtime}`, async () => {
+      const { home, project } = await scratch(`incidental-findings-${runtime}`);
+      const skillDir = path.join(home, root, "skills", "orchestrate");
+      const procedure = path.join(skillDir, "out-of-scope-issues.md");
+      const personalNotes = "# Personal instructions\nKeep my notes.\n";
+      const projectNotes = "# Project instructions\nKeep the project scope.\n";
+      await writeFile(path.join(home, "AGENTS.md"), personalNotes);
+      await writeFile(path.join(project, "AGENTS.md"), projectNotes);
+      const install = () => run(["install", `--${runtime}`], { home, cwd: project });
+      const initial = install();
+      assert.equal(initial.status, 0, initial.out);
+      const source = path.join(REPO, "skills", "orchestrate");
+      for (const file of ["SKILL.md", "out-of-scope-issues.md"]) {
+        assert.equal(await read(path.join(skillDir, file)), await read(path.join(source, file)));
+      }
+      // Blocks adopt the destination's line endings; compare content, not keywords
+      // claimed to prove model behavior. Skill files above must remain byte-identical.
+      const roster = await read(path.join(home, "AGENTS.md"));
+      assert.ok(roster.startsWith(personalNotes));
+      const sourceRoster = await read(path.join(REPO, "reference", "agents-block.md"));
+      assert.ok(roster.replace(/\r\n/g, "\n").includes(sourceRoster.replace(/\r\n/g, "\n").trim()));
+      const [adapterDir, adapterFile, sourceBlock] = {
+        claude: [".claude", "CLAUDE.md", "routing-block.md"],
+        codex: [".codex", "AGENTS.md", "codex-block.md"],
+        opencode: [path.join(".config", "opencode"), "AGENTS.md", "opencode-block.md"],
+      }[runtime];
+      const adapter = await read(path.join(home, adapterDir, adapterFile));
+      const sourceAdapter = await read(path.join(REPO, "reference", sourceBlock));
+      assert.ok(adapter.replace(/\r\n/g, "\n").includes(sourceAdapter.replace(/\r\n/g, "\n").trim()));
+      assert.equal(await read(path.join(project, "AGENTS.md")), projectNotes);
+
+      const userFile = path.join(skillDir, "personal-notes.md");
+      await writeFile(userFile, "untracked user notes\n");
+      await writeFile(procedure, "local procedure edit\n");
+      const updated = install();
+      assert.equal(updated.status, 0, updated.out);
+      assert.equal(await read(procedure + ".local.bak"), "local procedure edit\n");
+      assert.equal(await read(procedure), await read(path.join(source, "out-of-scope-issues.md")));
+
+      await writeFile(procedure, "second local procedure edit\n");
+      const removed = run(["uninstall", `--${runtime}`], { home, cwd: project });
+      assert.equal(removed.status, 0, removed.out);
+      assert.equal(existsSync(procedure), false);
+      assert.equal(await read(procedure + ".local.bak"), "local procedure edit\n");
+      assert.equal(await read(procedure + ".local-1.bak"), "second local procedure edit\n");
+      assert.equal(await read(userFile), "untracked user notes\n");
+      assert.ok((await read(path.join(home, "AGENTS.md"))).startsWith(personalNotes));
+      assert.equal(await read(path.join(project, "AGENTS.md")), projectNotes);
+    });
+  }
 
   test("install writes the skill for Claude Code and for Codex", async () => {
     const { home } = await scratch("skill-install");

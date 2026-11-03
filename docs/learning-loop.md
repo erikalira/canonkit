@@ -19,6 +19,11 @@ The skill and its proposal template are installed with the reference skills;
 
 ## What you receive
 
+Concrete problems outside a project's current task use the independent
+[incidental-findings workflow](out-of-scope-issues.md), including LOW work.
+They belong in the project's tracker. The contribution workflow below is for
+general improvements to CanonKit's instructions.
+
 Expect a concise explanation of the cause and the smallest useful correction, or
 a conclusion that no instruction should change. A code, tool or environment defect
 belongs in its normal fix workflow. Prefer rewriting, consolidating or removing

@@ -1,11 +1,19 @@
 ---
 name: orchestrate
-description: Use when planning or dispatching subagents (model and effort, parallel work, isolated writers), coordinating an existing OpenSpec change, or closing a MEDIUM/HIGH change involving multiple disciplines (Integration Review).
+description: Use when planning or dispatching subagents (model and effort, parallel work, isolated writers), coordinating an existing OpenSpec change, closing a MEDIUM/HIGH change involving multiple disciplines (Integration Review), or handling concrete incidental findings on any task, including LOW.
 ---
 
 # Orchestrate
 
 Orchestration rules whose short form lives in `~/AGENTS.md` and the project's tool block. This is the rationale and the procedure.
+
+## Incidental findings
+
+When normal work reveals a concrete out-of-scope problem, use
+[the incidental-findings procedure](out-of-scope-issues.md) to preserve it and
+offer authorized project issues at natural closure. This also applies to LOW
+tasks without delegation, OpenSpec or Learning Loop. Do not load the procedure
+or run discovery tools when there are no findings.
 
 ## Naming the model and effort
 

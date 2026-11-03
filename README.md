@@ -289,9 +289,11 @@ markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 
 **Does anything leave my machine?** The hook keeps telemetry local in
 `~/.claude/canonkit-activity/`; records can include task descriptions, command
-fragments and paths alongside counts and timing. The optional
+fragments and paths alongside counts and timing. Both
+[incidental project issues](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
+and the optional
 [Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)
-sends only a sanitized issue that you review and explicitly authorize. Raw logs
+supply sanitized drafts; publication requires your review and explicit authorization. Raw logs
 and personal memories do not belong in a contribution.
 [Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
@@ -322,6 +324,7 @@ forwarder for the old hook name. See
 | [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
 | [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
 | [docs/learning-loop.md](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md) | investigate mistakes and propose evaluated instruction changes |
+| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental project findings and approve issue drafts in a batch |
 | [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License

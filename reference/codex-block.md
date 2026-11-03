@@ -7,6 +7,10 @@ down to the working directory), so read `~/AGENTS.md` before dispatching any
 agent. This block holds only what is specific to Codex, and is reinstalled like
 the agents: local rules go outside the markers.
 
+On any task, including LOW without delegation, preserve concrete incidental
+findings using the `orchestrate` skill's incidental-findings procedure; do
+nothing extra without findings.
+
 - **The team are Codex subagents** in `$CODEX_HOME/agents/` (`~/.codex` by default). Ask for one by name.
 - **Generated agents set model and effort.** The installer maps each agent's
   frontmatter to `model` and `model_reasoning_effort` in its TOML. Name the

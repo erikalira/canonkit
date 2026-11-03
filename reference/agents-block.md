@@ -124,6 +124,16 @@ Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
 another name, and local rules go outside this block's markers.
 
+## Incidental findings
+
+On any task, including LOW, preserve concrete out-of-scope findings as a short
+note (title, location, observation, confidence); continue the task. Subagents
+include it in their normal report; the parent consolidates relevant findings at
+natural closure. Use the `orchestrate` skill's incidental-findings procedure
+before offering issues. Never defer delivery defects or blocked validation as
+incidental; alert urgent security risks promptly. Without findings, do nothing
+extra; do not search, delegate or create artifacts just for capture.
+
 ## New session when the subject changes
 
 When a request does not depend on what is in context (another change or area,

@@ -4,7 +4,7 @@ Repositório: https://github.com/erikalira/canonkit
 
 Branch de trabalho: `feat/learning-loop`
 
-Status: plano consolidado para implementação. Consolidar ou revisar este documento não inicia a implementação nem autoriza ações externas.
+Status: implementação nas fontes concluída, com validações determinísticas e revisões documentais aprovadas. Eficácia comportamental não medida; instalação pessoal e publicação não executadas.
 
 ## Objetivo
 
@@ -336,3 +336,110 @@ Falhas da própria entrega permanecem no fluxo da tarefa atual. Falhas parciais 
 O fluxo deve manter foco, privacidade, proporcionalidade e baixo custo de contexto. A entrega deve distinguir o que foi verificado nos artefatos do que foi efetivamente medido no comportamento do modelo.
 
 **Ao executar este plano:** inspecione o repositório, implemente as lacunas reais, adicione somente os testes necessários e valide o resultado; não pare na elaboração de outro plano.
+
+## Registro da implementação — 2026-11-03
+
+Base inspecionada: `f86cd73`, branch `feat/learning-loop`, worktree inicialmente limpo.
+Risco MEDIUM: novo fluxo de instruções, sem alteração de hooks, permissões do runtime,
+cliente GitHub ou dependências.
+
+### Lacunas e alterações
+
+Faltavam um gatilho para tarefas LOW, o procedimento de Issues do projeto independente
+do Learning Loop e a transmissão explícita de achados nos relatórios dos subagentes.
+O instalador já distribuía e rastreava arquivos auxiliares recursivamente; não precisou
+ser alterado. Como os runtimes nem sempre carregam o roster comum antes de uma tarefa
+sem delegação, seus próprios blocos também receberam uma referência condicional curta.
+
+| Fonte | Alteração e motivo |
+| --- | --- |
+| `reference/agents-block.md` | Gatilho comum, nota mínima, passagem ao agente principal e limites de escopo. |
+| `reference/routing-block.md`, `reference/codex-block.md`, `reference/opencode-block.md` | Referência condicional para alcançar tarefas LOW sem depender de delegação ou leitura prévia do roster. |
+| `skills/orchestrate/SKILL.md` | Descrição de descoberta ampliada e link para o procedimento sob demanda. |
+| `skills/orchestrate/out-of-scope-issues.md` | Captura, destinos, autorização em lote, privacidade, fallback e resultados parciais ou incertos. |
+| `docs/out-of-scope-issues.md` | Fluxo de uso, exemplo sintético de dois achados e limites da evidência por runtime. |
+| `README.md`, `docs/learning-loop.md` | Descoberta da funcionalidade e distinção entre backlog do projeto e melhoria do CanonKit. |
+| `test/cli.test.js`, `test/uninstall.test.js` | Distribuição dos blocos e procedimento, backups, preservação de arquivos, propriedade compartilhada e orçamento por perfil. |
+| Este plano | Registro das decisões, medições e validações, sem criar outro artefato de handoff. |
+
+Fluxo implementado nas instruções: achado concreto → nota mínima ou relatório normal
+do subagente → consolidação no encerramento → rascunhos sanitizados com destino →
+aprovação explícita dos itens → ferramenta disponível ou envio manual. Falhas de entrega
+permanecem na tarefa atual; resultados de criação incertos não são repetidos automaticamente.
+O exemplo completo, incluindo publicação parcial, está em `docs/out-of-scope-issues.md`.
+
+### Custo de contexto
+
+Contagem por palavras separadas por whitespace, conforme a rubrica e o teste existente:
+bloco comum + bloco do runtime + descrições dos dez agentes core + descrições das três
+skills padrão. Corpos sob demanda e texto do usuário fora dos marcadores são excluídos.
+Não há comandos padrão nem instruções de MCP instaladas pelo kit neste perfil.
+
+| Componente | Antes | Depois |
+| --- | ---: | ---: |
+| `reference/agents-block.md` | 1300 | 1376 |
+| `reference/routing-block.md` — somente Claude Code | 366 | 388 |
+| `reference/codex-block.md` — somente Codex | 235 | 257 |
+| `reference/opencode-block.md` — somente OpenCode | 305 | 327 |
+| Descrição `agents/archie.md` | 25 | 25 |
+| Descrição `agents/bob.md` | 31 | 31 |
+| Descrição `agents/gard.md` | 24 | 24 |
+| Descrição `agents/perry.md` | 31 | 31 |
+| Descrição `agents/pipe.md` | 22 | 22 |
+| Descrição `agents/pixie.md` | 29 | 29 |
+| Descrição `agents/quinn.md` | 30 | 30 |
+| Descrição `agents/scott.md` | 24 | 24 |
+| Descrição `agents/spencer.md` | 33 | 33 |
+| Descrição `agents/virgo.md` | 24 | 24 |
+| Descrição `skills/context-tune/SKILL.md` | 40 | 40 |
+| Descrição `skills/learning-loop/SKILL.md` | 19 | 19 |
+| Descrição `skills/orchestrate/SKILL.md` | 28 | 37 |
+
+| Perfil de fonte | Antes | Depois | Delta | Limite |
+| --- | ---: | ---: | ---: | ---: |
+| Claude Code padrão | 2026 | 2133 | +107 | 2500 |
+| Codex | 1895 | 2002 | +107 | 2500 |
+| OpenCode | 1965 | 2072 | +107 | 2500 |
+
+São perfis de fonte medidos separadamente, não medições de carregamento nativo das sessões.
+
+### Validação e revisões
+
+- Baseline: os oito testes existentes de `orchestrate skill` passaram antes das alterações.
+- A primeira execução dos novos testes identificou uma comparação de finais de linha
+  inadequada no teste do bloco residente. Corrigida a comparação para normalizar CRLF/LF,
+  mantendo igualdade exata dos arquivos da skill; o instalador não foi alterado.
+- Testes direcionados `node --test --test-name-pattern="orchestrate skill|shared roster and skills"
+  test/cli.test.js test/uninstall.test.js`: 12/12 passaram também sobre o diff final,
+  incluindo a distribuição das referências adicionais nos adaptadores.
+- Suíte completa `node --test "test/*.test.js"`: 755 testes, 752 passaram, nenhuma falha
+  e três ignorados pelas condições previstas na suíte; duração aproximada de quatro minutos.
+- `scripts/validate.sh --quiet`: passou também sobre os blocos finais; 15 agentes válidos.
+- `npm pack --dry-run --json`: confirmou a inclusão dos dois arquivos de `skills/orchestrate/`.
+- Links relativos locais verificados e `git diff --check` sem erros.
+- O helper `skill-creator/scripts/quick_validate.py` não executou por ausência de PyYAML
+  nos interpretadores disponíveis usados. A validação de frontmatter do repositório passou;
+  nenhuma dependência foi instalada para contornar essa ausência.
+- Virgo revisou a integração; Gard aprovou privacidade, autorização e tratamento de resultados
+  incertos; Quinn aprovou cobertura e reconfirmou a referência nos adaptadores. São revisões
+  documentais, não avaliações de comportamento. Spencer aprovou a consistência da documentação.
+- Integration Review concluído pelo agente principal após as revisões: fluxo coerente entre
+  descoberta, relatório de subagentes, aprovação e fallback; sem conflitos entre pareceres,
+  bloqueios pendentes ou alteração dos gates existentes. O custo adicional de contexto foi
+  explicitado e os perfis continuam dentro do limite.
+
+O primeiro despacho com papel fixo usou `gpt-5.6`, recusado pelo runtime desta conta. As revisões foram
+encaminhadas a subagentes compatíveis com configuração solicitada `gpt-6.1-sol`, esforço
+`medium`, usando as instruções dos respectivos papéis. A configuração de despacho é
+observável; a identidade interna do modelo não foi verificada independentemente.
+
+### Limitações e autorizações
+
+Eficácia comportamental **não medida** em Claude Code, Codex e OpenCode. Os testes
+comprovam conteúdo instalado em homes temporários e propriedades de configuração;
+não comprovam seleção nativa da skill, transmissão efetiva pelo modelo, sanitização de
+um caso real ou publicação bem-sucedida. As ferramentas disponíveis e a adesão do modelo
+às instruções continuam determinando esses resultados. Não foi criado gate mecânico.
+
+As instalações de teste usam ambientes temporários isolados. Não houve instalação no
+ambiente pessoal, criação de Issues reais, avaliação comportamental paga, commit ou push.
