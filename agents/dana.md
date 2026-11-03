@@ -1,6 +1,6 @@
 ---
 name: dana
-description: "Use when there are real users, telemetry, experiments or event volume: event taxonomy, telemetry schemas, metric definitions, funnels, cohorts, retention, A/B tests. Scott defines success, Dana how to measure it; Pipe runs pipelines; Gard reviews PII."
+description: "Use for analytics: telemetry/events, metrics, funnels, cohorts, retention, A/B tests. Scott defines success; Dana measures; Pipe runs pipelines; Gard reviews PII. Not for product scope alone."
 tier: specialist
 authority: veto
 model: sonnet

@@ -19,8 +19,11 @@ because it would be published as `latest`.
    green.
 2. Tag what is now on `main` and push the tag:
    `git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
-3. Wait for the CI matrix and the secret scan. Then approve the `npm` deployment
-   on the Actions run, after reading the `npm pack --dry-run` file list.
+3. Wait for the CI matrix and the secret scan. Before approving the `npm`
+   deployment, review `npm pack --dry-run --ignore-scripts` from the exact tagged
+   commit in a clean checkout. Then approve the deployment on the Actions run.
+   The publish job also logs its package file list, but that job starts only
+   after approval, so its log cannot serve as the pre-approval review.
 4. Create the GitHub release for the tag and link `docs/release-notes/X.Y.Z.md`
    from it.
 5. Check the published release:

@@ -5,10 +5,22 @@ average 7.7; `evals/audits/2026-10-29-ecc.json`, 4.9; rubric `evals/instruction-
 1.0.0) plus the open items left by the ECC comparison (`docs/plans/ecc-lessons-handoff.md`).
 One job per session: each item is independent.
 
-**Status (2026-10-29):** items 1 and 2 are done and merged (PRs #19, #20, #21);
-canonkit 2.0.0 is published from CI with provenance. The repository is now public and
-named **`erikalira/canonkit`** (was `erikalira/agent-team-config`; GitHub redirects the old
-URLs, but new links use the new name). Next: item 3.
+**Status (2026-11-03):** items 1–5 are implemented for the 2.x scope; item 5 is
+merged through PR #26. Items 6 and 7 are implemented in the repository, with
+local verification recorded below. Items 8 and 9 are **implemented and verified locally**;
+their validation and limits are recorded below. The README Runtimes correction
+in item 8 was already delivered by item 4.
+
+Remaining follow-ups after items 1–9: the item 4 deletion of
+byte-identical `~/.agents/<core>.md` copies is reserved for 3.0; behavioral
+efficacy for items 6 and 7 remains unmeasured; release/publication and cross-OS
+verification retain the limits recorded below. Publication of 2.3.0 and its npm
+provenance were verified on 2026-11-03 during preparation for 2.4.0 (see below).
+Completing the implementation does not
+claim the target rubric scores. Earlier dated entries remain historical records.
+
+The repository is public and named **`erikalira/canonkit`** (was
+`erikalira/agent-team-config`; new links use the new name).
 
 ## Decisions already made by the user
 
@@ -34,12 +46,12 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 1 | ~~CI on Linux, macOS, Windows~~ — **done**, PR #19 | kit-ci 5 → 10 | Pipe (MEDIUM) |
 | 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
-| 4 | Universal layout + enforcement outside Claude Code | portability 6 → 9–10 | Archie + Gard (HIGH) |
-| 5 | `canonkit uninstall` with tracked entries — **implemented locally**, 2.3.0 not published; validation below | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
-| 6 | Learning loop: lessons → evaluated instruction changes | memory 5 → 10 | Virgo + Quinn (MEDIUM) |
-| 7 | Stack packs, opt-in per project | stack-coverage 5 → 7–8 | Virgo; Scott on scope (MEDIUM) |
-| 8 | Small fixes from the audit (batch) | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
-| 9 | Leftovers, low value now | — | inline (LOW) |
+| 4 | Universal layout + enforcement outside Claude Code — **implemented for 2.x**; deletion of old identical agent copies deferred to 3.0 | portability 6 → 9–10 | Archie + Gard (HIGH) |
+| 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication/provenance verified on 2026-11-03 | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
+| 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
+| 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
+| 8 | Small fixes from the audit — **implemented and verified locally**; reviews recorded below | clarity, rationale, routing, consistency, observability, enforcement gap (not re-scored) | root; Virgo, Quinn, Gard, Spencer reviews (MEDIUM hook/validator) |
+| 9 | Optional editor schema and configured-path message/example — **implemented and verified locally** | — | root; Quinn + Spencer reviews (MEDIUM hook regression risk) |
 
 ### 1. CI on three OS
 
@@ -1080,6 +1092,12 @@ notes are prepared but unpublished; the 3.0 deletion remains a separate release.
 
 ### 6. Learning loop (the user's view of memory)
 
+**Next-session handoff (2026-11-02):** item 5 is merged into `main` through
+PR #26 (`1e566fd`). The working tree was clean at that commit. The user reports
+that the release Actions run is in progress; npm publication has not been
+verified. Design work for item 6 can proceed independently. Start with the design
+note below; do not run paid evals, commit or push without the user's approval.
+
 Goal: learn from mistakes by changing instructions, not by storing memories. Constraints:
 - **Signals, not transcripts.** Use what is already logged or measured: gate events per
   rule (`events.jsonl`; a gate that keeps firing on false alarms is a lesson), eval
@@ -1098,7 +1116,65 @@ Goal: learn from mistakes by changing instructions, not by storing memories. Con
 Start with a design note, not code. Dispatch: Virgo, opus, high (structural); Quinn,
 sonnet, medium on the eval-backed acceptance rule.
 
+**Design note (2026-11-02):** [Learning loop — design proposal](learning-loop-design.md)
+records the available signals, local log snapshot, privacy boundary, manual proposal
+lifecycle, expiry policy and context budget. Virgo drafted it and Quinn reviewed the
+eval-backed acceptance criteria using native Codex subagents. Human gate approval or
+decline cannot be inferred from the existing records. The proposal remains design only;
+no implementation or paid eval is authorized by the note. Existing eval dry-runs loaded
+23 routing and 45 quality cases without model calls; new acceptance cases are proposed,
+not executed. No commit or push was made.
+Root's Integration Review found the design and acceptance criteria consistent:
+unknown outcomes remain unknown, expiry requires a manual decision, and promotion
+requires evidence and authorization. Implementation and behavioral measurement remain pending.
+
+**Implementation (2026-11-02; subsequently authorized by the user):** the
+on-demand `learning-loop` skill, proposal template and Virgo pointer implement
+the manual workflow. The existing installer/catalog handles both files; no
+hook, CLI, runtime service or dependency changes. Three synthetic quality cases
+and calibrated correct/incorrect reports exercise evidence handling without
+paid model calls. Quinn approved offline quality after correcting concrete
+lexical false accepts/rejects. The source-derived default Claude profile is
+2,026 words, guarded by a 2,500-word test. Installation/uninstall is tested in
+scratch homes only. Full verification and remaining limits are recorded in the
+[design note's implementation record](learning-loop-design.md#implementation-record-2026-11-02);
+behavioral improvement remains unmeasured, and no memory score is claimed.
+No real installation, paid eval, commit or push was performed.
+
+**Final offline verification:** `npm test` completed with 731 tests, 728 passed,
+3 skipped and 0 failed (213.7 seconds, Windows); the final eval-calibration delta
+also passed 23 focused tests. Git Bash `validate.sh` passed with 15 agents, both
+eval dry-runs made no model calls, and the package dry-run included both skill
+files among 40 entries. Whitespace and relative-link checks passed. Quinn
+approved offline quality and Spencer approved documentary consistency. Root's
+Integration Review found no contradictory recommendations or remaining offline
+blocker. The behavioral comparison and actual installed-profile audit remain
+unmeasured; cross-OS CI and publication were not run here.
+
 ### 7. Stack packs, opt-in per project
+
+**Implemented locally (2026-11-02):** see [stack-packs-design.md](stack-packs-design.md)
+for the design and validation record. Ten project-only skills are available
+through explicit `canonkit add <stack>`, with tracked conservative removal and
+no automatic installation or new agents. They are separate from the core's
+global skills and install manifest. Thirteen quality cases load pack content
+explicitly; behavioral effectiveness is unmeasured and no paid eval was run.
+For the initial seven packs, the full local suite passed (749 tests before the final judge calibration:
+746 passed, three platform skips, no failures); the affected eval tests then
+passed 25/25. Repository/skill validation and dry-run packaging passed. Archie,
+Gard, Quinn and Spencer approved their final scopes; Integration Review found
+no unresolved blockers in that implementation. The subsequent Go/Kotlin/Swift
+expansion passed 43 focused tests, with 25/25 eval tests after final calibration;
+its three skill files, repository validation and ten-pack distribution passed.
+Its final reviews are recorded in the linked expansion record. No core reinstall,
+commit or push was performed.
+
+The user selected TypeScript, C++, Java, Python, React and Rust, then added C#
+(`csharp`), Go, Kotlin and Swift: ten packs. TypeScript was listed twice and is
+one pack. This overrides the initial two-to-three-pack
+recommendation below. The design starts with Virgo through native Codex
+subagents, using ECC's agents as reference. Publication and cross-OS CI have not
+been performed for this change.
 
 Recommendation: ship stacks as **skills** (on-demand, cheap) installed by `canonkit add
 <stack>`, not as new agents. An agent costs a cold start per dispatch and needs an owner,
@@ -1112,38 +1188,203 @@ only if the stack needs its own review verdict. Rules:
   scores stack-agnostic kits low by design, and scope-focus is 9 today — keep it).
 Dispatch: Virgo, sonnet, medium; Scott, sonnet, low only if scope is contested.
 
-### 8. Small fixes from the audit (one LOW batch)
+### 8. Small fixes from the audit
 
-- clarity: define "trivial" (`reference/agents-block.md:80`).
-- rationale: give a reason for the dependency-routing rule (`:61`) and for no-self-merge
-  (`:76-80`).
-- consistency: the README roster (`README.md:127-138`) drifted from
-  `reference/agents-block.md:20-31`; generate it or check it in `scripts/validate.sh`.
+**Status (2026-11-03):** implemented and verified locally in the working tree.
+The original LOW batch is treated as MEDIUM for the
+hook/validator regression risk. The portability documentation subtask was
+already delivered by item 4. The original checklist follows for traceability.
+Use section and symbol names to locate code; the original audit's line numbers
+have shifted after items 4–7.
+
+- clarity: define "trivial" in `reference/agents-block.md`, under "No self-merge on HIGH risk".
+- rationale: give a reason for the dependency-routing rule and for no-self-merge
+  in `reference/agents-block.md`.
+- consistency: prevent drift between the README roster and the core roster in
+  `reference/agents-block.md`; generate it or check it in `scripts/validate.sh`.
 - routing: a short non-trigger in each description. Measure context-cost after: it adds
   words to every session.
 - observability: stop logging the dispatch description (`task`, 200 chars) and the first
   80 chars of gated commands, or make them opt-in.
 - enforcement gap (score is 10, the gap is real): `shellWriteTargets`
-  (`hooks/canonkit-hook.js:785-795`) misses `cp`, `mv`, `sed -i`, `Copy-Item`,
+  in `hooks/canonkit-hook.js` misses `cp`, `mv`, `sed -i`, `Copy-Item`,
   `Move-Item`. Hook change: Quinn reviews after the edit.
-- portability docs: the README Runtimes table says "no" for Codex/OpenCode; say the
-  harness supports hooks and canonkit does not ship them yet (until item 4 lands).
+- portability docs — **done through item 4:** the README Runtimes table now
+  describes the shipped Codex/OpenCode deny gates and their limits. Keep it
+  aligned with the adapter maps; the original "does not ship them yet" wording
+  no longer applies.
+
+**Implementation (2026-11-03; user authorized item 8):**
+
+- Defined trivial work as local, reversible and without behavior, contract,
+  security or shared-runtime effects. A private-comment typo can remain LOW
+  even in an auth file, matching the existing `low-in-auth-file` eval; changes
+  with HIGH-risk effects still require independent review even when small.
+  Added the dependency-routing supply-chain rationale and the reason for a
+  fresh reviewer after the last edit. Existing eval expectations are unchanged.
+- All 15 descriptions include a short "Not for ..." boundary while preserving
+  domain ownership and authority. The validator requires it and a complete
+  description line below 300 UTF-8 bytes.
+- README core roster now matches the reference. `scripts/check-roster.mjs`,
+  called by `validate.sh`, compares every cell in order and rejects missing or
+  duplicate rows/tables; scratch-fixture tests exercise real checker exits.
+- New activity records omit `task` and `detail`, including background ends
+  joined to legacy starts. Git-bypass metadata retains only the flag family,
+  without configuration values or message suffixes. Existing logs are not
+  rewritten; paths, names and identifiers still require sanitization. The
+  existing dashboard tolerates the absent fields without a frontend change.
+- `shellWriteTargets` recognizes literal operands of `cp`, `mv`, GNU/BSD
+  in-place `sed`, `Copy-Item` and `Move-Item`, reusing the existing tokenizer.
+  Moves include removed sources; copies check destinations. Gard identified
+  PowerShell's optional destination during review; the correction gates
+  `Move-Item` sources even when the destination is omitted, with regressions
+  in both core and process tests. Denies remain ahead of confirms/config reads.
+- This remains a heuristic, with dynamic expansion, wrappers, directory child
+  resolution and copied-content scanning outside its scope. Limits are explicit
+  in [docs/hooks.md](../hooks.md#shell-write-targets).
+- Default source profiles decreased by 13 words: Claude **2,133 → 2,120**,
+  Codex **2,002 → 1,989**, OpenCode **2,072 → 2,059**, below the 2,500-word
+  limit. Method and limits are in [docs/evals.md](../evals.md#always-loaded-cost).
+  Behavioral routing effectiveness and new rubric scores are not measured.
+
+**Verification (2026-11-03, Windows):**
+
+- `npm test`: **816 tests, 813 passed, 3 skipped, 0 failed**, 206.5 seconds.
+  This full-suite run started before the omitted-destination correction. The
+  final hook correction and its additional regressions then passed
+  `node --test --test-reporter=dot test/hook-core.test.js test/check-roster.test.js test/canonkit-hook.test.js`.
+  The complete suite was not repeated after that bounded correction.
+- Git Bash `scripts/validate.sh --quiet` passed after the final hook correction,
+  with 15 agents. Git Bash and the Node test runner required execution outside
+  the sandbox, which blocked their process/pipe creation.
+- Routing and quality dry-runs loaded **23 and 61 cases**, with no model calls.
+  `npm pack --dry-run --json` passed with **52 files**; no package was published.
+  `git diff --check` passed.
+- Virgo reviewed the instructions. Quinn approved quality after the final hook
+  edit and the later clarification preserving LOW comment edits. Gard approved
+  security after the omitted-destination fix. Spencer approved documentary
+  consistency conditional on recording actual final results and correcting
+  the Node-availability caveat; both are recorded here and in `docs/maintaining.md`.
+- Root's Integration Review reconciled the initial trivial/HIGH ambiguity with
+  the existing LOW auth-comment eval. No gate maps, eval expectations or
+  ownership boundaries changed; privacy minimization retains identifiers and
+  historical logs, and the documented parser limits remain explicit. No
+  contradictory recommendation or remaining implementation blocker was found.
+
+Dispatches requested native Codex `gpt-6.1-terra` (high for Virgo/Quinn/Gard,
+medium for Spencer); reviewers could not independently observe the resolved
+runtime model. Cross-OS CI and real-harness/model-session verification were not
+rerun. No real install, paid eval, commit, push or publication was run.
 
 ### 9. Leftovers (low value now)
 
-- `canonkit.json` schema: mostly done — the hook validates keys, version and types
-  (`hooks/canonkit-hook.js:740-771`) and doctor WARNs on every ignored entry
-  (`bin/cli.js:1400`). Left: an optional JSON Schema file for editor completion; maybe
-  FAIL instead of WARN on unknown keys.
-- Lint/test config as a gated path: already possible with `highRisk.include`; what is
-  missing is a neutral gate message (today it says "HIGH-risk surface (auth/secret/...)")
-  and a docs example. No default list.
+**Implementation (2026-11-03; user requested item 9):** implemented locally.
+The scope is MEDIUM for the shared hook's confirmation-message regression risk.
+Unknown-key diagnostics remain **WARN**, not FAIL; any change to that policy
+remains a separate decision.
+
+- Added optional `reference/canonkit.schema.json`, shipped through the existing
+  npm `reference/` inclusion. Draft-07 describes the existing optional keys,
+  version 1, types, nonblank globs and list/string limits. It does not alter the
+  parser, install destinations or dependencies. Editor diagnostics reject unknown
+  properties; runtime behavior remains ignore-and-WARN. Runtime catch-all exclude
+  checks (including unions), the file byte limit and the UTF-16/code-point length
+  difference remain explicit schema limitations.
+- Documented VS Code `json.schemas` association, with local-dependency, source
+  checkout and copied-schema paths. No `$schema` metadata key is added to the
+  runtime configuration. The association follows the linked official VS Code
+  documentation; interactive completion/diagnostics in an editor were not run.
+- `highRisk.include` matches now get a neutral reason for direct and shell writes:
+  the project's configured protection, the affected area's routing/review rules,
+  reason for the change, checks and rollback. The message explains that removing
+  configured protection requires changing `include`, which `exclude` cannot
+  override. Built-in surface messages, decisions, ordering, event kind/rule,
+  Stop review behavior and harness gate maps remain unchanged.
+- Added an opt-in lint/test example without a default list. New tests exercise
+  direct edits/writes, Bash/PowerShell, nested filename matches and root includes
+  under nested configs, include precedence, unchanged defaults, real Claude hook
+  process output, documented configuration examples and schema/runtime key/limit
+  consistency. These assertions do not constitute a JSON Schema validator run.
+
+**Verification (2026-11-03, Windows):**
+
+- Focused `test/hook-core.test.js` and `test/canonkit-hook.test.js` passed after
+  the final code/test edit. Full `npm test` then passed: **832 tests, 829 passed,
+  3 skipped, 0 failed**, 204.5 seconds. No code or tests changed after that run.
+- Git Bash `scripts/validate.sh --quiet` passed, 15 agents. Tests and Git Bash
+  needed execution outside the sandbox because it blocked process/pipe creation.
+- `npm pack --dry-run --json` passed: **53 files**, including the schema.
+  `git diff --check` passed. No always-loaded instruction text changed.
+- Quinn approved quality conditional on the focused tests passing; that run
+  passed. Spencer approved documentary consistency; the requested final full-suite
+  result and review state are recorded here. Both dispatches requested
+  native Codex `gpt-6.1-terra`, effort medium; reviewers could not independently
+  observe the resolved runtime model/effort.
+- Root's Integration Review found no contradictory recommendation or unresolved
+  implementation blocker: the schema remains optional editor assistance, runtime
+  validation and WARN behavior are unchanged, and the neutral text preserves
+  configured protection, routing rules, logs and harness behavior. The remaining
+  verification limits are explicit above, and the full local suite passed.
+
+No real installation, paid eval, commit, push, publication or cross-OS CI was run.
+
+**Incidental finding — Graphify index/tooling drift (confirmed, not changed):**
+`graphify-out/graph.json` still returns old `meu-time-hook.js` symbol locations;
+the installed Graphify CLI also reports version 0.9.63 against skill 0.9.76.
+Current sources were used for item 9. Refreshing the graph or installed tooling
+is outside this task.
+
+### Merge and release preparation — 2.4.0 (2026-11-03)
+
+The user requested merge and release after completion of items 1–9. PR
+[#27](https://github.com/erikalira/canonkit/pull/27), `feat/learning-loop` into
+`main`, contains items 6–9 plus the Codex model-selection update. Its current
+head is `fdaa928fd6d98a753d39b45700ecbf2f8c67f0fb`; release preparation is still
+local and uncommitted. `package.json` and both lockfile root versions now read
+2.4.0. [Release notes](../release-notes/2.4.0.md) describe the final scope and
+limits, with no new efficacy or rubric-score claim.
+
+- npm `latest` is 2.3.0 and `dist.attestations` includes SLSA provenance. The
+  [2.3.0 release run](https://github.com/erikalira/canonkit/actions/runs/41422202885)
+  succeeded at `1e566fd4e00159f1bb3d53aec9264c84483d4ac8`.
+- Local metadata checks passed: CLI reports 2.4.0; package/lock versions agree;
+  release-note links resolve. The 2.4.0 `npm pack --dry-run --ignore-scripts`
+  has 53 files, 546,527 unpacked bytes, including the new schema, core skills
+  and project stack-pack implementation. `git diff --check` passed.
+- Archie approved the final public installation contract, including model
+  override/inheritance and unchanged manifest IDs/destinations. The prior
+  stack-pack reviews cover the unchanged engine contract and catalog extensions.
+  Pipe approved release preparation conditional on publication checks. Dispatches
+  requested native Codex `gpt-6.1-terra`, high for Archie and medium for Pipe;
+  effective runtime identifiers were not independently observable.
+- GitHub API checks confirmed the `npm` environment requires `erikalira` review
+  and only allows `v*` tags, with admin bypass disabled. The active release-tag
+  ruleset restricts creation, updates and deletion of `v*`, with the configured
+  repository-role bypass available to the authenticated owner. npm account-side
+  trusted-publisher and rollback access were not inspected; the previous successful
+  release is evidence of the workflow, not a guarantee of current account settings.
+- Pipe found that the runbook asked for the publish job's package list before
+  approving that job. `docs/releasing.md` now directs review of a local dry-run
+  from the exact tagged commit, followed by environment approval; the job's own
+  package listing remains a post-approval audit record. No workflow was changed.
+- Pipe approved the corrected runbook and final preparation record. Root's
+  Integration Review found the contract, version metadata, package contents and
+  publication sequence consistent. There is no preparation blocker; actual
+  publication remains subject to the final commit/tag CI and deployment gates.
+
+Next: obtain the explicit commit/push confirmation required by the supplied
+AGENTS.md, commit/push this preparation, wait for CI on the new PR head, merge
+the exact reviewed head, tag that merged commit as `v2.4.0`, and push the tag.
+Follow `docs/releasing.md` for the tagged CI, package review, environment approval,
+publication/provenance checks and GitHub release. Do not reuse a version already
+published. No commit, push, merge, tag or publication was performed in preparation.
 
 ## Parameters this list does not move
 
 Already at 10, guard them: proportionality, context-cost, governance, enforcement,
 human-docs. Items 6, 7 and the non-triggers in 8 all add text — re-measure context-cost.
-self-measurement (8): record a full run of the 40-case quality corpus as data (pairs with 3).
+self-measurement (8): record a full run of the current quality corpus as data (pairs with 3);
+the original 40-case count predates the additional cases. Preserve the limits of partial runs.
 scope-focus (9): decide whether `skills/context-tune` belongs in the core.
 
 ## Rubric follow-ups (instruction-audit, not canonkit)
@@ -1159,7 +1400,12 @@ Proposed in the audit, not applied (rubric stays 1.0.0):
 
 ## First step for the next session
 
-Item 3 (review-noise), once this branch is merged to main. Read `docs/evals.md`,
-`evals/quality-cases.json` (the `bait` cases) and `agents/perry.md`, propose the plan
-before editing, and leave the real-model run (`npm run eval:quality`, spends credit) for
-the user to start by hand.
+Items 1–9 have their implementation records above. Choose an explicit remaining
+follow-up; do not reopen completed implementation merely because behavioral
+measurement or publication is still pending. Unknown-key WARN versus FAIL remains
+a separate policy decision, and no default lint/test gate list was added.
+
+Keep the 3.0 deletion, release verification and behavioral measurements as
+explicit follow-ups. Real-model evals spend credit and require the user's
+authorization; no paid eval, commit, push or publication is authorized by this
+status update.

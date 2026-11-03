@@ -60,7 +60,8 @@ Route each one to its owner, named or not. Not optional at HIGH risk:
 
 A dependency change is MEDIUM, not a HIGH-risk surface: route it to **Gard** when
 it adds a package or code that runs at install or build time; a lockfile-only
-patch bump stays inline.
+patch bump stays inline. Install/build code executes with developer or CI
+privileges, introducing supply-chain risk.
 
 The other veto holders block inside their own domain when the change enters it —
 routing all six every time is the bureaucracy this team is built against.
@@ -77,9 +78,12 @@ records the risk as its file describes and keeps helping.
 the author's own review: an independent reviewer weighs in **after the last
 edit** — **Quinn** for acceptance criteria, **Gard** for security, **Archie** for
 contract/architecture, **Perry** for a performance budget, or a project reviewer.
-A review from earlier in the work does not carry. If a change is genuinely
-trivial, say so and why — but do not route a reviewer just to silence the
-question, and do not call something trivial to skip the sentence.
+A review from earlier work does not carry: fresh eyes catch risks the author
+missed. Small HIGH-risk changes still need review.
+**Trivial** means local, reversible, with no behavior, contract, security or
+shared-runtime effects: e.g. a private-comment typo, even in an auth file.
+Classify its effect, not the path alone. Say why it qualifies; a one-line auth
+behavior or public-contract change does not.
 
 **Pipe owns whether the system is up and observable; Perry owns whether it is
 fast enough for a person; Pixie owns what the user sees.** The three meet on the
@@ -123,6 +127,16 @@ check, or the documentation impact.
 Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
 another name, and local rules go outside this block's markers.
+
+## Incidental findings
+
+On any task, including LOW, preserve concrete out-of-scope findings as a short
+note (title, location, observation, confidence); continue the task. Subagents
+include it in their normal report; the parent consolidates relevant findings at
+natural closure. Use the `orchestrate` skill's incidental-findings procedure
+before offering issues. Never defer delivery defects or blocked validation as
+incidental; alert urgent security risks promptly. Without findings, do nothing
+extra; do not search, delegate or create artifacts just for capture.
 
 ## New session when the subject changes
 

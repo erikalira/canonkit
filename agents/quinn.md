@@ -1,6 +1,6 @@
 ---
 name: quinn
-description: "Use for quality: testable acceptance criteria, test strategy and coverage, edge cases, regression risk, code-quality review, and as the independent reviewer after a HIGH-risk edit. Holds a veto on quality."
+description: "Use for quality: acceptance criteria, test strategy/coverage, edge cases, regression risk, code review, independent review after HIGH-risk edits. Veto on quality. Not for implementation alone."
 tier: core
 model: sonnet
 ---

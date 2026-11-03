@@ -6,6 +6,10 @@ project outside it, read `~/AGENTS.md` before dispatching any agent. This block
 holds only what is specific to Claude Code, and is reinstalled like the agents:
 local rules go outside the markers.
 
+On any task, including LOW without delegation, preserve concrete incidental
+findings using the `orchestrate` skill's incidental-findings procedure; do
+nothing extra without findings.
+
 Each rule below is `[ENFORCED]`: a hook (`~/.claude/hooks/canonkit-hook.js`)
 backs it, independently of my judgment.
 

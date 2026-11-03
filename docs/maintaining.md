@@ -39,7 +39,8 @@ You are <Name>, the agent team's <domain> agent.
 
 The `name` must match the filename. The `description` is what the delegating
 model reads when deciding whether the agent fits a request, so it should say what
-the agent owns, not just its title. The `model` must be declared in the file
+the agent owns and end with a short "Not for ..." routing boundary. Keep the
+entire description line below 300 UTF-8 bytes. The `model` must be declared in the file
 itself: stated anywhere else — a table, a note, a habit — it is an intention, and
 the runtime quietly uses the session default instead. The `tier` decides where the
 agent installs, and is read by every installer; it lives here for the same reason
@@ -65,7 +66,7 @@ Read-only, exits non-zero on any failure. It automates Virgo's protocol and chec
 the conventions in [team.md](team.md#conventions):
 
 - frontmatter — `name` matches the filename, `model` and `tier` declared and
-  valid, `description` opening with "Use ..." and under 300 characters (Claude
+  valid, `description` opening with "Use ...", including "Not for ..." and under 300 UTF-8 bytes (Claude
   Code lists the description of every installed agent on every turn: it is the
   delegation trigger, not a biography);
 - structure — Mission, Responsibilities, Collaboration, Expected Output,
@@ -81,7 +82,9 @@ the conventions in [team.md](team.md#conventions):
 - the veto rule — whoever declares a veto also says what to do when overruled;
 - the core/specialist split — every agent declares `tier`, all have a summary line
   in `reference/agents-block.md`, the roster lists no name without a file, and the
-  roster's two sections match the declared `tier`;
+  roster's two sections match the declared `tier`; the README core table matches
+  its names, order, ownership and authority (comparison runs when Node is
+  available; otherwise validation skips it with a warning);
 - the escalation graph — no isolated core agent, and nobody escalating to a
   generic role ("the security owner") instead of a named agent;
 - the roster and the routing block — every agent appears in the roster, the
@@ -93,6 +96,8 @@ the conventions in [team.md](team.md#conventions):
   `routing-block.md` mentions must be shipped in `skills/`. The blocks load in
   every project of whoever installs; a skill that only exists on the package
   maintainer's machine becomes an instruction to call something that is not there;
+- stack packs — `stack-packs/` matches the shared catalog, installed names are
+  `canonkit-<stack>`, metadata is valid and every pack has a quality case;
 - the npm package — `bin/cli.js` compiles, `files[]` includes `agents/` and
   `reference/` (the published CLI reads them at runtime, and a clone always has
   them — it is the packaging mistake that running from a clone never catches),
@@ -115,7 +120,34 @@ into a file you already had — `~/AGENTS.md`, `~/.claude/CLAUDE.md`, a project'
 
 `scripts/`, `test/`, `evals/` and `docs/` do not go into the npm package — the
 tarball carries `bin/`, `agents/`, `reference/`, `hooks/`, `dashboard/`, `skills/`,
-`tools/`, the README and LICENSE. These checks belong to the clone.
+`stack-packs/`, `tools/`, the README and LICENSE. These checks belong to the clone.
+
+## Stack packs
+
+Edit `stack-packs/<stack>/SKILL.md`, not a consuming project's generated copy.
+Its YAML name is `canonkit-<stack>`, matching the installed directory; the short
+source ID is the argument to `canonkit add`. Keep pack sources outside `skills/`,
+whose direct children are automatically installed at user scope.
+
+`bin/stack-packs.js` is the single catalog and implements the project receipt,
+lock and per-file pending intent. Destinations derive from that catalog, never
+from paths in the receipt. New target files require a deliberate catalog and
+receipt-compatibility decision; do not discard descriptors for previously owned
+files. Keep project receipt logic separate from the global install manifest.
+
+Use `test/stack-packs.test.js` for installation/removal, isolation, local-file
+preservation, dry-run, links, lock contention and interrupted-operation recovery.
+Each pack needs a quality fixture declaring `stackPack` in
+`evals/quality-cases.json`. `test/eval.test.js` checks explicit content loading
+and lexical calibration, not behavioral efficacy. Run `npm test`,
+`npm run validate`, `npm pack --dry-run` and the quality runner's `--dry-run`.
+Real-model evals remain manual and need authorization when they incur cost.
+
+Re-add a pack in a consuming project to update intact installed copies; a core
+reinstall does not update it. Retain `.canonkit/stack-packs.json` with copies
+whose ownership should survive a checkout or clone. This project receipt stores
+IDs/hashes/pending metadata; the global `~/.canonkit/` backups discussed below
+may contain private configuration. Neither kind of lock is versioned.
 
 ## Global install receipts
 

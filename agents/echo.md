@@ -1,6 +1,6 @@
 ---
 name: echo
-description: "Use when sound carries meaning or identity: sonic identity, sound palette, mix hierarchy, SFX as feedback, adaptive music, spatialization, silence as a decision. Maya decides what a state communicates; Echo how it sounds."
+description: "Use for meaningful sound: sonic identity, palette, mix hierarchy, SFX feedback, adaptive music, spatialization, silence. Maya owns game states; Echo their sound. Not for gameplay rules alone."
 tier: specialist
 authority: veto
 model: sonnet

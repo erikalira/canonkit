@@ -154,8 +154,9 @@ reviews the diff in plan mode. The cases include defects in code, tests, scope
 proposals, performance evidence, operational plans, documentation and team
 configuration, plus defect-free controls to detect an invented block on LOW.
 
-The corpus has **45 cases for the 10 core agents** (7 original, 26 from Phase 3,
-4 from Phase 7, 3 from the reviewer pre-report gate and 5 from review-noise). Each core has
+The corpus has **61 cases for the 10 core agents** (7 original, 26 from Phase 3,
+4 from Phase 7, 3 from the reviewer pre-report gate, 5 from review-noise and
+3 from the learning loop and 13 for stack packs). Each core has
 `kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
 no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
 guarded or compatible, where the right report approves with no finding; it is not
@@ -219,6 +220,64 @@ arguments: call the script directly and quote the list, as in
   `--save`, before attributing results to the agents. The bodies and the runner
   were not changed in that expansion.
 
+### Stack-pack cases
+
+Thirteen `stack-*` cases cover ten packs and use Quinn with an optional
+`stackPack` ID: TypeScript
+runtime validation, C++ dangling views, C# early disposal, Java resource cleanup,
+Python shared defaults, React stale results, Rust spawned-task ownership, Go
+error identity, Kotlin cancellation and Swift actor reentrancy. The Go, Kotlin
+and Swift additions also have benign controls: direct error propagation, a plain
+JVM null-handling refactor and a synchronous strong capture. They check that
+review does not require universal error wrapping, an unrelated architecture or
+weak captures without a lifetime problem.
+The runner validates the ID against the shipped catalog and appends that pack's
+checkout `SKILL.md` body explicitly to the eval agent's instructions. Existing
+cases without `stackPack` retain their original definitions. Dry-run output
+identifies the pack supplied to each case.
+
+The fixtures need no language toolchains for offline schema/judge checks.
+Tests cover pack inclusion, catalog coverage and representative correct and
+incorrect reports, including correct diagnoses with ineffective corrections,
+negations and Markdown formatting. A dry run calls no model; neither it nor
+lexical calibration
+proves that the guidance improves behavior. **No paid stack-pack run has been
+performed.** These cases measure review with supplied content, not native skill
+discovery, installation or Codex/OpenCode behavior. A future efficacy comparison
+needs separately authorized matching runs with and without the pack, recording
+both agent and pack revisions. `--variant` replaces the agent body, not the
+selected pack source.
+
+### Learning-loop cases
+
+`virgo-learning-unknown`, `virgo-learning-evidence` and `virgo-learning-clean`
+review synthetic lesson proposals. They cover inferred human approval and false
+positives, insufficient before/after evidence, and a clean proposal that keeps
+unknowns and awaits evidence. Offline calibration checks representative correct
+and incorrect reports, including incorrect recommendations with expected words.
+It validates the lexical judge contract, not the model's behavior. No paid run
+of these cases has been performed.
+
+The quality runner supplies the checkout Virgo body but uses the installed
+skills and global blocks. These cases ask for the `learning-loop` skill if
+available. Record whether and which skill was available when comparing runs;
+without it, the result measures the agent's review rather than the skill.
+`--variant` changes only the body and does not test skill selection, its
+installation, or a changed managed block. A controlled installation or validated
+isolation method needs separate authorization. Native Codex and OpenCode behavior
+remains unmeasured by this Claude runner.
+
+For each proposed instruction change, retain the fixed target case and judge,
+baseline and candidate revisions, matching model/settings, and a protected
+control. Require at least three answered runs on each side for each target and
+control. Baseline must fail the target and candidate must hold it, with the
+control holding on both sides, using `ceil(2n/3)` as the hold threshold. Report
+all attempts and errors; never selectively retry or discard valid answers. The
+runner can report a hold with one answered run, so its exit code alone does not
+satisfy the learning-loop requirement. Unavailable or incomplete comparisons
+leave a lesson awaiting evidence. See the [guide](learning-loop.md) and
+[design criteria](plans/learning-loop-design.md#acceptance-and-evaluation).
+
 ### Results: lean bodies (2026-10-18)
 
 Baseline before the corpus expansion, with the 7 original cases (3 runs per case,
@@ -281,6 +340,24 @@ Code lists on every turn, add up to ~12.0k characters (~3.0k tokens) — already
 counting the Risk scale, which now exists once in the block instead of fourteen
 times across the agents. Before 1.1 it was ~14.5k (~3.6k tokens). Specialist
 descriptions only weigh in the project that installed them.
+
+**Item 8 measurement (2026-11-03, source profiles):** adding routing non-triggers
+to all 15 agent descriptions while shortening the descriptions reduced the
+default profiles by 13 words, including the new risk-rule rationale:
+
+| Default profile | Before item 8 | After item 8 | Limit |
+|---|---:|---:|---:|
+| Claude Code | 2,133 words | 2,120 words | 2,500 words |
+| Codex | 2,002 words | 1,989 words | 2,500 words |
+| OpenCode | 2,072 words | 2,059 words | 2,500 words |
+
+Method: whitespace-separated words in `reference/agents-block.md`, the runtime's
+adapter block, ten core descriptions and every shipped global skill description,
+as in `test/cli.test.js`'s default-profile guard. Before is the pre-item-8 Git
+HEAD; after is the working-tree source. All 15 complete `description:` lines
+are below 300 UTF-8 bytes. Specialist descriptions are excluded from the default
+profiles. These are source word counts, not tokenizer output, installed-profile
+measurements or evidence of routing effectiveness. No paid model eval was run.
 
 Per dispatch, a core agent's body is ~3.7–8.7k characters (~0.9–2.2k tokens); the
 report it returns is measured in `report_chars` in the log (see

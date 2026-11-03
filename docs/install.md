@@ -1,8 +1,8 @@
 # Installation reference
 
 The README covers the happy path. This page is the detail: what each choice
-writes, how the Codex and OpenCode targets differ, project-level specialists, the
-global reference blocks and skills, and upgrading from an older name.
+writes, how the Codex and OpenCode targets differ, project-level specialists and
+stack packs, global reference blocks and skills, and upgrading from an older name.
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
@@ -39,7 +39,7 @@ larger than that.
 `install` and `reference` also maintain `~/.canonkit/install-manifest.json`.
 It records global artifacts by stable ID, resolved root, harness owners,
 provenance and installed-byte hash. Private configuration snapshots live under
-`~/.canonkit/backups/`. Project specialists, external tool setup and activity
+`~/.canonkit/backups/`. Project specialists and stack packs, external tool setup and activity
 history are not owned by this global manifest. `--no-reference` skips the blocks
 and skills and preserves earlier records for them.
 
@@ -99,13 +99,53 @@ fifteen more lines to keep in sync and one more thing to drift:
 
 | frontmatter | Codex | reasoning effort |
 | --- | --- | --- |
-| `opus` | `gpt-5.6` | `high` |
-| `sonnet` | `gpt-5.6` | `medium` |
-| `haiku` | `gpt-5.6-luna` | `low` |
+| `opus` | `gpt-6.1-sol` | `high` |
+| `sonnet` | `gpt-6.1-sol` | `medium` |
+| `haiku` | `gpt-6-luna` | `low` |
 
 Every agent on this team is a judgment agent, not a scanner optimized for speed —
 which is why the fast models sit at the end of the map and nothing selects
-`gpt-5.6-luna` today.
+`gpt-6-luna` today. These defaults are centralized in `CODEX_MODELS` in
+`bin/cli.js`; they were checked against the [official model documentation](https://learn.chatgpt.com/docs/models?surface=web)
+on 2026-11-03. Availability depends on the account and client.
+
+### Follow the session model
+
+Set `CANONKIT_CODEX_MODEL=inherit` when installing to avoid pinning a model
+version in the generated agents:
+
+```bash
+CANONKIT_CODEX_MODEL=inherit node bin/cli.js install --codex
+```
+
+In PowerShell, from this checkout:
+
+```powershell
+$env:CANONKIT_CODEX_MODEL = 'inherit'
+node bin/cli.js install --codex
+```
+
+For the published package, use `npx canonkit install --codex` with the same
+environment variable. `inherit` omits the TOML `model` key and keeps each agent's
+reasoning effort. [Codex resolves the model](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+from an explicit spawn selection, then its subagent default, then the parent
+session. This follows your configuration; it does not guarantee the newest
+model. If you also leave the top-level Codex model unset, the client uses its
+recommended model.
+
+You can set the variable to a concrete model ID instead, such as
+`gpt-6.1-terra`. That pins the same model for every tier; efforts stay mapped as
+above. The installer does not probe account access or fetch models from the
+network. Unset the variable to restore the shipped mapping on the next install
+(`Remove-Item Env:CANONKIT_CODEX_MODEL` in PowerShell, `unset CANONKIT_CODEX_MODEL`
+in Bash).
+
+This is an **install-time** choice, shared by `install` and specialist `add`.
+Changing the variable alone does not update existing files. Re-run installation
+to regenerate core agents, and `canonkit add <name>` in each project to
+regenerate its specialists; start a new Codex session afterward. `reference`
+only updates blocks and skills, so it does not regenerate agents. Historical
+plans, eval records and hook fixtures retain the model IDs actually used.
 
 Your own Codex custom agents live in the same directory and are none of the
 installer's business. The only thing it comments on is narrower: a file that
@@ -227,15 +267,15 @@ the two `git commit *` and `git push *` ask rules from `permissions`.
 
 | Command | What it does |
 | --- | --- |
-| `install` | core at user level + hooks + dashboard + global reference blocks + the `orchestrate` and `context-tune` skills |
+| `install` | core at user level + hooks + dashboard + global reference blocks + the `orchestrate`, `context-tune` and `learning-loop` skills |
 | `install --wire-hooks` | the same, and wires the hook of each runtime installed: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, the OpenCode plugin (see [hooks.md](hooks.md)) |
 | `install --no-reference` | only the agents, the hooks and the dashboard |
 | `install --claude` / `--codex` / `--opencode` | only for those runtimes, without the menu |
 | `doctor` | read-only check of the installation; exits 1 if any check is `FAIL` |
-| `reference` | only the global blocks and the skills (`--claude`/`--codex`/`--opencode` narrow it; no menu) |
+| `reference` | only the global blocks and core skills (`--claude`/`--codex`/`--opencode` narrow it; no menu; no stack packs) |
 | `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `add <name>...` | specialists in the current project |
-| `remove <name>...` | removes specialists from the current project |
+| `add <name>...` | specialists or stack-pack skills in the current project |
+| `remove <name>...` | removes specialists or tracked stack-pack files from the current project |
 | `list` | the roster and what is installed where (and points to `tool list`) |
 | `tool add <graphify\|openspec>` | runs the tool's setup in this project and records it in `AGENTS.md` (see [tools.md](tools.md)) |
 | `tool remove <name>` | removes the tool from `AGENTS.md` |
@@ -280,6 +320,66 @@ for choosing an agent and not a description of one.
 Removing the last specialist takes the whole block out of `AGENTS.md`. Everything
 outside the markers is preserved, and the script refuses to run inside the
 `canonkit` repository itself or to install a core agent.
+
+## Stack packs, per project
+
+Stack packs are skills, not additional agents. They supply language/framework
+guidance to Bob and Quinn without changing the roster or adding a review verdict.
+The [stack-pack table in the README](../README.md#stack-packs-per-project) lists
+all available packs, their guidance and individual install commands. Install only
+the ones wanted, from the consuming project's directory:
+
+```bash
+npx canonkit add typescript react
+npx canonkit add cpp csharp java python rust
+npx canonkit add go kotlin swift
+npx canonkit list
+npx canonkit remove react
+```
+
+Each named pack writes two project-local copies of its `SKILL.md`:
+
+- `.agents/skills/canonkit-<stack>/` for universal discovery;
+- `.claude/skills/canonkit-<stack>/` for Claude Code.
+
+An installed skill is available for selection when relevant; installing it does
+not force a dispatch. React does not implicitly install TypeScript. There is no
+stack detection, download, toolchain/dependency installation or build execution.
+`install`, `reference` and global `uninstall` neither install nor remove project
+packs. Core skills remain in `skills/`; pack sources ship in `stack-packs/`.
+
+`add` and `remove` also accept mixed lists such as `add maya react`. All names
+and pack destinations are checked before any specialist writes. The current
+directory is the project boundary; the command does not search upward for a
+different root. Pack writes refuse HOME, canonkit's own checkout and symlinks or
+junctions below the canonical project boundary.
+
+The project receipt `.canonkit/stack-packs.json` records fixed file IDs and
+installed hashes, independently of the global install manifest. Keep it with
+the installed copies: without it, an existing destination is an untracked
+collision and is preserved. The receipt contains instruction-file metadata,
+not credentials or machine-specific absolute paths. Do not share or version
+temporary lock, recovery-lock or staging files.
+
+Repeating `add` is idempotent when current and updates tracked, unchanged copies.
+A locally edited copy or an untracked destination causes an install/update
+conflict before writes. `remove` deletes only tracked files matching their
+recorded hashes; it may remove an intact copy while preserving an edited one,
+retain the latter's receipt and exit nonzero. Unrelated extra files remain and
+do not make an otherwise completed removal fail.
+
+`list` reports `installed`, `absent`, `partial`, `locally modified`,
+`untracked/collision` or `partial (pending)` without writing or recovering state.
+An installed pack may be from an older package; repeat `add` to update it.
+
+Mutating commands serialize through a project lock and record pending intent
+before changing each file. A retry recognizes the before/after bytes and
+recovers interrupted work; a conflicting third state is preserved for manual
+resolution. A stale lock is recovered only when its process is no longer alive;
+an unrecognized or stranded recovery lock requires inspection. `--dry-run`
+changes no files or directories and refuses a lock or pending operation instead
+of recovering it. No transaction or rollback of legacy specialist writes is
+promised for a mixed request that fails during execution.
 
 ## Global reference blocks and skills
 
@@ -327,6 +427,16 @@ rule in `AGENTS.md` that every session loads. That is why it weighs nothing per
 session: Claude Code does not put the description of a skill with
 `disable-model-invocation: true` in context, and Codex does not pick it on its
 own because of `allow_implicit_invocation: false` in `agents/openai.yaml`.
+
+The `learning-loop` skill investigates mistakes on demand and produces a
+sanitized proposal for improving canonical instructions or project configuration.
+Its template travels with the skill. General contributions use an optional,
+user-reviewed GitHub issue, without a required duplicate local record or prior
+issue search. Incorporation requires the concrete diff, applicable validation and
+authorization. It does not inject lessons at session start or apply changes
+automatically; see [learning from mistakes](learning-loop.md) for contribution,
+update and review steps. Reinstall the relevant source/package version to update
+shipped instructions; local `canonkit.json` tuning needs no reinstall.
 
 `AGENTS.md` is runtime-neutral and is the only definition of the team. The
 routing block keeps only what is Claude Code mechanics (hooks and what they
@@ -417,7 +527,7 @@ a backup or removing their content.
 Backups can contain secrets. They are private (POSIX permissions, restricted DACLs
 on Windows), never overwritten, and retained after uninstall, along with private
 snapshots and the manifest. Configuration changes also get dated backups beside
-the configuration file. Activity history, project specialists/configs, external
+the configuration file. Activity history, project specialists/packs/configs, external
 tool data and `~/.agents/<core>.md` leftovers are preserved.
 
 Some wiring needs a manual step. Codex groups/handlers stay if removing them would
@@ -460,7 +570,7 @@ installed:
   [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
   `~/.claude/CLAUDE.md`, `$CODEX_HOME/AGENTS.md` and `~/.config/opencode/AGENTS.md`;
-- the `orchestrate` and `context-tune` folders in `~/.claude/skills` and
+- the `orchestrate`, `context-tune` and `learning-loop` folders in `~/.claude/skills` and
   `~/.agents/skills` (Codex and OpenCode read the latter);
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
   `meu-time-hook.js` forwarder next to it, after checking and updating references

@@ -1,6 +1,6 @@
 ---
 name: maya
-description: "Use when gameplay or gamification exists: core loop, progression, pacing, reward, difficulty and balance, game economy, playable onboarding, playtests. Maya decides whether a state should exist and what it communicates; Nova how it looks, Echo how it sounds."
+description: "Use for gameplay/gamification: core loop, progression, pacing, reward, difficulty, balance, economy, onboarding, playtests. Owns game states; Nova owns visuals, Echo sound. Not for visual or audio style alone."
 tier: specialist
 authority: veto
 model: sonnet

@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import prompts from "prompts";
 
-import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES } from "../bin/cli.js";
+import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES, codexAgent } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -73,6 +73,7 @@ function isolatedEnv(home, env) {
   if ("PATH" in env) for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
   const e = { ...base, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
   if (!("CODEX_HOME" in env)) delete e.CODEX_HOME;
+  if (!("CANONKIT_CODEX_MODEL" in env)) delete e.CANONKIT_CODEX_MODEL;
   return e;
 }
 
@@ -583,6 +584,81 @@ describe("install", () => {
 describe("orchestrate skill", () => {
   const skillPath = (home, root) => path.join(home, root, "skills", "orchestrate", "SKILL.md");
 
+  test("default source instruction profiles stay within 2500 words", async () => {
+    // Source-derived default profile: the two managed blocks, core agent
+    // descriptions and every shipped skill description. There are currently no
+    // default command descriptions or kit-installed MCP instructions; update
+    // this profile if installation adds either. On-demand bodies are excluded.
+    const words = (s) => s.trim().split(/\s+/).filter(Boolean).length;
+    const agents = (await readAgents()).filter((a) => a.tier === "core");
+    const skillDirs = await readdir(path.join(REPO, "skills"), { withFileTypes: true });
+    const descriptions = [];
+    for (const entry of skillDirs.filter((e) => e.isDirectory())) {
+      const skill = await read(path.join(REPO, "skills", entry.name, "SKILL.md"));
+      const description = skill.match(/^description:\s*(.+)$/m);
+      assert.ok(description, `${entry.name}: missing description`);
+      descriptions.push(description[1]);
+    }
+    for (const [runtime, adapter] of [["Claude", "routing"], ["Codex", "codex"], ["OpenCode", "opencode"]]) {
+      const blocks = await Promise.all(["agents-block.md", `${adapter}-block.md`].map((f) => read(path.join(REPO, "reference", f))));
+      const counts = [...blocks.map(words), ...agents.map((a) => words(a.description)), ...descriptions.map(words)];
+      const total = counts.reduce((a, b) => a + b, 0);
+      assert.ok(total <= 2500, `default ${runtime} source profile: ${total} words, limit 2500`);
+    }
+  });
+
+  for (const [runtime, root] of [["claude", ".claude"], ["codex", ".agents"], ["opencode", ".agents"]]) {
+    test(`incidental-finding procedure distributes and preserves user files for ${runtime}`, async () => {
+      const { home, project } = await scratch(`incidental-findings-${runtime}`);
+      const skillDir = path.join(home, root, "skills", "orchestrate");
+      const procedure = path.join(skillDir, "out-of-scope-issues.md");
+      const personalNotes = "# Personal instructions\nKeep my notes.\n";
+      const projectNotes = "# Project instructions\nKeep the project scope.\n";
+      await writeFile(path.join(home, "AGENTS.md"), personalNotes);
+      await writeFile(path.join(project, "AGENTS.md"), projectNotes);
+      const install = () => run(["install", `--${runtime}`], { home, cwd: project });
+      const initial = install();
+      assert.equal(initial.status, 0, initial.out);
+      const source = path.join(REPO, "skills", "orchestrate");
+      for (const file of ["SKILL.md", "out-of-scope-issues.md"]) {
+        assert.equal(await read(path.join(skillDir, file)), await read(path.join(source, file)));
+      }
+      // Blocks adopt the destination's line endings; compare content, not keywords
+      // claimed to prove model behavior. Skill files above must remain byte-identical.
+      const roster = await read(path.join(home, "AGENTS.md"));
+      assert.ok(roster.startsWith(personalNotes));
+      const sourceRoster = await read(path.join(REPO, "reference", "agents-block.md"));
+      assert.ok(roster.replace(/\r\n/g, "\n").includes(sourceRoster.replace(/\r\n/g, "\n").trim()));
+      const [adapterDir, adapterFile, sourceBlock] = {
+        claude: [".claude", "CLAUDE.md", "routing-block.md"],
+        codex: [".codex", "AGENTS.md", "codex-block.md"],
+        opencode: [path.join(".config", "opencode"), "AGENTS.md", "opencode-block.md"],
+      }[runtime];
+      const adapter = await read(path.join(home, adapterDir, adapterFile));
+      const sourceAdapter = await read(path.join(REPO, "reference", sourceBlock));
+      assert.ok(adapter.replace(/\r\n/g, "\n").includes(sourceAdapter.replace(/\r\n/g, "\n").trim()));
+      assert.equal(await read(path.join(project, "AGENTS.md")), projectNotes);
+
+      const userFile = path.join(skillDir, "personal-notes.md");
+      await writeFile(userFile, "untracked user notes\n");
+      await writeFile(procedure, "local procedure edit\n");
+      const updated = install();
+      assert.equal(updated.status, 0, updated.out);
+      assert.equal(await read(procedure + ".local.bak"), "local procedure edit\n");
+      assert.equal(await read(procedure), await read(path.join(source, "out-of-scope-issues.md")));
+
+      await writeFile(procedure, "second local procedure edit\n");
+      const removed = run(["uninstall", `--${runtime}`], { home, cwd: project });
+      assert.equal(removed.status, 0, removed.out);
+      assert.equal(existsSync(procedure), false);
+      assert.equal(await read(procedure + ".local.bak"), "local procedure edit\n");
+      assert.equal(await read(procedure + ".local-1.bak"), "second local procedure edit\n");
+      assert.equal(await read(userFile), "untracked user notes\n");
+      assert.ok((await read(path.join(home, "AGENTS.md"))).startsWith(personalNotes));
+      assert.equal(await read(path.join(project, "AGENTS.md")), projectNotes);
+    });
+  }
+
   test("install writes the skill for Claude Code and for Codex", async () => {
     const { home } = await scratch("skill-install");
     assert.equal(run(["install"], { home }).status, 0);
@@ -631,6 +707,68 @@ describe("orchestrate skill", () => {
     }
   });
 
+  test("learning-loop and its proposal template install and uninstall together", async () => {
+    const { home } = await scratch("skill-learning-loop");
+    assert.equal(run(["install"], { home }).status, 0);
+    for (const root of [".claude", ".agents"]) {
+      for (const file of ["SKILL.md", "proposal-template.md"]) {
+        assert.equal(await read(path.join(home, root, "skills", "learning-loop", file)),
+          await read(path.join(REPO, "skills", "learning-loop", file)));
+      }
+    }
+    const result = run(["uninstall"], { home });
+    assert.equal(result.status, 0, result.out);
+    for (const root of [".claude", ".agents"]) {
+      assert.equal(existsSync(path.join(home, root, "skills", "learning-loop", "SKILL.md")), false);
+      assert.equal(existsSync(path.join(home, root, "skills", "learning-loop", "proposal-template.md")), false);
+    }
+  });
+
+  test("learning-loop source updates reach fresh processes only after reinstall", async () => {
+    const { root, home, project } = await scratch("learning-loop-upgrade");
+    const pkg = path.join(root, "pkg");
+    // Change a throwaway source package, never this checkout or a personal HOME.
+    for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "tools", "stack-packs"]) {
+      await cp(path.join(REPO, dir), path.join(pkg, dir), { recursive: true });
+    }
+    await cp(path.join(REPO, "package.json"), path.join(pkg, "package.json"));
+    const sourceFile = path.join(pkg, "skills", "learning-loop", "SKILL.md");
+    const base = await read(sourceFile);
+    const oldSource = `${base}\nSynthetic propagation fixture: require validation of the old example.\n`;
+    const newSource = `${base}\nSynthetic propagation fixture: require validation of the corrected example.\n`;
+    const env = isolatedEnv(home, {});
+    const args = ["install", "--claude", "--codex", "--opencode"];
+    const installCopy = () => spawnSync(process.execPath, [path.join(pkg, "bin", "cli.js"), ...args], {
+      cwd: project, env, encoding: "utf8",
+    });
+    const destinations = [".claude", ".agents"].map(dir => path.join(home, dir, "skills", "learning-loop", "SKILL.md"));
+    const readInstalled = () => {
+      const result = spawnSync(process.execPath, ["--input-type=module", "-e",
+        "import { readFileSync } from 'node:fs'; process.stdout.write(JSON.stringify(process.argv.slice(1).map(p => readFileSync(p, 'utf8'))));",
+        ...destinations], { cwd: project, env, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const userNotes = "# Personal notes\nKeep these outside managed blocks.\n";
+    await writeFile(path.join(home, "AGENTS.md"), userNotes);
+    const localFile = path.join(project, "AGENTS.md");
+    await writeFile(localFile, "# Project instructions\nKeep project instructions.\n");
+
+    await writeFile(sourceFile, oldSource);
+    const initial = installCopy();
+    assert.equal(initial.status, 0, initial.stderr);
+    assert.deepEqual(readInstalled(), destinations.map(() => oldSource));
+
+    await writeFile(sourceFile, newSource);
+    assert.deepEqual(readInstalled(), destinations.map(() => oldSource), "a source edit must not silently update an installation");
+    const updated = installCopy();
+    assert.equal(updated.status, 0, updated.stderr);
+    assert.deepEqual(readInstalled(), destinations.map(() => newSource));
+    assert.ok((await read(path.join(home, "AGENTS.md"))).startsWith(userNotes));
+    assert.equal(await read(localFile), "# Project instructions\nKeep project instructions.\n");
+    // This checks installed bytes in another Node process, not native harness loading.
+  });
+
   test("--no-reference leaves the skill alone, like the blocks it belongs to", async () => {
     const { home } = await scratch("skill-no-reference");
     assert.equal(run(["install", "--no-reference"], { home }).status, 0);
@@ -666,12 +804,63 @@ describe("codex custom agents", () => {
 
     // archie is opus in frontmatter — the demanding end of the map.
     const archie = await read(path.join(dest, "archie.toml"));
-    assert.match(archie, /^model = "gpt-5\.6"$/m);
+    assert.match(archie, /^model = "gpt-6\.1-sol"$/m);
     assert.match(archie, /^model_reasoning_effort = "high"$/m);
 
     // scott is sonnet — the balanced default.
     const scott = await read(path.join(dest, "scott.toml"));
+    assert.match(scott, /^model = "gpt-6\.1-sol"$/m);
     assert.match(scott, /^model_reasoning_effort = "medium"$/m);
+  });
+
+  test("keeps the lightweight tier and rejects unknown source models", () => {
+    const agent = { name: "scanner", description: "Focused work", model: "haiku", body: "Instructions" };
+    assert.match(codexAgent(agent), /^model = "gpt-6-luna"$/m);
+    assert.match(codexAgent(agent), /^model_reasoning_effort = "low"$/m);
+    assert.throws(() => codexAgent({ ...agent, model: "unknown" }), /no Codex equivalent/);
+    assert.match(codexAgent(agent, 'custom/"quoted"\\model'), /^model = "custom\/\\"quoted\\"\\\\model"$/m);
+  });
+
+  for (const model of ["inherit", "gpt-6.1-terra"]) {
+    test(`applies ${model} to core installation and specialist add`, async () => {
+      const { home, project } = await scratch(`codex-override-${model}`);
+      const env = { CANONKIT_CODEX_MODEL: model };
+      assert.equal(run(["install", "--codex", "--no-reference"], { home, env }).status, 0);
+      const added = run(["add", "iris", "maya"], { home, cwd: project, env });
+      assert.equal(added.status, 0, added.out);
+      for (const [dir, names] of [
+        [path.join(home, ".codex", "agents"), CORE],
+        [path.join(project, ".codex", "agents"), ["iris", "maya"]],
+      ]) {
+        for (const name of names) {
+          const text = await read(path.join(dir, `${name}.toml`));
+          if (model === "inherit") assert.doesNotMatch(text, /^model\s*=/m);
+          else assert.match(text, /^model = "gpt-6\.1-terra"$/m);
+          assert.match(text, new RegExp(`^model_reasoning_effort = "${["archie", "iris"].includes(name) ? "high" : "medium"}"$`, "m"));
+          assert.match(text, /^developer_instructions = '''$/m);
+        }
+      }
+      // Reinstalling without the variable restores defaults, not a stale override.
+      assert.equal(run(["install", "--codex", "--no-reference"], { home }).status, 0);
+      assert.match(await read(path.join(home, ".codex", "agents", "archie.toml")), /^model = "gpt-6\.1-sol"$/m);
+      assert.equal(await read(path.join(project, ".claude", "agents", "maya.md")), await read(path.join(REPO, "agents", "maya.md")));
+      assert.doesNotMatch(await read(path.join(project, ".opencode", "agents", "maya.md")), /^model:/m);
+    });
+  }
+
+  test("rejects invalid model overrides before writing agents", async () => {
+    for (const [index, model] of ["", "   ", "gpt-6.1-sol\nother", "bad\tmodel"].entries()) {
+      const { home, project } = await scratch(`codex-invalid-model-${index}`);
+      const env = { CANONKIT_CODEX_MODEL: model };
+      const installed = run(["install", "--no-reference"], { home, env });
+      assert.equal(installed.status, 1, installed.out);
+      assert.match(installed.out, /CANONKIT_CODEX_MODEL must be/);
+      assert.equal(existsSync(path.join(home, ".claude", "agents")), false);
+      assert.equal(existsSync(path.join(home, ".codex", "agents")), false);
+      const added = run(["add", "maya"], { home, cwd: project, env });
+      assert.equal(added.status, 1, added.out);
+      assert.equal(existsSync(path.join(project, ".claude")), false);
+    }
   });
 
   test("every agent body survives as a TOML literal string", async () => {

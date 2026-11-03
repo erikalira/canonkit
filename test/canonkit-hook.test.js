@@ -373,6 +373,20 @@ describe("git hook and signing bypass", () => {
   });
 });
 
+describe("copy, move and in-place edits through the real hook", () => {
+  for (const [tool, command] of [
+    ["Bash", "cp plain.ts src/auth/session.ts"],
+    ["Bash", "mv src/auth/session.ts plain.ts"],
+    ["Bash", "sed -i 's/old/new/' src/auth/session.ts"],
+    ["PowerShell", "Copy-Item plain.ts src/auth/session.ts"],
+    ["PowerShell", "Move-Item src/auth/session.ts plain.ts"],
+    ["PowerShell", "Move-Item -Path src/auth/session.ts"],
+  ]) test(command, () => assert.equal(decide(pre(tool, { command })), "ask"));
+  test("new command types retain hard-secret precedence", () => {
+    assert.equal(decide(pre("Bash", { command: `sed -i 's/x/${FAKE_AWS_KEY}/' src/auth/session.ts` })), "deny");
+  });
+});
+
 describe("every shell is a shell", () => {
   // The side door this closed: on Windows the harness's primary shell tool is
   // PowerShell, so a gate wired only to Bash gates nothing that matters there.
@@ -711,6 +725,51 @@ describe("project config (.claude/canonkit.json)", () => {
     const cwd = await project({ highrisk: { exclude: ["**"] }, perfBudgets: ["perf/x.yml"] });
     assert.equal(edit(cwd, "perf/x.yml"), "ask", "the known key still applies");
     assert.deepEqual(hook().projectConfig(cwd, "").ignored.map((i) => i.where), ["highrisk"]);
+  });
+
+  test("a configured lint path keeps the real-process ask and neutral reason", async () => {
+    const cwd = await project({ highRisk: { include: ["eslint.config.*"], exclude: ["eslint.config.*"] } });
+    for (const [tool, input] of [
+      ["Edit", { file_path: cwd + "/eslint.config.js", new_string: "x" }],
+      ["Bash", { command: "echo x > eslint.config.js" }],
+    ]) {
+      const r = runHook({ ...pre(tool, input), cwd });
+      assert.equal(r.status, 0, r.stderr);
+      const output = JSON.parse(r.stdout).hookSpecificOutput;
+      assert.equal(output.permissionDecision, "ask");
+      assert.match(output.permissionDecisionReason, /protected by the project's highRisk\.include/);
+      assert.match(output.permissionDecisionReason, /highRisk\.exclude cannot override it/);
+    }
+  });
+
+  test("editor schema properties and documented examples are understood by the runtime", async () => {
+    const schema = JSON.parse(await readFile(path.join(REPO, "reference", "canonkit.schema.json"), "utf8"));
+    assert.equal(schema.additionalProperties, false);
+    assert.equal(schema.properties.highRisk.additionalProperties, false);
+    // No required keys: the editor must continue to accept a default-only file.
+    assert.equal(schema.required, undefined);
+    assert.equal(schema.properties.highRisk.required, undefined);
+    const full = { version: 1, highRisk: { include: ["eslint.config.*"], exclude: ["src/domain/contracts/**"] }, perfBudgets: ["perf/limits.yml"] };
+    assert.deepEqual(Object.keys(schema.properties).sort(), Object.keys(full).sort());
+    assert.deepEqual(Object.keys(schema.properties.highRisk.properties).sort(), Object.keys(full.highRisk).sort());
+    assert.equal(schema.properties.version.const, 1);
+    for (const config of [{}, full]) {
+      const cfg = hook().projectConfig(await project(config), "");
+      assert.deepEqual(cfg.ignored, []);
+    }
+    const docs = await readFile(path.join(REPO, "docs", "hooks.md"), "utf8");
+    const examples = [...docs.matchAll(/```json\r?\n([\s\S]*?)```/g)].map((m) => JSON.parse(m[1]));
+    for (const config of examples.filter((v) => v.highRisk)) {
+      assert.deepEqual(hook().projectConfig(await project(config), "").ignored, []);
+    }
+    const { maxItems, items: { maxLength } } = schema.definitions.globList;
+    const cfg = hook().projectConfig(await project({ highRisk: {
+      include: Array(maxItems).fill("x".repeat(maxLength)).concat("overflow"),
+      exclude: ["x".repeat(maxLength + 1)],
+    } }), "");
+    assert.equal(cfg.include.length, maxItems);
+    assert.equal(cfg.exclude.length, 0);
+    assert.equal(cfg.ignored.length, 2, "schema limits match runtime truncation and rejection");
   });
 
   test("a malformed config yields the defaults plus the reasons it was ignored", async () => {
@@ -1370,7 +1429,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.id, "toolu_fg");
     assert.deepEqual(
       { agent: end.agent, task: end.task, model: end.model, effort: end.effort, mode: end.mode },
-      { agent: "gard", task: "review auth", model: "haiku", effort: "low", mode: "foreground" },
+      { agent: "gard", task: undefined, model: "haiku", effort: "low", mode: "foreground" },
     );
     assert.equal(end.resolved_model, "claude-haiku-5-5");
     assert.equal(end.duration_ms, 9000);
@@ -1379,7 +1438,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.report_chars, RESULT.length, "the size of what returned to the caller, not its text");
 
     const raw = JSON.stringify(evs);
-    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
+    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT) && !raw.includes(ti.description), "prompt, description or result text reached the log");
   });
 
   test("a dispatch with no effort logs it as empty (inherited)", async () => {
@@ -1786,13 +1845,14 @@ describe("definition-of-done gate: reviewer probes and resumed reviewers", () =>
     assert.ok(!JSON.stringify(evs).includes("CONTENT-") && !JSON.stringify(evs).includes("SUMMARY-TEXT"));
   });
 
-  test("agent_start logs the agent's name; names, targets and tasks are capped", async () => {
+  test("agent_start omits tasks; names and resume targets are capped", async () => {
     const s = session();
     decide(pre("Agent", { subagent_type: "gard", name: "n".repeat(5000), description: "d".repeat(5000) }, s));
     send(s, { to: "t".repeat(5000), message: "m" });
     const [start, resume] = await logged(s);
     assert.match(start.name, /^n+$/);
-    for (const v of [start.name, start.task, resume.to]) assert.ok(v.length > 0 && v.length <= 200, String(v.length));
+    assert.equal(Object.hasOwn(start, "task"), false);
+    for (const v of [start.name, resume.to]) assert.ok(v.length > 0 && v.length <= 200, String(v.length));
   });
 });
 

@@ -102,13 +102,18 @@ test("shared roster and skills survive partial uninstall; install does not forge
   ok(run(home, ["install", "--codex"]));
   ok(run(home, ["reference", "--opencode"]));
   ok(run(home, ["install", "--claude", "--no-reference"]));
+  const procedure = path.join(home, ".agents", "skills", "orchestrate", "out-of-scope-issues.md");
+  const procedureBytes = await readFile(procedure, "utf8");
   ok(run(home, ["uninstall", "--codex"]));
   const data = await manifest(home);
   assert.deepEqual(data.entries["home:block:AGENTS.md"].owners, ["opencode"]);
+  assert.deepEqual(data.entries["skills:file:orchestrate/out-of-scope-issues.md"].owners, ["opencode"]);
+  assert.equal(await readFile(procedure, "utf8"), procedureBytes);
   assert.ok(Object.values(data.entries).some((entry) => entry.root === "skills" && entry.owners.includes("opencode")));
   assert.ok((await readFile(path.join(home, "AGENTS.md"), "utf8")).includes("agent-team-config:start"));
   assert.ok(existsSync(path.join(home, ".claude", "agents", "bob.md")));
   ok(run(home, ["uninstall", "--opencode"]));
+  assert.equal(existsSync(procedure), false);
   assert.equal((await readFile(path.join(home, "AGENTS.md"), "utf8")).includes("agent-team-config:start"), false);
 });
 

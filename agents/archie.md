@@ -1,6 +1,6 @@
 ---
 name: archie
-description: "Use for structural technical decisions: pattern choice, module/service boundaries, monolith vs services, public contracts, data models, new services, overengineering risk. Holds a veto on architecture."
+description: "Use for architecture: patterns, module/service boundaries, public contracts, data models, new services, overengineering risk. Veto on architecture. Not for routine implementation."
 tier: core
 model: opus
 ---

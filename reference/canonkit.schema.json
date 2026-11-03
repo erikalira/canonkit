@@ -1,0 +1,46 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CanonKit project configuration",
+  "description": "Optional editor assistance for .claude/canonkit.json. Runtime validation remains authoritative: doctor warns about ignored entries, and the hook rejects catch-all excludes (including combinations) that this schema cannot detect.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Configuration version. Optional; only version 1 is supported. Other versions cause the hook to use defaults.",
+      "type": "integer",
+      "const": 1
+    },
+    "highRisk": {
+      "description": "Additional protected paths and narrow exclusions from ambiguous path heuristics. Includes take precedence over excludes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "include": {
+          "description": "Add confirmation gates, including for lint/test configuration, tests and fixtures. Does not change domain ownership or review rules.",
+          "allOf": [{ "$ref": "#/definitions/globList" }]
+        },
+        "exclude": {
+          "description": "Silence ambiguous path heuristics only. Cannot exclude includes, auth, secrets, migrations or the gate configuration itself. Catch-all exclusions, individually or combined, are rejected at runtime.",
+          "allOf": [{ "$ref": "#/definitions/globList" }]
+        }
+      }
+    },
+    "perfBudgets": {
+      "description": "Additional performance budget files. Built-in budgets remain protected; only Perry may loosen a threshold.",
+      "allOf": [{ "$ref": "#/definitions/globList" }]
+    }
+  },
+  "definitions": {
+    "globList": {
+      "description": "Case-insensitive, project-relative globs. A slash anchors the path; otherwise match the filename at any depth. * and ? stay in a segment; ** as a whole segment crosses folders. Trailing / means everything below. ! and brackets are literal. The hook reads at most 100 entries per list and files up to 64 KiB.",
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 200,
+        "pattern": "\\S"
+      }
+    }
+  }
+}

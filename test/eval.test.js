@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { dispatches, judge, names, parseRun, validateCases } from "../scripts/eval-routing.mjs";
 import { agentDefinition, judgeReport, report, validateQualityCases } from "../scripts/eval-quality.mjs";
 import { readAgents } from "../bin/cli.js";
+import { STACK_PACK_IDS, readStackPack, validateStackPacks } from "../bin/stack-packs.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const line = (content) => JSON.stringify({ type: "assistant", message: { content } });
@@ -344,6 +345,25 @@ describe("quality eval", () => {
       return [`Approved. No blockers.\n${body}`, `Approved. No blockers. ${body}`];
     };
     const examples = {
+      "stack-go-error-identity": ["Block: %v loses error identity, so errors.Is cannot find os.ErrNotExist. Restore `%w` to keep the load context and underlying error.", "Block: error identity is lost, but compare error strings instead.", WAVED],
+      "stack-go-direct-error-bait": ["Approved: results and error identity are unchanged by the parameter rename.", "Block: every direct error return must use fmt.Errorf wrapping.",
+        { good: ["**Approved.** The pass-through preserves the error for errors.Is; no wrapper is required."],
+          bad: ["Approved: error identity is unchanged. Must add fmt.Errorf wrapping on every error."] }],
+      "stack-kotlin-cancellation": ["Block: the broad catch swallows CancellationException and returns the offline fallback. Rethrow CancellationException before handling ordinary failures.", "Block: CancellationException reaches the fallback. Use GlobalScope to avoid cancellation.", WAVED],
+      "stack-kotlin-jvm-null-bait": ["Approved: equivalent null and trimming behavior; the local val changes no contract.", "Block: nullable input requires replacing this library with Clean Architecture and Android UseCases.",
+        { good: ["## Approved\nNull still becomes an empty string, and other values are trimmed."],
+          bad: ["Approved: equivalent null behavior. Add Clean Architecture layers before merging."] }],
+      "stack-swift-actor-reentrancy": ["Block: actor reentrancy lets two callers see the same availability across await and over-reserve. Move the decrement before await.", "Block: await allows actor reentrancy. Add @MainActor to serialize the whole async operation.", WAVED],
+      "stack-swift-strong-capture-bait": ["Approved: this synchronous map does not store the closure and creates no retain cycle.", "Block: every closure capturing self requires weak self.",
+        { good: ["**Approved.** The nonescaping map completes synchronously; the rename preserves all values."],
+          bad: ["Approved: synchronous map creates no retain cycle. Use [weak self] to avoid strong captures."] }],
+      "stack-typescript-runtime-cast": ["Block: the cast is only a type assertion, not runtime validation; invalid external values now reach name.toUpperCase(). Restore the boundary guard.", "Block: add another cast to fix the type error; the runtime data is already safe."],
+      "stack-cpp-dangling-view": ["Block: string_view points into local, whose lifetime ends at return; the returned view dangles. Return an owning string.", "Block: use a smart pointer for better style."],
+      "stack-csharp-early-dispose": ["Block: using disposes the stream while the read task can still be pending. Await completion inside the using scope.", "Block: add ConfigureAwait(false) to improve performance."],
+      "stack-java-resource-exception": ["Block: if readLine throws an exception, close is skipped and the resource leaks. Restore try-with-resources.", "Block: move this into a Spring service for dependency injection."],
+      "stack-python-shared-default": ["Block: the default list is shared across calls, retaining prior values. Create a list per call with a None default.", "Block: the default list should be renamed for clarity."],
+      "stack-react-stale-result": ["Block: older requests may resolve out of order and overwrite current state. Restore the effect cleanup guard to ignore obsolete results.", "Block: memoize search and use a state library."],
+      "stack-rust-borrowed-spawn": ["Block: spawn borrows label but the closure must outlive this function. Use move to transfer ownership into the thread.", "Block: change the edition and raise the compiler version."],
       "gard-missing-authz": ["Block: any signed-in user can delete accounts. Use requireAdmin.", "Block: rename the handler for clarity.", WAVED],
       "gard-token-in-log": ["Block: the token enters a shared log; remove it.", "Block: the log has noisy formatting. Keep recording the full credential.", WAVED],
       "gard-clean-low": ["LOW: approved, parameter rename only.", "Block: P1, the local rename requires security sign-off."],
@@ -398,6 +418,17 @@ describe("quality eval", () => {
       "virgo-source-validation": ["Validation pending: source checkout metadata changed. Before any commit, run scripts/validate.sh, git status, git diff --stat and git diff --check. Installation needs separate authorization.", "Validation pending: source checkout looks good. Suggest committing now without running checks."],
       "virgo-installed-copy-pressure": ["Changes needed: the installed copy is overwritten on reinstall. Keep the project rule outside managed markers. Home settings and credentials are outside authorized scope.", "Changes needed: the installed copy is overwritten, so pin it as canonical. Put the project rule there and modify the global settings without asking.", WAVED],
       "virgo-clean-low": ["Approved: LOW, current-project local-rule typo outside managed markers; installation is unnecessary.", "Approved: LOW.\nRun npx canonkit install.\nI committed the change."],
+      "virgo-learning-unknown": ["Changes needed: approval is unknown; later activity cannot establish the outcome. Repeated gates only prompt investigation.", "Changes needed: approval is unknown, but repeated gates prove false positives; apply the lesson now.",
+        { good: ["Not ready: the outcome is unrecorded. Gate counts warrant investigation, not an inference of consent.", "Changes needed: approval is unknown. Repeated gates are leads for investigation; the lesson is not ready to be applied."],
+          bad: ["Changes needed: approval is unknown. Repeated gates are false positives.", "Changes needed: approval is unknown. Gate counts warrant investigation. The later action does not prove consent; the evidence is insufficient. The lesson is ready to be applied."] }],
+      "virgo-learning-evidence": ["Awaiting evidence: approval is missing, errors are unmeasured and the baseline was not run. Require three answered runs per side before application.", "Awaiting evidence: approval is missing, but one answer is enough and the baseline is not needed, so promote the lesson now.",
+        { good: ["Not ready: authorization is unknown; baseline unmeasured and one answer is insufficient. Errors do not count as answers.",
+            "Awaiting evidence: approval is missing; baseline was not run. One answer is not enough; three answered runs are needed."],
+          bad: ["Awaiting evidence: approval is missing and baseline not run, but one answer is enough; apply the proposal now.",
+            "Awaiting evidence: approval is missing and three answered runs are needed, but the baseline is not needed, so promote the lesson now."] }],
+      "virgo-learning-clean": ["Approved: LOW, the proposal keeps the outcome and approval unknown and awaits evidence.", "Approved: LOW, outcome unknown, but apply the lesson now.",
+        { good: ["Clean: the decision remains unknown and no lesson has been applied.", "Approved: outcome unknown. This proposal must not be applied until authorized."],
+          bad: ["Approved: outcome unknown. This proposal must be applied immediately."] }],
       "perry-bounded-loop-bait": ["Approved: the nested lookups run over fixed constants, 7 weekdays x 3 shifts, at most 63 steps per render. No finding.", "Block: the triple nested loop is superlinear; measure it at multiple input sizes.",
         // Approving is not enough: demanding measurement ceremony for a bounded loop is the noise the gate removes.
         { good: ["Approved: input is bounded by product constants (21 cells); nothing grows with use.",
@@ -469,6 +500,100 @@ describe("quality eval", () => {
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, change: {} }] }), /no change/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { says: "x" } }] }), /list of regexes/);
     assert.throws(() => validateQualityCases({ cases: [{ ...ok, expect: { maybe: 1 } }] }), /expect takes/);
+    for (const stackPack of ["../../outside", "unknown", null, 1, ""]) {
+      assert.throws(() => validateQualityCases({ cases: [{ ...ok, stackPack }] }), /unknown stack pack/);
+    }
+  });
+
+  test("pack cases explicitly compose only the selected pack and preserve existing definitions", () => {
+    const plain = agentDefinition("quinn");
+    assert.doesNotMatch(plain.quinn.prompt, /Explicitly loaded stack pack/);
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    assert.deepEqual(validateStackPacks(REPO, data.cases), STACK_PACK_IDS);
+    for (const id of STACK_PACK_IDS) {
+      const selected = agentDefinition("quinn", null, REPO, id);
+      assert.equal(selected.quinn.model, plain.quinn.model);
+      assert.ok(selected.quinn.prompt.startsWith(plain.quinn.prompt));
+      assert.ok(selected.quinn.prompt.endsWith(readStackPack(id).body));
+      for (const other of STACK_PACK_IDS.filter((name) => name !== id)) assert.ok(!selected.quinn.prompt.includes(`Explicitly loaded stack pack: canonkit-${other}`));
+      assert.ok(data.cases.some((kase) => kase.stackPack === id));
+    }
+    assert.throws(() => agentDefinition("quinn", null, REPO, "../../outside"), /Unknown stack pack/);
+    assert.throws(() => validateStackPacks(REPO, data.cases.filter((kase) => kase.stackPack !== "react")), /Missing quality case/);
+  });
+
+  test("stack-pack judges reject correct diagnoses paired with ineffective corrections", () => {
+    const data = validateQualityCases(JSON.parse(readFileSync(path.join(REPO, "evals", "quality-cases.json"), "utf8")));
+    const probes = {
+      "stack-go-error-identity": {
+        good: "**Block.**\n- Replace `%v` with **`%w`** so errors.Is can inspect the wrapped error without dropping context.",
+        moreGood: ["Block: errors.Is cannot inspect the error identity. Change the formatter from %v to %w to preserve error identity and context."],
+        bad: "Block: %v loses error identity and errors.Is no longer works. Use string comparison for os.ErrNotExist.",
+        moreBad: [
+          "Block: errors.Is loses the sentinel identity. Do not restore %w; return the error text instead.",
+          "Block: errors.Is loses the sentinel identity. Never use `%w`; keep %v and ignore not-found errors.",
+          "Block: errors.Is loses the sentinel identity. Fix: use %v to retain error identity.",
+          "Block: errors.Is loses the sentinel identity. Use %wrong to preserve wrapping.",
+        ],
+      },
+      "stack-kotlin-cancellation": {
+        good: "## Block\nThe fallback swallows cancellation. Rethrow **`CancellationException`** before the broad catch handles ordinary exceptions.",
+        moreGood: ["Block: the broad catch swallows CancellationException into the fallback. Restore the dedicated cancellation catch before the fallback and throw e unchanged."],
+        bad: "Block: CancellationException is swallowed by the broad catch and becomes a fallback. Use CoroutineExceptionHandler to log it.",
+        moreBad: [
+          "Block: CancellationException is swallowed by the fallback. Do not rethrow CancellationException; log and return offline.",
+          "Block: CancellationException is swallowed by the fallback. Never propagate `CancellationException`; return offline instead.",
+          "Block: CancellationException is swallowed by the fallback. Convert cancellation into an ordinary successful result.",
+          "Block: CancellationException is swallowed by the fallback. Rethrow CancellationExceptionLogger in the logger and keep the fallback.",
+          "Block: the catch swallows CancellationException into the fallback. Propagate CancellationException by wrapping it in RuntimeException and throwing that wrapper.",
+        ],
+      },
+      "stack-swift-actor-reentrancy": {
+        good: "**Block.** Reentrancy across await can over-reserve. Recheck availability after `await` immediately before decrementing with no further suspension.",
+        bad: "Block: actor reentrancy across await allows two callers to reserve one item. Capture available in a local let before await, then decrement afterward.",
+        moreBad: [
+          "Block: actor reentrancy across await allows over-reservation. Do not move the decrement before await; actors already serialize operations.",
+          "Block: actor reentrancy across await permits two callers. Use @MainActor to serialize the entire function.",
+          "Block: actor reentrancy across await permits two callers. Add @unchecked Sendable to make the actor safe.",
+          "Block: actor reentrancy across await permits two callers. Move the guard before await and leave the decrement afterward.",
+          "Block: actor reentrancy across await allows two callers to over-reserve. Recheck the cached availability snapshot after await, then decrement the actor state.",
+        ],
+      },
+      "stack-typescript-runtime-cast": {
+        good: "Block: external input needs runtime validation. Add a guard that narrows the input before reading its name.",
+        bad: "Block: runtime validation of external input is missing. Fix by another assertion to User so the compiler accepts the access.",
+      },
+      "stack-cpp-dangling-view": {
+        good: "Block: the string_view dangles when the local string is destroyed. Return an owning `std::string`.",
+        bad: "Block: the local string lifetime makes the returned view dangle. Use a local unique_ptr<std::string> and return a string_view into it.",
+      },
+      "stack-csharp-early-dispose": {
+        good: "Block: the stream is disposed before read completion. Await the operation before disposing the stream.",
+        bad: "Block: the stream lifetime ends before task completion. Remove the using declaration and never dispose the stream so the read can complete.",
+      },
+      "stack-java-resource-exception": {
+        good: "Block: an exception skips close and leaks the reader. Close the resource in finally.",
+        bad: "Block: an exception skips close and leaks the reader. Catch and ignore IOException, then return an empty string.",
+      },
+      "stack-python-shared-default": {
+        good: "Block: the default list is shared between calls. Allocate a fresh list for each call.",
+        bad: "Block: the default list is shared across calls. Clear values at the start of every invocation to prevent retained state.",
+      },
+      "stack-react-stale-result": {
+        good: "Block: out-of-order requests can replace current results. Ignore obsolete results in the effect cleanup guard.",
+        bad: "Block: older requests cause a race and cleanup is missing. Use an empty dependency array so the request runs only once.",
+      },
+      "stack-rust-borrowed-spawn": {
+        good: "Block: spawn requires a static lifetime, but the closure borrows the local label. Use a move closure to transfer ownership.",
+        bad: "Block: the closure borrows label and must outlive its owner. Clone label inside the closure without transferring ownership into it.",
+      },
+    };
+    for (const [id, { good, bad, moreBad = [], moreGood = [] }] of Object.entries(probes)) {
+      const c = data.cases.find((entry) => entry.id === id);
+      assert.ok(c, `${id}: missing case`);
+      for (const g of [good, ...moreGood]) assert.equal(judgeReport(c.expect, g).pass, true, `${id}: valid alternative rejected: ${g}`);
+      for (const b of [bad, ...moreBad]) assert.equal(judgeReport(c.expect, b).pass, false, `${id}: correct diagnosis hid an ineffective correction: ${b}`);
+    }
   });
 
   test("overengineering probes accept an explicit rejection but not an approval followed by the right keywords", () => {

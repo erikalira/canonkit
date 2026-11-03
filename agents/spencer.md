@@ -1,6 +1,6 @@
 ---
 name: spencer
-description: "Use for durable documentation: ADRs, PRDs, specs, API docs, release notes, runbooks, docs that drifted from the code. Holds a veto on confusing, incomplete or outdated docs; blocks HIGH changes missing minimum docs."
+description: "Use for durable docs: ADRs, PRDs, specs, API docs, release notes, runbooks, drift from code. Veto on doc quality; blocks HIGH changes missing minimum docs. Not for code comments alone."
 tier: core
 model: sonnet
 ---

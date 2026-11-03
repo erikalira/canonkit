@@ -47,6 +47,11 @@ runtime you chose: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json` (then run
 `.bak` of each config file it changes and changes nothing else. If you leave the
 flag out, `install` only prints Claude Code's JSON for you to paste yourself. [What each choice writes](https://github.com/erikalira/canonkit/blob/main/docs/install.md#core-at-user-level).
 
+Codex agents default to `gpt-6.1-sol`. To follow your Codex session's model
+instead of pinning a version, set `CANONKIT_CODEX_MODEL=inherit` when installing.
+See [model configuration](docs/install.md#follow-the-session-model) for PowerShell
+examples, overrides and updating existing agents.
+
 **Check that it worked:**
 
 ```bash
@@ -126,18 +131,18 @@ make the change HIGH.
 
 **Core**: installed at user level and available in every project.
 
-| Agent | Owns | Authority |
-| --- | --- | --- |
+| Agent | Owns | Blocking authority |
+|---|---|---|
 | **Scott** | product: problem, scope, acceptance criteria, success metrics | veto |
-| **Archie** | architecture: boundaries, public contracts, new services | veto |
+| **Archie** | architecture: patterns, module/service boundaries, public contracts, new services | veto |
 | **Bob** | implementation: code, debugging, refactoring, integration | none |
-| **Quinn** | quality: test strategy, edge cases, regression risk | veto |
-| **Gard** | security: auth, permissions, secrets, dependencies, Docker | veto |
+| **Quinn** | quality: test strategy, coverage, edge cases, regression risk | veto |
+| **Gard** | security: auth, permissions, secrets, exposure, dependencies, Docker/Compose | veto |
 | **Pixie** | UX: flows, UI states, accessibility, microcopy | veto |
-| **Perry** | perceived speed: budgets, measurement, production-build evidence | blocks; only Perry loosens a budget |
-| **Pipe** | operations: CI/CD, deploy, rollback, observability | blocks |
-| **Spencer** | documentation: ADRs, specs, runbooks, release notes | veto |
-| **Virgo** | the team's own configuration: agents, skills, managed blocks | none |
+| **Perry** | perceived speed: budgets, measurement, production-build evidence | blocks; sole authority to loosen a budget |
+| **Pipe** | operations: CI/CD, deploy, rollback, observability, jobs, running migrations | blocks |
+| **Spencer** | documentation: ADRs, specs, API docs, runbooks, release notes | veto |
+| **Virgo** | the team's own configuration: agents, skills, these managed blocks | none |
 
 **Specialists**: not installed by default. A project gets one only when you add
 it, so no agent gets called just to round out the list:
@@ -160,6 +165,42 @@ MEDIUM or HIGH change, and only against a risk it can name. You can overrule a
 veto. When you do, the agent records the open risk and keeps helping. Who owns
 what at the boundaries, the conventions every agent follows, and the Integration
 Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/docs/team.md).
+
+## Stack packs, per project
+
+**Optional skills** add language and framework guidance to the existing team.
+Choose the packs your project uses; each is installed separately from the core.
+
+| Stack | Guidance | Install in your project |
+| --- | --- | --- |
+| [TypeScript](stack-packs/typescript/SKILL.md) | Type safety, async boundaries and module/build diagnostics | `npx canonkit add typescript` |
+| [C++](stack-packs/cpp/SKILL.md) | Resource ownership, lifetimes, concurrency and compiler/linker diagnostics | `npx canonkit add cpp` |
+| [C# / .NET](stack-packs/csharp/SKILL.md) | Nullability, async/resource lifetimes and solution/project builds | `npx canonkit add csharp` |
+| [Java](stack-packs/java/SKILL.md) | Resources, concurrency and Maven/Gradle diagnostics | `npx canonkit add java` |
+| [Python](stack-packs/python/SKILL.md) | Runtime data, mutable state, resources, async and environments | `npx canonkit add python` |
+| [React](stack-packs/react/SKILL.md) | Hooks, state/effects, hydration and configured framework boundaries | `npx canonkit add react` |
+| [Rust](stack-packs/rust/SKILL.md) | Ownership, lifetimes, async/unsafe invariants and Cargo diagnostics | `npx canonkit add rust` |
+| [Go](stack-packs/go/SKILL.md) | Errors, goroutines/channels and module/workspace builds | `npx canonkit add go` |
+| [Kotlin](stack-packs/kotlin/SKILL.md) | Nullability, coroutines/Flow and JVM/Android/multiplatform builds | `npx canonkit add kotlin` |
+| [Swift](stack-packs/swift/SKILL.md) | ARC, actors/concurrency and SwiftPM/Xcode diagnostics | `npx canonkit add swift` |
+
+Run these commands from your project. You can add several packs at once, inspect
+what is installed and remove a pack when you stop using it:
+
+```bash
+cd my-project
+npx canonkit add typescript react
+npx canonkit list
+npx canonkit remove react
+```
+
+React and TypeScript are independent. Adding a pack installs its instructions;
+it does not install compilers, runtimes or project dependencies.
+
+Copies go to the project's `.agents/skills/canonkit-<stack>/` and
+`.claude/skills/canonkit-<stack>/`. Local edits and unrelated files are preserved;
+repeating `add` updates intact copies. Details, recovery and removal are in
+[docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#stack-packs-per-project).
 
 ## When a gate fires
 
@@ -226,7 +267,7 @@ Which gate does what in each runtime:
 | `doctor` | checks the installation; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |
 | `uninstall [--claude] [--codex] [--opencode]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `add <name>...` / `remove <name>...` | specialists in the current project |
+| `add <name>...` / `remove <name>...` | specialists or stack-pack skills in the current project |
 | `list` | the roster and what is installed where |
 | `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) in the current project |
 
@@ -251,9 +292,15 @@ project agent with a different name, or change the source here and reinstall
 ([docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md)). Text outside the managed block
 markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 
-**Does anything leave my machine?** No. The hook records numbers and metadata
-(agent, model, tokens, durations, gate kind) in `~/.claude/canonkit-activity/`. It
-never records prompt text, results or commands.
+**Does anything leave my machine?** The hook keeps telemetry local in
+`~/.claude/canonkit-activity/`; new records omit task descriptions and command
+fragments, but still include paths and identifiers alongside counts and timing.
+Older records can retain those texts until rotation. Both
+[incidental project issues](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
+and the optional
+[Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)
+supply sanitized drafts; publication requires your review and explicit authorization. Raw logs
+and personal memories do not belong in a contribution.
 [Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
 **A gate fired on a change I'm sure is LOW.** Confirm it and say why. If the same
@@ -282,6 +329,8 @@ forwarder for the old hook name. See
 | [docs/tools.md](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) | graphify and openspec integration, with their security notes |
 | [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
 | [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
+| [docs/learning-loop.md](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md) | investigate mistakes and propose evaluated instruction changes |
+| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental project findings and approve issue drafts in a batch |
 | [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License

@@ -119,6 +119,12 @@ before(async () => {
     perfBudgets: ["perf/limits.yml"],
   });
   fx.badJson = await proj("bad-json", "{ \"highRisk\": { \"exclude\": [\"**\"] ");
+  fx.optIn = await proj("opt-in", {
+    highRisk: { include: ["eslint.config.*", "vitest.config.*"], exclude: ["eslint.config.*"] },
+  });
+  fx.optInNested = path.join(fx.optIn, "packages", "demo");
+  await mkdir(path.join(fx.optInNested, ".claude"), { recursive: true });
+  await writeFile(path.join(fx.optInNested, ".claude", "canonkit.json"), "{}");
   fx.dirConfig = await proj("dir-config");
   await mkdir(path.join(fx.dirConfig, ".claude", "canonkit.json"));
 
@@ -149,6 +155,104 @@ const editAt = (cwd, rel, content = "x", tool = "Edit") => ({
 });
 const envFor = (projectDir, extra = {}) =>
   ({ logDir: path.join(ROOT, "no-logs"), legacyLogDir: undefined, projectDir, home: ROOT, contextBands: undefined, ...extra });
+
+describe("literal shell copy, move and in-place edit targets", () => {
+  const cases = [
+    ["cp plain.ts src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["cp -f plain.ts 'src/auth/session file.ts'", "Bash", "high-risk-surface"],
+    ["cp -- plain.ts src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["cp -t src/auth a.ts b.ts", "Bash", "high-risk-surface"],
+    ["cp --target-directory=src/auth a.ts b.ts", "Bash", "high-risk-surface"],
+    ["cp -tsrc/auth a.ts b.ts", "Bash", "high-risk-surface"],
+    ["cp -t.env a.ts", "Bash", "high-risk-surface"],
+    ["sudo -u dev cp -S .backup plain.ts src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["cp src/auth/session.ts plain.ts", "Bash", null],
+    ["mv src/auth/session.ts plain.ts", "Bash", "high-risk-surface"],
+    ["mv a.ts b.ts src/auth/", "Bash", "high-risk-surface"],
+    ["mv --target-directory=plain src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["cp plain.ts .size-limit.json", "Bash", "perf-budget"],
+    ["cp plain.ts .claude/canonkit.json", "Bash", "high-risk-surface"],
+    ["sed -i 's/old/new/' src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["sed -i.bak 's/old/new/' plain.ts src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["sed -i '' 's/old/new/' 'src/auth/session file.ts'", "Bash", "high-risk-surface"],
+    ["sed -i .bak -e 's/old/new/' src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["sed --in-place=.bak --expression='s/old/new/' src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["sed -Ei -f program.sed -- src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["sed 's/old/new/' src/auth/session.ts", "Bash", null],
+    ["sed -i -e 's/src/auth/session.ts/new/' plain.ts", "Bash", null],
+    ["sed -i -f src/auth/program.sed plain.ts", "Bash", null],
+    ["echo 'cp plain.ts src/auth/session.ts'", "Bash", null],
+    ["printf '%s' 'mv src/auth/session.ts plain.ts'", "Bash", null],
+    ["echo ok # cp plain.ts src/auth/session.ts", "Bash", null],
+    ["true && cp plain.ts src/auth/session.ts", "Bash", "high-risk-surface"],
+    ["cp plain.ts ordinary.ts", "Bash", null],
+    ["Copy-Item -Path plain.ts -Destination src/auth/session.ts", "PowerShell", "high-risk-surface"],
+    ["Copy-Item plain.ts 'src/auth/session file.ts' -Force", "PowerShell", "high-risk-surface"],
+    ["Copy-Item -LiteralPath plain.ts -Destination:src/auth/session.ts", "PowerShell", "high-risk-surface"],
+    ["Copy-Item -Destination src/auth/session.ts plain.ts", "PowerShell", "high-risk-surface"],
+    ["Copy-Item src/auth/session.ts ordinary.ts", "PowerShell", null],
+    ["Copy-Item -Filter auth.ts plain.ts ordinary.ts", "PowerShell", null],
+    ["Move-Item -LiteralPath 'src\\auth\\session file.ts' -Destination plain.ts", "PowerShell", "high-risk-surface"],
+    ["Move-Item plain.ts src/auth/session.ts", "PowerShell", "high-risk-surface"],
+    ["Move-Item -Path src/auth/session.ts", "PowerShell", "high-risk-surface"],
+    ["Move-Item src/auth/session.ts", "PowerShell", "high-risk-surface"],
+    ["Write-Output 'Copy-Item plain.ts src/auth/session.ts'", "PowerShell", null],
+    ["& 'C:\\Tools\\cp.exe' plain.ts src\\auth\\session.ts", "PowerShell", "high-risk-surface"],
+  ];
+  for (const [command, tool, kind] of cases) {
+    test(`${tool}: ${command}`, () => {
+      const result = evaluate(shell(fx.plain, command, tool), envFor(fx.plain));
+      assert.equal(result.kind, kind);
+      assert.equal(result.decision, kind ? "ask" : "allow");
+    });
+  }
+  for (const [command, tool] of [
+    [`sed -i 's/x/${FAKE_AWS_KEY}/' src/auth/session.ts`, "Bash"],
+    [`Copy-Item plain.ts src/auth/session.ts # ${FAKE_AWS_KEY}`, "PowerShell"],
+    [`cp plain.ts .env # ${FAKE_PEM}`, "Bash"],
+  ]) {
+    test(`${tool}: hard-secret deny precedes path asks and malformed config`, () => {
+      const result = evaluate(shell(fx.badJson, command, tool), envFor(fx.badJson));
+      assert.equal(result.decision, "deny");
+      assert.equal(result.kind, "secret-block");
+    });
+  }
+});
+
+describe("new telemetry omits descriptions and command fragments", () => {
+  test("Agent/Task start and foreground end omit task text", () => {
+    for (const tool of ["Agent", "Task"]) for (const event of ["PreToolUse", "PostToolUse"]) {
+      const result = evaluate({ event, tool, cwd: fx.plain, session: "PRIVATE",
+        toolInput: { subagent_type: "gard", description: "PRIVATE-DESCRIPTION", prompt: "PRIVATE-PROMPT" },
+        toolResponse: { status: "completed" } }, envFor(fx.plain));
+      const records = result.logs.map((l) => l.record);
+      assert.ok(records.some((r) => r.event === (event === "PreToolUse" ? "agent_start" : "agent_end")));
+      assert.ok(records.every((r) => !Object.hasOwn(r, "task")));
+      assert.doesNotMatch(JSON.stringify(records), /PRIVATE-DESCRIPTION|PRIVATE-PROMPT/);
+    }
+  });
+  test("background end never copies a legacy task field into new records", async () => {
+    const logDir = await mkdtemp(path.join(ROOT, "legacy-task-"));
+    await writeFile(path.join(logDir, "events.jsonl"), [
+      { session: "OLD", event: "agent_start", id: "d1", agent: "gard", task: "LEGACY-PRIVATE-DESCRIPTION" },
+      { session: "OLD", event: "agent_launch", id: "d1", agent_id: "a1" },
+    ].map(JSON.stringify).join("\n") + "\n");
+    const result = evaluate({ event: "SubagentStop", cwd: fx.plain, session: "OLD", agentId: "a1" }, envFor(fx.plain, { logDir }));
+    assert.ok(result.logs.some((l) => l.record.event === "agent_end"));
+    assert.ok(result.logs.every((l) => !Object.hasOwn(l.record, "task")));
+    assert.doesNotMatch(JSON.stringify(result.logs), /LEGACY-PRIVATE/);
+  });
+  for (const command of ["git commit -m PRIVATE-MESSAGE", "git commit --no-verify -m PRIVATE-MESSAGE",
+    "git -c core.hooksPath=PRIVATE-PATH commit", "git commit -nmPRIVATE-MESSAGE"]) {
+    test(`git metadata without command text: ${command}`, () => {
+      const result = evaluate(shell(fx.plain, command), envFor(fx.plain));
+      assert.ok(["ask", "deny"].includes(result.decision));
+      assert.ok(result.logs.length);
+      assert.ok(result.logs.every((l) => !Object.hasOwn(l.record, "detail")));
+      assert.doesNotMatch(JSON.stringify(result.logs), /PRIVATE-MESSAGE|PRIVATE-PATH/);
+    });
+  }
+});
 
 // ---- 1. PURITY ----
 
@@ -342,6 +446,43 @@ describe("a missing or non-string cwd still denies", () => {
 // test/hook-opencode.test.js the plugin's hook).
 const P = () => fx.plain;
 const C = () => fx.cfg;
+
+describe("configured paths have a neutral confirmation message", () => {
+  for (const [label, event] of [
+    ["direct edit", () => editAt(fx.optIn, "eslint.config.js")],
+    ["file write", () => editAt(fx.optIn, "vitest.config.ts", "x", "Write")],
+    ["shell write", () => shell(fx.optIn, "echo x > eslint.config.js")],
+    ["PowerShell write", () => shell(fx.optIn, "Set-Content vitest.config.ts x", "PowerShell")],
+    ["nested filename match", () => editAt(fx.optIn, "packages/ui/eslint.config.js")],
+    ["root include under a nested config", () => ({ ...editAt(fx.optIn, "eslint.config.js"), cwd: fx.optInNested })],
+  ]) {
+    test(label, () => {
+      const r = evaluate(event(), envFor(fx.optIn));
+      assert.equal(r.decision, "ask");
+      assert.equal(r.kind, "high-risk-surface");
+      assert.match(r.reason, /protected by the project's highRisk\.include/);
+      assert.match(r.reason, /routing and review rules for the affected area/);
+      assert.match(r.reason, /which checks/);
+      assert.match(r.reason, /rollback/);
+      assert.match(r.reason, /highRisk\.exclude cannot override it/);
+      assert.doesNotMatch(r.reason, /auth\/secret|Archie\/Gard|is a HIGH-risk surface/);
+      assert.equal(r.logs.find((l) => l.record.kind === r.kind)?.record.rule, "include");
+    });
+  }
+
+  test("lint/test configs are opt-in and default HIGH-risk paths retain their message", () => {
+    for (const evt of [editAt(fx.plain, "eslint.config.js"), shell(fx.plain, "echo x > vitest.config.ts")]) {
+      assert.equal(evaluate(evt, envFor(fx.plain)).decision, "allow");
+    }
+    for (const evt of [editAt(fx.plain, "src/auth/session.ts"), shell(fx.plain, "echo x > src/auth/session.ts")]) {
+      const r = evaluate(evt, envFor(fx.plain));
+      assert.equal(r.decision, "ask");
+      assert.match(r.reason, /HIGH-risk surface \(auth\/secret\/migration\/contract\)/);
+      assert.match(r.reason, /Archie\/Gard review/);
+    }
+  });
+});
+
 const PARITY = [
   // git-bypass
   { name: "git commit --no-verify", evt: () => shell(P(), "git commit --no-verify -m wip"), expect: { claude: { decision: "deny", kind: "git-bypass" }, codex: { decision: "deny", kind: "git-bypass" }, opencode: { decision: "deny", kind: "git-bypass" } } },

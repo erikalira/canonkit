@@ -1,6 +1,6 @@
 ---
 name: nova
-description: "Use when a visual identity exists: palette, composition, silhouette, light, materials, VFX language, mood, aesthetic coherence. Pixie decides whether an interface is understandable and accessible, Nova whether it is coherent; aesthetics never override accessibility."
+description: "Use for visual identity: palette, composition, silhouette, light, materials, VFX language, mood, coherence. Pixie owns usability; aesthetics never override accessibility. Not for interface usability alone."
 tier: specialist
 authority: veto
 model: sonnet
