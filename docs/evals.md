@@ -143,7 +143,7 @@ for unanswered cases. An offline `--rescore` of the saved transcripts reproduced
 the same verdict without model calls. The judge, expectations and installed instructions were
 left unchanged, and no further model calls were made. A complete eval pass
 remains unverified; the separate unit, validation and real-harness release-gate
-results remain recorded in the [2.2 handoff](plans/canonkit-improvements-handoff.md).
+results remain recorded in the [2.2 handoff](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/canonkit-improvements-handoff.md).
 
 ## Quality eval
 
@@ -276,7 +276,7 @@ all attempts and errors; never selectively retry or discard valid answers. The
 runner can report a hold with one answered run, so its exit code alone does not
 satisfy the learning-loop requirement. Unavailable or incomplete comparisons
 leave a lesson awaiting evidence. See the [guide](learning-loop.md) and
-[design criteria](plans/learning-loop-design.md#acceptance-and-evaluation).
+[design criteria](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/learning-loop-design.md#acceptance-and-evaluation).
 
 ### Results: lean bodies (2026-10-18)
 

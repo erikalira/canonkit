@@ -3,7 +3,7 @@
 - Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md)
 - Data: 2026-10-19
 - Dono: Spencer (registro); decisão da usuária, desenho revisado por Archie e Gard
-- Plano de origem: `docs/plans/complements.md`
+- Plano de origem: [`docs/plans/complements.md`](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/complements.md) (removido após a conclusão; link para o histórico)
 - Numeração: `NNNN-assunto-em-kebab-case.md`, sequencial a partir de 0001. Uma ADR
   nunca é reescrita depois de aceita: uma decisão nova abre outra ADR e marca esta
   como substituída.

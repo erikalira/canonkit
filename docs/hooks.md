@@ -49,7 +49,7 @@ What `--wire-hooks` writes for each harness, and how to remove it by hand, is in
 The Codex/OpenCode "Verified on" rows above describe the November 1 tarball,
 before PR #25's shell-dialect correction. The correction has installed-adapter
 regressions and a separate model-free OpenCode API check, recorded in the
-[handoff](plans/canonkit-improvements-handoff.md). Its conversational/subagent
+[handoff](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/canonkit-improvements-handoff.md). Its conversational/subagent
 gate has not been rerun.
 
 The hook is one `PreToolUse` group in `$CODEX_HOME/hooks.json` (`~/.codex` when

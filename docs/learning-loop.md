@@ -150,5 +150,5 @@ authorization as other changes.
 The skill runs on demand. There is no SessionStart injection or automatic
 collection, promotion, installation or rollback. Its
 [instructions](../skills/learning-loop/SKILL.md) carry the full workflow and
-privacy rules; the [design note](plans/learning-loop-design.md) records the
+privacy rules; the [design note](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/learning-loop-design.md) records the
 initial investigation and acceptance rationale.
