@@ -47,6 +47,11 @@ runtime you chose: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json` (then run
 `.bak` of each config file it changes and changes nothing else. If you leave the
 flag out, `install` only prints Claude Code's JSON for you to paste yourself. [What each choice writes](https://github.com/erikalira/canonkit/blob/main/docs/install.md#core-at-user-level).
 
+Codex agents default to `gpt-6.1-sol`. To follow your Codex session's model
+instead of pinning a version, set `CANONKIT_CODEX_MODEL=inherit` when installing.
+See [model configuration](docs/install.md#follow-the-session-model) for PowerShell
+examples, overrides and updating existing agents.
+
 **Check that it worked:**
 
 ```bash

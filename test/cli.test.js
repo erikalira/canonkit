@@ -17,7 +17,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import prompts from "prompts";
 
-import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES } from "../bin/cli.js";
+import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES, codexAgent } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -73,6 +73,7 @@ function isolatedEnv(home, env) {
   if ("PATH" in env) for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
   const e = { ...base, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
   if (!("CODEX_HOME" in env)) delete e.CODEX_HOME;
+  if (!("CANONKIT_CODEX_MODEL" in env)) delete e.CANONKIT_CODEX_MODEL;
   return e;
 }
 
@@ -803,12 +804,63 @@ describe("codex custom agents", () => {
 
     // archie is opus in frontmatter — the demanding end of the map.
     const archie = await read(path.join(dest, "archie.toml"));
-    assert.match(archie, /^model = "gpt-5\.6"$/m);
+    assert.match(archie, /^model = "gpt-6\.1-sol"$/m);
     assert.match(archie, /^model_reasoning_effort = "high"$/m);
 
     // scott is sonnet — the balanced default.
     const scott = await read(path.join(dest, "scott.toml"));
+    assert.match(scott, /^model = "gpt-6\.1-sol"$/m);
     assert.match(scott, /^model_reasoning_effort = "medium"$/m);
+  });
+
+  test("keeps the lightweight tier and rejects unknown source models", () => {
+    const agent = { name: "scanner", description: "Focused work", model: "haiku", body: "Instructions" };
+    assert.match(codexAgent(agent), /^model = "gpt-6-luna"$/m);
+    assert.match(codexAgent(agent), /^model_reasoning_effort = "low"$/m);
+    assert.throws(() => codexAgent({ ...agent, model: "unknown" }), /no Codex equivalent/);
+    assert.match(codexAgent(agent, 'custom/"quoted"\\model'), /^model = "custom\/\\"quoted\\"\\\\model"$/m);
+  });
+
+  for (const model of ["inherit", "gpt-6.1-terra"]) {
+    test(`applies ${model} to core installation and specialist add`, async () => {
+      const { home, project } = await scratch(`codex-override-${model}`);
+      const env = { CANONKIT_CODEX_MODEL: model };
+      assert.equal(run(["install", "--codex", "--no-reference"], { home, env }).status, 0);
+      const added = run(["add", "iris", "maya"], { home, cwd: project, env });
+      assert.equal(added.status, 0, added.out);
+      for (const [dir, names] of [
+        [path.join(home, ".codex", "agents"), CORE],
+        [path.join(project, ".codex", "agents"), ["iris", "maya"]],
+      ]) {
+        for (const name of names) {
+          const text = await read(path.join(dir, `${name}.toml`));
+          if (model === "inherit") assert.doesNotMatch(text, /^model\s*=/m);
+          else assert.match(text, /^model = "gpt-6\.1-terra"$/m);
+          assert.match(text, new RegExp(`^model_reasoning_effort = "${["archie", "iris"].includes(name) ? "high" : "medium"}"$`, "m"));
+          assert.match(text, /^developer_instructions = '''$/m);
+        }
+      }
+      // Reinstalling without the variable restores defaults, not a stale override.
+      assert.equal(run(["install", "--codex", "--no-reference"], { home }).status, 0);
+      assert.match(await read(path.join(home, ".codex", "agents", "archie.toml")), /^model = "gpt-6\.1-sol"$/m);
+      assert.equal(await read(path.join(project, ".claude", "agents", "maya.md")), await read(path.join(REPO, "agents", "maya.md")));
+      assert.doesNotMatch(await read(path.join(project, ".opencode", "agents", "maya.md")), /^model:/m);
+    });
+  }
+
+  test("rejects invalid model overrides before writing agents", async () => {
+    for (const [index, model] of ["", "   ", "gpt-6.1-sol\nother", "bad\tmodel"].entries()) {
+      const { home, project } = await scratch(`codex-invalid-model-${index}`);
+      const env = { CANONKIT_CODEX_MODEL: model };
+      const installed = run(["install", "--no-reference"], { home, env });
+      assert.equal(installed.status, 1, installed.out);
+      assert.match(installed.out, /CANONKIT_CODEX_MODEL must be/);
+      assert.equal(existsSync(path.join(home, ".claude", "agents")), false);
+      assert.equal(existsSync(path.join(home, ".codex", "agents")), false);
+      const added = run(["add", "maya"], { home, cwd: project, env });
+      assert.equal(added.status, 1, added.out);
+      assert.equal(existsSync(path.join(project, ".claude")), false);
+    }
   });
 
   test("every agent body survives as a TOML literal string", async () => {

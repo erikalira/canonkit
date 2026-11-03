@@ -99,13 +99,53 @@ fifteen more lines to keep in sync and one more thing to drift:
 
 | frontmatter | Codex | reasoning effort |
 | --- | --- | --- |
-| `opus` | `gpt-5.6` | `high` |
-| `sonnet` | `gpt-5.6` | `medium` |
-| `haiku` | `gpt-5.6-luna` | `low` |
+| `opus` | `gpt-6.1-sol` | `high` |
+| `sonnet` | `gpt-6.1-sol` | `medium` |
+| `haiku` | `gpt-6-luna` | `low` |
 
 Every agent on this team is a judgment agent, not a scanner optimized for speed —
 which is why the fast models sit at the end of the map and nothing selects
-`gpt-5.6-luna` today.
+`gpt-6-luna` today. These defaults are centralized in `CODEX_MODELS` in
+`bin/cli.js`; they were checked against the [official model documentation](https://learn.chatgpt.com/docs/models?surface=web)
+on 2026-11-03. Availability depends on the account and client.
+
+### Follow the session model
+
+Set `CANONKIT_CODEX_MODEL=inherit` when installing to avoid pinning a model
+version in the generated agents:
+
+```bash
+CANONKIT_CODEX_MODEL=inherit node bin/cli.js install --codex
+```
+
+In PowerShell, from this checkout:
+
+```powershell
+$env:CANONKIT_CODEX_MODEL = 'inherit'
+node bin/cli.js install --codex
+```
+
+For the published package, use `npx canonkit install --codex` with the same
+environment variable. `inherit` omits the TOML `model` key and keeps each agent's
+reasoning effort. [Codex resolves the model](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+from an explicit spawn selection, then its subagent default, then the parent
+session. This follows your configuration; it does not guarantee the newest
+model. If you also leave the top-level Codex model unset, the client uses its
+recommended model.
+
+You can set the variable to a concrete model ID instead, such as
+`gpt-6.1-terra`. That pins the same model for every tier; efforts stay mapped as
+above. The installer does not probe account access or fetch models from the
+network. Unset the variable to restore the shipped mapping on the next install
+(`Remove-Item Env:CANONKIT_CODEX_MODEL` in PowerShell, `unset CANONKIT_CODEX_MODEL`
+in Bash).
+
+This is an **install-time** choice, shared by `install` and specialist `add`.
+Changing the variable alone does not update existing files. Re-run installation
+to regenerate core agents, and `canonkit add <name>` in each project to
+regenerate its specialists; start a new Codex session afterward. `reference`
+only updates blocks and skills, so it does not regenerate agents. Historical
+plans, eval records and hook fixtures retain the model IDs actually used.
 
 Your own Codex custom agents live in the same directory and are none of the
 installer's business. The only thing it comments on is narrower: a file that
