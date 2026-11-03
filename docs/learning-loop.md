@@ -75,8 +75,9 @@ consent. Codex and OpenCode currently produce no canonkit activity log. These
 limits must remain visible in a proposal. Raw logs, commands, session identifiers
 and transcripts do not belong in it. Sanitize local and public proposals alike;
 never send personal memories, secrets or private project information to an issue.
-Existing hook logs can contain task descriptions, command fragments and paths;
-proposal sanitization does not sanitize those logs.
+New hook records omit task descriptions and command fragments; historical logs
+can still contain them. Paths and identifiers remain in new records. Proposal
+sanitization does not sanitize those logs.
 
 A lesson changes canonical source in `agents/`, `reference/`, `skills/`, or a
 project's `canonkit.json`. Generated installed copies are replaced on reinstall.

@@ -7,10 +7,10 @@ One job per session: each item is independent.
 
 **Status (2026-11-03):** items 1–5 are implemented for the 2.x scope; item 5 is
 merged through PR #26. Items 6 and 7 are implemented in the repository, with
-local verification recorded below. **Next: item 8, then item 9.** The README
-Runtimes correction in item 8 was already delivered by item 4.
+local verification recorded below. Item 8 is **implemented and verified locally**.
+**Next: item 9.** The README Runtimes correction in item 8 was already delivered by item 4.
 
-Remaining follow-ups outside those two batches: the item 4 deletion of
+Remaining follow-ups outside item 9: the item 4 deletion of
 byte-identical `~/.agents/<core>.md` copies is reserved for 3.0; behavioral
 efficacy for items 6 and 7 remains unmeasured; release/publication and cross-OS
 verification retain the limits recorded below. The recorded 2.3.0 publication
@@ -48,8 +48,8 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
-| 8 | Small fixes from the audit — **next**; Runtimes docs already corrected by item 4 | clarity, rationale, routing, consistency, observability, enforcement gap | inline (LOW) |
-| 9 | Leftovers, low value now — **pending**, after item 8 | — | inline (LOW) |
+| 8 | Small fixes from the audit — **implemented and verified locally**; reviews recorded below | clarity, rationale, routing, consistency, observability, enforcement gap (not re-scored) | root; Virgo, Quinn, Gard, Spencer reviews (MEDIUM hook/validator) |
+| 9 | Leftovers, low value now — **next** | — | inline (LOW) |
 
 ### 1. CI on three OS
 
@@ -1186,10 +1186,12 @@ only if the stack needs its own review verdict. Rules:
   scores stack-agnostic kits low by design, and scope-focus is 9 today — keep it).
 Dispatch: Virgo, sonnet, medium; Scott, sonnet, low only if scope is contested.
 
-### 8. Small fixes from the audit (one LOW batch)
+### 8. Small fixes from the audit
 
-**Status (2026-11-03):** this is the next implementation batch. The portability
-documentation subtask is complete; the remaining subtasks below are pending.
+**Status (2026-11-03):** implemented and verified locally in the working tree.
+The original LOW batch is treated as MEDIUM for the
+hook/validator regression risk. The portability documentation subtask was
+already delivered by item 4. The original checklist follows for traceability.
 Use section and symbol names to locate code; the original audit's line numbers
 have shifted after items 4–7.
 
@@ -1210,9 +1212,71 @@ have shifted after items 4–7.
   aligned with the adapter maps; the original "does not ship them yet" wording
   no longer applies.
 
+**Implementation (2026-11-03; user authorized item 8):**
+
+- Defined trivial work as local, reversible and without behavior, contract,
+  security or shared-runtime effects. A private-comment typo can remain LOW
+  even in an auth file, matching the existing `low-in-auth-file` eval; changes
+  with HIGH-risk effects still require independent review even when small.
+  Added the dependency-routing supply-chain rationale and the reason for a
+  fresh reviewer after the last edit. Existing eval expectations are unchanged.
+- All 15 descriptions include a short "Not for ..." boundary while preserving
+  domain ownership and authority. The validator requires it and a complete
+  description line below 300 UTF-8 bytes.
+- README core roster now matches the reference. `scripts/check-roster.mjs`,
+  called by `validate.sh`, compares every cell in order and rejects missing or
+  duplicate rows/tables; scratch-fixture tests exercise real checker exits.
+- New activity records omit `task` and `detail`, including background ends
+  joined to legacy starts. Git-bypass metadata retains only the flag family,
+  without configuration values or message suffixes. Existing logs are not
+  rewritten; paths, names and identifiers still require sanitization. The
+  existing dashboard tolerates the absent fields without a frontend change.
+- `shellWriteTargets` recognizes literal operands of `cp`, `mv`, GNU/BSD
+  in-place `sed`, `Copy-Item` and `Move-Item`, reusing the existing tokenizer.
+  Moves include removed sources; copies check destinations. Gard identified
+  PowerShell's optional destination during review; the correction gates
+  `Move-Item` sources even when the destination is omitted, with regressions
+  in both core and process tests. Denies remain ahead of confirms/config reads.
+- This remains a heuristic, with dynamic expansion, wrappers, directory child
+  resolution and copied-content scanning outside its scope. Limits are explicit
+  in [docs/hooks.md](../hooks.md#shell-write-targets).
+- Default source profiles decreased by 13 words: Claude **2,133 → 2,120**,
+  Codex **2,002 → 1,989**, OpenCode **2,072 → 2,059**, below the 2,500-word
+  limit. Method and limits are in [docs/evals.md](../evals.md#always-loaded-cost).
+  Behavioral routing effectiveness and new rubric scores are not measured.
+
+**Verification (2026-11-03, Windows):**
+
+- `npm test`: **816 tests, 813 passed, 3 skipped, 0 failed**, 206.5 seconds.
+  This full-suite run started before the omitted-destination correction. The
+  final hook correction and its additional regressions then passed
+  `node --test --test-reporter=dot test/hook-core.test.js test/check-roster.test.js test/canonkit-hook.test.js`.
+  The complete suite was not repeated after that bounded correction.
+- Git Bash `scripts/validate.sh --quiet` passed after the final hook correction,
+  with 15 agents. Git Bash and the Node test runner required execution outside
+  the sandbox, which blocked their process/pipe creation.
+- Routing and quality dry-runs loaded **23 and 61 cases**, with no model calls.
+  `npm pack --dry-run --json` passed with **52 files**; no package was published.
+  `git diff --check` passed.
+- Virgo reviewed the instructions. Quinn approved quality after the final hook
+  edit and the later clarification preserving LOW comment edits. Gard approved
+  security after the omitted-destination fix. Spencer approved documentary
+  consistency conditional on recording actual final results and correcting
+  the Node-availability caveat; both are recorded here and in `docs/maintaining.md`.
+- Root's Integration Review reconciled the initial trivial/HIGH ambiguity with
+  the existing LOW auth-comment eval. No gate maps, eval expectations or
+  ownership boundaries changed; privacy minimization retains identifiers and
+  historical logs, and the documented parser limits remain explicit. No
+  contradictory recommendation or remaining implementation blocker was found.
+
+Dispatches requested native Codex `gpt-6.1-terra` (high for Virgo/Quinn/Gard,
+medium for Spencer); reviewers could not independently observe the resolved
+runtime model. Cross-OS CI and real-harness/model-session verification were not
+rerun. No real install, paid eval, commit, push or publication was run.
+
 ### 9. Leftovers (low value now)
 
-**Status (2026-11-03):** pending, after item 8. The JSON Schema is optional;
+**Status (2026-11-03):** next, after the locally verified item 8. The JSON Schema is optional;
 changing unknown-key diagnostics from WARN to FAIL remains a decision, not an
 approved behavior change.
 
@@ -1245,12 +1309,11 @@ Proposed in the audit, not applied (rubric stays 1.0.0):
 
 ## First step for the next session
 
-Start item 8. Read `reference/agents-block.md`, the agent descriptions, the README
-roster and Runtimes table, `scripts/validate.sh`, and the logging and
-`shellWriteTargets` code in `hooks/canonkit-hook.js`. Propose the bounded batch
-before editing; account for the portability subtask already delivered by item 4.
-Measure context-cost after instruction changes and obtain Quinn's review after
-the hook edit. Then address item 9's optional schema and neutral gate-message/docs work.
+Start item 9. Read `projectConfig` and the HIGH-risk gate messages in
+`hooks/canonkit-hook.js`, the doctor diagnostics in `bin/cli.js`, and the
+configuration examples in `docs/hooks.md`. Propose the optional editor JSON
+Schema and neutral message/example work before editing. Keep unknown-key WARN
+versus FAIL as an explicit decision, and do not add a default lint/test gate list.
 
 Keep the 3.0 deletion, release verification and behavioral measurements as
 explicit follow-ups. Real-model evals spend credit and require the user's

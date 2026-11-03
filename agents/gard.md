@@ -1,6 +1,6 @@
 ---
 name: gard
-description: "Use for security: auth, permissions, sessions, secrets, exposed services/ports/endpoints, dependencies and supply chain, Docker/Compose, sensitive scripts, pre-merge risk triage. Holds a veto on security."
+description: "Use for security: auth, permissions, sessions, secrets, exposure, dependencies/supply chain, Docker/Compose, sensitive scripts. Veto on security. Not for lockfile-only patch bumps alone."
 tier: core
 model: sonnet
 ---

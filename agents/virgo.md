@@ -1,6 +1,6 @@
 ---
 name: virgo
-description: "Use to change the team's own configuration: agents, skills, the managed AGENTS.md/CLAUDE.md blocks, which specialists a project installs, and canonkit's validation. No blocking authority."
+description: "Use to change team configuration: agents, skills, managed AGENTS.md/CLAUDE.md blocks, installed specialists, canonkit validation. No blocking authority. Not for ordinary project code."
 tier: core
 model: sonnet
 ---

@@ -126,18 +126,18 @@ make the change HIGH.
 
 **Core**: installed at user level and available in every project.
 
-| Agent | Owns | Authority |
-| --- | --- | --- |
+| Agent | Owns | Blocking authority |
+|---|---|---|
 | **Scott** | product: problem, scope, acceptance criteria, success metrics | veto |
-| **Archie** | architecture: boundaries, public contracts, new services | veto |
+| **Archie** | architecture: patterns, module/service boundaries, public contracts, new services | veto |
 | **Bob** | implementation: code, debugging, refactoring, integration | none |
-| **Quinn** | quality: test strategy, edge cases, regression risk | veto |
-| **Gard** | security: auth, permissions, secrets, dependencies, Docker | veto |
+| **Quinn** | quality: test strategy, coverage, edge cases, regression risk | veto |
+| **Gard** | security: auth, permissions, secrets, exposure, dependencies, Docker/Compose | veto |
 | **Pixie** | UX: flows, UI states, accessibility, microcopy | veto |
-| **Perry** | perceived speed: budgets, measurement, production-build evidence | blocks; only Perry loosens a budget |
-| **Pipe** | operations: CI/CD, deploy, rollback, observability | blocks |
-| **Spencer** | documentation: ADRs, specs, runbooks, release notes | veto |
-| **Virgo** | the team's own configuration: agents, skills, managed blocks | none |
+| **Perry** | perceived speed: budgets, measurement, production-build evidence | blocks; sole authority to loosen a budget |
+| **Pipe** | operations: CI/CD, deploy, rollback, observability, jobs, running migrations | blocks |
+| **Spencer** | documentation: ADRs, specs, API docs, runbooks, release notes | veto |
+| **Virgo** | the team's own configuration: agents, skills, these managed blocks | none |
 
 **Specialists**: not installed by default. A project gets one only when you add
 it, so no agent gets called just to round out the list:
@@ -288,8 +288,9 @@ project agent with a different name, or change the source here and reinstall
 markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 
 **Does anything leave my machine?** The hook keeps telemetry local in
-`~/.claude/canonkit-activity/`; records can include task descriptions, command
-fragments and paths alongside counts and timing. Both
+`~/.claude/canonkit-activity/`; new records omit task descriptions and command
+fragments, but still include paths and identifiers alongside counts and timing.
+Older records can retain those texts until rotation. Both
 [incidental project issues](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
 and the optional
 [Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)

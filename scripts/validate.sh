@@ -80,8 +80,10 @@ for f in agents/*.md; do
       # on every turn: it is the trigger, so it opens with when to call the
       # agent, not with who the agent is.
       fail "$base: description must open with \"Use ...\" — it is the delegation trigger"
-    elif [ "$len" -gt 300 ]; then
-      fail "$base: description is $len chars — it loads on every turn; keep it under 300"
+    elif [ "$len" -ge 300 ]; then
+      fail "$base: description is $len bytes — it loads on every turn; keep it under 300"
+    elif ! printf '%s' "$desc" | grep -q ' Not for '; then
+      fail "$base: description needs a short 'Not for ...' routing boundary"
     else
       pass "$base"
     fi
@@ -278,6 +280,16 @@ else
 fi
 
 head_ "Skills"
+
+if command -v node >/dev/null 2>&1; then
+  node "$REPO_ROOT/scripts/check-roster.mjs" > "$TMP" 2>&1 || true
+  while IFS=$'\t' read -r status detail; do
+    [ -z "${status:-}" ] && continue
+    if [ "$status" = "OK" ]; then pass "$detail"; else fail "$detail"; fi
+  done < "$TMP"
+else
+  warn "node not found — skipped the README roster check"
+fi
 
 # A skill is the on-demand half of the reference: the roster keeps one always-on
 # line per moved rule and points at the skill. A skill that cannot be found, or

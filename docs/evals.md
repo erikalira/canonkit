@@ -341,6 +341,24 @@ counting the Risk scale, which now exists once in the block instead of fourteen
 times across the agents. Before 1.1 it was ~14.5k (~3.6k tokens). Specialist
 descriptions only weigh in the project that installed them.
 
+**Item 8 measurement (2026-11-03, source profiles):** adding routing non-triggers
+to all 15 agent descriptions while shortening the descriptions reduced the
+default profiles by 13 words, including the new risk-rule rationale:
+
+| Default profile | Before item 8 | After item 8 | Limit |
+|---|---:|---:|---:|
+| Claude Code | 2,133 words | 2,120 words | 2,500 words |
+| Codex | 2,002 words | 1,989 words | 2,500 words |
+| OpenCode | 2,072 words | 2,059 words | 2,500 words |
+
+Method: whitespace-separated words in `reference/agents-block.md`, the runtime's
+adapter block, ten core descriptions and every shipped global skill description,
+as in `test/cli.test.js`'s default-profile guard. Before is the pre-item-8 Git
+HEAD; after is the working-tree source. All 15 complete `description:` lines
+are below 300 UTF-8 bytes. Specialist descriptions are excluded from the default
+profiles. These are source word counts, not tokenizer output, installed-profile
+measurements or evidence of routing effectiveness. No paid model eval was run.
+
 Per dispatch, a core agent's body is ~3.7–8.7k characters (~0.9–2.2k tokens); the
 report it returns is measured in `report_chars` in the log (see
 [telemetry.md](telemetry.md)).

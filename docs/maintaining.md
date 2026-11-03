@@ -39,7 +39,8 @@ You are <Name>, the agent team's <domain> agent.
 
 The `name` must match the filename. The `description` is what the delegating
 model reads when deciding whether the agent fits a request, so it should say what
-the agent owns, not just its title. The `model` must be declared in the file
+the agent owns and end with a short "Not for ..." routing boundary. Keep the
+entire description line below 300 UTF-8 bytes. The `model` must be declared in the file
 itself: stated anywhere else — a table, a note, a habit — it is an intention, and
 the runtime quietly uses the session default instead. The `tier` decides where the
 agent installs, and is read by every installer; it lives here for the same reason
@@ -65,7 +66,7 @@ Read-only, exits non-zero on any failure. It automates Virgo's protocol and chec
 the conventions in [team.md](team.md#conventions):
 
 - frontmatter — `name` matches the filename, `model` and `tier` declared and
-  valid, `description` opening with "Use ..." and under 300 characters (Claude
+  valid, `description` opening with "Use ...", including "Not for ..." and under 300 UTF-8 bytes (Claude
   Code lists the description of every installed agent on every turn: it is the
   delegation trigger, not a biography);
 - structure — Mission, Responsibilities, Collaboration, Expected Output,
@@ -81,7 +82,9 @@ the conventions in [team.md](team.md#conventions):
 - the veto rule — whoever declares a veto also says what to do when overruled;
 - the core/specialist split — every agent declares `tier`, all have a summary line
   in `reference/agents-block.md`, the roster lists no name without a file, and the
-  roster's two sections match the declared `tier`;
+  roster's two sections match the declared `tier`; the README core table matches
+  its names, order, ownership and authority (comparison runs when Node is
+  available; otherwise validation skips it with a warning);
 - the escalation graph — no isolated core agent, and nobody escalating to a
   generic role ("the security owner") instead of a named agent;
 - the roster and the routing block — every agent appears in the roster, the

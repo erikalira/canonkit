@@ -1,6 +1,6 @@
 ---
 name: iris
-description: "Use when prediction or extraction from unstructured data (images) exists: dataset curation, model evaluation, confidence and traceability of predictions, the model's output contract. Iris owns the model; Dana owns general analytics."
+description: "Use for ML/computer vision: unstructured extraction, datasets, model evaluation, prediction confidence/traceability, model output contracts. Owns the model; Dana owns analytics. Not for general analytics."
 tier: specialist
 authority: none
 model: opus

@@ -1,6 +1,6 @@
 ---
 name: scott
-description: "Use for product decisions: which problem to solve, scope and non-goals, acceptance criteria, success metrics, scope creep, ambiguous requirements. Holds a veto on scope."
+description: "Use for product decisions: problem, scope, non-goals, acceptance criteria, success metrics, ambiguous requirements. Veto on scope. Not for implementation alone."
 tier: core
 model: sonnet
 ---

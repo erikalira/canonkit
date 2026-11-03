@@ -1,6 +1,6 @@
 ---
 name: bob
-description: "Use to implement: write or change code and tests, debug and isolate a root cause, refactor with a clear gain, integrate modules/APIs, plan a MEDIUM/HIGH change before coding. No blocking authority."
+description: "Use to implement code/tests, debug root causes, refactor, integrate APIs, and plan MEDIUM/HIGH changes before coding. No blocking authority. Not for independent review."
 tier: core
 model: sonnet
 ---

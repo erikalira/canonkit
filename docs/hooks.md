@@ -154,6 +154,25 @@ disk that no event references, on the other hand, does nothing and does not
 complain, which is the worst possible failure mode for a gate: everyone keeps
 believing it runs.
 
+## Shell write targets
+
+Alongside redirections, `tee` and the existing PowerShell write commands, the
+hook recognizes literal operands of `cp`, `mv`, `sed -i`/`--in-place`,
+`Copy-Item` and `Move-Item`. Copy operations check their destination; moves
+also check the removed source, including `Move-Item` with its default destination
+(the current directory). GNU target-directory options and common
+PowerShell named parameters are recognized; sed programs and script files are
+not treated as write targets. Quoted command examples and comments are ignored
+by this operand parser. Hard-secret checks still run before confirmation gates
+and project configuration reads.
+
+This remains a heuristic: it does not expand variables, globs, PowerShell
+arrays/pipeline-bound sources or commands hidden in shell wrappers. Copying or
+moving into a directory checks the directory operand, without resolving each
+resulting child filename. It does not read a copied file's content for secrets.
+Aliases and arbitrary scripts are outside this command list. Existing raw
+redirection and PowerShell-write heuristics retain their own limits.
+
 ## What the git gates read
 
 Both shells (Bash and PowerShell) go through the same check. The command is split

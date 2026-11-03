@@ -1,6 +1,6 @@
 ---
 name: pipe
-description: "Use for operations: CI/CD, deploy readiness, rollback, operational Docker/Compose, jobs and queues, observability, runbooks, and running a migration. Blocks on operational readiness."
+description: "Use for operations: CI/CD, deploy readiness, rollback, Docker/Compose, jobs/queues, observability, runbooks, running migrations. Blocks on operational readiness. Not for perceived speed alone."
 tier: core
 model: sonnet
 ---

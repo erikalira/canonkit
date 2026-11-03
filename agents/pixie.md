@@ -1,6 +1,6 @@
 ---
 name: pixie
-description: "Use for UX: user flows, UI states (empty, error, loading, permission, success), accessibility, design-system consistency, microcopy, design handoff. Holds a veto on whether an interface is understandable and accessible."
+description: "Use for UX: flows, UI states, accessibility, design-system consistency, microcopy, design handoff. Veto on understandability/accessibility. Not for visual style alone."
 tier: core
 model: sonnet
 ---

@@ -1,7 +1,9 @@
 # Dispatch metrics, context contributors and the dashboard
 
 The Claude Code hook records numbers and metadata about what each session spends,
-including task descriptions, command fragments and paths in some event types.
+including paths and identifiers in some event types. New records omit dispatch
+descriptions (`task`) and command fragments (`detail`); older records may retain
+them until rotation. No existing logs are rewritten or deleted by this change.
 Hook telemetry stays on your machine, in `~/.claude/canonkit-activity/`. Optional
 [Learning Loop contributions](learning-loop.md#contributing-a-general-improvement)
 send only user-reviewed, explicitly authorized sanitized issues, not raw logs.
@@ -26,7 +28,7 @@ average report size and average duration.
 
 Each subagent dispatch becomes two lines in
 `~/.claude/canonkit-activity/events.jsonl`, linked by `id` (the `tool_use_id`):
-`agent_start` (agent, description, `model`, `effort`; empty = inherited the
+`agent_start` (agent, `model`, `effort`; empty = inherited the
 default) and `agent_end` (resolved model, duration, input / output / cache read /
 cache write tokens, number of API calls, and `report_chars`, the size of the
 report that came back into the dispatcher's context — it is re-read on every
@@ -55,8 +57,9 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
 - `gate`: `kind` (`git`, `git-bypass`, `high-risk-surface`, `secret-block`,
   `secret-ask`, `perf-budget`, `excluded-by-config`, `context-size`,
   `definition-of-done`), `file`, `tool`, `project`; in `git` and `git-bypass`,
-  `detail` (the first 80 characters of the command); in `git-bypass`, `flag` (the
-  flag that was denied); in `excluded-by-config`, `glob`; in
+  older records may contain `detail` (the first 80 characters of the command).
+  New records omit it. In `git-bypass`, `flag` identifies the denied flag family
+  without config values or short-option message suffixes; in `excluded-by-config`, `glob`; in
   `high-risk-surface`, `rule`, the rule that matched (`config`, `include`,
   `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); in
   `definition-of-done` (the Stop gate blocked the turn), `files` (how many files)
@@ -65,6 +68,11 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
 - `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_end`,
   also `resolved_model`, `mode`, `duration_ms`, `tool_uses`, `tokens` and
   `report_chars`.
+
+Readers must accept absent `task` and `detail` fields. The dashboard already
+falls back to a generic dispatch label and omits absent command details. Agent
+names, resume targets, project names and file paths still require sanitization
+before sharing; omitting descriptions is not a guarantee that records are anonymous.
 
 Unknown fields must be ignored by readers: new ones may appear without notice.
 

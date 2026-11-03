@@ -373,6 +373,20 @@ describe("git hook and signing bypass", () => {
   });
 });
 
+describe("copy, move and in-place edits through the real hook", () => {
+  for (const [tool, command] of [
+    ["Bash", "cp plain.ts src/auth/session.ts"],
+    ["Bash", "mv src/auth/session.ts plain.ts"],
+    ["Bash", "sed -i 's/old/new/' src/auth/session.ts"],
+    ["PowerShell", "Copy-Item plain.ts src/auth/session.ts"],
+    ["PowerShell", "Move-Item src/auth/session.ts plain.ts"],
+    ["PowerShell", "Move-Item -Path src/auth/session.ts"],
+  ]) test(command, () => assert.equal(decide(pre(tool, { command })), "ask"));
+  test("new command types retain hard-secret precedence", () => {
+    assert.equal(decide(pre("Bash", { command: `sed -i 's/x/${FAKE_AWS_KEY}/' src/auth/session.ts` })), "deny");
+  });
+});
+
 describe("every shell is a shell", () => {
   // The side door this closed: on Windows the harness's primary shell tool is
   // PowerShell, so a gate wired only to Bash gates nothing that matters there.
@@ -1370,7 +1384,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.id, "toolu_fg");
     assert.deepEqual(
       { agent: end.agent, task: end.task, model: end.model, effort: end.effort, mode: end.mode },
-      { agent: "gard", task: "review auth", model: "haiku", effort: "low", mode: "foreground" },
+      { agent: "gard", task: undefined, model: "haiku", effort: "low", mode: "foreground" },
     );
     assert.equal(end.resolved_model, "claude-haiku-5-5");
     assert.equal(end.duration_ms, 9000);
@@ -1379,7 +1393,7 @@ describe("dispatch metrics", () => {
     assert.equal(end.report_chars, RESULT.length, "the size of what returned to the caller, not its text");
 
     const raw = JSON.stringify(evs);
-    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
+    assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT) && !raw.includes(ti.description), "prompt, description or result text reached the log");
   });
 
   test("a dispatch with no effort logs it as empty (inherited)", async () => {
@@ -1786,13 +1800,14 @@ describe("definition-of-done gate: reviewer probes and resumed reviewers", () =>
     assert.ok(!JSON.stringify(evs).includes("CONTENT-") && !JSON.stringify(evs).includes("SUMMARY-TEXT"));
   });
 
-  test("agent_start logs the agent's name; names, targets and tasks are capped", async () => {
+  test("agent_start omits tasks; names and resume targets are capped", async () => {
     const s = session();
     decide(pre("Agent", { subagent_type: "gard", name: "n".repeat(5000), description: "d".repeat(5000) }, s));
     send(s, { to: "t".repeat(5000), message: "m" });
     const [start, resume] = await logged(s);
     assert.match(start.name, /^n+$/);
-    for (const v of [start.name, start.task, resume.to]) assert.ok(v.length > 0 && v.length <= 200, String(v.length));
+    assert.equal(Object.hasOwn(start, "task"), false);
+    for (const v of [start.name, resume.to]) assert.ok(v.length > 0 && v.length <= 200, String(v.length));
   });
 });
 

@@ -1,6 +1,6 @@
 ---
 name: perry
-description: "Use when a change can affect what the user waits for: performance budgets, measurement method, production-build evidence, dominant-cost attribution, regressions. Blocks on performance; the only agent that may loosen a budget."
+description: "Use for perceived speed: budgets, measurement, production-build evidence, dominant costs, regressions. Blocks on performance; sole authority to loosen a budget. Not for uptime alone."
 tier: core
 model: sonnet
 ---

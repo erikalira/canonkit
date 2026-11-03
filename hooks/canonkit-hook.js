@@ -129,7 +129,7 @@ const safeId = (v) => (typeof v === 'string' && /^[\w-]{1,64}$/.test(v) ? v : ''
 // Agent types may be namespaced (`plugin:agent`, `scope.name`): rejecting `:` would
 // fold every plugin agent into one "unknown" row. Still no spaces, slashes or quotes.
 const safeType = (v) => (typeof v === 'string' && /^[\w.:-]{1,128}$/.test(v) ? v : '');
-// Free text the model chose (a task description, an agent's name, a message
+// Free text the model chose (an agent's name, a message
 // target): kept short, so one long string cannot bloat the log the Stop gate reads.
 const cap = (v) => (typeof v === 'string' ? v.slice(0, 200) : '');
 
@@ -705,7 +705,7 @@ const SOFT_SECRET = /(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=
 // path gates cover `echo ... > src/auth/x.ts` and `Set-Content lighthouserc.json`
 // as well as an Edit. Targets only — testing the whole command string would fire
 // on every `grep auth src > out.txt`, and a noisy gate is a dead gate.
-function shellWriteTargets(cmd) {
+function shellWriteTargets(cmd, tool) {
   const out = [];
   let m;
   const redirect = /(?:^|[^0-9>])>>?\s*(["']?)([^\s"'|;&]+)\1/g;
@@ -714,7 +714,77 @@ function shellWriteTargets(cmd) {
   while ((m = tee.exec(cmd))) out.push(m[2]);
   const psWrite = /\b(?:Set-Content|Add-Content|Out-File|New-Item)\b[^\n;|]*?(?:-(?:Path|FilePath)\s+)?(["']?)([A-Za-z0-9_.\/\\:-]+\.[A-Za-z0-9]+)\1/gi;
   while ((m = psWrite.exec(cmd))) out.push(m[2]);
-  return out;
+  // Literal operands only: reuse the shell grammar so quoted examples, comments
+  // and sed expressions are not mistaken for commands or destination paths.
+  // This is a tripwire, not a shell evaluator (no variable/glob expansion).
+  for (const seg of shellSegments(cmd, tool)) {
+    let i = 0;
+    while (i < seg.length) {
+      if (/^[A-Za-z_]\w*=/.test(seg[i])) { i++; continue; }
+      if (!CMD_PREFIX.has(seg[i])) break;
+      for (i++; i < seg.length && (seg[i].startsWith('-') || /^\d[\d.]*[smhd]?$/.test(seg[i])); i++) {
+        if (CMD_PREFIX_VALUE.has(seg[i])) i++;
+      }
+    }
+    const command = (seg[i] || '').split(/[\\/]/).pop().replace(/\.exe$/i, '').toLowerCase();
+    const args = seg.slice(i + 1);
+    if (command === 'cp' || command === 'mv') {
+      const operands = [];
+      let target = null, literal = false;
+      for (let j = 0; j < args.length; j++) {
+        const a = args[j];
+        if (!literal && a === '--') { literal = true; continue; }
+        if (!literal && (a === '-t' || a === '--target-directory')) { target = args[++j]; continue; }
+        if (!literal && /^(?:--target-directory=.+|-t.+)$/.test(a)) {
+          target = a.startsWith('--') ? a.slice(a.indexOf('=') + 1) : a.slice(2); continue;
+        }
+        if (!literal && (a === '-S' || a === '--suffix')) { j++; continue; }
+        if (!literal && a.startsWith('-')) continue;
+        operands.push(a);
+      }
+      if (target === null) target = operands.length > 1 ? operands.pop() : null;
+      if (target) out.push(target);
+      // A move also removes its source; a copy only reads it.
+      if (command === 'mv' && target) out.push(...operands);
+    } else if (command === 'copy-item' || command === 'move-item') {
+      const sources = [], positional = [];
+      let destination = null;
+      for (let j = 0; j < args.length; j++) {
+        const a = args[j];
+        const p = /^-(Path|LiteralPath|Destination|Filter|Include|Exclude|Credential|FromSession|ToSession|ErrorAction|WarningAction|InformationAction|ErrorVariable|WarningVariable|InformationVariable|OutVariable|OutBuffer|PipelineVariable)(?::(.*))?$/i.exec(a);
+        if (p) {
+          const value = p[2] === undefined ? args[++j] : p[2];
+          if (/^destination$/i.test(p[1])) destination = value;
+          else if (/^(?:literal)?path$/i.test(p[1]) && value) sources.push(value);
+        } else if (!a.startsWith('-')) positional.push(a);
+      }
+      if (!sources.length && positional.length) sources.push(positional.shift());
+      if (destination === null && positional.length) destination = positional.shift();
+      if (destination) out.push(destination);
+      // Destination is optional in PowerShell (the current directory by default).
+      if (command === 'move-item') out.push(...sources);
+    } else if (command === 'sed') {
+      const operands = [];
+      let inplace = false, script = false, literal = false;
+      for (let j = 0; j < args.length; j++) {
+        const a = args[j];
+        if (!literal && a === '--') { literal = true; continue; }
+        if (!literal && /^(?:--in-place(?:=.*)?|-[A-Za-z]*i.*)$/.test(a)) {
+          inplace = true;
+          // BSD sed requires a separate backup suffix, often the empty string.
+          if (a === '-i' && (args[j + 1] === '' || /^\.[\w.-]+$/.test(args[j + 1] || ''))) j++;
+          continue;
+        }
+        if (!literal && /^(?:-e|-f|--expression|--file)$/.test(a)) { script = true; j++; continue; }
+        if (!literal && /^(?:-[ef].+|--(?:expression|file)=)/.test(a)) { script = true; continue; }
+        if (!literal && a.startsWith('-')) continue;
+        operands.push(a);
+      }
+      if (!script) operands.shift(); // the first operand is the program
+      if (inplace) out.push(...operands);
+    }
+  }
+  return [...new Set(out)];
 }
 
 // ---- GIT BYPASS ----
@@ -1136,7 +1206,6 @@ function decide(evt, env, logs) {
           id: launch.id,
           agent_id: agentId,
           agent: start.agent || evt.agentType || 'unknown',
-          task: start.task || '',
           model: start.model || '',
           effort: start.effort || '',
           resolved_model: launch.resolved_model || '',
@@ -1189,7 +1258,6 @@ function decide(evt, env, logs) {
           id,
           agent_id: launched,
           agent: ti.subagent_type || 'unknown',
-          task: cap(ti.description),
           model: ti.model || '',
           effort: ti.effort || '',
           resolved_model: r.resolvedModel || '',
@@ -1212,7 +1280,6 @@ function decide(evt, env, logs) {
       // and PostToolUse share.
       id: evt.toolUseId || '',
       agent: ti.subagent_type || 'unknown',
-      task: cap(ti.description),
       // What a later SendMessage addresses it by (the Stop gate's resume credit).
       name: cap(ti.name),
       // The rule says every planned dispatch names its model and effort. Logging
@@ -1241,13 +1308,17 @@ function decide(evt, env, logs) {
     for (const call of calls) {
       const flag = gitBypass(call);
       if (flag) {
-        logGate({ kind: 'git-bypass', detail: cmd.slice(0, 80), flag: cap(flag), project, tool });
+        // Persist only the flag family: config values and short-option clusters
+        // can contain paths or message text, just like a command fragment can.
+        const family = flag.startsWith('-c ') ? flag.split('=')[0]
+          : flag.startsWith('--no-gpg') ? '--no-gpg-sign' : '--no-verify';
+        logGate({ kind: 'git-bypass', flag: family, project, tool });
         return denyFor('git-bypass', `canonkit gate: \`git ${call.sub} ${flag}\` skips the repository's hooks or commit signing. Blocked: fix what the hook reported instead. If you really mean to skip it, run the command yourself (in Claude Code, prefix it with \`!\`).`);
       }
     }
     // Every deny before any confirm: a confirm returns, and a deny after it never runs.
     // Before the project config is read, too: nothing in it may cost the deny.
-    const targets = shellWriteTargets(cmd);
+    const targets = shellWriteTargets(cmd, tool);
     if (targets.length) {
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
@@ -1258,7 +1329,7 @@ function decide(evt, env, logs) {
     }
     // The raw match stays next to the parsed one: it still sees `bash -c "git commit ..."`.
     if (/\bgit\s+(commit|push)\b/.test(cmd) || calls.some((c) => c.sub === 'commit' || c.sub === 'push')) {
-      logGate({ kind: 'git', detail: cmd.slice(0, 80), project, tool });
+      logGate({ kind: 'git', project, tool });
       return askFor('git', 'canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
     }
     if (targets.length) {
