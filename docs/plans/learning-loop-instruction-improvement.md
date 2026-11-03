@@ -1,8 +1,9 @@
 # Learning Loop — plano consolidado de melhoria das instruções
 
 Data: 2026-11-02.
-Status: plano consolidado para evolução do workflow existente. Este documento não
-registra implementação, aprovação de diffs futuros ou eficácia comportamental medida.
+Status: workflow implementado e validado offline no worktree. Ver o
+[registro da implementação](learning-loop-design.md#consolidated-workflow-implementation-2026-11-02).
+A eficácia comportamental permanece não medida; este plano não aprova diffs futuros.
 
 Referências: [handoff de melhorias](canonkit-improvements-handoff.md), especialmente
 o item 6 e “Parameters this list does not move”;

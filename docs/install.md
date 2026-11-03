@@ -389,9 +389,14 @@ session: Claude Code does not put the description of a skill with
 own because of `allow_implicit_invocation: false` in `agents/openai.yaml`.
 
 The `learning-loop` skill investigates mistakes on demand and produces a
-sanitized proposal, source diff and eval plan. Its proposal template travels
-with the skill. It does not inject lessons at session start or apply changes
-automatically; see [learning from mistakes](learning-loop.md).
+sanitized proposal for improving canonical instructions or project configuration.
+Its template travels with the skill. General contributions use an optional,
+user-reviewed GitHub issue, without a required duplicate local record or prior
+issue search. Incorporation requires the concrete diff, applicable validation and
+authorization. It does not inject lessons at session start or apply changes
+automatically; see [learning from mistakes](learning-loop.md) for contribution,
+update and review steps. Reinstall the relevant source/package version to update
+shipped instructions; local `canonkit.json` tuning needs no reinstall.
 
 `AGENTS.md` is runtime-neutral and is the only definition of the team. The
 routing block keeps only what is Claude Code mechanics (hooks and what they

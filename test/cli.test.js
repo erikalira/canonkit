@@ -669,6 +669,51 @@ describe("orchestrate skill", () => {
     }
   });
 
+  test("learning-loop source updates reach fresh processes only after reinstall", async () => {
+    const { root, home, project } = await scratch("learning-loop-upgrade");
+    const pkg = path.join(root, "pkg");
+    // Change a throwaway source package, never this checkout or a personal HOME.
+    for (const dir of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "tools", "stack-packs"]) {
+      await cp(path.join(REPO, dir), path.join(pkg, dir), { recursive: true });
+    }
+    await cp(path.join(REPO, "package.json"), path.join(pkg, "package.json"));
+    const sourceFile = path.join(pkg, "skills", "learning-loop", "SKILL.md");
+    const base = await read(sourceFile);
+    const oldSource = `${base}\nSynthetic propagation fixture: require validation of the old example.\n`;
+    const newSource = `${base}\nSynthetic propagation fixture: require validation of the corrected example.\n`;
+    const env = isolatedEnv(home, {});
+    const args = ["install", "--claude", "--codex", "--opencode"];
+    const installCopy = () => spawnSync(process.execPath, [path.join(pkg, "bin", "cli.js"), ...args], {
+      cwd: project, env, encoding: "utf8",
+    });
+    const destinations = [".claude", ".agents"].map(dir => path.join(home, dir, "skills", "learning-loop", "SKILL.md"));
+    const readInstalled = () => {
+      const result = spawnSync(process.execPath, ["--input-type=module", "-e",
+        "import { readFileSync } from 'node:fs'; process.stdout.write(JSON.stringify(process.argv.slice(1).map(p => readFileSync(p, 'utf8'))));",
+        ...destinations], { cwd: project, env, encoding: "utf8" });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    const userNotes = "# Personal notes\nKeep these outside managed blocks.\n";
+    await writeFile(path.join(home, "AGENTS.md"), userNotes);
+    const localFile = path.join(project, "AGENTS.md");
+    await writeFile(localFile, "# Project instructions\nKeep project instructions.\n");
+
+    await writeFile(sourceFile, oldSource);
+    const initial = installCopy();
+    assert.equal(initial.status, 0, initial.stderr);
+    assert.deepEqual(readInstalled(), destinations.map(() => oldSource));
+
+    await writeFile(sourceFile, newSource);
+    assert.deepEqual(readInstalled(), destinations.map(() => oldSource), "a source edit must not silently update an installation");
+    const updated = installCopy();
+    assert.equal(updated.status, 0, updated.stderr);
+    assert.deepEqual(readInstalled(), destinations.map(() => newSource));
+    assert.ok((await read(path.join(home, "AGENTS.md"))).startsWith(userNotes));
+    assert.equal(await read(localFile), "# Project instructions\nKeep project instructions.\n");
+    // This checks installed bytes in another Node process, not native harness loading.
+  });
+
   test("--no-reference leaves the skill alone, like the blocks it belongs to", async () => {
     const { home } = await scratch("skill-no-reference");
     assert.equal(run(["install", "--no-reference"], { home }).status, 0);

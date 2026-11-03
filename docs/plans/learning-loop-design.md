@@ -287,3 +287,68 @@ handoff responsibilities. Offline implementation is ready for review. Behavioral
 efficacy, native-harness model comparisons and publication remain unverified;
 they are not implied by the passing suite. The existing cross-OS CI matrix was
 not run locally.
+
+## Consolidated workflow implementation (2026-11-02)
+
+The [consolidated plan](learning-loop-instruction-improvement.md) is implemented
+in the existing skill and proposal template. General improvements can use a
+sanitized GitHub issue for any contributor, including the maintainer. The first
+issue can precede a concrete diff and evaluation; previews and explicit publication
+authorization remain required. Offers are optional and nonintrusive, with no
+insistence or default search of existing proposals. The issue itself can hold the
+audit record without a duplicate local file. No integration, CLI, dependency,
+memory store, background process, hook or installer implementation was added.
+
+The workflow distinguishes editorial, deterministic and behavioral claims, source
+changes from verified availability, and maintainer approval from local authority.
+Local project configuration is read without reinstalling the kit. The existing
+behavioral thresholds and 90/180-day confirmation policy remain intact. The guide,
+installation reference and privacy overview describe the same boundaries; existing
+telemetry still contains some textual fields and is not sanitized by this change.
+
+The source-derived default Claude profile remains unchanged:
+
+| Component | Before (words) | After (words) | Delta |
+| --- | ---: | ---: | ---: |
+| Managed team block | 1,300 | 1,300 | 0 |
+| Claude routing block | 366 | 366 | 0 |
+| Ten core agent descriptions | 273 | 273 | 0 |
+| Three default skill descriptions | 87 | 87 | 0 |
+| **Total** | **2,026** | **2,026** | **0** |
+
+The skill body and template load on demand. This is a source-derived profile,
+not an audit of a person's additional instructions or native memories.
+
+Verification: three focused tests passed, covering the context ceiling,
+existing install/uninstall and new source-update propagation. The new test runs
+the real installer against a copied package and a temporary home for all three
+targets, changes the source while checking that the installation stays unchanged,
+then reinstalls and reads the updated bytes in fresh Node processes. User and
+project notes are preserved. It does not prove native harness loading, selection
+or behavioral efficacy. The full suite passed on Windows with Node 25.9.0:
+**752 tests, 749 passed, 3 skipped, 0 failed**, in 405.1 seconds. The cross-OS CI
+matrix was not run locally.
+
+Git Bash `scripts/validate.sh` passed with Python 3.12 and 15 agents. Both eval
+dry-runs loaded 23 routing and 61 quality cases without model calls. Package
+dry-run included the skill and template; 35 relative links and anchors in the
+affected guide/reference/skill/plan documents passed inspection. An initial validator
+invocation lost Python argument quoting between PowerShell and Bash; sending the
+runner through stdin corrected the environment without changing the validator.
+The first new-test attempt also exposed and corrected a missing empty environment
+argument in its fixture setup. Sandbox process creation required authorized
+execution outside the default process restriction; installations stayed in scratch
+homes. Packaging used an isolated temporary npm cache.
+
+Virgo implemented the instruction changes. Quinn approved the final source after
+correcting a numbered step that had prematurely required an implementation diff
+before an initial issue; the full-suite evidence satisfies the remaining quality
+condition. Spencer approved documentary consistency against the shipped workflow.
+The installed `gpt-5.6` role failed with `model_not_found`; subsequent role-based
+dispatches explicitly requested `gpt-6.1-terra` at medium effort. Resolved runtime
+model telemetry was not exposed. Root's Integration Review found no conflicting
+owner recommendations, undocumented trade-offs or remaining offline blockers:
+early contribution, later promotion, local configuration and installed updates
+remain distinct, with no resident context increase or new infrastructure.
+No paid eval, real issue, personal installation, commit, push or publication was
+performed. Behavioral efficacy remains unmeasured.

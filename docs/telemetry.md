@@ -1,8 +1,10 @@
 # Dispatch metrics, context contributors and the dashboard
 
-The Claude Code hook records numbers and metadata about what each session spends
-— never the text of a prompt, a command or a result. Everything stays on your
-machine, in `~/.claude/canonkit-activity/`. Nothing is sent anywhere.
+The Claude Code hook records numbers and metadata about what each session spends,
+including task descriptions, command fragments and paths in some event types.
+Hook telemetry stays on your machine, in `~/.claude/canonkit-activity/`. Optional
+[Learning Loop contributions](learning-loop.md#contributing-a-general-improvement)
+send only user-reviewed, explicitly authorized sanitized issues, not raw logs.
 
 ## Dashboard
 

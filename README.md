@@ -287,9 +287,12 @@ project agent with a different name, or change the source here and reinstall
 ([docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md)). Text outside the managed block
 markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 
-**Does anything leave my machine?** No. The hook records numbers and metadata
-(agent, model, tokens, durations, gate kind) in `~/.claude/canonkit-activity/`. It
-never records prompt text, results or commands.
+**Does anything leave my machine?** The hook keeps telemetry local in
+`~/.claude/canonkit-activity/`; records can include task descriptions, command
+fragments and paths alongside counts and timing. The optional
+[Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)
+sends only a sanitized issue that you review and explicitly authorize. Raw logs
+and personal memories do not belong in a contribution.
 [Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
 **A gate fired on a change I'm sure is LOW.** Confirm it and say why. If the same
