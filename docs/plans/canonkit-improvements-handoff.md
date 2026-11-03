@@ -14,8 +14,9 @@ in item 8 was already delivered by item 4.
 Remaining follow-ups after items 1–9: the item 4 deletion of
 byte-identical `~/.agents/<core>.md` copies is reserved for 3.0; behavioral
 efficacy for items 6 and 7 remains unmeasured; release/publication and cross-OS
-verification retain the limits recorded below. The recorded 2.3.0 publication
-has not been verified in this handoff. Completing the implementation does not
+verification retain the limits recorded below. Publication of 2.3.0 and its npm
+provenance were verified on 2026-11-03 during preparation for 2.4.0 (see below).
+Completing the implementation does not
 claim the target rubric scores. Earlier dated entries remain historical records.
 
 The repository is public and named **`erikalira/canonkit`** (was
@@ -46,7 +47,7 @@ item targets (an estimate, not a promise; re-run `instruction-audit` after each)
 | 2 | ~~Publish from CI with npm provenance; secret scan in CI~~ — **done**, PRs #20, #21 | security 5 → ~8 | Gard + Pipe (MEDIUM) |
 | 3 | ~~Review-noise: real-model run, injection bait, Perry gate~~ — **done**, PR #23 | review-noise 7 → 9 | Quinn + Gard (MEDIUM) |
 | 4 | Universal layout + enforcement outside Claude Code — **implemented for 2.x**; deletion of old identical agent copies deferred to 3.0 | portability 6 → 9–10 | Archie + Gard (HIGH) |
-| 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication verification pending | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
+| 5 | `canonkit uninstall` with tracked entries — **merged**, PR #26; 2.3.0 publication/provenance verified on 2026-11-03 | install 7 → 10 (not re-scored) | Bob; Archie + Gard + Quinn + Spencer reviews (HIGH) |
 | 6 | Learning loop: manual workflow **implemented locally**; behavioral efficacy unmeasured | memory 5 → 10 (not re-scored) | Virgo + Quinn (MEDIUM) |
 | 7 | Stack packs, opt-in per project — **implemented locally**; behavioral efficacy unmeasured | stack-coverage 5 → 7–8 (not re-scored) | Virgo; Archie + Gard + Quinn + Spencer on implementation |
 | 8 | Small fixes from the audit — **implemented and verified locally**; reviews recorded below | clarity, rationale, routing, consistency, observability, enforcement gap (not re-scored) | root; Virgo, Quinn, Gard, Spencer reviews (MEDIUM hook/validator) |
@@ -1332,6 +1333,51 @@ No real installation, paid eval, commit, push, publication or cross-OS CI was ru
 the installed Graphify CLI also reports version 0.9.63 against skill 0.9.76.
 Current sources were used for item 9. Refreshing the graph or installed tooling
 is outside this task.
+
+### Merge and release preparation — 2.4.0 (2026-11-03)
+
+The user requested merge and release after completion of items 1–9. PR
+[#27](https://github.com/erikalira/canonkit/pull/27), `feat/learning-loop` into
+`main`, contains items 6–9 plus the Codex model-selection update. Its current
+head is `fdaa928fd6d98a753d39b45700ecbf2f8c67f0fb`; release preparation is still
+local and uncommitted. `package.json` and both lockfile root versions now read
+2.4.0. [Release notes](../release-notes/2.4.0.md) describe the final scope and
+limits, with no new efficacy or rubric-score claim.
+
+- npm `latest` is 2.3.0 and `dist.attestations` includes SLSA provenance. The
+  [2.3.0 release run](https://github.com/erikalira/canonkit/actions/runs/41422202885)
+  succeeded at `1e566fd4e00159f1bb3d53aec9264c84483d4ac8`.
+- Local metadata checks passed: CLI reports 2.4.0; package/lock versions agree;
+  release-note links resolve. The 2.4.0 `npm pack --dry-run --ignore-scripts`
+  has 53 files, 546,527 unpacked bytes, including the new schema, core skills
+  and project stack-pack implementation. `git diff --check` passed.
+- Archie approved the final public installation contract, including model
+  override/inheritance and unchanged manifest IDs/destinations. The prior
+  stack-pack reviews cover the unchanged engine contract and catalog extensions.
+  Pipe approved release preparation conditional on publication checks. Dispatches
+  requested native Codex `gpt-6.1-terra`, high for Archie and medium for Pipe;
+  effective runtime identifiers were not independently observable.
+- GitHub API checks confirmed the `npm` environment requires `erikalira` review
+  and only allows `v*` tags, with admin bypass disabled. The active release-tag
+  ruleset restricts creation, updates and deletion of `v*`, with the configured
+  repository-role bypass available to the authenticated owner. npm account-side
+  trusted-publisher and rollback access were not inspected; the previous successful
+  release is evidence of the workflow, not a guarantee of current account settings.
+- Pipe found that the runbook asked for the publish job's package list before
+  approving that job. `docs/releasing.md` now directs review of a local dry-run
+  from the exact tagged commit, followed by environment approval; the job's own
+  package listing remains a post-approval audit record. No workflow was changed.
+- Pipe approved the corrected runbook and final preparation record. Root's
+  Integration Review found the contract, version metadata, package contents and
+  publication sequence consistent. There is no preparation blocker; actual
+  publication remains subject to the final commit/tag CI and deployment gates.
+
+Next: obtain the explicit commit/push confirmation required by the supplied
+AGENTS.md, commit/push this preparation, wait for CI on the new PR head, merge
+the exact reviewed head, tag that merged commit as `v2.4.0`, and push the tag.
+Follow `docs/releasing.md` for the tagged CI, package review, environment approval,
+publication/provenance checks and GitHub release. Do not reuse a version already
+published. No commit, push, merge, tag or publication was performed in preparation.
 
 ## Parameters this list does not move
 
