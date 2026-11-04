@@ -42,8 +42,10 @@ With the binary present, `tool add`:
 3. runs the tool's own setup (`openspec init --tools claude,codex`;
    `graphify update .`; with `--with-git-hooks`, it first runs
    `graphify hook install`);
-4. last, and only if the setup succeeded, writes the "Project tools" block into
-   the project's `AGENTS.md` (markers `agent-team-config:complements:*`).
+4. only if the setup succeeded, writes the tool's `.gitignore` block, when its
+   registry entry has a `gitignore:` list (graphify does; see below);
+5. last, writes the "Project tools" block into the project's `AGENTS.md`
+   (markers `agent-team-config:complements:*`).
 
 `--dry-run` executes nothing, not even `--version`. canonkit never creates a
 `CLAUDE.md` in the project — with one, Claude Code stops reading `AGENTS.md` — and
@@ -53,8 +55,9 @@ refused. The reasoning is in
 [`docs/adr/0001-tool-namespace-integrate-only.md`](adr/0001-tool-namespace-integrate-only.md).
 
 `tool remove` takes the entry out of the block (the last one removes the block)
-and prints how to undo the setup. It does not touch `openspec/` or
-`graphify-out/`. Running `add` or `remove` twice leaves `AGENTS.md` the same.
+and prints how to undo the setup. It does not touch `openspec/`,
+`graphify-out/` or the `.gitignore` block. Running `add` or `remove` twice leaves
+`AGENTS.md` and `.gitignore` the same.
 
 Raising a pin is a MEDIUM change, reviewed by Gard. Whoever published the
 `graphifyy` package has a Trusted Publishing attestation that matches the declared
@@ -110,6 +113,38 @@ preserving the project's hooks. With hook managers, also check the manual
 chaining. `tool remove` still removes only the entry in `AGENTS.md`. Decision and
 upstream assessment: [ADR 0002](adr/0002-graphify-git-hooks-opt-in.md).
 
+### What gets versioned
+
+`tool add graphify` writes this block into the project's `.gitignore`, so only
+the report is committed:
+
+```gitignore
+# agent-team-config:gitignore:graphify:start
+# graphify: rebuilt locally; only the ! lines are versioned. Managed by canonkit tool add graphify.
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
+# agent-team-config:gitignore:graphify:end
+```
+
+`GRAPH_REPORT.md` is what the project block tells agents to read first, so a
+fresh clone has it. Everything else is rebuilt by `graphify update .` or is
+local: `graph.json` (large, rewritten on every update), `cache/`, `manifest.json`
+(mtime-based), `cost.json`, dated snapshots, saved queries in `memory/`, and
+`.graphify_python`, the interpreter path graphify's hooks execute — keeping it
+out of git is the same protection the preflight checks for.
+
+- A `.gitignore` that already has rules for `graphify-out/` outside the block is
+  left as it is: patterns are last-match-wins, and a block appended after them
+  would overrule a decision the project made (versioning `graph.json`, say).
+  `--dry-run` says which case applies.
+- Ignoring does not untrack. If graphify output was committed before, `tool add`
+  lists it and prints the command to stop tracking it
+  (`git rm -r --cached -q -- graphify-out && git add -- graphify-out`); it never
+  runs it.
+- To version more (`graph.json`, for teammates who query without rebuilding), add
+  a `!graphify-out/graph.json` line inside the block, or replace the block with
+  your own rules.
+
 ### Keeping the graph fresh
 
 Before using a report or query as structural evidence, check
@@ -153,8 +188,8 @@ existing judge; they do not run a real refresh.
   own environment.
 - Git hooks are **per clone**: new clones only get them with
   `tool add graphify --with-git-hooks`.
-- `graphify-out/` must be in `.gitignore` or be versioned on purpose. In this
-  repository `GRAPH_REPORT.md` is versioned and gets dirty on every commit.
+- `GRAPH_REPORT.md` stays versioned (see [What gets versioned](#what-gets-versioned)),
+  so with the hooks it gets dirty on every commit.
 - canonkit never installs graphify's Claude hook. If you install it yourself, it
   and canonkit's hook both fire on `PreToolUse` with no guaranteed order; do not
   count on one running before the other.

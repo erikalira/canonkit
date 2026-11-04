@@ -1,6 +1,6 @@
 # ADR 0001 — `canonkit tool`: um namespace próprio, que só integra
 
-- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md)
+- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md); decisão 2 ampliada pela [ADR 0003](0003-tool-gitignore-block.md) (bloco no `.gitignore`)
 - Data: 2026-10-19
 - Dono: Spencer (registro); decisão da usuária, desenho revisado por Archie e Gard
 - Plano de origem: [`docs/plans/complements.md`](https://github.com/erikalira/canonkit/blob/8123e70/docs/plans/complements.md) (removido após a conclusão; link para o histórico)
