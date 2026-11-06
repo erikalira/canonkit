@@ -138,12 +138,48 @@ before offering issues. Never defer delivery defects or blocked validation as
 incidental; alert urgent security risks promptly. Without findings, do nothing
 extra; do not search, delegate or create artifacts just for capture.
 
+## Durable preferences
+
+A durable preference lives in instructions that follow you across machines, not
+in one machine's local memory. If you maintain the kit, that is the canonkit
+source. If you only install it, a personal preference goes in your own versioned
+instructions, outside this block's markers, and one meant for everybody is
+proposed upstream. A rule for one project or one machine stays a local rule.
+
+Project decisions and documentation stay in the project's repository, never in a
+harness's private memory: memory reaches no other runtime, machine or person.
+
+## Branches
+
+Never create a branch from a remote-tracking ref (`git switch -c <name> origin/main`,
+`git checkout -b <name> origin/...`): it silently sets `origin/main` as the upstream,
+and the next ordinary push or Sync lands on main with no PR. Update local main
+(`git switch main`, then `git pull --ff-only`) and branch from it, or pass
+`--no-track`. Before any commit on a feature branch, check `git status -sb`: if it
+shows `...origin/main`, run `git branch --unset-upstream` and say so. This covers
+inherited branches too.
+
+Why: on 2026-10-30 a session created `feat/universal-layout` from `origin/main`, and
+an ordinary push sent all of canonkit 2.1 to main with no PR. The session then wrongly
+blamed the user's branching habit; branches the user creates never had this problem.
+So after a git mishap, check the transcripts and the reflog for who caused it before
+giving advice.
+
+## Temporary work outside the repository
+
+Use the file-writing tool: one script, in the harness's scratch folder or else
+the system temp folder, that does its own copying and cleanup, run by its literal
+absolute path. No shell redirects, `cp`, `mv` or variable paths there: each is a
+permission prompt or a false gate for the user. A brief that asks a subagent for
+scratch work says so.
+
 ## New session when the subject changes
 
 When a request does not depend on what is in context (another change or area,
 or the previous task is done), or bundles independent jobs, say so in one line
 and suggest a new session per job. If the next session needs state, first write
-a short handoff (tasks.md, an ops file, or memory) and give its path. End the
+a short handoff in `docs/plans/<topic>-handoff.md` in the repository, never in
+memory or elsewhere outside it, and give its path. End the
 suggestion with the **opening prompt for the new session**, ready to paste, in
 the user's language: one fenced block that names the goal, points at the handoff
 path, and says what to do first — so starting over costs one paste, not a

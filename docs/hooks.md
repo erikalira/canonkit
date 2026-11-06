@@ -22,7 +22,8 @@ each harness does with each gate:
 | `git-bypass`: `--no-verify`, `--no-gpg-sign`, `-c core.hooksPath=...` on git | deny | deny | deny |
 | `secret-block`: an obvious secret written to a file | deny | deny | deny |
 | `git`: confirm before `git commit` / `git push` | ask | by judgment | by judgment, plus a permission ask on the command as typed |
-| `secret-ask`, `high-risk-surface`, `perf-budget`: confirm an edit | ask | by judgment | by judgment |
+| `secret-ask`, `perf-budget`: confirm an edit | ask | by judgment | by judgment |
+| `high-risk-surface`: confirm an edit | ask, once per file per session ([which rules](#ask-once-per-file-per-session)) | by judgment | by judgment |
 | `definition-of-done`: Stop without an independent reviewer | block | not offered | not offered |
 | `context-size`, `dispatch-log` | yes | not offered | not offered |
 
@@ -166,6 +167,29 @@ not treated as write targets. Quoted command examples and comments are ignored
 by this operand parser. Hard-secret checks still run before confirmation gates
 and project configuration reads.
 
+The redirect, `tee` and PowerShell-write patterns read the raw command, interpreter
+code, comments and heredocs included, so a shell line inside `execSync('echo x > .env')`
+is seen, and a secret in it blocks. One exception, for the path gates only
+(`perf-budget`, `high-risk-surface`, and the scratchpad exemption on them): a `=>` inside
+a quoted string is not a redirect, so `node -e "list.filter(e=>e.session)"` gates
+nothing, in any language. The secret checks read every target, quoted arrows included:
+a secret next to any arrow in a command blocks or asks exactly as it would without the
+exception, and that command's path gates read every target too.
+
+For the path gates, an unquoted arrow, as in `foo=>.env`, stays a redirect. So does any
+arrow the left-to-right quote scan cannot prove quoted: after a comment, a heredoc, a
+here-string, `$'...'`, a `$(...)`, a backtick, a `${...}` or PowerShell's curly quotes,
+in an unclosed quote, as `=>>`, and whenever a shell is named in the command, since it
+would run the string (`bash -c "a=>.env"`). That list of shell-running commands
+(`RUNS_STRINGS`) is a tripwire, not a complete list: fish, csh, wsl and similar are not
+covered, so `fish -c "a=>.env"` reads as quoted.
+
+The cost is on the safe side and accepted: any other `>` in interpreter code
+(`python -c "a = b > c.env"`), and an arrow in a heredoc body or a comment, may still
+ask. The known miss, for the path gates: a shell line with an arrow inside another
+language's string (`node -e "execSync('a=>.env')"`) is not seen. A write made by the
+interpreter's own code (`fs.writeFileSync`) was never visible to these gates.
+
 This remains a heuristic: it does not expand variables, globs, PowerShell
 arrays/pipeline-bound sources or commands hidden in shell wrappers. Copying or
 moving into a directory checks the directory operand, without resolving each
@@ -221,6 +245,84 @@ of these agents was dispatched, or resumed with a message (`SendMessage`): `quin
 suffix counts (`gard-strict` is Gard; `gardener` is not). A reviewer's own probes
 outside the project are not counted as edits.
 
+## Ask once per file per session
+
+The `high-risk-surface` gate on an edit asks the first time a session edits a file.
+A later edit of that file does not ask, but only once an earlier edit of it in the
+same session is known to have completed. A refused edit never counts. Claude Code
+only: Codex and OpenCode send no completion and are unchanged.
+
+| | Later edits of the file |
+| --- | --- |
+| Rules `strong`, `auth`, `migration`, `word`, `ambiguous` | no prompt; the gate line is still written, with `repeat: true` |
+| Rules `config`, `secret-path`, `include` | always ask |
+| Performance budgets, secret content, git, shell writes | always their own gate; relief never reaches them |
+
+**It never skips the review.** A repeat writes its `gate` line because the Stop gate
+compares the last gate's time with the reviewer's. An edit after a review needs a
+new review, with or without a prompt. If that line cannot be written (a read-only
+log, a full disk), the edit is asked like a first edit instead: there is no repeat
+without its line.
+
+**The evidence.** On `PostToolUse` of `Edit`, `Write`, `MultiEdit` and `NotebookEdit`,
+the hook recomputes the verdict and, for a path in one of the relief rules, writes an
+`edit_complete` line ([fields](telemetry.md#stable-fields)). It counts only when a
+`high-risk-surface` gate with the same `tool_use_id` exists in the session for that
+file: an edit that went through a `secret-ask` confirm, or that the Pre hook never
+saw, earns nothing. The `tool_response` must match the success shape of its tool
+(`EDIT_SUCCESS` in the hook), with no failure signal; a result held for review
+(`staged`) left the file unchanged and earns nothing. `MultiEdit` no longer exists
+(2.1.302 and 2.1.318 both answer "No such tool available") and has no confirmed shape, so
+it earns no credit; on an older version an edit by it still takes relief another tool
+earned for the file. The
+verdict of the current edit decides first, so a path that joined `include` asks whatever was recorded before.
+
+**The lookup fails closed**, the one exception to [It fails open](#it-fails-open): it
+is the only code in the hook that can remove a prompt. No pair found means ask, for
+any reason: a log that is missing, rotated away, unreadable or corrupt; an error in
+the lookup; an empty session; a missing `tool_use_id`; a relative path with no cwd;
+a response of an unknown shape; no `PostToolUse` wiring for the edit tools. A hook updated without rerunning
+`--wire-hooks` therefore keeps asking every time, and `doctor` reports the matcher.
+
+Files are compared by absolute normalized path, resolved against the event's cwd.
+Drive case and slashes do not matter; a worktree and the main checkout are different
+files. Subagents share the parent's session, so an edit confirmed by one relieves the
+others. The rotated `events.jsonl.1` is read too, so one rotation costs nothing, and
+evidence rotated out of both files means one more prompt.
+
+## The session scratchpad
+
+Claude Code gives a session a scratch folder outside the project. With a claude.ai
+login the hook input carries it as `scratchpad_dir` (captured 2026-11-06 on 2.1.302: an
+absolute path, the same on the main thread and in a subagent, on `UserPromptSubmit`,
+`PreToolUse` and `PostToolUse`). Without that login the field is absent and nothing
+changes. Codex and OpenCode have no such field.
+
+A file inside it does not fire `high-risk-surface` or `perf-budget` and logs no gate
+line, so it cannot reach the Stop gate. Edit, Write and NotebookEdit skip `secret-ask`
+there too, because their one target is known. A shell keeps `secret-ask` inside the
+folder: the scan does not see every file a command writes (`tee <pad>/a .env`,
+`curl -o .env ... > <pad>/log`). `secret-block`, `git` and `git-bypass` run first and
+hold everywhere.
+
+The exemption removes prompts, so it has to be proved on every event, from that event's
+own value, and it fails closed (its own `catch`):
+
+- **The folder** must be an absolute path that is not a filesystem root, the home, the
+  project, or a parent of either, and not inside the project or `~/.claude`, compared
+  by real path. Anything else, or no known home, means no exemption.
+- **Each file** must be an absolute path, with no `$`, no backtick and no `..` segment,
+  whose real path is inside the folder. The `..` is read on the raw target, because
+  resolving it first would hide `<pad>/link/../.env`. A link out of the folder is seen,
+  and a dangling link counts as outside. A relative path keeps gating, because a `cd` in
+  the same command moves what it means; so do `~/x` and `$VAR/x`, which the hook does
+  not expand.
+- **A shell command** is exempt only when every target qualifies. One real target among
+  them gates as before.
+
+A completion a scratchpad edit logs (`edit_complete`) earns nothing: it pairs with no
+gate line. A hard link inside the folder cannot be told from a file.
+
 ## It fails open
 
 `main()` is wrapped in a `catch` that exits with 0, so a syntax error never locks
@@ -252,20 +354,23 @@ between minor versions (the tests in `test/hook-core.test.js` are what hold it).
 
 - `evt` is the normalized event: `event`, `tool`, `toolInput`, `cwd` (required),
   `session`, `agentId`/`agentType` (set only on a subagent's events), the Stop
-  fields and the PostToolUse fields. `normalizeClaude(input, fallbackCwd)` builds
-  it from Claude Code's hook input.
+  fields, the PostToolUse fields and `scratchpadDir` (Claude Code only).
+  `normalizeClaude(input, fallbackCwd)` builds it from Claude Code's hook input.
 - `env` is everything else it may know about the machine: `{logDir, legacyLogDir,
   projectDir, home}`. The core never reads the process environment or looks up
   the home directory itself.
 - It returns `{decision, kind, reason, logs}`. `decision` is `allow`, `ask`,
   `deny` or `block`; `kind` is one of `GATE_KINDS` or `null`; `logs` is a list of
-  `{file, record}` that the adapter appends under `logDir`.
+  `{file, record}` that the adapter appends under `logDir`. A repeat adds `unlogged`,
+  the ask an adapter must answer with if it could not write `logs`.
 - `CLAUDE_GATE_MODES` declares, per kind, what the Claude adapter does with it:
   `enforce` (the harness acts on the decision), `text` (surfaced as text, the
   model decides) or `off` (not offered). Another adapter declares its own map in
   its own file.
 - It **fails open** by itself: an error is an `allow` that keeps the logs recorded
-  before it.
+  before it. The exceptions are the two lookups that can remove a prompt, ask-once
+  and the scratchpad: each has its own `catch`, and an error there, or a repeat's
+  line the adapter could not write, means the gate runs.
 - Denies (git bypass flags, blocked secrets) are decided **before**
   `.claude/canonkit.json` is read, so a project config can never loosen them.
 
@@ -281,8 +386,8 @@ because it is still a decision kind with a mode; `evaluate` never returns it.
 ## Events it must be registered for
 
 In Claude Code, registration is checked **per event**: `PreToolUse`, `PostToolUse` (matcher
-`Agent|Task|Read|Grep|Glob|Bash|PowerShell`), `SubagentStop`, `UserPromptSubmit`
-and `Stop`. A hook wired to only some of them works halfway — the gates fire, so
+`Agent|Task|Read|Grep|Glob|Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit`),
+`SubagentStop`, `UserPromptSubmit` and `Stop`. A hook wired to only some of them works halfway — the gates fire, so
 nobody goes looking for the dispatch metrics that never get recorded.
 
 What the hook records on those events is described in

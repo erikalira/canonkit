@@ -222,7 +222,7 @@ function json(res, body) {
 const server = http.createServer((req, res) => {
   // Volume has its own aggregate view. It must not crowd gates/dispatches out
   // of the existing timeline or change its counters' 300-event window.
-  if (req.url.startsWith('/events.json')) return json(res, readLines().map(parse).filter((e) => e && e.event !== 'tool_result').slice(-300));
+  if (req.url.startsWith('/events.json')) return json(res, readLines().map(parse).filter((e) => e && e.event !== 'tool_result' && e.event !== 'edit_complete').slice(-300));
   if (req.url.startsWith('/dispatches.json')) return json(res, dispatches());
   if (req.url.startsWith('/context.json')) {
     const sessions = contextContributors();

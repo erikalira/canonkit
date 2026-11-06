@@ -6,7 +6,7 @@
     "name": "canonkit",
     "version": "1.1.5",
     "commit": "f2849c1",
-    "source": "C:/Users/lirae/Documents/dev/agent-team-config (branch feat/review-noise, PR #23)",
+    "source": "agent-team-config (branch feat/review-noise, PR #23)",
     "installProfile": "README quickstart: npx canonkit install --wire-hooks, menu defaults (Claude Code + Codex). Primary harness: Claude Code."
   },
   "evaluator": {

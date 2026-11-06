@@ -6,7 +6,7 @@
     "name": "canonkit",
     "version": "1.1.5",
     "commit": "9add039",
-    "source": "C:/Users/lirae/Documents/dev/agent-team-config (branch feat/improve-doc-instructions; the staged, uncommitted evals/instruction-rubric.json and docs/plans/instruction-rubric-handoff.md are not part of the kit and change no score)",
+    "source": "agent-team-config (branch feat/improve-doc-instructions; the staged, uncommitted evals/instruction-rubric.json and docs/plans/instruction-rubric-handoff.md are not part of the kit and change no score)",
     "installProfile": "README quickstart: npx canonkit install --wire-hooks, menu defaults (Claude Code + Codex). Primary harness: Claude Code."
   },
   "evaluator": {

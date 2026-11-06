@@ -6,7 +6,7 @@
     "name": "canonkit",
     "version": "2.4.0",
     "commit": "37be5de",
-    "source": "C:/Users/lirae/Documents/dev/agent-team-config (branch fix, clean tree; v2.4.0 published by Release run 41582000656)",
+    "source": "agent-team-config (branch fix, clean tree; v2.4.0 published by Release run 41582000656)",
     "installProfile": "README quickstart: npx canonkit install --wire-hooks, menu defaults (Claude Code + Codex). Primary harness: Claude Code."
   },
   "evaluator": {

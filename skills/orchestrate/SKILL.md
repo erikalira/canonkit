@@ -38,6 +38,12 @@ Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) â
 never concurrent file-editing agents in one tree, where each overwrites the
 other's edits and invalidates the other's test run.
 
+## Briefing scratch work
+
+A brief that asks for work outside the repository carries the block's rule
+("Temporary work outside the repository"): the subagent starts cold, and its shell
+writes there land on the user as prompts and false gates.
+
 ## OpenSpec change lifecycle
 
 Use this bridge where the project already uses OpenSpec: **OpenSpec = durable

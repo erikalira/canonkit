@@ -15,7 +15,7 @@
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
+import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile, copyFile, rename, chmod } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
@@ -30,6 +30,7 @@ const WIN = process.platform === "win32";
 
 const FAKE_AWS_KEY = "AKIA" + "ABCDEFGHIJKLMNOP";
 const FAKE_PEM = "-----BEGIN RSA PRIVATE " + "KEY-----";
+const SOFT_SECRET = "pass" + "word = 'hunter2hunter2'";
 
 let HOME;
 
@@ -1561,7 +1562,7 @@ describe("dispatch metrics", () => {
   });
 
   test("PostToolUse on a gated tool never answers as PreToolUse", () => {
-    // The hook is wired to PostToolUse for Agent|Task only, but a matcher is
+    // The hook is wired to PostToolUse for a list of tools, but a matcher is
     // config, not code. If it ever widens, a gate must not fire after the fact.
     const r = runHook({ hook_event_name: "PostToolUse", session_id: "X", tool_name: "Bash", tool_input: { command: "git push" } });
     assert.equal(r.stdout.trim(), "");
@@ -1926,5 +1927,684 @@ describe("context-size reminder (UserPromptSubmit)", () => {
     assert.equal(prompt("CTX-EMPTY", await transcript("ctx-empty", [""])), null);
     assert.equal(prompt("CTX-GARBAGE", await transcript("ctx-garbage", ['{"usage" broken', "not json"])), null);
     assert.equal(runHook({ hook_event_name: "UserPromptSubmit" }).status, 0);
+  });
+});
+
+// ---- ASK ONCE PER FILE PER SESSION ----
+// The one change in this hook that can remove a prompt, so most of this block is
+// about when it must not: evidence is positive-only, and a gate that stays open by
+// mistake is silent. Real process, Pre and Post carried like Claude Code's.
+describe("high-risk-surface asks once per file per session", () => {
+  const AUTH = "src/auth/login.ts";
+  let PROJ;
+  let seq = 0;
+
+  before(async () => {
+    PROJ = await project({ version: 1, highRisk: { include: ["src/billing/**"], exclude: ["src/legacy/"] } });
+  });
+
+  const toolInput = (tool, file, content) => ({
+    Edit: { file_path: file, old_string: "a", new_string: content },
+    Write: { file_path: file, content },
+    MultiEdit: { file_path: file, edits: [{ old_string: "a", new_string: content }] },
+    NotebookEdit: { notebook_path: file, new_source: content },
+  })[tool];
+  // One tool call: what Pre and Post both carry, tool_use_id included.
+  const editCall = (session, file, { tool = "Edit", content = "x", cwd = PROJ, id = `toolu_once_${++seq}` } = {}) =>
+    ({ session_id: session, tool_name: tool, tool_input: toolInput(tool, file, content), tool_use_id: id, cwd });
+  const askedPre = (call, env) => decide({ hook_event_name: "PreToolUse", ...call }, env);
+  // Success as each tool reports it (sdk-tools.d.ts, and real transcripts for Edit
+  // and Write; the Write here is the docs' minimal example). MultiEdit has none.
+  const success = {
+    Edit: (file) => ({ filePath: file, oldString: "a", newString: "x", originalFile: "a", structuredPatch: [], userModified: false, replaceAll: false }),
+    Write: (file) => ({ filePath: file, type: "update" }),
+    NotebookEdit: (file) => ({ new_source: "x", cell_type: "code", language: "python", edit_mode: "replace", notebook_path: file, original_file: "{}", updated_file: "{}" }),
+  };
+  const okFor = (call) => success[call.tool_name]?.(call.tool_input.file_path ?? call.tool_input.notebook_path);
+  const firePost = (call, env, response = okFor(call)) =>
+    runHook({ hook_event_name: "PostToolUse", ...call, tool_response: response }, env);
+  // A first edit answered yes: it asked, ran and completed.
+  const completed = (session, file, opts = {}, env) => {
+    const call = editCall(session, file, opts);
+    assert.equal(askedPre(call, env), "ask", "the first edit of a file asks");
+    assert.equal(firePost(call, env).stdout, "");
+    return call;
+  };
+  const at = (rel, cwd = PROJ) => `${cwd.replace(/\\/g, "/")}/${rel}`;
+  const gatesOf = async (session) => (await logged(session)).filter((e) => e.event === "gate");
+  const completionsOf = async (session) => (await logged(session)).filter((e) => e.event === "edit_complete");
+
+  // A home of its own, for the tests that break or rewrite the log.
+  async function isolated() {
+    const home = await mkdtemp(path.join(HOME, "once-home-"));
+    const logDir = path.join(home, ".claude", "canonkit-activity");
+    const repo = path.join(home, "repo");
+    await mkdir(logDir, { recursive: true });
+    await mkdir(repo);
+    const events = path.join(logDir, "events.jsonl");
+    const lines = async () => (await readFile(events, "utf8").catch(() => "")).trim().split("\n").filter(Boolean);
+    return { env: { HOME: home, USERPROFILE: home }, logDir, repo, events, lines };
+  }
+  const gateLine = (session, file, id, extra = {}) => JSON.stringify({ ts: 1000, session, event: "gate", kind: "high-risk-surface", file, rule: "auth", tool: "Edit", tool_use_id: id, ...extra }) + "\n";
+  const completeLine = (session, file, id, extra = {}) => JSON.stringify({ ts: 1001, session, event: "edit_complete", tool_use_id: id, file, rule: "auth", tool: "Edit", ...extra }) + "\n";
+
+  test("a second edit after the first completed does not ask, and still logs its gate", async () => {
+    const S = "ONCE-BASIC";
+    const file = at(AUTH);
+    const first = completed(S, file);
+    const second = editCall(S, file);
+    assert.equal(askedPre(second), "allow");
+    const gates = await gatesOf(S);
+    assert.equal(gates.length, 2, "a repeat keeps writing the gate the Stop hook reads");
+    const { ts: t0, ...asked } = gates[0];
+    assert.ok(t0);
+    assert.deepEqual(asked, {
+      session: S, event: "gate", kind: "high-risk-surface", file, rule: "auth",
+      project: path.basename(PROJ), tool: "Edit", tool_use_id: first.tool_use_id, in_project: true,
+    });
+    const { ts: t1, ...repeat } = gates[1];
+    assert.ok(t1);
+    assert.deepEqual(repeat, { ...asked, tool_use_id: second.tool_use_id, repeat: true });
+    const completions = await completionsOf(S);
+    assert.equal(completions.length, 1);
+    const { ts, ...done } = completions[0];
+    assert.ok(ts);
+    assert.deepEqual(done, {
+      session: S, event: "edit_complete", tool_use_id: first.tool_use_id, file: file.replace(/^[a-z]:/, (d) => (WIN ? d.toUpperCase() : d)),
+      rule: "auth", project: path.basename(PROJ), tool: "Edit",
+    });
+  });
+
+  test("every later edit is a repeat, not only the second", async () => {
+    const S = "ONCE-MANY";
+    const file = at(AUTH);
+    completed(S, file);
+    for (let i = 0; i < 3; i++) {
+      const call = editCall(S, file);
+      assert.equal(askedPre(call), "allow");
+      firePost(call);
+    }
+    assert.deepEqual((await gatesOf(S)).map((g) => !!g.repeat), [false, true, true, true]);
+  });
+
+  for (const tool of ["Edit", "Write", "NotebookEdit"]) {
+    test(`${tool} earns the relief and takes it`, () => {
+      const S = `ONCE-TOOL-${tool}`;
+      completed(S, at(AUTH), { tool });
+      assert.equal(askedPre(editCall(S, at(AUTH), { tool })), "allow");
+    });
+  }
+
+  test("MultiEdit has no confirmed success shape: it earns nothing, but takes a relief earned elsewhere", async () => {
+    const S = "ONCE-TOOL-MultiEdit";
+    const call = editCall(S, at(AUTH), { tool: "MultiEdit" });
+    assert.equal(askedPre(call), "ask");
+    firePost(call, undefined, success.Edit(at(AUTH)));
+    assert.deepEqual(await completionsOf(S), []);
+    assert.equal(askedPre(editCall(S, at(AUTH), { tool: "MultiEdit" })), "ask");
+    completed(S, at(AUTH));
+    assert.equal(askedPre(editCall(S, at(AUTH), { tool: "MultiEdit" })), "allow");
+  });
+
+  test("the relief crosses edit tools: a Write completed, an Edit follows", () => {
+    completed("ONCE-CROSS", at(AUTH), { tool: "Write" });
+    assert.equal(askedPre(editCall("ONCE-CROSS", at(AUTH), { tool: "Edit" })), "allow");
+  });
+
+  for (const [rule, rel] of [["strong", "src/jwt/verify.ts"], ["auth", "src/oauth.ts"], ["migration", "db/migrations/001.sql"],
+    ["word", "src/acl/rules.ts"], ["ambiguous", "packages/contracts/src/paper.ts"]]) {
+    test(`rule ${rule} is inside the relief`, async () => {
+      const S = `ONCE-RULE-${rule}`;
+      completed(S, at(rel));
+      assert.equal(askedPre(editCall(S, at(rel))), "allow");
+      assert.equal((await gatesOf(S))[1].rule, rule);
+    });
+  }
+
+  test("a refused edit (Pre with no Post) never counts: the next attempt asks", async () => {
+    const S = "ONCE-REFUSED";
+    assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+    assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+    assert.deepEqual((await gatesOf(S)).map((g) => g.repeat), [undefined, undefined]);
+    assert.deepEqual(await completionsOf(S), []);
+  });
+
+  test("no PostToolUse wiring (or a hook updated without --wire-hooks): always asks", async () => {
+    const S = "ONCE-UNWIRED";
+    for (let i = 0; i < 3; i++) assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+    assert.equal((await gatesOf(S)).length, 3);
+  });
+
+  test("a different file asks", () => {
+    completed("ONCE-OTHER-FILE", at(AUTH));
+    assert.equal(askedPre(editCall("ONCE-OTHER-FILE", at("src/auth/logout.ts"))), "ask");
+  });
+
+  test("a different session asks", () => {
+    completed("ONCE-SESSION-A", at(AUTH));
+    assert.equal(askedPre(editCall("ONCE-SESSION-B", at(AUTH))), "ask");
+  });
+
+  test("the same relative path in another checkout is another file", async () => {
+    const worktree = await project();
+    completed("ONCE-WORKTREE", at(AUTH));
+    assert.equal(askedPre(editCall("ONCE-WORKTREE", at(AUTH, worktree), { cwd: worktree })), "ask");
+  });
+
+  test("always asks: config, secret-path and include, even after a completion", async () => {
+    for (const [rule, rel] of [["config", ".claude/canonkit.json"], ["secret-path", "src/.env.production"], ["include", "src/billing/invoice.ts"]]) {
+      const S = `ONCE-ALWAYS-${rule}`;
+      const file = at(rel);
+      for (let i = 0; i < 3; i++) {
+        const call = editCall(S, file);
+        assert.equal(askedPre(call), "ask", rel);
+        assert.equal(firePost(call).stdout, "");
+      }
+      assert.deepEqual(await completionsOf(S), [], "no relief is earned, so none is logged");
+      assert.deepEqual((await gatesOf(S)).map((g) => [g.rule, !!g.repeat]), Array(3).fill([rule, false]));
+    }
+  });
+
+  test("always asks even with forged evidence: the current verdict decides first", async () => {
+    const box = await isolated();
+    const S = "ONCE-FORGED";
+    await mkdir(path.join(box.repo, ".claude"));
+    await writeFile(path.join(box.repo, ".claude", "canonkit.json"), JSON.stringify({ highRisk: { include: ["src/billing/**"] } }));
+    let log = "";
+    const rels = [".claude/canonkit.json", "src/.env", "src/billing/auth.ts"];
+    rels.forEach((rel, i) => {
+      const file = at(rel, box.repo);
+      log += gateLine(S, file, `f${i}`) + completeLine(S, file, `f${i}`);
+    });
+    await writeFile(box.events, log);
+    rels.forEach((rel) => assert.equal(askedPre(editCall(S, at(rel, box.repo), { cwd: box.repo }), box.env), "ask", rel));
+  });
+
+  test("a path that joined include mid-session asks again", async () => {
+    const box = await isolated();
+    const S = "ONCE-NEW-INCLUDE";
+    const file = at("src/auth/x.ts", box.repo);
+    const opts = { cwd: box.repo };
+    completed(S, file, opts, box.env);
+    assert.equal(askedPre(editCall(S, file, opts), box.env), "allow");
+    await mkdir(path.join(box.repo, ".claude"));
+    await writeFile(path.join(box.repo, ".claude", "canonkit.json"), JSON.stringify({ highRisk: { include: ["src/auth/**"] } }));
+    assert.equal(askedPre(editCall(S, file, opts), box.env), "ask");
+  });
+
+  test("a performance budget under a relief path keeps asking", async () => {
+    const S = "ONCE-PERF";
+    const file = at("src/auth/lighthouserc.json");
+    for (let i = 0; i < 2; i++) {
+      const call = editCall(S, file);
+      assert.equal(askedPre(call), "ask");
+      firePost(call);
+    }
+    assert.deepEqual((await gatesOf(S)).map((g) => g.kind), ["perf-budget", "perf-budget"]);
+    assert.deepEqual(await completionsOf(S), []);
+  });
+
+  test("content checks run first on a repeat: a hard secret is still denied", async () => {
+    const S = "ONCE-HARD-SECRET";
+    completed(S, at(AUTH));
+    assert.equal(askedPre(editCall(S, at(AUTH), { content: FAKE_AWS_KEY })), "deny");
+    assert.equal((await gatesOf(S)).at(-1).kind, "secret-block");
+  });
+
+  test("content checks run first on a repeat: a soft secret still asks", async () => {
+    const S = "ONCE-SOFT-SECRET";
+    completed(S, at(AUTH));
+    assert.equal(askedPre(editCall(S, at(AUTH), { content: SOFT_SECRET })), "ask");
+    assert.equal((await gatesOf(S)).at(-1).kind, "secret-ask");
+  });
+
+  test("a completion paired with a secret-ask gate grants nothing", async () => {
+    const S = "ONCE-SECRET-PAIR";
+    const call = editCall(S, at(AUTH), { content: SOFT_SECRET });
+    assert.equal(askedPre(call), "ask");
+    firePost(call);
+    assert.equal((await completionsOf(S)).length, 1, "the completion is there, and is not enough");
+    assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+    assert.deepEqual((await gatesOf(S)).map((g) => [g.kind, !!g.repeat]), [["secret-ask", false], ["high-risk-surface", false]]);
+  });
+
+  test("an edit after a review still triggers definition-of-done at Stop", async () => {
+    const S = "ONCE-REVIEW";
+    completed(S, at(AUTH));
+    assert.equal(decide(pre("Agent", { subagent_type: "quinn" }, S)), "allow");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "allow", "control: the review covers the first edit");
+    assert.equal(askedPre(editCall(S, at(AUTH))), "allow");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "block");
+    assert.equal(decide(pre("Agent", { subagent_type: "quinn" }, S)), "allow");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "allow", "a new review clears it");
+  });
+
+  test("a shell write always asks, Bash and PowerShell, even after a completion", async () => {
+    const S = "ONCE-SHELL";
+    completed(S, at(AUTH));
+    for (const [tool, command] of [["Bash", `echo x > ${AUTH}`], ["PowerShell", `Set-Content ${AUTH} x`]]) {
+      assert.equal(decide({ ...pre(tool, { command }, S), tool_use_id: "toolu_shell", cwd: PROJ }), "ask", tool);
+    }
+    assert.deepEqual((await gatesOf(S)).map((g) => g.repeat), [undefined, undefined, undefined]);
+    assert.equal(askedPre(editCall(S, at(AUTH))), "allow", "and the shell did not cost the file its relief");
+  });
+
+  test("PostToolUse never yields a decision", async () => {
+    const S = "ONCE-POST-SILENT";
+    for (const [rel, content] of [[AUTH, "x"], [".claude/canonkit.json", "x"], ["src/billing/a.ts", "x"], ["src/.env", "x"],
+      [AUTH, FAKE_AWS_KEY], [AUTH, SOFT_SECRET], ["src/auth/lighthouserc.json", "x"], ["src/plain.ts", "x"]]) {
+      for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
+        const r = firePost(editCall(S, at(rel), { tool, content }));
+        assert.deepEqual({ status: r.status, stdout: r.stdout, stderr: r.stderr }, { status: 0, stdout: "", stderr: "" }, `${tool} ${rel}`);
+      }
+    }
+    assert.deepEqual(await gatesOf(S), [], "a Post never opens a gate either");
+  });
+
+  test("only relief-eligible paths write a completion: events.jsonl stays low-volume", async () => {
+    const S = "ONCE-QUIET";
+    for (const rel of ["src/plain.ts", "src/legacy/login.ts", "src/auth/login.test.ts", "node_modules/auth/x.js", "docs/contracts.md"]) {
+      firePost(editCall(S, at(rel)));
+    }
+    assert.deepEqual(await logged(S), []);
+  });
+
+  // An allowlist: only a result shaped like its tool's success earns credit, and a
+  // failure signal on that shape takes it back.
+  const AT = "C:/p/src/auth/login.ts";
+  for (const [label, tool, response] of [
+    // shaped like success, with a failure signal
+    ["an error field", "Edit", { ...success.Edit(AT), error: "File has not been read yet" }],
+    ["NotebookEdit's error on a success shape", "NotebookEdit", { ...success.NotebookEdit(AT), error: "cell not found" }],
+    ["is_error", "Edit", { ...success.Edit(AT), is_error: true }],
+    ["isError", "Write", { ...success.Write(AT), isError: true }],
+    ["success: false", "Write", { ...success.Write(AT), success: false }],
+    ["interrupted", "Edit", { ...success.Edit(AT), interrupted: true }],
+    ["an Edit held for review (staged)", "Edit", { ...success.Edit(AT), staged: true }],
+    ["a Write held for review (staged)", "Write", { ...success.Write(AT), staged: true }],
+    // not the tool's shape
+    ["an empty object", "Edit", {}],
+    ["an empty object on Write", "Write", {}],
+    ["an empty object on NotebookEdit", "NotebookEdit", {}],
+    ["status: error", "Edit", { status: "error" }],
+    ["only isError", "Write", { isError: true }],
+    ["a bare filePath on Edit", "Edit", { filePath: AT }],
+    ["Edit without a patch", "Edit", { filePath: AT, newString: "x" }],
+    ["Edit with a non-array patch", "Edit", { ...success.Edit(AT), structuredPatch: "x" }],
+    ["Edit without newString", "Edit", { filePath: AT, structuredPatch: [] }],
+    ["NotebookEdit without updated_file", "NotebookEdit", { notebook_path: AT, new_source: "x" }],
+    ["NotebookEdit without notebook_path", "NotebookEdit", { new_source: "x", updated_file: "{}" }],
+    ["NotebookEdit without new_source", "NotebookEdit", { notebook_path: AT, updated_file: "{}" }],
+    ["Write's shape on Edit", "Edit", success.Write(AT)],
+    ["Write without a type", "Write", { filePath: AT }],
+    ["Write with an unknown type", "Write", { filePath: AT, type: "delete" }],
+    ["Edit's shape on NotebookEdit", "NotebookEdit", success.Edit(AT)],
+    ["a non-string filePath", "Write", { filePath: 1, type: "create" }],
+    ["a string", "Edit", "Interrupted by user"],
+    ["an array", "Edit", [{ type: "text", text: "x" }]],
+    ["null", "Edit", null],
+    ["nothing", "Edit", undefined],
+  ]) {
+    test(`a tool_response with ${label} records nothing`, async () => {
+      const S = `ONCE-FAILED-${label}`;
+      const call = editCall(S, at(AUTH), { tool });
+      assert.equal(askedPre(call), "ask");
+      runHook({ hook_event_name: "PostToolUse", ...call, tool_response: response });
+      assert.deepEqual(await completionsOf(S), []);
+      assert.equal(askedPre(editCall(S, at(AUTH), { tool })), "ask");
+    });
+  }
+
+  for (const [label, tool, extra] of [
+    ["a Write that created the file", "Write", { type: "create" }],
+    ["Write's full result", "Write", { content: "x", structuredPatch: [], originalFile: null, userModified: false }],
+    ["fields the shape does not name", "Edit", { contentNotInModelContext: true, staleRecovered: true }],
+    ["staged: false", "Edit", { staged: false }],
+    ["NotebookEdit's empty error", "NotebookEdit", { error: "" }],
+  ]) {
+    test(`a success with ${label} still counts`, () => {
+      const S = `ONCE-OK-${label}`;
+      const call = editCall(S, at(AUTH), { tool });
+      assert.equal(askedPre(call), "ask");
+      firePost(call, undefined, { ...okFor(call), ...extra });
+      assert.equal(askedPre(editCall(S, at(AUTH), { tool })), "allow");
+    });
+  }
+
+  test("a missing tool_use_id earns no credit, on Pre or on Post", async () => {
+    const S = "ONCE-NO-ID";
+    const { tool_use_id: _, ...noId } = editCall(S, at(AUTH));
+    assert.equal(askedPre(noId), "ask");
+    firePost(noId);
+    assert.deepEqual(await completionsOf(S), []);
+    assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+
+    const paired = editCall(S, at(AUTH));
+    const { tool_use_id: __, ...postNoId } = paired;
+    assert.equal(askedPre(paired), "ask");
+    firePost(postNoId);
+    assert.equal(askedPre(editCall(S, at(AUTH))), "ask");
+  });
+
+  test("an empty session always asks, and never matches a line with an empty session", async () => {
+    const box = await isolated();
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, gateLine("", file, "e1") + completeLine("", file, "e1"));
+    for (const session of ["", undefined]) {
+      const call = editCall(session, file, { cwd: box.repo });
+      assert.equal(askedPre(call, box.env), "ask");
+      firePost(call, box.env);
+      assert.equal(askedPre(editCall(session, file, { cwd: box.repo }), box.env), "ask");
+    }
+    assert.equal((await box.lines()).filter((l) => l.includes('"edit_complete"')).length, 1, "only the fixture's line");
+  });
+
+  // Every spelling of one file, as a harness or a shell may hand it. The drive's
+  // case and the Git Bash forms mean something only on win32, where normalizePath
+  // folds them; on POSIX `C:/x` and `/c/x` stay different names and are not listed.
+  const spellings = (dir, rel) => {
+    const base = dir.replace(/\\/g, "/");
+    const forms = {
+      forward: `${base}/${rel}`,
+      backslashes: `${base}/${rel}`.replace(/\//g, "\\"),
+      "a ..": `${base}/src/../${rel}`,
+      "a ./ and a //": `${base}/./src//${rel.slice("src/".length)}`,
+    };
+    if (WIN) {
+      const rest = base.slice(2);
+      Object.assign(forms, {
+        "c:\\ lower": `${base[0].toLowerCase()}:${rest}/${rel}`.replace(/\//g, "\\"),
+        "C:\\ upper": `${base[0].toUpperCase()}:${rest}/${rel}`.replace(/\//g, "\\"),
+        "Git Bash": `/${base[0].toLowerCase()}${rest}/${rel}`,
+        Cygwin: `/cygdrive/${base[0].toLowerCase()}${rest}/${rel}`,
+        "a \\\\?\\ prefix": `\\\\?\\${`${base}/${rel}`.replace(/\//g, "\\")}`,
+        "another letter case": `${base}/${rel}`.toUpperCase(),
+      });
+    }
+    return forms;
+  };
+
+  test("the spellings under test include the drive-case and Git Bash forms on win32", () => {
+    assert.equal(Object.keys(spellings("/a/b", AUTH)).includes("Git Bash"), WIN);
+  });
+
+  for (const name of Object.keys(spellings("/a/b", AUTH))) {
+    test(`path spelled with ${name}: the same file both ways round`, () => {
+      const forms = spellings(PROJ, AUTH);
+      completed(`ONCE-SPELL-A-${name}`, forms.forward);
+      assert.equal(askedPre(editCall(`ONCE-SPELL-A-${name}`, forms[name])), "allow");
+      completed(`ONCE-SPELL-B-${name}`, forms[name]);
+      assert.equal(askedPre(editCall(`ONCE-SPELL-B-${name}`, forms.forward)), "allow");
+    });
+  }
+
+  test("a path relative to cwd is the same file as its absolute form", () => {
+    completed("ONCE-RELATIVE", AUTH);
+    assert.equal(askedPre(editCall("ONCE-RELATIVE", at(AUTH))), "allow");
+  });
+
+  test("a completion rotated into events.jsonl.1 still counts", async () => {
+    const box = await isolated();
+    const S = "ONCE-ROTATED";
+    const file = at(AUTH, box.repo);
+    completed(S, file, { cwd: box.repo }, box.env);
+    await rename(box.events, box.events + ".1");
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow");
+    assert.match((await box.lines()).at(-1), /"repeat":true/);
+  });
+
+  test("a rotation between gate and completion still pairs them", async () => {
+    const box = await isolated();
+    const S = "ONCE-SPLIT";
+    const file = at(AUTH, box.repo);
+    const call = editCall(S, file, { cwd: box.repo });
+    assert.equal(askedPre(call, box.env), "ask");
+    await rename(box.events, box.events + ".1");
+    firePost(call, box.env);
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow");
+  });
+
+  test("a real rotation by size neither loses the record nor opens the gate", async () => {
+    const box = await isolated();
+    const S = "ONCE-SIZE";
+    const file = at(AUTH, box.repo);
+    completed(S, file, { cwd: box.repo }, box.env);
+    await appendFile(box.events, (JSON.stringify({ session: "NOISE", event: "prompt", pad: "x".repeat(1024) }) + "\n").repeat(2100));
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow", "the repeat's own gate line rotates the log");
+    assert.ok(existsSync(box.events + ".1"), "the fixture is over the cap");
+    // Two more rotations push the evidence out of both files: nothing left, so ask.
+    await writeFile(box.events + ".1", "");
+    await writeFile(box.events, "");
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "ask");
+  });
+
+  test("a completion with its gate gone asks", async () => {
+    const box = await isolated();
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, completeLine("ONCE-NO-GATE", file, "c1"));
+    assert.equal(askedPre(editCall("ONCE-NO-GATE", file, { cwd: box.repo }), box.env), "ask");
+  });
+
+  test("a gate with its completion gone asks", async () => {
+    const box = await isolated();
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, gateLine("ONCE-NO-DONE", file, "c1"));
+    assert.equal(askedPre(editCall("ONCE-NO-DONE", file, { cwd: box.repo }), box.env), "ask");
+  });
+
+  for (const [label, line] of [
+    ["another tool_use_id", (s, f) => gateLine(s, f, "g1") + completeLine(s, f, "g2")],
+    ["both with no id", (s, f) => gateLine(s, f, undefined) + completeLine(s, f, undefined)],
+    ["both with an empty id", (s, f) => gateLine(s, f, "") + completeLine(s, f, "")],
+    ["a gate of another kind", (s, f) => gateLine(s, f, "g1", { kind: "secret-ask" }) + completeLine(s, f, "g1")],
+    ["a gate of an always-ask rule", (s, f) => gateLine(s, f, "g1", { rule: "include" }) + completeLine(s, f, "g1")],
+    ["a gate on another file", (s, f) => gateLine(s, f + ".other", "g1") + completeLine(s, f, "g1")],
+    ["a completion of another file", (s, f) => gateLine(s, f, "g1") + completeLine(s, f + ".other", "g1")],
+    ["a gate from another session", (s, f) => gateLine("OTHER", f, "g1") + completeLine(s, f, "g1")],
+    ["a completion from another session", (s, f) => gateLine(s, f, "g1") + completeLine("OTHER", f, "g1")],
+    ["a non-string file", (s, f) => gateLine(s, 42, "g1") + completeLine(s, { f }, "g1")],
+  ]) {
+    test(`no pair with ${label}: asks`, async () => {
+      const box = await isolated();
+      const S = "ONCE-NO-PAIR";
+      const file = at(AUTH, box.repo);
+      await writeFile(box.events, line(S, file));
+      assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "ask");
+    });
+  }
+
+  test("control for the rows above: a true pair in a fixture is a repeat", async () => {
+    const box = await isolated();
+    const S = "ONCE-PAIR";
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, gateLine(S, file, "g1") + completeLine(S, file, "g1"));
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow");
+  });
+
+  test("a repeat's own pair carries the relief once the first pair has rotated out", async () => {
+    const box = await isolated();
+    const S = "ONCE-SELF-PAIR";
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, gateLine(S, file, "r1", { repeat: true }) + completeLine(S, file, "r1"));
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow");
+  });
+
+  test("a corrupt log asks", async () => {
+    const box = await isolated();
+    const S = "ONCE-CORRUPT";
+    const file = at(AUTH, box.repo);
+    const whole = gateLine(S, file, "g1") + completeLine(S, file, "g1");
+    await writeFile(box.events, "{not json\nnull\n42\n\"text\"\n" + whole.slice(0, whole.length - 20));
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "ask");
+  });
+
+  test("corrupt lines around a true pair do not cost it", async () => {
+    const box = await isolated();
+    const S = "ONCE-TORN";
+    const file = at(AUTH, box.repo);
+    await writeFile(box.events, "{not json\nnull\n" + gateLine(S, file, "g1") + "{torn\n" + completeLine(S, file, "g1"));
+    assert.equal(askedPre(editCall(S, file, { cwd: box.repo }), box.env), "allow");
+  });
+
+  test("an unreadable log (a directory in its place) asks", async () => {
+    const box = await isolated();
+    await mkdir(box.events);
+    const r = runHook({ hook_event_name: "PreToolUse", ...editCall("ONCE-DIR", at(AUTH, box.repo), { cwd: box.repo }) }, box.env);
+    assert.equal(r.status, 0);
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask");
+  });
+
+  // The main invariant: Stop reads a repeat's gate line, so a repeat whose line
+  // cannot be written must not exist. evaluate() writes nothing, so this is the
+  // adapter's half, and only the real process can show it.
+  const preRaw = (call, env) => runHook({ hook_event_name: "PreToolUse", ...call }, env);
+
+  test("a read-only log: the repeat asks with a first edit's reason and shape, and adds no line", async (t) => {
+    const box = await isolated();
+    const S = "ONCE-READ-ONLY";
+    const file = at(AUTH, box.repo);
+    const opts = { cwd: box.repo };
+    const first = editCall(S, file, opts);
+    const asked = preRaw(first, box.env);
+    firePost(first, box.env);
+    assert.equal(decide(pre("Agent", { subagent_type: "quinn" }, S), box.env), "allow");
+    assert.equal(askedPre(editCall(S, file, opts), box.env), "allow", "control: while the log is writable, it is a repeat");
+
+    const before = await box.lines();
+    await chmod(box.events, 0o444);
+    t.after(() => chmod(box.events, 0o644));
+    try {
+      await appendFile(box.events, "x\n");
+      await writeFile(box.events, before.join("\n") + "\n");
+      t.skip("this user can write a read-only file (root): the directory case below still runs");
+      return;
+    } catch (_) { /* read-only holds */ }
+
+    const r = preRaw(editCall(S, file, opts), box.env);
+    assert.equal(r.status, 0);
+    assert.equal(r.stdout, asked.stdout, "the same ask, byte for byte, as a first edit");
+    assert.equal(JSON.parse(r.stdout).hookSpecificOutput.permissionDecision, "ask");
+    assert.deepEqual(await box.lines(), before, "nothing reached the log");
+  });
+
+  test("a log that reads and cannot be written (the evidence rotated, a folder in its place): asks", async () => {
+    const box = await isolated();
+    const S = "ONCE-NO-WRITE";
+    const file = at(AUTH, box.repo);
+    const opts = { cwd: box.repo };
+    await writeFile(box.events + ".1", gateLine(S, file, "w1") + completeLine(S, file, "w1"));
+    assert.equal(askedPre(editCall(S, file, opts), box.env), "allow", "control: the rotated half is enough evidence");
+    await rm(box.events);
+    await mkdir(box.events);
+    const r = preRaw(editCall(S, file, opts), box.env);
+    assert.equal(r.status, 0);
+    const out = JSON.parse(r.stdout).hookSpecificOutput;
+    assert.equal(out.hookEventName, "PreToolUse");
+    assert.equal(out.permissionDecision, "ask");
+    assert.match(out.permissionDecisionReason, /is a HIGH-risk surface/);
+  });
+
+  test("a failed write elsewhere stays fail-open: an allow is not turned into an ask", async () => {
+    const box = await isolated();
+    await mkdir(box.events);
+    assert.equal(askedPre(editCall("ONCE-OPEN", at("src/plain.ts", box.repo), { cwd: box.repo }), box.env), "allow");
+    const r = runHook({ ...pre("Agent", { subagent_type: "bob" }, "ONCE-OPEN"), cwd: box.repo }, box.env);
+    assert.deepEqual({ status: r.status, stdout: r.stdout }, { status: 0, stdout: "" });
+  });
+
+  test("a missing log folder asks", async () => {
+    const box = await isolated();
+    await rm(box.logDir, { recursive: true });
+    assert.equal(askedPre(editCall("ONCE-GONE", at(AUTH, box.repo), { cwd: box.repo }), box.env), "ask");
+  });
+});
+
+// The false gate that blocked a real Stop, end to end: the arrow opened a gate on a
+// "file" named e.session, and the definition-of-done gate then held the turn.
+describe("scratch code never reaches Stop", () => {
+  const CODE = 'node -e "require(\'fs\').readFileSync(\'x\',\'utf8\').split(\'\\n\').filter(e=>e.session&&e.ok)"';
+
+  test("an arrow in quoted code opens no gate, in Bash or PowerShell, and Stop allows", async () => {
+    for (const tool of ["Bash", "PowerShell"]) {
+      const S = `CODE-STOP-${tool}`;
+      assert.equal(decide(pre(tool, { command: CODE }, S)), "allow");
+      assert.deepEqual(await logged(S), []);
+      assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "allow");
+    }
+  });
+
+  test("the same code beside a key still blocks", () => {
+    const command = `node -e "[1].map(x=>require('fs').writeFileSync('k.txt','${FAKE_AWS_KEY}'))"`;
+    assert.equal(decide(pre("Bash", { command }, "CODE-STOP-KEY")), "deny");
+  });
+
+  test("a real write after the same code still gates and holds Stop", async () => {
+    const S = "CODE-STOP-REAL";
+    assert.equal(decide(pre("Bash", { command: `${CODE} > .env` }, S)), "ask");
+    assert.equal((await logged(S))[0].file, ".env");
+    assert.equal(decide({ hook_event_name: "Stop", session_id: S }), "block");
+  });
+});
+
+// The field as Claude Code sends it, through the real process, to the Stop gate.
+describe("the session scratchpad, end to end", () => {
+  const at = async () => {
+    const cwd = await project();
+    const pad = await mkdtemp(path.join(HOME, "pad-"));
+    const file = pad.replace(/\\/g, "/") + "/.env";
+    return { cwd, pad, file };
+  };
+  const stop = (session_id) => decide({ hook_event_name: "Stop", session_id });
+
+  test("an Edit and a shell write inside it ask nothing, log nothing and leave Stop alone", async () => {
+    const { cwd, pad, file } = await at();
+    const S = "PAD-QUIET";
+    assert.equal(decide({ ...pre("Edit", { file_path: file, new_string: "x" }, S), cwd, scratchpad_dir: pad }), "allow");
+    assert.equal(decide({ ...pre("Bash", { command: `echo x > ${file}` }, S), cwd, scratchpad_dir: pad }), "allow");
+    assert.deepEqual(await logged(S), []);
+    assert.equal(stop(S), "allow");
+  });
+
+  test("without the field the same file gates and holds Stop", async () => {
+    const { cwd, file } = await at();
+    const S = "PAD-ABSENT";
+    assert.equal(decide({ ...pre("Edit", { file_path: file, new_string: "x" }, S), cwd }), "ask");
+    assert.equal((await logged(S))[0].kind, "high-risk-surface");
+    assert.equal(stop(S), "block");
+  });
+
+  test("the field is read per event: one naming the folder lends nothing to the next", async () => {
+    const { cwd, pad, file } = await at();
+    const S = "PAD-PER-EVENT";
+    assert.equal(decide({ ...pre("Edit", { file_path: file, new_string: "x" }, S), cwd, scratchpad_dir: pad }), "allow");
+    assert.equal(decide({ ...pre("Edit", { file_path: file, new_string: "y" }, S), cwd }), "ask");
+    assert.equal(stop(S), "block");
+  });
+
+  test("a real target among scratch ones gates and holds Stop", async () => {
+    const { cwd, pad, file } = await at();
+    const S = "PAD-MIXED";
+    assert.equal(decide({ ...pre("Bash", { command: `echo x > ${file}; echo y > .env` }, S), cwd, scratchpad_dir: pad }), "ask");
+    assert.equal(stop(S), "block");
+  });
+
+  test("a blocked secret inside it is denied, logged, and holds Stop", async () => {
+    const { cwd, pad, file } = await at();
+    const S = "PAD-SECRET";
+    assert.equal(decide({ ...pre("Write", { file_path: file, content: FAKE_AWS_KEY }, S), cwd, scratchpad_dir: pad }), "deny");
+    assert.equal((await logged(S))[0].kind, "secret-block");
+    assert.equal(stop(S), "block");
+  });
+
+  test("a completed edit inside it earns no ask-once relief for the file", async () => {
+    const { cwd, pad, file } = await at();
+    const S = "PAD-NO-RELIEF";
+    const input = { file_path: file, new_string: "x" };
+    assert.equal(decide({ ...pre("Edit", input, S), cwd, scratchpad_dir: pad, tool_use_id: "t1" }), "allow");
+    decide({
+      hook_event_name: "PostToolUse", tool_name: "Edit", tool_input: input, session_id: S, cwd, scratchpad_dir: pad, tool_use_id: "t1",
+      tool_response: { filePath: file, newString: "x", structuredPatch: [] },
+    });
+    assert.equal(decide({ ...pre("Edit", input, S), cwd, tool_use_id: "t2" }), "ask");
   });
 });

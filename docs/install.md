@@ -444,6 +444,11 @@ enforce) and only points to `~/AGENTS.md`, without `@`: projects live under a
 folder that contains `AGENTS.md`, Claude Code already loads it as an ancestor, and
 an import would load it twice. The block carries no team table of its own.
 
+The double load was observed, not assumed: on 2026-10-16 a real session on Windows
+showed `~/AGENTS.md` loaded once through the import, resolved as `C:\...`, and once
+as an ancestor, resolved as `c:\...`. The paths differed only in drive-letter case,
+which probably defeats the harness's duplicate check, so the import was dropped.
+
 Only the part between the markers is managed:
 
 ```markdown

@@ -56,6 +56,29 @@ test("old events, corrupt lines and unmeasured results do not invent context", (
   ])), []);
 });
 
+test("completions stay out of the timeline: they cannot push gates out of its 300 lines", async () => {
+  const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-timeline-"));
+  try {
+    const dir = path.join(home, ".claude", "canonkit-activity");
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, "events.jsonl"), lines([
+      { ts: 1, session: "s", event: "gate", kind: "high-risk-surface", file: "src/auth/a.ts", rule: "auth" },
+      ...Array.from({ length: 310 }, (_, i) => ({ ts: i + 2, session: "s", event: "edit_complete", tool_use_id: `t${i}`, file: "src/auth/a.ts", rule: "auth" })),
+    ]).join("\n") + "\n");
+    const script = `const { server } = require(${JSON.stringify(SERVER)});
+      server.listen(0, "127.0.0.1", async () => {
+        const r = await fetch("http://127.0.0.1:" + server.address().port + "/events.json");
+        console.log(await r.text());
+        server.close();
+      });`;
+    const r = spawnSync(process.execPath, ["-e", script], { encoding: "utf8", env: { ...process.env, HOME: home, USERPROFILE: home }, timeout: 15000 });
+    assert.equal(r.status, 0, r.stderr);
+    assert.deepEqual(JSON.parse(r.stdout).map((e) => [e.event, e.kind]), [["gate", "high-risk-surface"]]);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("context reads both retained log files, beyond the timeline's 300 lines", async () => {
   const home = await mkdtemp(path.join(os.tmpdir(), "canonkit-context-"));
   try {
@@ -423,4 +446,14 @@ test("token tables separate input, output, cache and calls, and label the window
   ctx.evs = [{ ts: 5, event: "prompt", project: "p" }];
   runInNewContext("render(evs)", ctx);
   assert.match(el("window-recent").textContent, /last 1 timeline lines/);
+  // A repeat did not prompt: quiet in the feed, and not a fired gate.
+  ctx.evs = [
+    { ts: 6, event: "gate", kind: "high-risk-surface", file: "src/auth/a.ts", rule: "auth" },
+    { ts: 7, event: "gate", kind: "high-risk-surface", file: "src/auth/a.ts", rule: "auth", repeat: true },
+    { ts: 8, event: "edit_complete", file: "src/auth/a.ts", tool_use_id: "t1", rule: "auth" },
+  ];
+  runInNewContext("render(evs)", ctx);
+  assert.equal(el("s-gates").textContent, 1);
+  assert.match(el("feed").innerHTML, /repeat edit, no prompt · src\/auth\/a\.ts/);
+  assert.equal(el("feed").innerHTML.match(/gate · high-risk-surface/g).length, 1);
 });

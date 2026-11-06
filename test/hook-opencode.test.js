@@ -437,6 +437,18 @@ describe("normalizeOpencode: one OpenCode event into evaluate()'s events", () =>
     assert.deepEqual(evts.map((e) => evaluate(e, { logDir: null, home: ROOT }).kind), [null, "high-risk-surface"]);
   });
 
+  // Ask-once needs a completion, and OpenCode never sees one: its plugin sends only
+  // PreToolUse and passes logDir: null, so a repeat stays what it is today.
+  test("no ask-once relief: a repeated edit stays high-risk-surface and refuses nothing", () => {
+    const evt = normalizeOpencode(ocEvent("write", { filePath: "src/auth/session.ts", content: "x" }), PROJ)[0];
+    for (let i = 0; i < 2; i++) {
+      const r = evaluate(evt, { logDir: null, home: ROOT });
+      assert.deepEqual({ decision: r.decision, kind: r.kind }, { decision: "ask", kind: "high-risk-surface" });
+      assert.equal(r.logs[0].record.repeat, undefined);
+      assert.equal(opencodeDecision(r), null);
+    }
+  });
+
   test("a non-string cwd becomes '' (no project, the stricter side)", () => {
     for (const cwd of [undefined, null, 42, {}]) assert.equal(normalizeOpencode(shell("ls"), cwd)[0].cwd, "");
   });

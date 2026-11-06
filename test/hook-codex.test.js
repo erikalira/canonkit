@@ -346,6 +346,27 @@ describe("normalizeCodex: one Codex call into evaluate()'s events", () => {
     assert.deepEqual(results.map((r) => r.kind), [null, "high-risk-surface"]);
   });
 
+  // Ask-once needs a completion, and Codex never sees one: it sends only PreToolUse
+  // and passes logDir: null. Even with Claude Code's log on this machine holding a
+  // true pair for the file, the core reads nothing, and the verdict is today's.
+  test("no ask-once relief: a repeated edit stays high-risk-surface, and the adapter stays silent", async () => {
+    const logDir = path.join(ROOT, ".claude", "canonkit-activity");
+    await mkdir(logDir, { recursive: true });
+    const file = path.join(PROJ, "src", "auth", "session.ts").replace(/\\/g, "/");
+    await writeFile(path.join(logDir, "events.jsonl"),
+      JSON.stringify({ ts: 1, session: "S-CODEX", event: "gate", kind: "high-risk-surface", file, rule: "auth", tool_use_id: "t1" }) + "\n" +
+      JSON.stringify({ ts: 2, session: "S-CODEX", event: "edit_complete", tool_use_id: "t1", file, rule: "auth" }) + "\n");
+    const evt = { event: "PreToolUse", tool: "Write", toolInput: { file_path: file, content: "x" }, cwd: PROJ, session: "S-CODEX", toolUseId: "t2" };
+    for (let i = 0; i < 2; i++) {
+      const r = evaluate(evt, { logDir: null, home: ROOT });
+      assert.deepEqual({ decision: r.decision, kind: r.kind }, { decision: "ask", kind: "high-risk-surface" });
+      assert.equal(r.logs[0].record.repeat, undefined);
+      assert.equal(codexOutput(r), null);
+    }
+    silent(spawnAdapter(patch("*** Update File: src/auth/session.ts", "@@", "+x")));
+    silent(spawnAdapter(patch("*** Update File: src/auth/session.ts", "@@", "+x")));
+  });
+
   test("a Delete File is gated by its path, with no content", () => {
     const [evt, ...rest] = normalizeCodex(patch("*** Delete File: src/auth/session.ts"), "/fallback");
     assert.deepEqual(rest, []);
