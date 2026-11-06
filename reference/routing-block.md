@@ -22,12 +22,9 @@ backs it, independently of my judgment.
   HIGH-risk-surface or performance-budget files, and on a shell command that *writes* to one — Bash
   and PowerShell alike, because a gate wired to one shell on a machine with two is a gate with a
   side door. Obvious secrets are blocked. If a gate fires on something I classified LOW, reconsider
-  the risk and whether a veto holder should weigh in — don't just dismiss the prompt. A HIGH-risk
-  edit asks once per file per session: a later edit of a file whose earlier edit completed does not
-  ask, and still counts for the review gate. Secret paths, `highRisk.include`, `.claude/canonkit.json`,
-  budgets, secret content and shell writes always ask, except files in the session's scratchpad, where
-  only blocked secrets, the git gates and, from a shell, secret content apply. A project tunes which paths count in
-  `.claude/canonkit.json`; editing it is itself gated, and it never reaches the secret check. <!-- enforced-by: git,git-bypass,secret-block,secret-ask,high-risk-surface,perf-budget -->
+  the risk and whether a veto holder should weigh in — don't just dismiss the prompt. A project
+  tunes which paths count in `.claude/canonkit.json`; editing it is itself gated, and it never
+  reaches the secret check. <!-- enforced-by: git,git-bypass,secret-block,secret-ask,high-risk-surface,perf-budget -->
 - `[ENFORCED]` **Every dispatch is logged** with its model and effort, then its tokens, duration
   and the size of the report it returned (`~/.claude/canonkit-activity/events.jsonl`), so a plan
   that names them is checkable against what ran. <!-- enforced-by: dispatch-log -->

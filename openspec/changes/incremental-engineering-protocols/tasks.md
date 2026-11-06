@@ -84,3 +84,19 @@ protocols and LOW proportionality remain intact. No new security exception is
 accepted. Fresh validation is complete and the corrections are ready for review;
 model efficacy remains UNMEASURED. No commit, push, archive, merge or publication
 was performed.
+
+### P1 follow-up — resident gate descriptions
+
+The earlier correction missed stale ask-once and scratchpad claims in
+`README.md` and `reference/routing-block.md`. Both now match `origin/main`,
+including removal of the link to the deleted ask-once section. This is LOW-risk
+documentation alignment with the existing gate; no runtime behavior changed.
+
+Validation: the existing default instruction-profile test passed (1/1), and
+`node scripts/check-enforced.mjs` confirmed all eight enforced rules have gates.
+A targeted search found no remaining ask-once/scratchpad claims in active
+README/reference/agent/skill/tool/hook documentation; historical plans and the
+regression tests retain their historical or negative assertions. Whitespace
+checks passed. Current resident totals supersede the earlier counts: Claude
+**2,427** / Codex **2,320** / OpenCode **2,366** words, with margins **73 / 180 /
+134**. The full runtime suite above was not rerun for this documentation-only fix.
