@@ -1983,7 +1983,7 @@ function parseTool(file, text) {
     }
   }
 
-  const lists = ["install", "setup", "touches", "notes", "undo", "env"];
+  const lists = ["install", "setup", "touches", "notes", "undo", "env", "gitignore"];
   for (const key of lists) {
     if (front[key] !== undefined && !Array.isArray(front[key])) throw new Error(`${where}: ${key} must be a list`);
   }
@@ -2020,6 +2020,13 @@ function parseTool(file, text) {
       throw new Error(`${where}: env entry ${kv.split("=")[0]} changes what gets loaded — not allowed`);
     }
   }
+  // Plain relative patterns under one top-level directory each: they are
+  // written verbatim into the project's .gitignore and passed to git ls-files.
+  for (const p of front.gitignore ?? []) {
+    if (!/^!?[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.*-]+)*\/?$/.test(p) || p.split("/").some((s) => s === "..")) {
+      throw new Error(`${where}: gitignore pattern ${JSON.stringify(p)} is not a plain relative path`);
+    }
+  }
   if (!rules.length || rules.length > 3) throw new Error(`${where}: the block takes 1 to 3 rule lines, found ${rules.length}`);
   if (rules.some((l) => l.includes(front.pin))) throw new Error(`${where}: the pin lives only in the frontmatter`);
 
@@ -2035,6 +2042,7 @@ function parseTool(file, text) {
     notes: front.notes ?? [],
     undo: front.undo ?? [],
     env: Object.fromEntries((front.env ?? []).map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
+    gitignore: front.gitignore ?? [],
     rules,
   };
 }
@@ -2092,6 +2100,57 @@ async function writeToolsBlock(ctx, project, tools, active) {
   if (text === raw) return ctx.log(active.size || !had ? "already current: AGENTS.md" : "No tools block in AGENTS.md");
   await ctx.writeAtomic(target, text);
   ctx.log(!active.size ? "Removed tools block from AGENTS.md" : `${had ? "Updated" : "Added"} tools block in AGENTS.md`);
+}
+
+/**
+ * A tool's `gitignore:` patterns, as a managed block in the project's
+ * .gitignore: what the tool rebuilds stays out of git, what the registry
+ * re-includes with `!` is versioned. Rules the project already has for those
+ * directories, outside the block, are its decision and win: patterns are
+ * last-match-wins, so a block appended after them would quietly overrule them.
+ */
+const gitignoreMarkers = (name) => [`# agent-team-config:gitignore:${name}:start`, `# agent-team-config:gitignore:${name}:end`];
+const gitignoreRoot = (p) => p.replace(/^!?\/?/, "").split("/")[0];
+
+function gitignorePlan(project, tool) {
+  if (!tool.gitignore.length) return null;
+  const target = path.join(project, ".gitignore");
+  const raw = existsSync(target) ? readFileSync(target, "utf8") : "";
+  const markers = gitignoreMarkers(tool.name);
+  const roots = [...new Set(tool.gitignore.map(gitignoreRoot))];
+  const outside = toLf(raw).replace(new RegExp(`${esc(markers[0])}[\\s\\S]*?${esc(markers[1])}`), "");
+  const own = outside
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("#") && roots.includes(gitignoreRoot(l)));
+  if (own.length) return { target, roots, own };
+  const body = [`# ${tool.name}: rebuilt locally; only the ! lines are versioned. Managed by canonkit tool add ${tool.name}.`, ...tool.gitignore].join("\n");
+  const { text, had } = replaceProjectBlock(raw, markers, body);
+  return { target, roots, raw, text, had };
+}
+
+async function writeGitignore(ctx, project, tool) {
+  const plan = gitignorePlan(project, tool);
+  if (!plan) return;
+  if (plan.own) {
+    ctx.log(`.gitignore already has its own rules for ${plan.roots.join(", ")} (${plan.own.join(", ")}); left as is.`);
+    return;
+  }
+  if (plan.text === plan.raw) ctx.log("already current: .gitignore");
+  else {
+    await ctx.writeAtomic(plan.target, plan.text);
+    ctx.log(`${plan.had ? "Updated" : "Added"} ${tool.name} block in .gitignore`);
+  }
+  // Ignoring does not untrack: files committed before stay versioned. Printed,
+  // never run — git rm touches the index the person is about to commit from.
+  const git = resolveBin("git", { cwd: project });
+  if (!git) return;
+  const r = runBin(git, ["ls-files", "-c", "-i", "--exclude-standard", "--", ...plan.roots], { cwd: project, capture: true, timeout: 30 * 1000 });
+  const tracked = r.status === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  if (!tracked.length) return;
+  const shown = tracked.slice(0, 5).join(", ") + (tracked.length > 5 ? `, … (${tracked.length} in all)` : "");
+  ctx.log(`  note:    already committed, so still tracked despite .gitignore: ${shown}`);
+  ctx.log(`           to stop tracking them (files stay on disk): git rm -r --cached -q -- ${plan.roots.join(" ")} && git add -- ${plan.roots.join(" ")}`);
 }
 
 const CLAUDE_MD = ["CLAUDE.md", path.join(".claude", "CLAUDE.md")];
@@ -2311,6 +2370,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   }
   setup.forEach((args, i) => ctx.log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
   tool.touches.forEach((t, i) => ctx.log(`  ${i ? "        " : "touches:"} ${t}`));
+  if (tool.gitignore.length) ctx.log(`  then:    .gitignore — canonkit's ${tool.name} block (${tool.gitignore.join(" ")}), unless it already has rules for them`);
   ctx.log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
   for (const [k, v] of Object.entries(tool.env)) ctx.log(`  env:     ${k}=${v}`);
   for (const n of tool.notes) ctx.log(`  note:    ${n}`);
@@ -2318,6 +2378,9 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   if (ctx.dryRun) {
     const raw = existsSync(path.join(project, "AGENTS.md")) ? await readFile(path.join(project, "AGENTS.md"), "utf8") : "";
     const active = activeTools(raw, tools);
+    const ignore = gitignorePlan(project, tool);
+    if (ignore?.own) ctx.log(".gitignore already has its own rules for them; would leave it as is");
+    else if (ignore) ctx.log(ignore.text === ignore.raw ? ".gitignore block already current" : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`);
     ctx.log(active.has(name) ? "tools block in AGENTS.md already lists it" : "would add it to the tools block in AGENTS.md");
     return 0;
   }
@@ -2344,6 +2407,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
     if (problems.length) loud(["graphify's hooks are not what canonkit expected — check before committing:", ...problems]);
   }
   warnNewClaudeMd(project, claudeBefore);
+  await writeGitignore(ctx, project, tool);
 
   // Read again: the setup above may have rewritten AGENTS.md.
   const target = path.join(project, "AGENTS.md");
@@ -2375,6 +2439,9 @@ async function toolRemove(ctx, name) {
 
   ctx.log(`Files ${tool.name} wrote are left as they are:`);
   for (const t of tool.touches) ctx.log(`  ${t}`);
+  // The block stays: graphify-out/ is still on disk, and dropping the rules
+  // would turn it into a pile of untracked files.
+  if (tool.gitignore.length) ctx.log(`  .gitignore (canonkit's ${tool.name} block — delete it by hand to version that output)`);
   if (tool.undo.length) {
     ctx.log("To undo its setup, yourself:");
     for (const u of tool.undo) ctx.log(`  ${u}`);

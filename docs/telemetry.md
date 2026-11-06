@@ -24,6 +24,26 @@ Then open `http://localhost:4317`: besides the timeline, it groups dispatches by
 (model, effort) and by agent, with the number of dispatches, average tokens,
 average report size and average duration.
 
+## Engineering baseline coverage
+
+Reuse the existing measurements for engineering questions; no second collector
+or dashboard is needed:
+
+| Question | Available evidence / limit |
+|---|---|
+| Tokens per dispatch | Transcript-derived token fields, with output only a floor and missing data kept null. |
+| Estimated financial cost | Not calculated: requires verified model prices and a policy for incomplete output counts. |
+| Delegation time | `duration_ms`; cumulative ends must be deduplicated. |
+| Report size | `report_chars`, not the report text. |
+| Tool-result volume | Recognized textual payload chars/lines, separately for main and subagent contexts. |
+| Dispatch frequency | Counts within the displayed retention/time window, not a lifetime rate. |
+| Context growth | Exact growth is UNMEASURED; payload/report sizes are contributors, not tokenized context or growth deltas. |
+
+These signals do not establish task success, review quality, human approval or
+false-positive rates. Missing or rotated records are coverage limits. See
+[offline protocol fixtures](evals.md#engineering-protocol-fixtures) for the
+separate deterministic baseline, which does not measure model behavior.
+
 ## Dispatch metrics
 
 Each subagent dispatch becomes two lines in
@@ -200,7 +220,7 @@ covers.
 ### Collecting on an existing installation
 
 Reinstall from this checkout and update **the existing** `PostToolUse` entry to
-the matcher above, avoiding duplicate hooks (or run
+the [current matcher](hooks.md#events-it-must-be-registered-for), avoiding duplicate hooks (or run
 `npx canonkit install --wire-hooks`, which updates the entry instead of adding a
 second one). The installer warns if it finds the old `Agent|Task` matcher, but
 without `--wire-hooks` it still does not write to `settings.json`. Editing the

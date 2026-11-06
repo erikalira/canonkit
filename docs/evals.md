@@ -333,6 +333,34 @@ Two Archie runs ended at the $0.60 cap before answering: a cold prompt cache mad
 the first turn cost $1.28 (158k cache-creation tokens on opus, none read). Those
 are not scored; the run was redone with `--budget 1.5` and cost $0.41.
 
+## Engineering protocol fixtures
+
+Seven synthetic cases reuse the existing quality runner, schema and lexical
+judge: `bob-stale-validation`, `bob-repeated-debugging`,
+`quinn-green-missing-requirement`, `quinn-review-scope-creep`,
+`scott-unobservable-outcome`, `bob-low-doc-no-ceremony` and
+`spencer-incomplete-handoff`. They cover historical tests after an edit, repeated
+fixes without a new hypothesis, green tests missing acceptance, unauthorized
+review scope, an unobservable outcome, a LOW typo needing no ceremony and a
+handoff missing validation and a next step.
+
+`node --test test/eval.test.js` validates all case schemas and calibrates the
+unchanged judge against representative useful and plausible incorrect reports,
+including wrong answers containing expected words. It also rescores synthetic
+saved reports offline. `node scripts/eval-quality.mjs --dry-run` only lists the
+plan; it does not run cases against a model. No paid execution of these seven
+cases has been performed. Behavioral efficacy is **UNMEASURED**.
+
+These checks prove fixture/schema and lexical-report contracts, not agent
+obedience, hypothesis testing, command execution, acceptance inspection or
+cross-runtime efficacy. Bob's completion and Scott's constraints are exercised
+as supplied prompt inputs; Spencer's handoff case does not prove native discovery
+or execution of the checkout's `orchestrate` skill. A future behavioral evaluation
+requires separate authorization and recording the actual loaded instructions.
+See the [team guide](team.md#engineering-delivery) for ownership and the
+[telemetry coverage](telemetry.md#engineering-baseline-coverage) for measurements
+already available without model runs.
+
 ## Always-loaded cost
 
 Measured: the two blocks plus the descriptions of the 10 core agents, which Claude

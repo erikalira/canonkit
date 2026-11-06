@@ -1,0 +1,332 @@
+{
+  "rubric": "instruction-quality",
+  "rubricVersion": "1.0.0",
+  "date": "2026-11-03",
+  "target": {
+    "name": "canonkit",
+    "version": "2.4.0",
+    "commit": "37be5de",
+    "source": "agent-team-config (branch fix, clean tree; v2.4.0 published by Release run 41582000656)",
+    "installProfile": "README quickstart: npx canonkit install --wire-hooks, menu defaults (Claude Code + Codex). Primary harness: Claude Code."
+  },
+  "evaluator": {
+    "model": "claude-opus-5-5"
+  },
+  "previous": "2026-10-29-canonkit-2.json",
+  "scores": [
+    {
+      "id": "clarity",
+      "score": 8,
+      "nearestAnchor": "10",
+      "missingForNext": "Fix the Node prerequisite contradiction (README says 18+, package.json and CI say 22), and state what a trivial HIGH-risk change is exempt from.",
+      "evidence": [
+        "reference/agents-block.md:110-112 — clear: LOW/MEDIUM/HIGH each defined by condition, once, for every role",
+        "reference/agents-block.md:83-86 — 'trivial' is now defined (local, reversible, no behavior/contract/security/shared-runtime effect), but 'Say why it qualifies' leaves implicit what it qualifies for; aebc444 dropped the old 'do not route a reviewer just to silence the question'",
+        "Contradiction: README.md:37 'Requires Node 18+' vs package.json engines 'node: >=22' and .github/workflows/ci.yml:3 'Node 22 is the floor package.json declares'",
+        "Cross-checked, no contradiction: context bands 100k/150k/200k (reference/agents-block.md:151 vs hooks/canonkit-hook.js:1475); 10 core (README.md:65, package.json:4, docs/install.md:62); core roster README vs block (scripts/check-roster.mjs, OK in npm run validate); HIGH-risk surfaces (reference/agents-block.md:53 vs hooks/canonkit-hook.js:425-440, 'new services' left to judgment); words of the default profile (docs/evals.md:347 2,120 = measured 2120)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "rationale",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Reasons for the newer rules: incidental findings (reference/agents-block.md:133-139) and 'do not invent a missing specialist's role' (:46-49).",
+      "evidence": [
+        "Same sample as the previous run (the first 10 imperative rules of reference/agents-block.md in file order): 10 of 10 now carry a specific reason.",
+        "Newly reasoned: :61-64 dependency routing — 'Install/build code executes with developer or CI privileges, introducing supply-chain risk'; :81 no self-merge — 'A review from earlier work does not carry: fresh eyes catch risks the author missed'.",
+        "Outside the sample, without reason: :133-139 'Never defer delivery defects or blocked validation as incidental ... do not search, delegate or create artifacts just for capture' (the why is in skills/orchestrate/out-of-scope-issues.md, not in the always-loaded rule); :46-49 'do not invent its role or cover the domain yourself'."
+      ],
+      "delta": {
+        "from": 8,
+        "cause": "real",
+        "commits": ["aebc444"],
+        "why": "The two rules the previous run named as unreasoned (dependency routing, no self-merge) gained specific reasons."
+      }
+    },
+    {
+      "id": "proportionality",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "reference/agents-block.md:104-112 — one risk scale 'the one every agent uses'",
+        "reference/agents-block.md:6-13 and :114-119 — LOW work and MEDIUM work no owner flags stay inline",
+        "reference/agents-block.md:72 and agents/quinn.md:37 — at LOW a veto becomes a note; Quinn 'creates no testing bureaucracy for LOW changes'; skills/orchestrate/out-of-scope-issues.md:6 'A LOW task stays LOW merely for capturing an incidental finding'",
+        "reference/agents-block.md:121-125 — risk and scale are two axes; scale calibrates evidence and never waives a rule"
+      ],
+      "delta": null
+    },
+    {
+      "id": "context-cost",
+      "score": 10,
+      "nearestAnchor": "10",
+      "measurement": {
+        "words": 2120,
+        "files": [
+          { "path": "reference/agents-block.md", "part": "whole file", "words": 1407 },
+          { "path": "reference/routing-block.md", "part": "whole file", "words": 388 },
+          { "path": "agents/archie.md", "part": "description", "words": 21 },
+          { "path": "agents/bob.md", "part": "description", "words": 23 },
+          { "path": "agents/gard.md", "part": "description", "words": 22 },
+          { "path": "agents/perry.md", "part": "description", "words": 24 },
+          { "path": "agents/pipe.md", "part": "description", "words": 22 },
+          { "path": "agents/pixie.md", "part": "description", "words": 20 },
+          { "path": "agents/quinn.md", "part": "description", "words": 25 },
+          { "path": "agents/scott.md", "part": "description", "words": 20 },
+          { "path": "agents/spencer.md", "part": "description", "words": 30 },
+          { "path": "agents/virgo.md", "part": "description", "words": 22 },
+          { "path": "skills/context-tune/SKILL.md", "part": "description", "words": 40 },
+          { "path": "skills/learning-loop/SKILL.md", "part": "description", "words": 19 },
+          { "path": "skills/orchestrate/SKILL.md", "part": "description", "words": 37 }
+        ]
+      },
+      "evidence": [
+        "node scripts/rubric.mjs context-cost on repo sources: agents-block 1407 + routing-block 388 + 10 core agent descriptions 229 + 3 skill descriptions 96 = 2120 words -> 10 (up from 1993; the third default skill, learning-loop, and the incidental-findings sections account for most of it)",
+        "Matches docs/evals.md:347-349, which records the same 2,120 for Claude Code, 1,989 for Codex and 2,059 for OpenCode, guarded by a default-profile test in test/cli.test.js",
+        "Not counted: stack-pack and specialist descriptions, installed per project only (canonkit add <name>). Headroom to the 2,500 anchor: 380 words."
+      ],
+      "delta": null
+    },
+    {
+      "id": "routing",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Restore a boundary on the Gard/Pipe Docker/Compose overlap in the descriptions, and a complete routing run after the description rewrite.",
+      "evidence": [
+        "agents/gard.md:3 — '... Docker/Compose, sensitive scripts. Veto on security. Not for lockfile-only patch bumps alone.'",
+        "agents/quinn.md:3 — '... independent review after HIGH-risk edits. Veto on quality. Not for implementation alone.' Every one of the 15 descriptions now ends with a 'Not for ...' non-trigger.",
+        "Overlap: agents/gard.md:3 and agents/pipe.md:3 both list 'Docker/Compose' unqualified; aebc444 dropped Pipe's 'operational' qualifier. The split survives only in bodies loaded after dispatch (agents/gard.md:28 'with a relevant risk involving privilege, a sensitive mount ...'). Pipe/Perry/Pixie split stays explicit at reference/agents-block.md:88-90.",
+        "evals/routing-cases.json — 23 cases. Latest run docs/evals.md:101-147 (2026-11-02, before the rewrite): 8/10 measured cases held, 13/23 unanswered (usage limit), 2 textual failures; last complete run 12/12 (docs/evals.md:74-96, 2026-10-17)."
+      ],
+      "delta": {
+        "from": 8,
+        "cause": "real",
+        "commits": ["aebc444"],
+        "why": "Non-triggers added to every agent description, the item the previous run named as missing."
+      }
+    },
+    {
+      "id": "governance",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "reference/agents-block.md:20-31 — owner and blocking authority per domain",
+        "reference/agents-block.md:69-75 — a veto is narrow (domain, MEDIUM/HIGH, named concrete risk); overruling is the lead's call",
+        "reference/agents-block.md:77-86 — no self-merge on HIGH risk, reviewer after the last edit; backed by the definition-of-done Stop gate, hooks/canonkit-hook.js:1141-1190"
+      ],
+      "delta": null
+    },
+    {
+      "id": "enforcement",
+      "score": 10,
+      "nearestAnchor": "10",
+      "measurement": {
+        "items": {
+          "E1": "block",
+          "E2": "block",
+          "E3": "confirm",
+          "E4": "confirm",
+          "E5": "confirm"
+        },
+        "penalties": []
+      },
+      "evidence": [
+        "E1 block — hooks/canonkit-hook.js:704-708 HARD_SECRET; Edit/Write/MultiEdit/NotebookEdit content denied at :1381-1386 (denyFor -> permissionDecision 'deny', :1449-1451); shell writes of the same denied at :1329-1336, before any config read.",
+        "E2 block — gitBypass :938-960 (--no-verify and prefixes, commit/am -n, --no-gpg-sign, -c core.hooksPath / commit.gpgsign=false); denied at :1314-1324 for Bash and PowerShell alike.",
+        "E3 confirm — highRisk :425-440 (config, include, secret paths, strong terms, auth, migrations); Edit/Write asks at :1398-1403.",
+        "E4 confirm — shellWriteTargets :716-797 now parses redirects, tee, Set-Content/Add-Content/Out-File/New-Item, cp, mv (-t too), sed -i, Copy-Item and Move-Item; asks at :1354-1365. Remaining gap: interpreter one-liners (node -e, python -c) and variable/glob expansion.",
+        "E5 confirm — :402 CONFIG_PATH is the first rule in highRisk (:427). ~/.claude/settings.json and the installed hook file are not gated (harness's own switch; doctor compares the hook byte for byte).",
+        "Off-switches: process.env is read only for CLAUDE_PROJECT_DIR (:653, :1441) and CANONKIT_CONTEXT_BANDS (:1443), which disables the non-blocking context reminder. The Codex and OpenCode adapters read no env switch.",
+        "[ENFORCED] rules in reference/routing-block.md each carry an enforced-by tag mapped to a gate kind, checked by scripts/check-enforced.mjs in npm run validate."
+      ],
+      "delta": null
+    },
+    {
+      "id": "review-noise",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "quinn-clean-covered-refactor still 1/3 on the line cap; no rerun since 2026-10-29, and the 5 new bait cases (stack-pack controls, learning-loop clean) have no paid run.",
+      "evidence": [
+        "Bar per reviewer unchanged: agents/quinn.md:62, agents/gard.md:62, agents/archie.md:64, agents/perry.md:85 — ## Pre-report gate (0324e51 fixed Perry's gate so it no longer shields missing-evidence blocks)",
+        "Bait cases now 7 (evals/quality-cases.json), including the Go/Kotlin/Swift benign controls (docs/evals.md:223-249) and virgo-learning-clean (:251-256)",
+        "Real-model run: docs/evals.md:298-334 (2026-10-29) — 8/9 cases, 23/27 runs; docs/evals.md:244 'No paid stack-pack run has been performed'"
+      ],
+      "delta": null
+    },
+    {
+      "id": "memory",
+      "score": 7,
+      "nearestAnchor": "5",
+      "missingForNext": "Capture runs only on request and skips duplicate search by default; nothing turns a recorded correction into a proposal unprompted.",
+      "evidence": [
+        "skills/learning-loop/SKILL.md:8-14 — on request, turns a lesson into the smallest reviewable diff to agents/, reference/, skills/ or a project canonkit.json; 'Prefer rewriting, consolidating or removing existing instructions over adding rules' (:40-41)",
+        "Where lessons land: the canonical instruction files themselves, so an applied lesson reaches every next session through the managed blocks and agents; proposals as a local record or a sanitized GitHub issue (:65-82, proposal-template.md)",
+        "Pruning: :138-152 — review due 90 days after application, expired at 180 days, removal/consolidation of obsolete rules through the same review",
+        "Not done: :8-9 'do not inject lessons at session start, ingest transcripts, automatically promote a lesson'; :69-70 'do not ... search existing issues or proposals for duplicates by default'",
+        "Incidental findings (reference/agents-block.md:131-139, skills/orchestrate/out-of-scope-issues.md) preserve out-of-scope findings for the session and the handoff; handoff convention unchanged at reference/agents-block.md:141-151"
+      ],
+      "delta": {
+        "from": 5,
+        "cause": "real",
+        "commits": ["b5505b6", "f1edaae"],
+        "why": "learning-loop turns a lesson into a reviewed configuration change with a review/expiry cycle; the previous run found nothing that did."
+      }
+    },
+    {
+      "id": "self-measurement",
+      "score": 8,
+      "nearestAnchor": "10",
+      "missingForNext": "A recorded run of the full 61-case quality corpus and a complete routing run, saved as data per version.",
+      "evidence": [
+        "evals/quality-cases.json — 61 cases across all 10 core agents (quinn 18, bob 8, gard 7, virgo 6, perry 5, archie 4, spencer 4, pixie 3, scott 3, pipe 3); kinds positive 23, adversarial 20, low 11, bait 7",
+        "evals/routing-cases.json — 23 cases",
+        "Runners: npm run eval, npm run eval:quality (--runs, --save, --rescore)",
+        "Results only in prose: docs/evals.md:74-96, :101-147 (partial 2.2.0 run, exit 1), :281-297, :298-334; stack-pack and learning-loop cases have no paid run (:244, :256)"
+      ],
+      "delta": null
+    },
+    {
+      "id": "observability",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "Log ~/.claude/canonkit-activity/events.jsonl; agent_start: id, agent, name, model, effort, project (hooks/canonkit-hook.js:1284-1299); agent_end: resolved_model, status, duration_ms, tool_uses, tokens, report_chars (:1268-1278)",
+        "No content: dispatch description (task) and command fragments (detail) no longer logged (docs/telemetry.md:3-6); git-bypass logs only the flag family (:1319-1323); SendMessage logs recipient and has_message (:1303-1306)",
+        "View: dashboard/serve.js grouping by (model, effort) and agent (docs/telemetry.md:11-26)"
+      ],
+      "delta": {
+        "from": 9,
+        "cause": "real",
+        "commits": ["aebc444"],
+        "why": "task and detail fields removed from new records, the item the previous run named as missing."
+      }
+    },
+    {
+      "id": "stack-coverage",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "10 stack packs with specific guidance (574 lines total): stack-packs/typescript, react, python, go, rust, java, kotlin, csharp, cpp, swift /SKILL.md; e.g. stack-packs/go/SKILL.md:3 'error identity, goroutine/channel lifetimes ...'",
+        "5 optional domain specialists: agents/maya.md, nova.md, echo.md, dana.md, iris.md",
+        "Selective install per project: canonkit add <stack> (README.md:169-204, docs/install.md:324-383; bin/stack-packs.js)"
+      ],
+      "delta": {
+        "from": 5,
+        "cause": "real",
+        "commits": ["4ab7a1d", "dee94fe"],
+        "why": "Ten language/framework stack packs added beside the five domain specialists: 15 covered, each installable per project."
+      }
+    },
+    {
+      "id": "portability",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Confirm gates on OpenCode, whose plugin API has a permission.ask hook (docs/hooks.md:124-126 says neither adapter can ask), and the Stop gate wherever a harness offers one.",
+      "evidence": [
+        "Claude Code: instructions ~/AGENTS.md + ~/.claude/CLAUDE.md + ~/.claude/agents; enforcement hooks/canonkit-hook.js (all gates)",
+        "Codex: $CODEX_HOME/agents/*.toml + $CODEX_HOME/AGENTS.md (reference/codex-block.md); enforcement hooks/canonkit-codex.js wired into $CODEX_HOME/hooks.json — git-bypass and secret-block deny (docs/hooks.md:20-27); verified on codex-cli 0.166.0, 2026-11-01 (:39)",
+        "OpenCode: ~/.config/opencode/agents + AGENTS.md (reference/opencode-block.md); enforcement hooks/canonkit-opencode.js + opencode-plugin.mjs — the same two denies, git asks through opencode.json permission rules; verified on v2.1.4, 2026-11-01 (:40)",
+        "Gaps documented: docs/hooks.md:120-136 (no confirm gates, no Stop gate, OpenCode execute/MCP not gated, doctor not target-aware). Current docs: Codex 'ask' support is disputed (PR openai/codex#20756 closed); OpenCode plugins expose permission.ask with status ask/deny/allow (third-party guides, not the official English reference)"
+      ],
+      "delta": {
+        "from": 6,
+        "cause": "real",
+        "commits": ["8d603ff", "ee50f08", "8dae175", "a2c0bff", "b1582f2"],
+        "why": "Codex and OpenCode adapters run the same core, enforce the two deny gates, and were verified in real harness runs."
+      }
+    },
+    {
+      "id": "security",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "One runtime dependency pinned exactly (prompts 2.4.2); no install/postinstall script (package.json scripts: prepublishOnly only)",
+        "Secret scan in CI: .github/workflows/ci.yml 'secrets' job — gitleaks 8.30.1 pinned by SHA-256 over the full history",
+        "Provenance: .github/workflows/release.yml — trusted publishing via OIDC, npm publish --provenance --ignore-scripts, tag must be on main and match package.json; v2.3.0 and v2.4.0 published by that workflow (gh run list)",
+        "Actions pinned to commits, kept current by .github/dependabot.yml (a4d29dd); kit config .claude/canonkit.json gated (hooks/canonkit-hook.js:402, :427); installers and adapters reviewed by Gard (2cb9cec, 5f29dfd 'Gard P3')"
+      ],
+      "delta": {
+        "from": 5,
+        "cause": "evaluator",
+        "commits": [],
+        "why": "CI, gitleaks and provenance (1137e23, 92992ce) landed between 9add039 and f2849c1. The f2849c1 run re-read only review-noise and carried this score from 9add039, so its 'No CI' was already stale. Only Dependabot (a4d29dd) is in range, and no anchor item depends on it."
+      }
+    },
+    {
+      "id": "install",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "Install/update: npx canonkit install [--wire-hooks] [--dry-run]; managed blocks between markers; copyKeepingLocal keeps local edits as .local.bak",
+        "Tracking by stable id: bin/cli.js:2422-2450 installCatalog — each entry id is root:kind:relative; bin/install-manifest.js:114-160 schema-1 manifest validated against the catalog, with a crash-safe pending intent (:244-315)",
+        "Uninstall: npx canonkit uninstall [--claude|--codex|--opencode] [--dry-run] (docs/install.md:500-557) — removes per entry, edited files backed up first, bytes outside markers preserved (bin/install-manifest.js:12-33)",
+        "Health check: npx canonkit doctor (README.md:55-70), exits 1 on FAIL. Caveat: not target-aware, so a Codex- or OpenCode-only install gets FAIL rows for Claude Code (docs/hooks.md:135-136)"
+      ],
+      "delta": {
+        "from": 7,
+        "cause": "real",
+        "commits": ["d4c06ab", "979f73a"],
+        "why": "canonkit uninstall with per-entry tracking by stable ids, the item the previous run named as missing."
+      }
+    },
+    {
+      "id": "consistency",
+      "score": 8,
+      "nearestAnchor": "10",
+      "missingForNext": "A check (or a single source) for the Node prerequisite, and one home for the incidental-findings rule.",
+      "evidence": [
+        "One source per agent; Codex TOML generated; doctor checks copies; README core roster now checked against reference/agents-block.md by scripts/check-roster.mjs (OK in npm run validate, 2026-11-03); [ENFORCED] tags checked by scripts/check-enforced.mjs",
+        "Drift: README.md:37 'Node 18+' vs package.json engines '>=22' and .github/workflows/ci.yml:3; no check covers it",
+        "Duplication without drift: the incidental-findings rule is in both always-loaded Claude Code blocks (reference/agents-block.md:131-139 and reference/routing-block.md:9-11); skills/learning-loop/SKILL.md:112-119 restates the rubric's context-cost method"
+      ],
+      "delta": {
+        "from": 7,
+        "cause": "real",
+        "commits": ["aebc444"],
+        "why": "The README roster drift found last time is fixed and now checked by check-roster.mjs; a new drift (Node prerequisite) keeps it below 10."
+      }
+    },
+    {
+      "id": "scope-focus",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Tie context-tune to the stated purpose or ship it separately.",
+      "evidence": [
+        "README.md:1-9 purpose; :22-33 who it is for and 'It is not a fit if you want one agent per task, or a heavy spec-first process'",
+        "Optional domains installed separately: specialists and stack packs per project (README.md:169-204); stack packs feed reviewers (docs/evals.md:223-235), learning-loop serves the team's own instructions",
+        "Edge of scope: skills/context-tune (quieting command output) is still a default global skill and serves context cost rather than the team"
+      ],
+      "delta": null
+    },
+    {
+      "id": "kit-ci",
+      "score": 9,
+      "nearestAnchor": "10",
+      "missingForNext": "Exercise the documented PowerShell entry point (scripts/install.ps1, docs/install.md:59) in CI; every job runs under bash.",
+      "evidence": [
+        "12 test files (hook, hook-core, hook-codex, hook-opencode, cli, uninstall, stack-packs, check-enforced, check-roster, eval, exec, dashboard); npm test -> 832 tests, 829 pass, 3 skipped, 0 fail (2026-11-03, Windows 11); PowerShell command grammar covered at the parser level (test/hook-core.test.js, 17 PowerShell cases)",
+        ".github/workflows/ci.yml — matrix ubuntu/macos/windows x Node 22/24, fail-fast off, npm test + npm run validate (python3/tomllib asserted), on pull_request and push to main; reused by release.yml before publishing",
+        "Gap: defaults.run.shell is bash on every runner; scripts/install.ps1 is never run"
+      ],
+      "delta": {
+        "from": 5,
+        "cause": "evaluator",
+        "commits": [],
+        "why": "The 3-OS CI (1137e23) landed between 9add039 and f2849c1; the f2849c1 run carried 'CI: none' from 9add039 without re-reading. In range, the suite grew from 5 to 12 files (adapters, uninstall), but no anchor item changed."
+      }
+    },
+    {
+      "id": "human-docs",
+      "score": 10,
+      "nearestAnchor": "10",
+      "evidence": [
+        "README.md is 338 lines (279 before); quickstart :35-70 with the doctor output it should print",
+        "Reference separate from tutorial: docs/install.md, hooks.md, telemetry.md, team.md, tools.md, evals.md, learning-loop.md, out-of-scope-issues.md; maintenance docs/maintaining.md, docs/releasing.md; release notes docs/release-notes/2.1.0-2.4.0",
+        "Nothing promotional before setup (:1-33). Defect outside this anchor: the quickstart's 'Requires Node 18+' (:37) is wrong for engines >=22 (scored under clarity and consistency)"
+      ],
+      "delta": null
+    }
+  ],
+  "average": 9.2,
+  "notes": "Full re-score: every parameter re-read at 37be5de. This audit ran under canonkit's own rules (~/AGENTS.md and ~/.claude/CLAUDE.md were loaded), and the rubric's knownBias applies to enforcement and governance. Two evaluator deltas of 2 or more (security +5, kit-ci +4) are not anchor looseness: the previous run (f2849c1) was a partial re-score that carried 18 scores from 9add039, and 24 commits between those two, including CI and provenance, had changed what the anchors look at. Other profiles: plain `npx canonkit install` (no --wire-hooks) leaves every hook unwired, so enforcement would be 0. Codex default profile 1,989 words, OpenCode 2,059 (docs/evals.md:347-349)."
+}

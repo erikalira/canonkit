@@ -2518,6 +2518,18 @@ describe("tool registry", () => {
     assert.doesNotMatch(g.install.join("\n"), /\bgraphify==/);
     assert.deepEqual(g.setup, [["update", "."]]);
     assert.deepEqual(tools.get("openspec").setup, [["init", "--tools", "claude,codex"]]);
+    // Only the report is versioned; .graphify_python above all never is.
+    assert.deepEqual(g.gitignore, ["graphify-out/*", "!graphify-out/GRAPH_REPORT.md"]);
+    assert.deepEqual(tools.get("openspec").gitignore, []);
+  });
+
+  test("refuses a gitignore pattern that is not a plain relative path", () => {
+    const file = (p) => `---\nname: t\nbin: t\npin: 1.2.3\ninstall:\n  - get t@{pin}\nsetup:\n  - init\ngitignore:\n  - ${p}\n---\none rule\n`;
+    assert.deepEqual(parseTool("t.md", file("out/*")).gitignore, ["out/*"]);
+    assert.deepEqual(parseTool("t.md", file("!out/keep.md")).gitignore, ["!out/keep.md"]);
+    for (const p of ["../x", "out/../x", "/abs", "out x", "*", "out/$(id)", "C:\\out"]) {
+      assert.throws(() => parseTool("t.md", file(p)), /plain relative path/, p);
+    }
   });
 
   test("refuses a range pin, a forbidden step, a non-literal argument and a long block", () => {
@@ -2796,6 +2808,59 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.equal(await read(config), beforeConfig);
     assert.equal(existsSync(path.join(project, ".gitattributes")), false);
     assert.match(await read(path.join(project, "AGENTS.md")), /git status --porcelain/);
+  });
+
+  test("graphify keeps only GRAPH_REPORT.md versioned, in a block that repeated adds leave alone", { skip: !gitDir }, async () => {
+    const { project, tool, env } = await setup("graphify-gitignore", { git: true });
+    const target = path.join(project, ".gitignore");
+    await writeFile(target, "node_modules/\n");
+    const dry = tool(["add", "graphify", "--dry-run"]);
+    assert.match(dry.out, /would add the graphify block in \.gitignore/);
+    assert.equal(await read(target), "node_modules/\n");
+
+    assert.equal(tool(["add", "graphify", "--yes"]).status, 0);
+    const once = await read(target);
+    assert.match(once, /^node_modules\/\n\n# agent-team-config:gitignore:graphify:start\n[\s\S]*graphify-out\/\*\n!graphify-out\/GRAPH_REPORT\.md\n# agent-team-config:gitignore:graphify:end\n$/);
+    const again = tool(["add", "graphify", "--yes"]);
+    assert.match(again.out, /already current: \.gitignore/);
+    assert.equal(await read(target), once);
+
+    // What git actually does with it.
+    const ignored = (f) => spawnSync("git", ["-C", project, "check-ignore", "-q", f], { env: env() }).status === 0;
+    for (const f of ["graphify-out/graph.json", "graphify-out/.graphify_python", "graphify-out/cache/ast/x.json", "graphify-out/memory/q.md"]) {
+      assert.ok(ignored(f), `${f} should be ignored`);
+    }
+    assert.equal(ignored("graphify-out/GRAPH_REPORT.md"), false);
+
+    // remove leaves the block, and says so.
+    const r = tool(["remove", "graphify"]);
+    assert.match(r.out, /\.gitignore \(canonkit's graphify block/);
+    assert.equal(await read(target), once);
+  });
+
+  test("graphify leaves a .gitignore that already decides graphify-out/ as it is", { skip: !gitDir }, async () => {
+    const { project, tool } = await setup("graphify-gitignore-own", { git: true });
+    const target = path.join(project, ".gitignore");
+    // Versioning graph.json on purpose: an appended block would overrule it.
+    await writeFile(target, "graphify-out/cache/\r\n");
+    const r = tool(["add", "graphify", "--yes"]);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /already has its own rules for graphify-out \(graphify-out\/cache\/\); left as is/);
+    assert.equal(await read(target), "graphify-out/cache/\r\n");
+  });
+
+  test("graphify points out output committed before the block, without untracking it", { skip: !gitDir }, async () => {
+    const { project, tool, env } = await setup("graphify-gitignore-tracked", { git: true });
+    await mkdir(path.join(project, "graphify-out"));
+    for (const f of ["graph.json", "GRAPH_REPORT.md"]) await writeFile(path.join(project, "graphify-out", f), "{}\n");
+    assert.equal(spawnSync("git", ["-C", project, "add", "graphify-out"], { env: env() }).status, 0);
+    const r = tool(["add", "graphify", "--yes"]);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /still tracked despite \.gitignore: graphify-out\/graph\.json\n/);
+    assert.doesNotMatch(r.out, /tracked despite[^\n]*GRAPH_REPORT/);
+    assert.match(r.out, /git rm -r --cached -q -- graphify-out && git add -- graphify-out/);
+    const index = spawnSync("git", ["-C", project, "ls-files"], { env: env(), encoding: "utf8" }).stdout;
+    assert.match(index, /graphify-out\/graph\.json/);
   });
 
   test("manual setup preserves existing Git automation and warns about migration", { skip: !gitDir }, async () => {

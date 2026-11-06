@@ -1,0 +1,4 @@
+# Generated local OpenSpec integrations; canonical artifacts live in openspec/.
+.agents/skills/openspec-*/
+.claude/skills/openspec-*/
+.claude/commands/opsx/

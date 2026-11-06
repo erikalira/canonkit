@@ -102,6 +102,57 @@ const logged = async (session) =>
 const pre = (tool_name, tool_input, session_id = "TEST") =>
   ({ hook_event_name: "PreToolUse", tool_name, tool_input, session_id });
 
+describe("authorization remains per edit", () => {
+  for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
+    test(`${tool}: successful completion never authorizes the next edit`, async () => {
+      const cwd = await project();
+      const file = path.join(cwd, "src", "auth", "login.ts");
+      const session = `PER-EDIT-${tool}`;
+      const call = { ...pre(tool, { file_path: file, new_string: "x" }, session), cwd, tool_use_id: "first" };
+      assert.equal(decide(call), "ask");
+      runHook({ ...call, hook_event_name: "PostToolUse", tool_response: {
+        filePath: file, newString: "x", structuredPatch: [], type: "update",
+        notebook_path: file, new_source: "x", updated_file: "{}",
+      } });
+      assert.equal(decide({ ...call, tool_use_id: "second" }), "ask");
+      const gates = (await logged(session)).filter((e) => e.event === "gate");
+      assert.equal(gates.length, 2);
+      assert.ok(gates.every((e) => e.kind === "high-risk-surface"));
+      assert.equal(decide({ hook_event_name: "Stop", session_id: session, cwd }), "block");
+    });
+  }
+
+  test("a scratchpad field never exempts path, budget or credential checks", async () => {
+    const cwd = await project();
+    const pad = await mkdtemp(path.join(HOME, "scratch-"));
+    const cases = [
+      ["Edit", { file_path: path.join(pad, "auth.ts"), new_string: "x" }, "high-risk-surface"],
+      ["Write", { file_path: path.join(pad, "lighthouserc.json"), content: "{}" }, "perf-budget"],
+      ["Write", { file_path: path.join(pad, "plain.js"), content: "pass" + "word = 'example-value'" }, "secret-ask"],
+      ["Bash", { command: `echo x > "${path.join(pad, ".env")}"` }, "high-risk-surface"],
+    ];
+    for (const [i, [tool, input, kind]] of cases.entries()) {
+      const session = `PAD-STILL-GATED-${i}`;
+      assert.equal(decide({ ...pre(tool, input, session), cwd, scratchpad_dir: pad }), "ask");
+      assert.equal((await logged(session))[0].kind, kind);
+      assert.equal(decide({ hook_event_name: "Stop", session_id: session, cwd }), "block");
+    }
+  });
+
+  test("shell writes inside quoted interpreter strings retain their path gate", async () => {
+    const cwd = await project();
+    for (const [i, command] of [
+      'fish -c "echo x=>.env"',
+      `node -e "require('child_process').execSync('echo x=>.env')"`,
+    ].entries()) {
+      // Only pass text to the hook; neither shell command is executed.
+      const session = `QUOTED-WRITE-${i}`;
+      assert.equal(decide({ ...pre("Bash", { command }, session), cwd }), "ask");
+      assert.equal((await logged(session))[0].kind, "high-risk-surface");
+    }
+  });
+});
+
 describe("tool-result volume (main thread and subagents)", () => {
   // Synthetic sensitive markers must never reach the activity JSONL, even via
   // cwd, file metadata, unexpected fields or tool_input.

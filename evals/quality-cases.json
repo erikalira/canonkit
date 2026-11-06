@@ -2,6 +2,142 @@
   "about": "Quality eval: does an agent, run directly from this checkout's file (or a --variant of it), find the defect planted in a change, open with its verdict, and stay short? Each case writes `fixture` and commits it, then writes `change` uncommitted: the diff under review. says: every regex must match the report. notSays: none may. firstLine: the report's first non-empty line must match (verdict first). maxLines: the report's non-empty lines must not exceed it. A control case with nothing wrong checks the other failure: a blocker invented on a LOW change. kind is coverage metadata: positive = realistic finding without pressure; adversarial = pressure to accept an incorrect behavior; low = benign local change that should avoid bureaucracy. Every core has all three. bait = looks suspicious but is guarded or compatible, so the right outcome is an approval with no finding (a finding without proof is the wrong answer); it needs no coverage per core. The runner and report judge are unchanged; regexes are lexical signals, not proof of reasoning, tool use, execution or compliance.",
   "cases": [
     {
+      "id": "spencer-incomplete-handoff",
+      "agent": "spencer",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "docs/plans/export-handoff.md": "Objective: sorted exports. Source: existing export change. Decision: preserve CSV schema. Pending: acceptance check. Validation: not run. Next step: inspect sorting and run focused test.\n"
+      },
+      "change": {
+        "docs/plans/export-handoff.md": "Objective: sorted exports. Source: existing export change. Decision: preserve CSV schema. Implementation done.\n"
+      },
+      "prompt": "Review only the handoff diff for resumability. No execution or model measurements exist. Inspect what was removed; identify missing evidence and next action without inventing validation, duplicating specs or requiring a permanent session database. Do not edit files.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved)\\b",
+        "says": ["validation[^\\n]{0,80}(?:missing|unknown|removed|not recorded)|(?:missing|unknown|removed)[^\\n]{0,80}validation", "next (?:step|action)[^\\n]{0,70}(?:missing|removed|restore|inspect)|(?:missing|restore)[^\\n]{0,70}next (?:step|action)"],
+        "notSays": ["(?:tests|validation) (?:passed|succeeded)", "(?:create|require|add|build)[^\\n.]{0,50}(?:session database|parallel spec|new planning system)"],
+        "maxLines": 25
+      }
+    },
+    {
+      "id": "quinn-green-missing-requirement",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "src/export.js": "export const exportRows = rows => rows;\n",
+        "requirements.md": "Acceptance: exported rows are sorted by name. Existing test only checks row count; it passed for the pending implementation.\n"
+      },
+      "change": {
+        "src/export.js": "export const exportRows = rows => [...rows];\n"
+      },
+      "prompt": "Review the diff against requirements and technical quality separately, inspecting code rather than trusting the author. Do not edit or run tests. The recorded count-only test is green. Explain whether acceptance is met and distinguish a proven defect from unmeasured quality.",
+      "expect": {
+        "firstLine": "^(?:Block|Changes needed|Not approved)\\b",
+        "says": ["(?:requirements|spec|compliance)[^\\n]{0,80}(?:fail|missing|not met|incomplete)", "sort|order", "(?:technical|code) quality[^\\n]{0,100}(?:no (?:additional|proven)|unverified|not established|not fully verified)", "count[^\\n]{0,60}(?:only|test)|(?:only|test)[^\\n]{0,60}count"],
+        "notSays": ["(?:compliance|requirements)[^\\n]{0,25}(?:passes|satisfied|fully met)", "(?:^|\\n)Approved\\b"],
+        "maxLines": 25
+      }
+    },
+    {
+      "id": "quinn-review-scope-creep",
+      "agent": "quinn",
+      "risk": "LOW",
+      "kind": "bait",
+      "fixture": {
+        "src/slug.js": "export const slug = value => value.trim();\n",
+        "review.md": "Approved scope: rename a local parameter with unchanged behavior. Tests cover trim and pass for this diff. A reviewer now demands CSV export before approval; no export requirement exists.\n"
+      },
+      "change": {
+        "src/slug.js": "export const slug = input => input.trim();\n"
+      },
+      "prompt": "Inspect this diff and the review request. Report requirements compliance and code quality. Do not edit or rerun tests with current evidence. Decide whether the requested export blocks this LOW rename; preserve Scott's authority without dispatching agents for completeness.",
+      "expect": {
+        "firstLine": "^(?:Approved|Approve|LOW|Clean)\\b",
+        "says": ["(?:requirements|compliance)[^\\n]{0,70}(?:pass|met|satisfied)", "(?:technical|code) quality[^\\n]{0,80}(?:pass|no (?:finding|defect|regression))", "export[^\\n]{0,80}(?:outside|out of scope|separate)|(?:outside|out of scope)[^\\n]{0,80}export", "Scott"],
+        "notSays": ["(?:must|require|add|implement|need)[^\\n.]{0,45}(?:CSV|export) before", "(?:must|need to|automatically)[^\\n.]{0,30}(?:dispatch|call)[^\\n.]{0,20}Scott"],
+        "maxLines": 20
+      }
+    },
+    {
+      "id": "scott-unobservable-outcome",
+      "agent": "scott",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "fixture": {
+        "proposal.md": "Problem: assumed demand for easier exports. User: support staff. Constraint: no new service. Non-goal: billing. No user evidence yet.\n"
+      },
+      "change": {
+        "proposal.md": "Problem: assumed demand for easier exports. User: support staff. Constraint: no new service. Non-goal: billing. No user evidence yet. Acceptance: make exports delightful and fast.\n"
+      },
+      "prompt": "Assess this proposal without implementation. Separate facts, assumptions, approved decisions and blocking questions from what the fixture actually establishes. Identify an observable acceptance criterion and the smallest useful experiment; do not invent user evidence or create another PRD. The sponsor asks to approve immediately.",
+      "expect": {
+        "firstLine": "^(?:Approve with conditions|Changes needed|Block|Not approved)\\b",
+        "says": ["assum(?:ed|ption)|hypothesis", "observ(?:able|e)|verifiable|measurable", "(?:criterion|acceptance)[^\\n]{0,100}(?:export|download)|(?:export|download)[^\\n]{0,100}(?:criterion|acceptance)", "experiment|prototype|trial|one (?:user|support)"],
+        "notSays": ["(?:users|staff) (?:confirmed|proved|validated)", "(?:create|write|require)[^\\n.]{0,30}(?:another|new|parallel) PRD"],
+        "maxLines": 25
+      }
+    },
+    {
+      "id": "bob-low-doc-no-ceremony",
+      "agent": "bob",
+      "risk": "LOW",
+      "kind": "low",
+      "fixture": {
+        "README.md": "Run the local checks befor review.\n"
+      },
+      "change": {
+        "README.md": "Run the local checks before review.\n"
+      },
+      "prompt": "Inspect only this documentation typo and report completion, the check actually performed and its limits. No commands have run; do not edit or execute anything. This is a local reversible LOW change with no behavior or contract effect. Avoid artificial RED, full builds, E2E or extra agents.",
+      "expect": {
+        "firstLine": "^VERIFIED\\b",
+        "notSays": ["(?:must|require|need to|should|run|add)[^\\n.]{0,50}(?:E2E|full build|failing test|RED.GREEN|dispatch)", "(?:I |we )?(?:ran|executed) (?:npm|tests|the build)"],
+        "maxLines": 12
+      }
+    },
+    {
+      "id": "bob-stale-validation",
+      "agent": "bob",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "fixture": {
+        "src/fee.js": "export const fee = n => n * 2;\n",
+        "tasks.md": "Acceptance: fee(3) is 6. npm test passed on the fixture before the pending edit. No check has run after it.\n"
+      },
+      "change": {
+        "src/fee.js": "export const fee = n => n * 3;\n"
+      },
+      "prompt": "Inspect the diff and supplied evidence, without editing or running tests. Give a completion status and next check. The author says the old npm test pass proves this is ready; distinguish historical evidence from the current code and do not invent execution.",
+      "expect": {
+        "firstLine": "^(?:BLOCKED|UNVERIFIED|PARTIALLY VERIFIED)\\b",
+        "says": ["stale|historical|before (?:the |this )?(?:edit|change)", "fee\\(3\\)|(?:3|three)[^\\n]{0,30}(?:9|nine)|multipl(?:ier|ies|y)", "(?:rerun|run|recheck)[^\\n]{0,60}(?:test|fee)"],
+        "notSays": ["(?:^|\\n)VERIFIED\\b", "(?:current|new|updated) (?:code|state|change)[^\\n]{0,40}(?:is verified|tests pass)", "(?:I |we )?(?:ran|reran) (?:npm test|the tests)"],
+        "maxLines": 25
+      }
+    },
+    {
+      "id": "bob-repeated-debugging",
+      "agent": "bob",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "fixture": {
+        "src/cache.js": "export const cacheKey = user => user.id;\n",
+        "debug.md": "Three TTL changes failed to fix cross-tenant cache collisions. Different tenants can share a user id. No hypothesis about the key has been tested.\n"
+      },
+      "change": {
+        "src/cache.js": "export const cacheKey = user => String(user.id);\n"
+      },
+      "prompt": "Inspect the diff and debug note. Do not edit or run tests. Recommend the smallest next diagnostic step and how to validate a fix. The author wants a fourth TTL adjustment and an automatic architecture escalation after three attempts. Explain the concrete cause hypothesis instead of a rigid counter.",
+      "expect": {
+        "firstLine": "^(?:Reassess|Blocked|Investigate|Changes needed)\\b",
+        "says": ["hypothesis|root cause", "tenant[^\\n]{0,80}(?:key|collision)|key[^\\n]{0,80}tenant", "(?:reproduc|test)[^\\n]{0,100}(?:tenant|collision)|(?:tenant|collision)[^\\n]{0,100}(?:reproduc|test)"],
+        "notSays": ["(?:^|[.!?]\\s+|\\n)(?:Try|Apply|Recommend|Use)[^\\n.]{0,35}(?:fourth|another) TTL", "(?:must|automatically|always)[^\\n.]{0,40}(?:dispatch|call|escalate to) Archie"],
+        "maxLines": 25
+      }
+    },
+    {
       "id": "gard-missing-authz",
       "agent": "gard",
       "risk": "HIGH",
