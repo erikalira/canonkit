@@ -44,6 +44,34 @@ A brief that asks for work outside the repository carries the block's rule
 ("Temporary work outside the repository"): the subagent starts cold, and its shell
 writes there land on the user as prompts and false gates.
 
+## Evidence-based completion
+
+Qualify the claim being made, using the existing short report rather than a new
+artifact or state engine:
+
+| Status | Meaning |
+|---|---|
+| VERIFIED | Sufficient, current evidence supports the stated criteria. |
+| PARTIALLY VERIFIED | Only some criteria have sufficient, current evidence; name the rest. |
+| UNVERIFIED | Evidence is absent or insufficient for the claim. |
+| BLOCKED | An unresolved failure or blocker prevents delivery; name it and the next step. |
+
+Report implemented scope, what was validated, relevant commands actually run and
+their results, skipped checks and remaining limitations. Lint is evidence about
+lint, not a passing build; a partial or skipped suite does not verify unrun cases.
+For LOW work, a brief inspection or focused check can suffice; do not require an
+irrelevant build or E2E. Format/schema checks of instructions do not establish
+model obedience: behavioral efficacy stays **UNMEASURED** without measurements.
+
+Tie evidence to the inspected work state when reliably known (revision and dirty
+state, or the relevant diff); do not invent a fingerprint. A relevant later edit
+invalidates the affected result, not unrelated checks. Label old results as
+historical and rerun only what that edit affects. Before adopting a subagent's
+success claim, inspect the relevant diff and its evidence, including freshness
+and missing criteria. Reuse valid evidence for the same state; a report alone
+does not establish correctness, and a review does not automatically require a
+second test run. An unresolved failed check remains explicit, never a pass.
+
 ## OpenSpec change lifecycle
 
 Use this bridge where the project already uses OpenSpec: **OpenSpec = durable
@@ -87,6 +115,32 @@ state; CanonKit = governance; Graphify = code evidence.**
    that workflow's prompts. Never archive while sync is running or failed, or
    report closure just because an archive command succeeded. If archive is not
    requested, report implementation readiness and the pending archive explicitly.
+
+## Compact continuity and finalization
+
+When continuity is needed, reuse the selected OpenSpec change and its existing
+artifacts; otherwise use the repository handoff location already established in
+`AGENTS.md`. Keep only the current objective, authoritative artifact references,
+decisions, task progress and relevant edits, actual validation and its work state,
+blockers, next step and minimum file references. Include branch, revision and
+uncommitted changes when reliably known; mark unknown state rather than guessing.
+Link existing decisions instead of copying them. Do not persist prompts,
+transcripts, secrets or sensitive data, or create `.planning` or permanent session
+records. If existing artifacts or a short report suffice, create no extra file.
+On resume, check the current change/work state and evidence freshness, then
+continue the pending task; do not repeat completed analysis without a reason.
+
+For a permitted dispatch, send task-relevant criteria, constraints, interfaces,
+references and dependency state, not full histories of prior tasks. Existing
+short reports remain the return path. This neither changes risk-based dispatch
+nor calls for one agent per task.
+
+At delivery, distinguish implemented work, validation status, pending required
+review and readiness for a PR from authorization to commit, push, merge, publish
+or discard work. Never infer those permissions from passing checks. Before
+worktree cleanup, verify ownership, inspect uncommitted/untracked work and obtain
+applicable authorization to remove it; preserve unrelated or unowned work. No
+automatic branch/worktree management is introduced.
 
 ## Integration Review
 

@@ -95,6 +95,29 @@ the ones that can be checked mechanically (see [maintaining.md](maintaining.md#v
   installation, not only by reading discipline: if the domain does not exist in
   the project, the agent is not there.
 
+## Engineering delivery
+
+Bob uses hypothesis-driven debugging, revisiting assumptions after repeated
+failed fixes. Completion reports use the existing `orchestrate` skill's
+[evidence-based completion protocol](../skills/orchestrate/SKILL.md#evidence-based-completion):
+claims distinguish current evidence, incomplete checks and unresolved failures.
+LOW work keeps focused validation. Offline instruction checks demonstrate
+integrity, not model obedience; behavioral efficacy remains **UNMEASURED**
+without model measurements.
+
+Scott reuses clear requirements, adding clarification only for consequential
+unknowns; OpenSpec artifacts remain authoritative where present. Quinn's existing
+review reports requirements compliance and technical quality separately, without
+adding reviewers. Scott retains scope authority. Bob favors a failing regression
+test before a correction when useful and practical; documentation and trivial
+edits need no TDD ceremony, and unavailable pre-fix execution is stated honestly.
+
+For a long-session handoff or finalization, use the same skill's
+[compact continuity procedure](../skills/orchestrate/SKILL.md#compact-continuity-and-finalization).
+Reference the existing change, known work state, evidence and next step;
+implementation readiness does not grant permission to commit, merge or clean up
+worktrees.
+
 ## Learning loop
 
 For changes motivated by a mistake, Virgo uses the on-demand `learning-loop`

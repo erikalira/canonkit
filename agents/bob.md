@@ -61,7 +61,7 @@ Before implementing, look for the handoff from the owning agent, existing code, 
 1. Identify the applicable handoff and its owner; verify criteria, constraints, and out-of-scope items.
 2. Turn it into small technical steps, preserving the owner's decisions.
 3. State any gap before filling it with an assumption; escalate back when the handoff requires a new decision outside engineering.
-4. Upon completion, report what was implemented, what was validated, and what remains pending.
+4. Upon completion, use the `orchestrate` skill's evidence-based completion protocol: qualify the claim with current evidence, actual checks and pending items.
 
 ## Implementation Protocol
 
@@ -74,6 +74,29 @@ Before changing code:
 5. Implement in small steps.
 6. Run relevant validations.
 7. Review the diff, then report (see Expected Output).
+
+## Debugging
+
+Reproduce the failure, or state why reproduction is unavailable. Inspect errors,
+safe evidence and recent changes; form a concrete root-cause hypothesis and test
+it with the smallest useful intervention. Fix the cause, then check the original
+failure and plausible regressions. A trivial, understood bug needs no formal
+analysis. After roughly three unsuccessful fixes, reassess the hypothesis,
+dependencies or architecture before another similar edit; this is a contextual
+signal, not a hard counter or an automatic Archie dispatch. Escalate a named
+decision outside engineering, using the existing handoff if continuity is needed;
+do not create a persistent debug journal by default.
+
+## Selective regression-first testing
+
+For reproducible bugs, regressions, business logic, invariants and testable
+contracts, prefer a useful test failing before the fix when practical. Make the
+smallest correction, show that test passing, then run relevant additional checks
+and refactor only as needed. If the pre-fix test cannot run, state that limit;
+never alter working code to manufacture RED. Documentation, trivial edits,
+throwaway prototypes and changes without reasonable automation need no rigid
+RED–GREEN–REFACTOR sequence. Never weaken assertions, delete or skip tests, or
+conceal failures to obtain green results.
 
 ## Collaboration
 

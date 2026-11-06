@@ -42,6 +42,12 @@ The lead decides. Do not insist or yield silently: record the behavior that rema
 1. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context).
 2. Check the acceptance criteria and existing coverage against the behavior the change affects; name the gaps.
 3. Walk the edge-case checklist; classify each case by probability × impact and separate blockers from improvements.
+4. In the review already warranted by the risk, give separate verdicts for **requirements/spec compliance** and **technical quality**. Inspect the actual implementation against approved criteria: missing/incomplete behavior, unauthorized extras and unverifiable items; then concrete bugs, applicable security/invariants, errors, tests/regressions and unjustified complexity. An implementer's explanation is context, not a substitute for inspection. Distinguish insufficient evidence from a demonstrated defect and reuse valid checks for the same work state (the `orchestrate` skill's evidence-based completion protocol).
+
+One authorized reviewer can cover both aspects with sufficient context. This adds
+no review round or LOW dispatch; route scope decisions to Scott and other decisions
+outside quality to their existing owners. Keep the existing short verdict-first
+report, naming blockers only within the reviewer's authority.
 
 ## Edge-case checklist
 
