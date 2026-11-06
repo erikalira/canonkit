@@ -72,7 +72,7 @@ rotation pushes them out, and the dashboard reads both.
 
 On every line: `ts` (ms since the epoch), `session` and `event`. In
 `events.jsonl`, the events are `prompt`, `gate`, `agent_start`, `agent_launch`,
-`agent_end`, `agent_stop`, `agent_resume` and `edit_complete`.
+`agent_end`, `agent_stop` and `agent_resume`.
 
 - `gate`: `kind` (`git`, `git-bypass`, `high-risk-surface`, `secret-block`,
   `secret-ask`, `perf-budget`, `excluded-by-config`, `context-size`,
@@ -81,19 +81,9 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
   New records omit it. In `git-bypass`, `flag` identifies the denied flag family
   without config values or short-option message suffixes; in `excluded-by-config`, `glob`; in
   `high-risk-surface`, `rule`, the rule that matched (`config`, `include`,
-  `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); on an edit in
-  `high-risk-surface`, also `tool_use_id` and, when the edit did not prompt because
-  an earlier edit of the file completed in this session, `repeat: true` (absent
-  otherwise; see [ask once](hooks.md#ask-once-per-file-per-session)). A `repeat` line
-  counts for the Stop gate and is not a prompt: to count prompts, skip it. In
+  `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); in
   `definition-of-done` (the Stop gate blocked the turn), `files` (how many files)
   and `rules` (the rules of the gates that made it fire).
-- `edit_complete`: an edit of a path in a relief rule completed, with a success-shaped result. `tool_use_id` (the
-  id of its gate), `file` (absolute and normalized, resolved against the cwd), `rule`,
-  `tool`, `project`, and `agent_id`/`agent_type` on a subagent. No other edit writes
-  one, which keeps this file low-volume. Written whether or not a gate fired on that
-  edit: the pairing with the gate happens when the next edit reads it. Not in the
-  dashboard's timeline.
 - `agent_resume`: `to`, `has_message` (boolean) and `project`.
 - `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_end`,
   also `resolved_model`, `mode`, `duration_ms`, `tool_uses`, `tokens` and

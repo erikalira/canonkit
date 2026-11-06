@@ -3,25 +3,19 @@
  * canonkit — mechanical enforcement + process-observability hook.
  *
  * Wired (in ~/.claude/settings.json; `canonkit install --wire-hooks`) to PreToolUse
- * (edits, shells, Agent/Task, SendMessage), PostToolUse (agents, context tools and
- * edits), SubagentStop, UserPromptSubmit, Stop. Three jobs:
+ * (edits, shells, Agent/Task, SendMessage), PostToolUse (agents + context tools),
+ * SubagentStop, UserPromptSubmit, Stop. Three jobs:
  *   1. ENFORCEMENT — turn the team's soft HIGH-risk gates into mechanical ones:
  *        - git commit / git push  -> require explicit confirmation (Bob's rule)
  *        - skipping git hooks or signing (--no-verify, commit -n, --no-gpg-sign,
  *          -c core.hooksPath / commit.gpgsign=false) -> block
  *        - edits to HIGH-risk surfaces (auth, secrets, migrations, contracts) -> confirm
- *          (forces Archie/Gard consideration even if risk was misjudged as LOW).
- *          Once per file per session where an earlier edit completed, and only for
- *          the heuristic rules (ASK ONCE below); a repeat still logs its gate, so
- *          the Stop gate below sees it
+ *          (forces Archie/Gard consideration even if risk was misjudged as LOW)
  *        - edits to performance-budget files (lighthouserc, size-limit, ...) -> confirm
  *          (Perry owns loosening)
  *        - obvious secrets in written content -> block (Gard as a tripwire)
  *      A project tunes the path heuristics in .claude/canonkit.json (see PROJECT
- *      CONFIG below); nothing there reaches the content checks. A file in the
- *      session's scratchpad is outside the path gates, and for the edit tools
- *      secret-ask (THE SESSION SCRATCHPAD below): Claude Code only; the denies and
- *      the git confirm still apply.
+ *      CONFIG below); nothing there reaches the content checks.
  *   2. OBSERVABILITY — append a structured event line that the dashboard reads.
  *   3. DEFINITION-OF-DONE — on Stop, if this session touched a gated surface
  *      (HIGH-risk, a secret, or a performance budget) without an independent
@@ -41,11 +35,6 @@
  *
  * DESIGN RULE: fail-open. Any internal error -> exit 0 (allow). A buggy hook must
  * never brick the user's workflow; the agents (Gard/Quinn/Archie) are the real review.
- * The exception is the two lookups that can remove a prompt: they fail closed. Each
- * (isRepeatEdit, inScratchpad) has its own catch, and an error or any missing
- * evidence means the gate runs: a throw reaching evaluate()'s catch would open it.
- * And a repeat whose gate line could not be written asks too (main): the Stop gate
- * reads that line, so the relief cannot exist without it.
  *
  * CORE AND ADAPTER. The gates live in `evaluate(evt, env)`, which takes a
  * normalized event (see normalizeClaude) and returns
@@ -82,8 +71,7 @@ const MAX_LOG_BYTES = 2 * 1024 * 1024;
 const TOOL_RESULTS_FILE = 'tool-results.jsonl';
 
 // The adapter's half of logging: evaluate() returns the records, this appends
-// one to its file under logDir. Never throws; returns whether the line was
-// written, which only the ask-once relief acts on (see main).
+// one to its file under logDir.
 function writeLog(logDir, { file, record }) {
   try {
     fs.mkdirSync(logDir, { recursive: true });
@@ -92,8 +80,7 @@ function writeLog(logDir, { file, record }) {
       if (fs.statSync(f).size > MAX_LOG_BYTES) fs.renameSync(f, f + '.1');
     } catch (_) { /* no file yet, or a raced rename — either way, just append */ }
     fs.appendFileSync(f, JSON.stringify(record) + '\n');
-    return true;
-  } catch (_) { return false; /* never throw from logging */ }
+  } catch (_) { /* never throw from logging */ }
 }
 
 // withRotated: also read events.jsonl.1, for lookups that must survive a rotation
@@ -277,8 +264,6 @@ function realish(p) {
   }
 }
 
-const realPath = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
-
 // Inside env.projectDir (cwd without one), by real path. A path under
 // ~/.claude counts as inside: the hooks and settings there gate every project,
 // so a probe on them is never only a probe. Any failure counts as inside too,
@@ -287,9 +272,10 @@ const realPath = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
 function onProject(fp, cwd, env) {
   if (!cwd) return true;
   try {
-    const file = realPath(path.resolve(normalizePath(cwd), normalizePath(fp)));
-    return isWithin(file, realPath(env.projectDir || cwd)) ||
-      (!env.home || isWithin(file, realPath(path.join(env.home, '.claude'))));
+    const real = (p) => normalizePath(realish(path.resolve(normalizePath(p))));
+    const file = real(path.resolve(normalizePath(cwd), normalizePath(fp)));
+    return isWithin(file, real(env.projectDir || cwd)) ||
+      (!env.home || isWithin(file, real(path.join(env.home, '.claude'))));
   } catch (_) { return true; }
 }
 
@@ -723,64 +709,15 @@ const HARD_SECRET = [
 // Lower-confidence — surface to user instead of hard block.
 const SOFT_SECRET = /(password|passwd|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*['"][^'"\s]{8,}['"]/i;
 
-// An arrow in quoted code (`node -e "list.filter(e=>e.session)"`) is not a redirect.
-// Any doubt keeps the redirect, because a false gate is the cheap mistake. Doubt is
-// whatever moves where a quote really is, past which this scan proves nothing (a
-// comment, a heredoc, a here-string, `$'...'`, a substitution, a `${ }`, a backtick,
-// PowerShell's curly quotes), an unclosed quote, and a shell named anywhere in the
-// command, which would run the string: `bash -c "a=>.env"`. RUNS_STRINGS is a
-// tripwire, not a complete list: fish, csh and wsl, among others, are not in it.
-const RUNS_STRINGS = /(?<![-.\w])(?:bash|sh|zsh|dash|ash|ksh|eval|pwsh|powershell|iex|invoke-expression|cmd)\b/i;
-// The quoted strings of a command, as [open, close] offsets, in one pass. It stops at
-// the first doubt, so nothing after that point falls in a span.
-function quotedSpans(text, tool) {
-  const spans = [];
-  if (RUNS_STRINGS.test(text)) return spans;
-  const esc = tool === 'PowerShell' ? '`' : '\\';
-  let quote = '', open = 0, i = 0;
-  for (; i < text.length; i++) {
-    const c = text[i], two = text.slice(i, i + 2);
-    if (tool === 'PowerShell' && /[\u2018-\u201e]/.test(c)) break;
-    if (quote === "'") { if (c === "'") { spans.push([open, i]); quote = ''; } continue; }
-    if (c === esc) { i++; continue; }
-    if (quote) {
-      if (c === '"') { spans.push([open, i]); quote = ''; }
-      else if (c === '`' || two === '$(' || two === '${') break;
-    } else if (c === '#' || c === '`' || ['<<', "$'", '$(', '${', "@'", '@"'].includes(two)) break;
-    else if (c === "'" || c === '"') { quote = c; open = i; }
-  }
-  // Doubt inside a string: what came before it stays quoted, if the string can close.
-  if (quote && i < text.length && text.indexOf(quote, i) >= 0) spans.push([open, i]);
-  return spans;
-}
-
 // A shell writes files too. Pull the destinations out of a command so the same
 // path gates cover `echo ... > src/auth/x.ts` and `Set-Content lighthouserc.json`
 // as well as an Edit. Targets only — testing the whole command string would fire
 // on every `grep auth src > out.txt`, and a noisy gate is a dead gate.
-// `includeQuotedArrows` is for the secret checks: only the path gates may skip a
-// quoted arrow, because a secret beside one is a secret whatever the arrow is.
-function shellWriteTargets(cmd, tool, includeQuotedArrows = false) {
+function shellWriteTargets(cmd, tool) {
   const out = [];
   let m;
   const redirect = /(?:^|[^0-9>])>>?\s*(["']?)([^\s"'|;&]+)\1/g;
-  const spans = includeQuotedArrows || !cmd.includes('=>') ? [] : quotedSpans(cmd, tool);
-  let span = 0;
-  // Arrows come in order, so this walks the spans once.
-  const quoted = (at) => {
-    while (span < spans.length && spans[span][1] < at) span++;
-    return span < spans.length && spans[span][0] < at;
-  };
-  while ((m = redirect.exec(cmd))) {
-    if (!/^=>(?!>)/.test(m[0]) || !quoted(m.index)) { out.push(m[2]); continue; }
-    // Resume at the next `>`: a real one may sit in what was read as this target. A
-    // run of quoted arrows is hopped here, since the regex would reread it per arrow.
-    let at = m.index;
-    do at = cmd.indexOf('>', at + 2) - 1;
-    while (at >= 0 && cmd[at] === '=' && cmd[at + 2] !== '>' && quoted(at));
-    if (at < 0) break;
-    redirect.lastIndex = at;
-  }
+  while ((m = redirect.exec(cmd))) out.push(m[2]);
   const tee = /\btee\s+(?:-a\s+)?(["']?)([^\s"'|;&]+)\1/g;
   while ((m = tee.exec(cmd))) out.push(m[2]);
   const psWrite = /\b(?:Set-Content|Add-Content|Out-File|New-Item)\b[^\n;|]*?(?:-(?:Path|FilePath)\s+)?(["']?)([A-Za-z0-9_.\/\\:-]+\.[A-Za-z0-9]+)\1/gi;
@@ -1097,159 +1034,6 @@ function patchWrites(text) {
   return orphan.length ? [...files, { path: '', content: orphan.join('\n') }] : files;
 }
 
-// ---- ASK ONCE PER FILE PER SESSION ----
-// The high-risk-surface gate had no memory: on a real log, 175 of 358 prompts
-// repeated a file already confirmed in that session, and a prompt answered sixteen
-// times is a prompt no longer read. So a later edit of a file stops asking once an
-// earlier edit of it, in this session, is known to have completed.
-//
-// Only the heuristic rules below. `config`, `secret-path` and `include` always ask:
-// each is a file someone decided to guard, not a word in a path. The verdict of
-// this edit decides, whatever was recorded before. Shell writes always ask (a
-// command is not one file), and the content checks and perf-budget run first.
-//
-// A repeat skips the prompt, never the record: it writes its `gate` line with
-// `repeat: true`, because the Stop gate compares the last gate's ts with the
-// reviewer's. An edit after a review still needs a new review. evaluate() writes
-// nothing, so a repeat also returns `unlogged`, the ask it would have made, and
-// main() answers with that when the line did not reach the log.
-//
-// The evidence is one `edit_complete` line paired with a `high-risk-surface` gate
-// through tool_use_id, the one id Pre and Post share (see DISPATCH METRICS). A
-// completion alone proves nothing: the edit may have passed a secret-ask confirm
-// or run where the Pre hook did not, and neither answered this gate. Positive
-// only: no pair found, for whatever reason (a log missing, rotated away, unreadable
-// or corrupt; no PostToolUse wired; no id; no session), is an ask.
-//
-// Why PostToolUse means the edit happened (code.claude.com/docs/en/hooks, checked
-// 2026-11-06): it "Runs immediately after a tool completes successfully"; a tool
-// that fails fires PostToolUseFailure instead; and "Permission denials fire
-// `PreToolUse` but not this event" (that is, PostToolUseFailure). The page does
-// not say in as many words that a denial skips PostToolUse: it follows from a
-// denied tool never running. The page also says cancelling a running tool does not
-// fire PostToolUseFailure, "the tool result carries the interruption message
-// instead", without saying whether PostToolUse fires. So the response is read too
-// (editSucceeded), as an allowlist of what success looks like per tool.
-//
-// Completions land in events.jsonl, which must stay low-volume (see MAX_LOG_BYTES),
-// so only relief-eligible paths write one, not every edit.
-const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit']);
-const ASK_ONCE_RULES = new Set(['strong', 'auth', 'migration', 'word', 'ambiguous']);
-const EDIT_COMPLETE = 'edit_complete';
-
-const editPath = (ti) => String(ti.file_path || ti.notebook_path || ti.path || '');
-
-// What identifies a file across a session: absolute, normalized, resolved against
-// the event's cwd. Never project-relative: a worktree and the main checkout hold
-// different files under the same relative path, and a nested config moves the
-// root. Compared with samePath. '' means no key, and no key means ask: a relative
-// path with no absolute cwd to resolve it against names no particular file.
-function fileKey(fp, cwd) {
-  if (!fp) return '';
-  const p = normalizePath(fp);
-  if (isAbsolutePath(p)) return p;
-  const base = normalizePath(cwd || '');
-  return isAbsolutePath(base) ? normalizePath(base + '/' + p) : '';
-}
-
-// The success shape per tool. Anything else earns no credit, a shape not listed
-// here included: an unknown result asks. Only fields the sources below agree are
-// always there. Checked 2026-11-06 against real PostToolUse payloads captured from
-// Claude Code 2.1.302 and 2.1.318 (Edit, Write and NotebookEdit, the real binary
-// against a local stand-in for the API), sdk-tools.d.ts of
-// @anthropic-ai/claude-agent-sdk 0.3.318 (FileEditOutput, FileWriteOutput,
-// NotebookEditOutput), real toolUseResult entries in local transcripts (2.1.149 to
-// 2.1.318: 2308 Edit, 939 Write; every failed call there was a string), and the
-// PostToolUse example in the hooks docs, which gives Write only filePath and type.
-// MultiEdit is in none of them, and both binaries answered "No such tool available"
-// to a call, so it has no entry and never earns credit.
-const EDIT_SUCCESS = {
-  Edit: (r) => typeof r.filePath === 'string' && typeof r.newString === 'string' && Array.isArray(r.structuredPatch),
-  Write: (r) => typeof r.filePath === 'string' && (r.type === 'create' || r.type === 'update'),
-  NotebookEdit: (r) => typeof r.notebook_path === 'string' && typeof r.new_source === 'string' && typeof r.updated_file === 'string',
-};
-
-// `staged`: "held for the machine owner to review instead of written; the file is
-// unchanged" (sdk-tools), on a result otherwise shaped like success. NotebookEdit
-// reports a failure the same way, in `error`.
-function editSucceeded(tool, r) {
-  const shape = EDIT_SUCCESS[tool];
-  return !!shape && isObj(r) && shape(r) && !r.staged && !r.error &&
-    !r.is_error && !r.isError && r.success !== false && !r.interrupted;
-}
-
-// True only on proof that an earlier edit of this file completed in this session.
-// The catch is the point: see the DESIGN RULE.
-function isRepeatEdit(fp, rule, cwd, session, env) {
-  try {
-    if (!session || !ASK_ONCE_RULES.has(rule)) return false;
-    const key = fileKey(fp, cwd);
-    if (!key) return false;
-    const same = (file) => typeof file === 'string' && samePath(fileKey(file, cwd), key);
-    // The rotated half too: a rotation can land between the two edits.
-    const evs = readEvents(env, true).filter((e) => e.session === session && same(e.file));
-    const gated = new Set(evs
-      .filter((e) => e.event === 'gate' && e.kind === 'high-risk-surface' && ASK_ONCE_RULES.has(e.rule))
-      .map((e) => e.tool_use_id).filter(Boolean));
-    return evs.some((e) => e.event === EDIT_COMPLETE && gated.has(e.tool_use_id));
-  } catch (_) { return false; }
-}
-
-// ---- THE SESSION SCRATCHPAD ----
-// Claude Code gives a session a scratch folder outside the project, and what lands
-// there is no surface: a copied `.env`, a fixture named auth.ts, a probe of a gate.
-// Gating it cost a prompt per file and a Stop block for a review of nothing.
-// Captured 2026-11-06 with a real login on Claude Code 2.1.302: the hook input
-// carries `scratchpad_dir`, an absolute path, the same on the main thread and in a
-// subagent, on UserPromptSubmit, PreToolUse and PostToolUse. It is absent without a
-// claude.ai login, and absent changes nothing.
-//
-// A file in it skips perf-budget and high-risk-surface and logs no gate line, so
-// Stop never hears of it. An edit tool skips secret-ask too, its one target being
-// known; a shell does not, because the scan does not see every file a command
-// writes (`tee pad/a .env`, `curl -o .env ... > pad/log`). secret-block, git and
-// git-bypass run before this check and hold everywhere. PostToolUse needs nothing:
-// a completion it logs there pairs with no gate line (none was written), so it earns
-// no relief.
-//
-// Two ways to be wrong, and only one is cheap, so everything here must be proved:
-//   the folder   absolute, and not a root, the home, the project or a parent of
-//                either, nor inside the project or ~/.claude, by real path: a link
-//                to the project is the project.
-//   each file    absolute: a relative one is relative to a cwd a `cd` in the same
-//                command already left, and `~` or `$VAR/x` are not paths at all.
-//                No `$` or backtick anywhere: `pad/$X/../.env` may land anywhere.
-//                No `..` segment, read before anything resolves it: path.resolve
-//                is lexical and runs ahead of the real path, so `pad/link/../.env`
-//                would read as inside whatever the link points at. Compared by
-//                real path, so a link out of the folder is seen. A dangling link
-//                is checked apart: realish() stops at what does not exist, and
-//                writing through one creates its target.
-// Read from each event, never stored. A throw means no exemption, in this catch:
-// evaluate()'s would allow. A hard link cannot be told from a file: not covered.
-function danglingLink(p) {
-  for (let dir = p; ;) {
-    try { return fs.lstatSync(dir).isSymbolicLink() && !fs.existsSync(dir); } catch (_) {}
-    const up = path.dirname(dir);
-    if (up === dir) return false;
-    dir = up;
-  }
-}
-
-function inScratchpad(files, dir, cwd, env) {
-  try {
-    const absolute = (p) => typeof p === 'string' && (WIN ? /^[a-z]:\//i : /^\//).test(normalizePath(p));
-    const project = env.projectDir || cwd;
-    if (!absolute(dir) || !absolute(project) || !env.home) return false;
-    const root = realPath(dir);
-    if (path.dirname(root) === root) return false;
-    if (isWithin(realPath(env.home), root) || isWithin(realPath(project), root)) return false;
-    if (isWithin(root, realPath(project)) || isWithin(root, realPath(path.join(env.home, '.claude')))) return false;
-    return files.every((f) => absolute(f) && !/[$`]/.test(f) && !f.split(/[\\/]/).includes('..') &&
-      !danglingLink(path.resolve(normalizePath(f))) && isWithin(realPath(f), root));
-  } catch (_) { return false; }
-}
-
 // ---- THE CORE: evaluate(evt, env) ----
 // Every kind a decision can carry besides null (a plain allow). Each is also
 // the `kind` of the gate line logged with it, so a decision and its log line
@@ -1261,7 +1045,7 @@ const GATE_KINDS = Object.freeze([
   'git', // ask: git commit / git push
   'secret-ask', // ask: what looks like a hardcoded credential
   'perf-budget', // ask: a performance-budget file
-  'high-risk-surface', // ask: auth/secret/migration/contract paths, and canonkit.json; a repeat logs it and allows
+  'high-risk-surface', // ask: auth/secret/migration/contract paths, and canonkit.json
   'definition-of-done', // block: Stop with a gated edit and no reviewer after it
   'context-size', // allow, with the reminder as reason (Claude adapter only)
 ]);
@@ -1298,15 +1082,13 @@ const CLAUDE_GATE_MODES = Object.freeze({
 //                        'UserPromptSubmit' | '' (an empty one is gated as PreToolUse)
 //   tool                 tool name, '' when none
 //   toolInput            the tool's arguments, {} when none
-//   toolUseId            PreToolUse and PostToolUse
-//   toolResponse, durationMs   PostToolUse
+//   toolResponse, toolUseId, durationMs   PostToolUse
 //   cwd                  required: the session's working directory
 //   session              session id, '' when none
 //   agentId, agentType   set only on a subagent's events (agentId undefined on
 //                        the main thread, which is how the two are told apart)
 //   stopHookActive       Stop / SubagentStop: a stop hook already continued it
 //   transcriptPath, agentTranscriptPath, lastAssistantMessage
-//   scratchpadDir        Claude Code only, unvalidated: see THE SESSION SCRATCHPAD
 // env, everything else it may know about the machine:
 //   logDir        the activity-log folder (read here; written by the adapter)
 //   legacyLogDir  the pre-rename log folder, read only (optional)
@@ -1316,10 +1098,8 @@ const CLAUDE_GATE_MODES = Object.freeze({
 // for the adapter's contextReminder; evaluate() does not read it.)
 // Returns { decision, kind, reason, logs }: kind is one of GATE_KINDS or null,
 // logs is [{ file, record }] with file a name inside env.logDir and record the
-// complete JSON line. A repeat (see ASK ONCE) adds `unlogged`: the answer to give
-// instead if an adapter that writes logs could not write them. Fails open by itself: an error is an allow that still
-// carries the logs recorded before it, as the old in-place writes did. The two
-// lookups that can remove a prompt never get that far (isRepeatEdit, inScratchpad).
+// complete JSON line. Fails open by itself: an error is an allow that still
+// carries the logs recorded before it, as the old in-place writes did.
 function evaluate(evt, env) {
   const logs = [];
   try {
@@ -1474,25 +1254,6 @@ function decide(evt, env, logs) {
         });
       }
     }
-    // Half of the ask-once evidence (see ASK ONCE). The verdict is recomputed here
-    // only to keep the log quiet, the order as in the Pre path; pairing with the
-    // gate happens when the next edit looks it up. Its own catch: no record is no
-    // credit, and the next edit asks.
-    if (EDIT_TOOLS.has(tool)) {
-      try {
-        const fp = editPath(ti);
-        const id = safeId(evt.toolUseId);
-        const key = fileKey(fp, cwd);
-        if (session && id && key && editSucceeded(tool, evt.toolResponse)) {
-          const cfg = configHere();
-          const rel = cfg.rel(fp);
-          const verdict = !isPerfBudget(rel, cfg, fp) && highRisk(rel, cfg, fp);
-          if (verdict && ASK_ONCE_RULES.has(verdict.rule)) {
-            log({ event: EDIT_COMPLETE, tool_use_id: id, file: key, rule: verdict.rule, project, tool, ...who });
-          }
-        }
-      } catch (_) {}
-    }
     if (tool === 'Agent' || tool === 'Task') {
       const r = evt.toolResponse && typeof evt.toolResponse === 'object' ? evt.toolResponse : {};
       const id = evt.toolUseId || '';
@@ -1565,9 +1326,7 @@ function decide(evt, env, logs) {
     }
     // Every deny before any confirm: a confirm returns, and a deny after it never runs.
     // Before the project config is read, too: nothing in it may cost the deny.
-    // Every target, quoted arrows included: the secret checks ask what this command
-    // holds, and only the path gates below ask whether a target is a real file.
-    const targets = shellWriteTargets(cmd, tool, true);
+    const targets = shellWriteTargets(cmd, tool);
     if (targets.length) {
       for (const re of HARD_SECRET) {
         if (re.test(cmd)) {
@@ -1582,33 +1341,24 @@ function decide(evt, env, logs) {
       return askFor('git', 'canonkit gate: git commit/push requires explicit user authorization (Bob/Pipe rule). Confirm to proceed.');
     }
     if (targets.length) {
-      // A hard secret was denied above, so only a soft one reaches this line. Waived by
-      // the test-file rule below, it keeps every target: no secret skips an arrow.
-      const soft = SOFT_SECRET.test(cmd);
-      const gated = soft ? targets : shellWriteTargets(cmd, tool);
-      if (!gated.length) return allow();
-      // Ahead of the config read: a throw here must cost the exemption, not the gates.
-      const padded = inScratchpad(gated, evt.scratchpadDir, cwd, env);
       // The first config read on this path: every deny is above.
       const cfg = configHere();
-      const rels = gated.map((t) => cfg.rel(t));
+      const rels = targets.map((t) => cfg.rel(t));
       // Waived only when every target is a test file: one test target among
       // several must not carry a credential into the others.
-      if (soft && !rels.every(isTestFile)) {
-        logGate({ kind: 'secret-ask', file: gated[0], project, tool }, gated);
+      if (SOFT_SECRET.test(cmd) && !rels.every(isTestFile)) {
+        logGate({ kind: 'secret-ask', file: targets[0], project, tool }, targets);
         return askFor('secret-ask', 'canonkit gate (Gard): this command writes what looks like a hardcoded credential to a file. Confirm this is intentional and not a real secret.');
       }
-      // Every target, or the path gates run: one real file among them is a real write.
-      if (padded) return allow();
-      const perf = gated.find((t, i) => isPerfBudget(rels[i], cfg, t));
+      const perf = targets.find((t, i) => isPerfBudget(rels[i], cfg, t));
       if (perf) {
         logGate({ kind: 'perf-budget', file: perf, project, tool }, [perf]);
         return askFor('perf-budget', `canonkit gate (Perry): this command writes "${path.basename(perf)}", which carries the performance budgets. Anyone may tighten a threshold; only Perry loosens one, and only with a measured floor. Derivations live in docs/adr/. Confirm to proceed.`);
       }
       // In target order, as before: an excluded target ahead of the first
       // HIGH-risk one is logged, one after it is not (the ask ended the run).
-      for (let i = 0; i < gated.length; i++) {
-        const t = gated[i];
+      for (let i = 0; i < targets.length; i++) {
+        const t = targets[i];
         const verdict = highRisk(rels[i], cfg, t);
         if (verdict && verdict.rule) {
           logGate({ kind: 'high-risk-surface', file: t, rule: verdict.rule, project, tool }, [t]);
@@ -1622,8 +1372,8 @@ function decide(evt, env, logs) {
   }
 
   // ---- ENFORCEMENT: file-editing tools ----
-  if (EDIT_TOOLS.has(tool)) {
-    const fp = editPath(ti);
+  if (tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit' || tool === 'NotebookEdit') {
+    const fp = String(ti.file_path || ti.notebook_path || ti.path || '');
     const content = String(
       ti.content || ti.new_string || ti.new_source ||
       (Array.isArray(ti.edits) ? ti.edits.map((e) => e.new_string || '').join('\n') : '')
@@ -1636,7 +1386,6 @@ function decide(evt, env, logs) {
         return denyFor('secret-block', 'canonkit gate (Gard): a high-confidence secret (private key / cloud key) was detected in this write. Blocked. Move it to an env var / secret store.');
       }
     }
-    if (inScratchpad([fp], evt.scratchpadDir, cwd, env)) return allow();
     // The first config read on this path: the deny is above.
     const cfg = configHere();
     const rel = cfg.rel(fp);
@@ -1650,20 +1399,9 @@ function decide(evt, env, logs) {
     }
     const verdict = highRisk(rel, cfg, fp);
     if (verdict && verdict.rule) {
-      const id = safeId(evt.toolUseId);
-      const gate = { kind: 'high-risk-surface', file: fp, rule: verdict.rule, project, tool, ...(id ? { tool_use_id: id } : {}) };
-      const ask = askFor('high-risk-surface', verdict.rule === 'include' ? includedPathReason(fp)
-        : `canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
-      // No prompt, but the gate line still goes out, through logGate so in_project
-      // and agent_id stay on it: the Stop gate reads this line (see ASK ONCE). A
-      // plain allow, so no adapter has a kind to print; `unlogged` is the ask main
-      // falls back to if that line cannot be written.
-      if (isRepeatEdit(fp, verdict.rule, cwd, session, env)) {
-        logGate({ ...gate, repeat: true }, [fp]);
-        return { ...allow(), unlogged: ask };
-      }
-      logGate(gate, [fp]);
-      return ask;
+      logGate({ kind: 'high-risk-surface', file: fp, rule: verdict.rule, project, tool }, [fp]);
+      if (verdict.rule === 'include') return askFor('high-risk-surface', includedPathReason(fp));
+      return askFor('high-risk-surface', `canonkit gate: "${path.basename(fp)}" is a HIGH-risk surface (auth/secret/migration/contract). Archie/Gard review applies even if this felt LOW. Before confirming, state: who imports or calls it, which public contract it touches (or "none"), and the rollback if it is wrong. A false alarm is tuned in .claude/canonkit.json (highRisk.exclude).`);
     }
     // Not a gate: the dashboard shows what a project's config kept quiet.
     if (verdict && verdict.excludedBy) logGate({ kind: 'excluded-by-config', file: fp, glob: verdict.excludedBy, project, tool }, [fp]);
@@ -1692,7 +1430,6 @@ function normalizeClaude(input, fallbackCwd) {
     transcriptPath: input.transcript_path,
     agentTranscriptPath: input.agent_transcript_path,
     lastAssistantMessage: input.last_assistant_message,
-    scratchpadDir: input.scratchpad_dir,
   };
 }
 
@@ -1812,10 +1549,7 @@ function main() {
   const env = claudeEnv();
   const evt = normalizeClaude(input, process.cwd());
   const result = evaluate(evt, env);
-  const written = result.logs.map((line) => writeLog(env.logDir, line));
-  // No line, no relief: the Stop gate would never see this edit. Any other failed
-  // write costs only its line.
-  const answer = result.unlogged && !written.every(Boolean) ? result.unlogged : result;
+  for (const line of result.logs) writeLog(env.logDir, line);
   // After the logs: events.jsonl keeps the order prompt, then gate. Its own try,
   // so a failed reminder costs only the reminder.
   let note = null;
@@ -1823,7 +1557,7 @@ function main() {
     const log = (event) => writeLog(env.logDir, { file: EVENTS_FILE, record: { ts: Date.now(), session: evt.session, ...event } });
     try { note = contextReminder(evt, env, log); } catch (_) { /* fail-open */ }
   }
-  const out = claudeOutput(note ? allow('context-size', note) : answer);
+  const out = claudeOutput(note ? allow('context-size', note) : result);
   if (out) process.stdout.write(JSON.stringify(out));
   process.exit(0);
 }

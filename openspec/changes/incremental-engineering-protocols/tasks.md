@@ -46,3 +46,41 @@ Integration Review: recommendations agree; scope, quality and instruction cost r
 
 - Sync declared deltas and archive only through the applicable OpenSpec workflow when requested; archive was not requested.
 - Commit, push, merge, publication and worktree removal require their own applicable authorization.
+
+## PR review corrections — 2026-11-06
+
+- [x] Remove local Codex hooks, Claude settings, and generated OpenSpec integrations from version control; ignore their local copies and preserve canonical `openspec/` artifacts.
+- [x] Restore baseline authorization gates, their installer matcher and dashboard behavior. Remove ask-once, scratchpad exemptions and quoted-arrow suppression from this PR. Add regressions for repeated successful edits, scratchpad gates and quoted shell writes.
+- [x] Restore the 13 historical plans deleted by the branch and their local documentation links. Make this project's Graphify instructions proportional to structural exploration.
+- [x] Validate the corrected tree, remeasure resident profiles, and obtain final security and documentary reviews.
+
+The original implementation evidence above describes the earlier tree. Fresh
+validation below supersedes it for these corrections; no original test count is
+claimed for the corrected tree. The hook and dashboard runtime sources now match
+`origin/main`; the remaining CLI changes concern the pre-existing Graphify
+gitignore integration. Local generated files remain on disk but are untracked and
+ignored. These corrections do not change the canonical resident instruction
+blocks or agent/skill descriptions.
+
+Fresh validation:
+
+- OpenSpec strict validation and whitespace checks passed. Git comparisons confirm the hook, hook documentation, dashboard and 13 restored plans match `origin/main`.
+- Source resident profiles remain Claude 2,488 / Codex 2,320 / OpenCode 2,366 words (margins 12 / 180 / 134). Canonical resident sources did not change during these corrections.
+- Packaging dry-run passed: 53 entries; no publication or global installation.
+- The repository validator passed all checks for 15 agents with no warnings in an isolated LF-normalized snapshot using Git Bash and native Node/Python. This retains the original checkout's documented Windows/CRLF portability limit. Cleanup initially failed on read-only Git objects; approved native PowerShell cleanup removed the snapshot.
+- `graphify update .` passed without LLM calls: 1,386 nodes / 2,432 edges. The first update retained 47 old nodes from 15 generated integration files; explicit `.graphifyignore` rules removed them on the second update. Verified zero generated integration source paths remain. Cache-root spelling and community-label warnings remain tool limitations; semantic extraction/LLM labeling was not rerun.
+- `npm test`: exit 0, 842 tests in 82 suites, 839 passed, 0 failed, 3 skipped, 373.8 seconds. All six new authorization regressions passed. The three skips are existing platform limits: `/dev/zero`, POSIX file modes and unavailable file-symlink creation on this Windows machine. The sandbox initially blocked test subprocesses with `spawn EPERM`; this result is from the complete offline suite restarted with approved escalation. Test counts fell with the removed feature suites; baseline tests remain and the new authorization regressions cover the restored guarantee. Only documentation/evidence edits followed the test run's source snapshot.
+
+Risk of the authorization rollback is HIGH. Gard independently approved after
+the last security-source/test edit with no remaining findings. Spencer approved
+documentary consistency and then rechecked the final validation evidence, local
+links and Graphify exclusions, with no blockers or incidental findings.
+Intended specialist runtime: `gpt-6.1-sol`, effort `medium`; actual runtime
+settings were not exposed for independent confirmation.
+
+Integration Review: the security and documentary recommendations agree. Baseline
+authorization and historical traceability are restored; canonical engineering
+protocols and LOW proportionality remain intact. No new security exception is
+accepted. Fresh validation is complete and the corrections are ready for review;
+model efficacy remains UNMEASURED. No commit, push, archive, merge or publication
+was performed.

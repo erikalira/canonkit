@@ -1184,7 +1184,7 @@ describe("hooks", () => {
 
     const { out } = run(["install", "--no-reference"], { home });
     assert.ok(out.includes("under: PostToolUse"), out);
-    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task|Read|Grep|Glob|Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit"'), out);
+    assert.ok(out.includes('"PostToolUse": [{ "matcher": "Agent|Task|Read|Grep|Glob|Bash|PowerShell"'), out);
     assert.ok(!out.includes('"Stop": ['), "an event that is wired must not be reported");
   });
 
@@ -1438,7 +1438,7 @@ function runIn(args, { home, cwd, env = {} }) {
 
 const REQUIRED = {
   PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
-  PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit",
+  PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
   SubagentStop: null,
   UserPromptSubmit: null,
   Stop: null,

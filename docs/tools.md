@@ -73,6 +73,10 @@ user-level configuration (`openspec/config.json` in `%APPDATA%` or
 keep sending unless you set one of those variables. The version matters: an old
 openspec (1.4.1) with `--tools codex` wrote prompts to `~/.codex/prompts`.
 
+In this repository, the generated skill/command copies and local runtime
+settings are ignored. Keep `openspec/config.yaml` and the canonical change
+artifacts versioned; regenerate integrations explicitly with the setup above.
+
 OpenSpec holds the durable state; canonkit applies risk, ownership, gates and
 reviews; Graphify provides evidence from the code. The handoff and closing bridge
 is in [OpenSpec change lifecycle](../skills/orchestrate/SKILL.md#openspec-change-lifecycle):

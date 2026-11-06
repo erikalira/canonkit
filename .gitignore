@@ -22,6 +22,15 @@ graphify-out/*
 .codex/agents/
 .opencode/agents/
 
+# Local runtime preferences and generated OpenSpec integrations.
+# Canonical change artifacts remain versioned under openspec/.
+/.codex/hooks.json
+/.claude/settings.json
+/.agents/skills/.openspec-target
+/.agents/skills/openspec-*/
+/.claude/skills/openspec-*/
+/.claude/commands/opsx/
+
 # npm pack output
 *.tgz
 

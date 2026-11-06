@@ -68,7 +68,7 @@ const HOOK = "canonkit-hook.js";
 const HOOK_EVENTS = {
   [HOOK]: {
     PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
-    PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell|Edit|Write|MultiEdit|NotebookEdit",
+    PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
     UserPromptSubmit: null,
     Stop: null,
