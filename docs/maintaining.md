@@ -55,6 +55,15 @@ the hardest imaginable task makes every agent expensive for no gain.
 The conventions every agent body follows are in
 [team.md](team.md#conventions).
 
+## Product-neutral examples
+
+Agents and skills install in every project of whoever uses canonkit, so their
+examples stay domain-free: an example taken from one product (its entities, its
+stack, its business rules) reads as a rule in every other project. The team was
+once cleaned of the domain it grew up in; a new example that names a product or
+its flows is that drift coming back. Domain knowledge goes in a specialist,
+installed only where it applies, or in the project's own `AGENTS.md`.
+
 ## Validation
 
 ```bash

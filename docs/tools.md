@@ -197,3 +197,27 @@ existing judge; they do not run a real refresh.
 - canonkit never installs graphify's Claude hook. If you install it yourself, it
   and canonkit's hook both fire on `PreToolUse` with no guaranteed order; do not
   count on one running before the other.
+
+## Evaluated and rejected
+
+### Laya
+
+An MCP server that suggests which files to read for a question. Rejected on
+2026-10-18, after a controlled A/B in a private project: 8 paired read-only
+exploration tasks (`claude -p`, Opus 5.5), arm A with Laya mandatory after
+graphify, arm B without it.
+
+- Arm A cost 19% more (cheaper in 1 of 8 tasks), with 53% more input tokens, 40%
+  more output tokens and 84% more wall time.
+- Files read fell 18% overall, but the one task where Laya cut reads (1 file
+  instead of 4) lost answer quality.
+- Laya picked the right primary file in 5 of 8 tasks (always the one obvious by
+  name), the wrong one in 1, and abstained in 1; its "second best" always repeated
+  the first.
+- Before the A/B: zero organic calls in 11 days, while its tool schemas cost about
+  5k tokens per session.
+
+The kill criterion, agreed before the run, was at least 15% fewer tokens with no
+quality loss; it failed. Do not propose it again for token savings without new
+evidence. If it is ever reinstalled, the connection timeout is fixed with
+`LAYA_PRELOAD=0` and `HF_HUB_OFFLINE=1` (handshake from 14s to 2s).

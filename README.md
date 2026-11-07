@@ -97,10 +97,29 @@ Every agent uses one shared risk scale:
 
 - **LOW**: local and reversible. No public contract, auth, sensitive data or
   shared runtime.
-- **MEDIUM**: a new rule, flow, integration, permission or configuration; a
-  shared refactor; a plausible regression.
+- **MEDIUM**: a rule, flow, integration, configuration or shared refactor that
+  changes behavior, with a concrete regression risk.
 - **HIGH**: auth, secrets, migrations, public contracts, new services, payment, a
   production deploy, or anything that is hard to roll back.
+
+### Risk and scale are two different questions
+
+**Risk** is what this change can break. **Scale** is how much is around it: real
+users, blast radius, rollback cost, people who must agree. Scale calibrates four
+things, in both directions: **evidence, scope, reviews and validation**. It never
+changes which rules apply:
+
+| | Small scale (one person, easy rollback) | Large scale (real users, wide blast radius, costly rollback) |
+|---|---|---|
+| **Evidence** | Reuse what is still valid; a focused check can be enough. | Fresh evidence for every path the change affects. |
+| **Scope** | The smallest solution that meets acceptance. | Still the smallest that meets acceptance, plus a rollout and rollback plan. |
+| **Reviews** | No fixed chain: an extra reviewer only for a distinct gap. | The owners whose risks the change names, and more coordination. |
+| **Validation** | The affected path. | The affected paths, wider and in stages. |
+| **Never waived** | HIGH's mandatory owners and independent review, security checks, contracts, validation of the boundary the change touches, the documentation impact. | The same list. |
+| **The excuse it does not buy** | "It's one line, it doesn't need review." | "It's 40 files, we can't validate every path." |
+
+New infrastructure needs a current requirement or reuse that already exists, at
+any scale: "we might need it later" is not one.
 
 Both examples below come from the [routing eval](https://github.com/erikalira/canonkit/blob/main/docs/evals.md#routing-eval)
 cases:

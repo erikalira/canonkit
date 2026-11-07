@@ -14,8 +14,8 @@ re-reads on every later turn.
 
 ## Core team — installed at user level (`~/.claude/agents`)
 
-Available in every project. Each agent's description says when to call it; this
-table is who owns what and who can stop a change.
+Each agent's description says when to call it; this table is who owns what and
+who can stop a change.
 
 | Agent | Owns | Blocking authority |
 |---|---|---|
@@ -45,8 +45,7 @@ growing without need.
 
 If a specialist is not installed, **do not invent its role or cover the domain
 yourself** — say the domain has no owner in this project and that
-`npx canonkit add <name>` installs it. Where one is installed, its description
-carries its boundaries with the core team.
+`npx canonkit add <name>` installs it.
 
 ## HIGH-risk surfaces and who owns them
 
@@ -60,11 +59,7 @@ Route each one to its owner, named or not. Not optional at HIGH risk:
 
 A dependency change is MEDIUM, not a HIGH-risk surface: route it to **Gard** when
 it adds a package or code that runs at install or build time; a lockfile-only
-patch bump stays inline. Install/build code executes with developer or CI
-privileges, introducing supply-chain risk.
-
-The other veto holders block inside their own domain when the change enters it —
-routing all six every time is the bureaucracy this team is built against.
+patch bump stays inline.
 
 **A veto is narrow.** It is used inside the holder's domain, on a MEDIUM/HIGH
 change, against a named and concrete risk — never for completeness or taste: a
@@ -117,11 +112,21 @@ A small change has no fixed review chain. HIGH retains the mandatory routing
 and independent review above. Explicit requests for a named owner still apply.
 
 Risk is what this change can break; scale (users, blast radius, rollback cost
-and coordination) calibrates scope, reviews and validation. Choose the smallest
+and coordination) calibrates evidence, scope, reviews and validation. Choose the smallest
 solution satisfying acceptance; infrastructure needs a current requirement or
 demonstrated reuse. Reuse valid evidence and add checks for uncovered failure
-modes. Small scale never waives HIGH's mandatory routing and independent
-review, security checks, contracts or validation of an affected boundary.
+modes. Scale never waives HIGH's mandatory routing and independent
+review, security checks, contracts, validation of an affected boundary or the
+documentation impact.
+
+A project's AI instructions (AGENTS.md, CLAUDE.md, skills) are documentation
+too: when a change makes them wrong, propose the update in the same change and
+apply it only after the user agrees.
+
+Claims about disk state carry their evidence: before calling something dead,
+orphaned, broken or duplicated, open it (the file, a listing, `git ls-files -s`);
+before building on what a brief or plan says exists, confirm it is in the tree,
+or stop and report the gap.
 
 Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
