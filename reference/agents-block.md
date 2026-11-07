@@ -184,4 +184,11 @@ suggestion with the **opening prompt for the new session**, ready to paste, in
 the user's language: one fenced block that names the goal, points at the handoff
 path, and says what to do first — so starting over costs one paste, not a
 rewrite. Not a block: if the user wants to continue, continue. In Claude Code a
-hook reminds at ~100k/150k/200k tokens.
+hook reminds at ~100k/150k/200k tokens. Likewise before resuming a session idle
+past the prompt cache: its whole context is billed again.
+
+## Images
+
+An image read is billed again on every later turn: decide from script
+measurements, open one only when a number flags a problem, as a crop or
+downscaled copy, never to confirm what the user already judged by eye.
