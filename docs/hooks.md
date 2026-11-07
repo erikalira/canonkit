@@ -221,6 +221,15 @@ of these agents was dispatched, or resumed with a message (`SendMessage`): `quin
 suffix counts (`gard-strict` is Gard; `gardener` is not). A reviewer's own probes
 outside the project are not counted as edits.
 
+## What the gates prove
+
+A gate makes a decision surface; it does not make it right. A confirm puts the
+commit, push or gated edit in front of whoever answers it, and the Stop gate makes
+a reviewer get dispatched after the last gated edit. The hook sees that a reviewer
+ran, not what it found or whether its verdict was acted on, and a confirm answered
+without reading passes like any other. The verdict lives in the reviewer's report
+and in whoever reads it.
+
 ## It fails open
 
 `main()` is wrapped in a `catch` that exits with 0, so a syntax error never locks

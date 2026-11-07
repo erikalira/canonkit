@@ -14,8 +14,8 @@ re-reads on every later turn.
 
 ## Core team — installed at user level (`~/.claude/agents`)
 
-Available in every project. Each agent's description says when to call it; this
-table is who owns what and who can stop a change.
+Each agent's description says when to call it; this table is who owns what and
+who can stop a change.
 
 | Agent | Owns | Blocking authority |
 |---|---|---|
@@ -45,8 +45,7 @@ growing without need.
 
 If a specialist is not installed, **do not invent its role or cover the domain
 yourself** — say the domain has no owner in this project and that
-`npx canonkit add <name>` installs it. Where one is installed, its description
-carries its boundaries with the core team.
+`npx canonkit add <name>` installs it.
 
 ## HIGH-risk surfaces and who owns them
 
@@ -60,11 +59,7 @@ Route each one to its owner, named or not. Not optional at HIGH risk:
 
 A dependency change is MEDIUM, not a HIGH-risk surface: route it to **Gard** when
 it adds a package or code that runs at install or build time; a lockfile-only
-patch bump stays inline. Install/build code executes with developer or CI
-privileges, introducing supply-chain risk.
-
-The other veto holders block inside their own domain when the change enters it —
-routing all six every time is the bureaucracy this team is built against.
+patch bump stays inline.
 
 **A veto is narrow.** It is used inside the holder's domain, on a MEDIUM/HIGH
 change, against a named and concrete risk — never for completeness or taste: a
@@ -108,21 +103,30 @@ Every agent classifies LOW / MEDIUM / HIGH before recommending, and says what
 only what its own domain raises:
 
 - LOW: local and reversible; no public contract, auth, sensitive data, or shared runtime.
-- MEDIUM: a new rule, flow, integration, permission, or configuration; a shared refactor; a plausible regression.
+- MEDIUM: a behavior-changing rule, flow, integration, configuration or shared refactor with a concrete regression risk.
 - HIGH: a HIGH-risk surface (above), sensitive data, permissions, payment, production deploy or a hard rollback, or a multi-product change.
 
-Handle LOW-risk, single-domain work directly; delegate when
-the work is an agent's actual domain of authority (not just adjacent) and is
-MEDIUM/HIGH, or when the user asks for that domain's judgment by name. Do not
-bring in an agent for completeness: pulling Nova into a change with no visual
-surface, or Dana into a change with no data-backed decision, is exactly the
-bureaucracy the core/project separation exists to avoid.
+Handle LOW work directly. At MEDIUM, route concrete risks needing an owner's
+judgment; each additional reviewer must cover a distinct gap in existing checks.
+A small change has no fixed review chain. HIGH retains the mandatory routing
+and independent review above. Explicit requests for a named owner still apply.
 
-Risk and scale are two axes. Risk (LOW/MEDIUM/HIGH) is what *this change* can
-break; scale (real users, blast radius, rollback cost, people who must agree)
-sets how much *evidence* it needs. Scale calibrates evidence and never waives a
-rule: not a boundary, a contract, validation of the affected path, a security
-check, or the documentation impact.
+Risk is what this change can break; scale (users, blast radius, rollback cost
+and coordination) calibrates evidence, scope, reviews and validation. Choose the smallest
+solution satisfying acceptance; infrastructure needs a current requirement or
+demonstrated reuse. Reuse valid evidence and add checks for uncovered failure
+modes. Scale never waives HIGH's mandatory routing and independent
+review, security checks, contracts, validation of an affected boundary or the
+documentation impact.
+
+A project's AI instructions (AGENTS.md, CLAUDE.md, skills) are documentation
+too: when a change makes them wrong, propose the update in the same change and
+apply it only after the user agrees.
+
+Claims about disk state carry their evidence: before calling something dead,
+orphaned, broken or duplicated, open it (the file, a listing, `git ls-files -s`);
+before building on what a brief or plan says exists, confirm it is in the tree,
+or stop and report the gap.
 
 Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with

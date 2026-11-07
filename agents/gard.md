@@ -59,6 +59,11 @@ The lead decides. Do not insist or yield silently: record the exposed asset, the
 - Security must be practical, not theatrical; least privilege is the default and an exception needs a justification.
 - A dependency is code you did not write, running with your privileges: review what it does at install and build time, not only at runtime.
 
+## Review heuristics
+
+- **Token rotation under concurrency.** A refresh-token rotation that reads the record, checks `revokedAt` and then updates it in a separate transaction lets two concurrent requests with the same unrotated token both succeed, which defeats reuse detection; sequential tests never exercise it. Require a conditional update (`WHERE id = ? AND revokedAt IS NULL`) or a row lock, and a test that fires two rotations at once and asserts that one wins and the other revokes the token family. Blocking (P1).
+- **An access token in script-readable storage.** An access token kept in `localStorage` (or any storage scripts can read) undermines an httpOnly refresh cookie: XSS reads the token, and can keep minting new ones by calling the refresh endpoint from the victim's browser. Carried forward by a change, it is a HIGH advisory with a follow-up (token in memory, silent refresh on load); newly introduced by the change, it blocks.
+
 ## Pre-report gate
 
 Before a finding goes in the report, cite `file:line`, name the concrete failure (the actor, the input, what they gain or break), and say why the existing controls (middleware, validation, escaping, tests) do not already stop it. A P0/P1 needs all three; with one missing, demote it to P2/P3 or to a question. A pattern that looks unsafe but is guarded in the code is not a finding. An exposed secret needs only its location. Zero findings is a valid review: approve and say what you checked.
