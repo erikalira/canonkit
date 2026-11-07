@@ -108,21 +108,20 @@ Every agent classifies LOW / MEDIUM / HIGH before recommending, and says what
 only what its own domain raises:
 
 - LOW: local and reversible; no public contract, auth, sensitive data, or shared runtime.
-- MEDIUM: a new rule, flow, integration, permission, or configuration; a shared refactor; a plausible regression.
+- MEDIUM: a behavior-changing rule, flow, integration, configuration or shared refactor with a concrete regression risk.
 - HIGH: a HIGH-risk surface (above), sensitive data, permissions, payment, production deploy or a hard rollback, or a multi-product change.
 
-Handle LOW-risk, single-domain work directly; delegate when
-the work is an agent's actual domain of authority (not just adjacent) and is
-MEDIUM/HIGH, or when the user asks for that domain's judgment by name. Do not
-bring in an agent for completeness: pulling Nova into a change with no visual
-surface, or Dana into a change with no data-backed decision, is exactly the
-bureaucracy the core/project separation exists to avoid.
+Handle LOW work directly. At MEDIUM, route concrete risks needing an owner's
+judgment; each additional reviewer must cover a distinct gap in existing checks.
+A small change has no fixed review chain. HIGH retains the mandatory routing
+and independent review above. Explicit requests for a named owner still apply.
 
-Risk and scale are two axes. Risk (LOW/MEDIUM/HIGH) is what *this change* can
-break; scale (real users, blast radius, rollback cost, people who must agree)
-sets how much *evidence* it needs. Scale calibrates evidence and never waives a
-rule: not a boundary, a contract, validation of the affected path, a security
-check, or the documentation impact.
+Risk is what this change can break; scale (users, blast radius, rollback cost
+and coordination) calibrates scope, reviews and validation. Choose the smallest
+solution satisfying acceptance; infrastructure needs a current requirement or
+demonstrated reuse. Reuse valid evidence and add checks for uncovered failure
+modes. Small scale never waives HIGH's mandatory routing and independent
+review, security checks, contracts or validation of an affected boundary.
 
 Installed agent files (`~/.claude/agents`, `.claude/agents`) and
 this block are copies a reinstall overwrites: a local variant is a new agent with
