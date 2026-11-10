@@ -6,7 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { ADAPTERS, discover, parseClaudeHelp, readCatalog, writeCatalog, refreshCatalog, systemRunner, trustedRunner, claudeModelPolicy, applyClaudePolicy } from "../bin/model-discovery.js";
+import { ADAPTERS, discover, parseClaudeHelp, parseCodexModels, readCatalog, writeCatalog, refreshCatalog, systemRunner, trustedRunner, claudeModelPolicy, applyClaudePolicy } from "../bin/model-discovery.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HELP = readFileSync(path.join(REPO, "test", "fixtures", "claude", "help-2.1.322.txt"), "utf8");
@@ -24,6 +24,12 @@ function stub(answers) {
 
 const ok = (stdout) => ({ status: 0, stdout, stderr: "", error: null });
 const claudeOk = () => stub({ "claude --version": ok("2.1.322 (Claude Code)\n"), "claude --help": ok(HELP) });
+const CODEX = JSON.stringify({ models: [
+  { slug: "gpt-6-luna", visibility: "list", default_reasoning_level: "medium", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }], model_messages: "PRIVATE LONG TEXT" },
+  { slug: "gpt-6-astra", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "ultra" }] },
+  { slug: "legacy-hidden", visibility: "hide", supported_reasoning_levels: [{ effort: "high" }] },
+] });
+const codexOk = () => stub({ "codex --version": ok("codex-cli 0.166.0\n"), "codex debug models": ok(CODEX) });
 
 async function tempDir() {
   return realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-models-")));
@@ -76,10 +82,35 @@ describe("claude adapter", () => {
   });
 });
 
+describe("codex adapter", () => {
+  test("keeps only visible model IDs and their own efforts, never model messages", () => {
+    const { run, calls } = codexOk();
+    const result = ADAPTERS.codex.discover(run);
+    assert.deepEqual(result, { status: "discovered", models: [
+      { id: "gpt-6-luna", efforts: ["low", "medium"] },
+      { id: "gpt-6-astra", efforts: ["low", "ultra"] },
+    ], source: "codex debug models", confidence: "experimental-debug", accountAvailability: "unconfirmed", harnessVersion: "0.166.0" });
+    assert.ok(!JSON.stringify(result).includes("PRIVATE LONG TEXT"));
+    assert.deepEqual(calls, ["codex --version", "codex debug models"]);
+  });
+  test("malformed, missing and failed catalogs become unknown without leaking output", () => {
+    for (const raw of ["not JSON PRIVATE", "{}", JSON.stringify({ models: [{ slug: "ok", visibility: "list", supported_reasoning_levels: [{ effort: "bad effort" }] }] })]) {
+      const result = parseCodexModels(raw);
+      assert.equal(result.status, "unknown");
+      assert.ok(!JSON.stringify(result).includes("PRIVATE"));
+    }
+    const failed = stub({ "codex --version": ok("codex-cli 0.166.0"), "codex debug models": { status: 2, stdout: "SECRET", stderr: "SECRET", error: null } });
+    assert.deepEqual(ADAPTERS.codex.discover(failed.run), { status: "unknown", reason: "codex debug models exited with status 2" });
+    const timeout = stub({ "codex --version": ok("codex-cli 0.166.0"), "codex debug models": { status: null, stdout: "", stderr: "", error: "timed out after 30s" } });
+    assert.match(ADAPTERS.codex.discover(timeout.run).reason, /timed out/);
+    assert.match(ADAPTERS.codex.discover(stub({}).run).reason, /not found/);
+  });
+});
+
 describe("unsupported harnesses", () => {
-  test("codex, opencode and copilot are unknown without starting a process", () => {
+  test("opencode and copilot are unknown without starting a process", () => {
     const { run, calls } = stub({});
-    for (const name of ["codex", "opencode", "copilot"]) {
+    for (const name of ["opencode", "copilot"]) {
       assert.deepEqual(ADAPTERS[name].discover(run), { status: "unknown", reason: "not yet supported" });
     }
     assert.deepEqual(calls, []);
@@ -92,7 +123,8 @@ describe("discover and the catalog", () => {
     const out = discover(["claude", "codex", "nonesuch"], { run, now: NOW, policy: () => null });
     assert.equal(out.claude.status, "discovered");
     assert.equal(out.claude.discoveredAt, NOW.toISOString());
-    assert.deepEqual(out.codex, { status: "unknown", reason: "not yet supported", discoveredAt: NOW.toISOString() });
+    assert.equal(out.codex.status, "unknown");
+    assert.match(out.codex.reason, /not found/);
     assert.equal(out.nonesuch.reason, "no adapter");
     const thrown = discover(["claude"], { run: () => { throw new Error("spawn EPERM"); }, now: NOW });
     assert.deepEqual(thrown.claude, { status: "unknown", reason: "discovery failed: spawn EPERM", discoveredAt: NOW.toISOString() });

@@ -10,7 +10,7 @@
  * (model-config.js) and are never written here.
  *
  * Rules every adapter follows:
- *   - it runs only the harness's own read-only commands (--version, --help),
+ *   - it runs only the harness's own read-only commands,
  *     through exec.js: no shell, stdin closed, a timeout, a capped buffer, and
  *     a binary resolved from PATH outside the current project;
  *   - it reads no credential and stores no token;
@@ -123,6 +123,31 @@ function parseClaudeHelp(help) {
   return { status: "discovered", models: aliases.map((id) => ({ id, efforts: [...efforts] })) };
 }
 
+/** The experimental Codex debug catalog is advice, not proof of account access. */
+function parseCodexModels(stdout) {
+  let data;
+  try { data = JSON.parse(stdout); } catch { return unknown("codex debug models returned invalid JSON"); }
+  if (!Array.isArray(data?.models) || !data.models.length) return unknown("codex debug models has no models array");
+  const models = [];
+  const seen = new Set();
+  for (const item of data.models) {
+    if (!item || typeof item.slug !== "string" || !VALUE_ID.test(item.slug) ||
+        !["list", "hide"].includes(item.visibility) || !Array.isArray(item.supported_reasoning_levels)) {
+      return unknown("codex debug models has an unrecognized model entry");
+    }
+    if (item.visibility === "hide") continue;
+    if (seen.has(item.slug)) return unknown("codex debug models has duplicate model IDs");
+    seen.add(item.slug);
+    const efforts = item.supported_reasoning_levels.map((level) => level?.effort);
+    if (efforts.some((effort) => typeof effort !== "string" || !TOKEN.test(effort))) {
+      return unknown("codex debug models has unrecognized effort levels");
+    }
+    models.push({ id: item.slug, efforts: [...new Set(efforts)] });
+  }
+  if (!models.length) return unknown("codex debug models lists no visible models");
+  return { status: "discovered", models, source: "codex debug models", confidence: "experimental-debug", accountAvailability: "unconfirmed" };
+}
+
 /**
  * The help text quotes aliases as examples ("e.g. 'fable', 'opus', or
  * 'sonnet'"), not as the full list. These are the family aliases Claude Code
@@ -219,9 +244,22 @@ const ADAPTERS = {
       };
     },
   },
-  // Not yet supported: no process is started. The follow-up change fills these
-  // in (codex: `codex debug models`; opencode: `opencode models`).
-  codex: { harness: "codex", discover: () => unknown("not yet supported") },
+  codex: {
+    harness: "codex",
+    discover(run) {
+      const version = run("codex", ["--version"]);
+      const versionProblem = failure("codex --version", version);
+      if (versionProblem) return unknown(versionProblem);
+      const catalog = run("codex", ["debug", "models"]);
+      const catalogProblem = failure("codex debug models", catalog);
+      if (catalogProblem) return unknown(catalogProblem);
+      const parsed = parseCodexModels(catalog.stdout);
+      if (parsed.status !== "discovered") return parsed;
+      const match = /\d+\.\d+\.\d+/.exec(version.stdout);
+      return { ...parsed, harnessVersion: match ? match[0] : null };
+    },
+  },
+  // Not yet supported: no process is started.
   opencode: { harness: "opencode", discover: () => unknown("not yet supported") },
   copilot: { harness: "copilot", discover: () => unknown("not yet supported") },
 };
@@ -304,8 +342,8 @@ async function writeCatalog(fresh, file = catalogPath(), { keepWithin = 0, now =
 async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0, home, policy = home ? () => claudeModelPolicy({ home }) : undefined } = {}) {
   // Only harnesses with a working adapter need a process; skip the repository
   // walk when none will start one.
-  const runner = run ?? (harnesses.some((h) => h === "claude") ? await trustedRunner() : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
+  const runner = run ?? (harnesses.some((h) => h === "claude" || h === "codex") ? await trustedRunner() : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
   return writeCatalog(discover(harnesses, { run: runner, now, policy }), file, { keepWithin, now });
 }
 
-export { HARNESSES, ADAPTERS, CATALOG_VERSION, CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy, applyClaudePolicy, catalogPath, systemRunner, trustedRunner, parseClaudeHelp, discover, readCatalog, writeCatalog, refreshCatalog };
+export { HARNESSES, ADAPTERS, CATALOG_VERSION, CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy, applyClaudePolicy, catalogPath, systemRunner, trustedRunner, parseClaudeHelp, parseCodexModels, discover, readCatalog, writeCatalog, refreshCatalog };

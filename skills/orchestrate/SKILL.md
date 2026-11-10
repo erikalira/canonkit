@@ -42,8 +42,16 @@ agent) to a model and effort the harness reported.
 - **Up or down** means another level the person configured, the `deep` or
   `light` entry in the same output, not a model named from memory. When nothing
   is configured, name the dispatch "inherit" and pass no parameter.
-- **Other harnesses** inherit the session's model and effort until model
-  selection supports them; name the dispatch "inherit".
+- **Codex:** read `harnesses.codex.agents.<agent>` in the same `models show
+  --json` output. Pass configured values as `model` and
+  `reasoning_effort` spawn overrides when supported. Codex custom agent
+  files win over spawn overrides, so reinstall with `npx canonkit install
+  --codex` after changing user choices and in each project with core overrides.
+  A project shadow in `.codex/agents/` carries those overrides. The Codex
+  catalog is experimental; an offered model does not prove account access.
+  Name unset fields "inherit" and check the effective runtime for critical work.
+- **OpenCode and Copilot** inherit the session's model and effort; name the
+  dispatch "inherit".
 
 The `model:` and `effort:` that `canonkit install` writes into a Claude Code
 agent are the fallback for an ad-hoc dispatch nobody planned, not a ceiling.

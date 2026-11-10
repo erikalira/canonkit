@@ -48,7 +48,10 @@ const HONORED_FIELDS = {
   // by running Claude Code 2.1.322; `effort` is documented but showed no
   // observable effect (kept by decision; openspec/changes/runtime-model-discovery/evidence.md).
   claude: ["model", "effort"],
-  codex: [],
+  // learn.chatgpt.com/docs/agent-configuration/subagents, checked 2026-11-10:
+  // custom agent TOML accepts model and model_reasoning_effort. The latter is
+  // named `effort` in canonkit choices and mapped when the file is generated.
+  codex: ["model", "effort"],
   opencode: [],
   copilot: [],
 };

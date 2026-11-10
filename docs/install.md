@@ -382,8 +382,8 @@ The native setting scopes and version requirements are tracked against
 2026-11-08. A supported key or static version check is still not a recorded
 runtime boundary test.
 
-To preview and reverse only canonkit-attributable security changes in the
-current validated repository:
+To preview and reverse canonkit-attributable security changes and Codex core
+agent overrides in the current validated repository:
 
 ```bash
 npx canonkit uninstall --project --dry-run
@@ -391,7 +391,8 @@ npx canonkit uninstall --project
 ```
 
 Project-only removal leaves global distribution, the user-scoped network lock
-and other repositories alone.
+and other repositories alone. Edited Codex core files and preexisting
+same-name agents stay in the project.
 Ordinary global uninstall does not enumerate or modify repository policies.
 Undo uses per-key provenance: it reverses an owned scalar only while its current
 value still matches the installed value, restoring the original boolean or
@@ -421,8 +422,8 @@ translating it to Codex models). Catalogs and effort levels change monthly and
 differ between subscriptions, so a shipped table goes stale for someone. The
 harness is asked instead.
 
-This version applies choices to **Claude Code**. Codex, OpenCode and GitHub Copilot
-agents inherit the session model until their support lands.
+This version applies choices to **Claude Code and Codex**. OpenCode and GitHub
+Copilot agents inherit the session model.
 
 ```bash
 npx canonkit models refresh            # ask each harness what it offers
@@ -431,6 +432,7 @@ npx canonkit models setup --project    # the same, for this project only
 npx canonkit models show               # what each agent resolves to, and from where
 npx canonkit models show --json        # the same, for tools and the orchestrate skill
 npx canonkit install --claude          # write the user-level defaults into ~/.claude/agents
+npx canonkit install --codex           # write Codex agents, including project core overrides
 ```
 
 **Discovery.** `models refresh` runs the harness's own read-only commands and
@@ -447,8 +449,14 @@ record says `confidence: "help-text"`, and anything it does not recognize become
 `unknown` with the reason, never an error. The binary is looked up on PATH outside
 the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
 any subfolder), with no shell, closed stdin, a 30-second timeout and no
-`NODE_OPTIONS`-style loader variables. No credential is read and nothing goes over
-the network. A non-dry-run `install` and `models setup` refresh it too; `install`
+`NODE_OPTIONS`-style loader variables. Canonkit reads no credential; Claude's
+help-based probe does not use the network. Codex discovery runs the experimental
+`codex debug models` command. Codex may refresh its catalog over the network,
+use its local cache, or fall back to the catalog bundled with the CLI. It can
+return models without login, so the record marks account access as unconfirmed;
+listed models do not prove the account can run them. Canonkit stores only visible
+model IDs and their per-model efforts, not the full debug output. A non-dry-run
+`install` and `models setup` refresh discovery too; `install`
 leaves a record that is under a day old and unchanged as it is, so reinstalling
 rewrites nothing. `models show` and `doctor` only read files, and a dry run starts
 nothing.
@@ -553,11 +561,20 @@ editable copy. Before this, the only thing this repository could tell Codex was
 the roster in prose in `AGENTS.md`, which describes the team but cannot call
 anyone.
 
-The generated agents set no `model` and no `model_reasoning_effort`, so each runs
-on the parent session's model and effort. Canonkit no longer ships a map from its
-agents to Codex models; see [Choosing models](#choosing-models) for why, and for
-what applies today. `CANONKIT_CODEX_MODEL` is ignored: `install` and `add` print
-one warning when it is set and carry on.
+The generated agents use `model` and `model_reasoning_effort` when configured
+through `npx canonkit models setup --codex`. Effort choices are offered for the
+selected model. Unset fields inherit. Reinstall after changing choices. A Codex
+install from a repository with project choices writes core overrides to that
+project's `.codex/agents/` when they differ from user choices; the user-level
+files retain the user choices. Project specialists added with `canonkit add`
+use the merged project and user choices. A project custom agent file wins over
+explicit spawn parameters. `uninstall --project` removes only receipt-owned
+core overrides whose bytes still match; edits and preexisting same-name files
+are preserved. `models show --json` reports `projectFile.status` for affected
+core agents; `doctor` warns when a project file is missing, stale, edited,
+unowned or waiting for removal. Run `install --codex` in the repository after
+changing its choices. A linked `.codex` destination is refused. `CANONKIT_CODEX_MODEL`
+is ignored: `install` and `add` print one warning when it is set.
 
 Your own Codex custom agents live in the same directory and are none of the
 installer's business. The only thing it comments on is narrower: a file that

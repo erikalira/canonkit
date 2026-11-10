@@ -11,9 +11,9 @@ add specific gates when you explicitly wire them. Codex and OpenCode have their
 own controls and can opt into the git-bypass and secret-write tripwires.
 
 Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
-Claude Code reads. For Claude Code, installing is a plain copy. Codex, OpenCode
-and Copilot get native profiles generated from the same body. Either way there
-is one source per agent, and nothing to reconcile by hand.
+Claude Code reads. Installing generates Claude Code frontmatter while preserving
+the agent body. Codex, OpenCode and Copilot get native profiles generated from
+that same body. There is one source per agent, and nothing to reconcile by hand.
 
 > **canonkit 1.x is not canonkit 0.x.** Versions up to `0.2.0` were a different
 > tool. It generated Spec-Kit-style governance templates (`.specify/`, a
@@ -73,8 +73,9 @@ commands there have no OS sandbox. [Environment coverage](docs/install.md#native
 Agents run on your session's model until you choose otherwise. To pick the model
 and effort per need level from what your harness actually offers, answer Yes when
 the interactive `npx canonkit install` asks, or run `npx canonkit models setup`,
-then `npx canonkit install --claude`. Codex, OpenCode
-and Copilot inherit the session model for now. See [Choosing models](docs/install.md#choosing-models).
+then reinstall with `npx canonkit install --claude --codex`. Claude Code and
+Codex apply these choices; OpenCode and Copilot inherit the session model.
+See [Choosing models](docs/install.md#choosing-models).
 
 **Check that it worked:**
 

@@ -26,6 +26,18 @@ function claudeRunner() {
   };
   return { run, calls };
 }
+function codexRunner() {
+  const calls = [];
+  const run = (name, args) => {
+    calls.push([name, ...args].join(" "));
+    if (name !== "codex") return { status: null, stdout: "", stderr: "", error: `${name} not found on PATH` };
+    return args[0] === "--version" ? ok("codex-cli 0.166.0\n") : ok(JSON.stringify({ models: [
+      { slug: "gpt-6-luna", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }] },
+      { slug: "gpt-6-astra", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "ultra" }] },
+    ] }));
+  };
+  return { run, calls };
+}
 
 function capture() {
   const lines = [];
@@ -47,7 +59,7 @@ const writeJson = async (file, data) => {
 };
 
 describe("models refresh", () => {
-  test("writes the catalog with Claude Code discovered and the others unknown", async () => {
+  test("writes the catalog with Claude Code discovered and unavailable harnesses unknown", async () => {
     const s = await scratch();
     try {
       const { ctx, text } = capture();
@@ -55,10 +67,11 @@ describe("models refresh", () => {
       assert.equal(await refresh(ctx, { run, now: NOW, home: s.home }), 0);
       const data = JSON.parse(await readFile(path.join(s.home, ".canonkit", "model-catalog.json"), "utf8"));
       assert.equal(data.harnesses.claude.status, "discovered");
-      for (const h of ["codex", "opencode", "copilot"]) assert.deepEqual([data.harnesses[h].status, data.harnesses[h].reason], ["unknown", "not yet supported"]);
-      assert.deepEqual(calls, ["claude --version", "claude --help"]);
+      assert.match(data.harnesses.codex.reason, /not found/);
+      for (const h of ["opencode", "copilot"]) assert.deepEqual([data.harnesses[h].status, data.harnesses[h].reason], ["unknown", "not yet supported"]);
+      assert.deepEqual(calls, ["claude --version", "claude --help", "codex --version"]);
       assert.match(text(), /Claude Code: fable, opus, sonnet, haiku; efforts low, medium, high, xhigh, max/);
-      assert.match(text(), /Codex: unknown — not yet supported; its agents inherit the session model/);
+      assert.match(text(), /Codex: unknown — codex --version: codex not found on PATH/);
     } finally {
       await s.cleanup();
     }
@@ -98,7 +111,7 @@ describe("models show", () => {
       assert.deepEqual(o.harnesses.claude.agents.archie, { need: "deep", model: { value: "opus", source: "user level", unverified: false, alias: true }, effort: { value: "high", source: "user level", unverified: false } });
       assert.deepEqual(o.harnesses.claude.agents.quinn.effort, { value: "xhigh", source: "user agent override", unverified: false });
       assert.deepEqual(o.harnesses.codex.agents.archie.model, { value: null, source: "inherit", unverified: false, alias: null });
-      assert.equal(o.harnesses.codex.applied, false);
+      assert.equal(o.harnesses.codex.applied, true);
       assert.deepEqual(o.harnesses.claude.catalog, { status: "missing" });
 
       const inside = capture();
@@ -112,7 +125,7 @@ describe("models show", () => {
       await show(text.ctx, agents, { home: s.home, cwd: s.project, harnesses: ["claude", "codex"] });
       assert.match(text.text(), /quinn\s+standard\s+model: sonnet \(user level\)\s+effort: xhigh \(user agent override\)/);
       assert.match(text.text(), /archie\s+deep\s+model: fable \(project level\)/);
-      assert.match(text.text(), /Codex: every agent inherits the session model and effort \(model selection not yet supported; catalog: no discovery yet\)/);
+      assert.match(text.text(), /Codex \(catalog: no discovery yet\)/);
     } finally {
       await s.cleanup();
     }
@@ -141,6 +154,20 @@ describe("models show", () => {
     } finally {
       await s.cleanup();
     }
+  });
+
+  test("Codex show resolves user and project fields without starting discovery", async () => {
+    const s = await scratch();
+    try {
+      await writeJson(path.join(s.home, ".canonkit", "models.json"), { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra", effort: "ultra" } } } } });
+      await writeJson(path.join(s.project, ".canonkit", "models.json"), { version: 1, harnesses: { codex: { agents: { archie: { effort: "low" } } } } });
+      const c = capture();
+      await show(c.ctx, agents, { json: true, home: s.home, cwd: s.project, harnesses: ["codex"] });
+      const result = JSON.parse(c.text()).harnesses.codex;
+      assert.equal(result.applied, true);
+      assert.deepEqual(result.agents.archie.model, { value: "gpt-6-astra", source: "user level", unverified: false, alias: false });
+      assert.deepEqual(result.agents.archie.effort, { value: "low", source: "project agent override", unverified: false });
+    } finally { await s.cleanup(); }
   });
 
   test("an unsupported project file is reported, not overwritten", async () => {
@@ -303,18 +330,46 @@ describe("models setup", () => {
     }
   });
 
-  test("other harnesses are not yet supported and change nothing", async () => {
+  test("OpenCode and Copilot are not yet supported and change nothing", async () => {
     const s = await scratch();
     try {
       const { ctx, text } = capture();
       const { calls, opts, asked } = base(s, {});
-      assert.equal(await setup(ctx, agents, { ...opts, harnesses: ["codex"] }), 0);
-      assert.match(text(), /Codex: model selection not yet supported; agents inherit the session model/);
+      assert.equal(await setup(ctx, agents, { ...opts, harnesses: ["opencode", "copilot"] }), 0);
+      assert.match(text(), /OpenCode, GitHub Copilot: model selection not yet supported; agents inherit the session model/);
       assert.deepEqual(calls, []);
       assert.deepEqual(asked, []);
     } finally {
       await s.cleanup();
     }
+  });
+
+  test("Codex effort choices follow the selected model and cancellation writes nothing", async () => {
+    const s = await scratch();
+    try {
+      const runner = codexRunner();
+      const a = asker({ "codex-deep-model": "gpt-6-luna", "codex-deep-effort": "medium" });
+      await setup(capture().ctx, agents, { ask: a.ask, run: runner.run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] });
+      assert.deepEqual(a.q("codex-deep-effort").choices.map((c) => c.value), ["<none>", "low", "medium"]);
+      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep, { model: "gpt-6-luna", effort: "medium" });
+      assert.deepEqual(runner.calls, ["codex --version", "codex debug models"]);
+
+      await writeJson(userFile(s), { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra", effort: "ultra" } } } } });
+      const changed = asker({ "codex-deep-model": "gpt-6-luna" });
+      await setup(capture().ctx, agents, { ask: changed.ask, run: codexRunner().run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] });
+      assert.deepEqual(changed.q("codex-deep-effort").choices.map((c) => c.value), ["<none>", "low", "medium"]);
+      assert.equal(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep.effort, undefined);
+
+      const before = await readFile(userFile(s), "utf8");
+      const cancelled = asker({}, { cancelAt: "codex-standard-model" });
+      await assert.rejects(setup(capture().ctx, agents, { ask: cancelled.ask, run: codexRunner().run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] }), /cancelled/);
+      assert.equal(await readFile(userFile(s), "utf8"), before);
+
+      const unknown = asker({ "codex-deep-model": "<other>", "codex-deep-model-other": "custom-model", "codex-deep-effort": "high" });
+      await setup(capture().ctx, agents, { ask: unknown.ask, run: codexRunner().run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] });
+      assert.equal(unknown.q("codex-deep-effort").type, "text");
+      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep, { model: "custom-model", effort: "high", unverified: true });
+    } finally { await s.cleanup(); }
   });
 });
 
@@ -346,6 +401,17 @@ describe("models step of the interactive install", () => {
     } finally {
       await s.cleanup();
     }
+  });
+
+  test("Codex-only interactive install offers Codex setup", async () => {
+    const s = await scratch();
+    try {
+      const { run } = codexRunner();
+      const f = fake({ "codex-deep-model": "gpt-6-luna", "codex-deep-effort": "medium" });
+      assert.equal(await offerModelSetup(capture().ctx, agents, { ask: f.ask, run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] }), true);
+      assert.match(f.asked[0].message, /Choose models for your Codex agents/);
+      assert.equal(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep.model, "gpt-6-luna");
+    } finally { await s.cleanup(); }
   });
 
   test("with choices already saved, No is highlighted and Enter skips the step", async () => {
@@ -381,6 +447,23 @@ describe("doctor model checks", () => {
     models: models.map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })),
   } } });
   const at = (s, rows) => rows.map((r) => `${r.status} ${r.detail}`).join("\n");
+
+  test("Codex doctor reports incompatible pairs and uncertain inherited settings", async () => {
+    const s = await scratch();
+    try {
+      await writeJson(path.join(s.home, ".canonkit", "model-catalog.json"), { version: 1, harnesses: { codex: {
+        status: "discovered", discoveredAt: NOW.toISOString(), source: "codex debug models", confidence: "experimental-debug", accountAvailability: "unconfirmed",
+        models: [{ id: "gpt-6-luna", efforts: ["low", "medium"] }],
+      } } });
+      await writeJson(path.join(s.home, ".canonkit", "models.json"), { version: 1, harnesses: { codex: {
+        levels: { deep: { model: "gpt-6-luna", effort: "ultra" }, standard: { model: "gpt-6-luna" } },
+      } } });
+      const rows = await modelDiagnosis(agents, { home: s.home, cwd: s.project, now: NOW });
+      assert.match(at(s, rows), /incompatible: archie: gpt-6-luna \/ ultra/);
+      assert.match(at(s, rows), /set only model or effort; compatibility/);
+      assert.ok(rows.every((r) => r.status !== "FAIL"));
+    } finally { await s.cleanup(); }
+  });
 
   test("nothing configured is OK and needs no catalog", async () => {
     const s = await scratch();

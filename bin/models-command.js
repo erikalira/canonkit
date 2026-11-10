@@ -7,16 +7,17 @@
  *          was discovered (model-config.js)
  * show     prints what each agent resolves to and which layer said so
  *
- * Only refresh and setup start a program; show and the doctor checks read
- * stored files only. This change applies choices to Claude Code; the other
- * harnesses inherit the session model until their adapters land, and show
- * says so rather than printing values nothing acts on.
+ * Only refresh and setup start a program; show and doctor read stored files.
+ * Claude Code and Codex apply choices; the other harnesses inherit.
  */
 import { existsSync } from "node:fs";
+import { readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import { HARNESSES, catalogPath, readCatalog, refreshCatalog } from "./model-discovery.js";
 import { APPLIED, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, VALUE } from "./model-config.js";
+import { repositoryRoot, projectStateDir, safePath } from "./security.js";
 
 const NEED_ORDER = ["deep", "standard", "light"];
 // The shape of `models show --json`. Bumped only when a field changes meaning;
@@ -42,7 +43,7 @@ async function loadLayers({ home = os.homedir(), cwd = process.cwd() } = {}) {
 }
 
 /** Every agent's resolution for every harness, in the shape `show --json` prints. */
-function effective(agents, layers, catalog, harnesses = HARNESSES) {
+function effective(agents, layers, catalog, harnesses = HARNESSES, codexDeployment = {}) {
   const out = { version: SHOW_VERSION, project: layers.root, harnesses: {} };
   for (const harness of harnesses) {
     const record = catalog?.harnesses?.[harness] ?? null;
@@ -53,18 +54,81 @@ function effective(agents, layers, catalog, harnesses = HARNESSES) {
     const alias = (v) => (v === null ? null : aliases ? aliases.includes(v) : /^[a-z]+$/.test(v));
     const entry = {
       applied: APPLIED.includes(harness),
-      catalog: record ? { status: record.status, discoveredAt: record.discoveredAt ?? null, ...(record.reason ? { reason: record.reason } : {}) } : { status: "missing" },
+      catalog: record ? { status: record.status, discoveredAt: record.discoveredAt ?? null, ...(record.reason ? { reason: record.reason } : {}), ...(record.confidence ? { confidence: record.confidence } : {}), ...(record.accountAvailability ? { accountAvailability: record.accountAvailability } : {}) } : { status: "missing" },
       agents: {},
     };
     for (const agent of agents) {
       const r = entry.applied ? resolve(agent, harness, layers) : null;
       const inherit = { value: null, source: "inherit", unverified: false };
       const model = r?.model ?? inherit;
-      entry.agents[agent.name] = { need: agent.need, model: { ...model, alias: alias(model.value) }, effort: r?.effort ?? inherit };
+      entry.agents[agent.name] = { need: agent.need, model: { ...model, alias: alias(model.value) }, effort: r?.effort ?? inherit,
+        ...(harness === "codex" && codexDeployment[agent.name] ? { projectFile: codexDeployment[agent.name] } : {}) };
     }
     out.harnesses[harness] = entry;
   }
   return out;
+}
+
+async function readSmall(file, limit = 1024 * 1024) {
+  await safePath(file);
+  let info;
+  try { info = await stat(file); } catch (err) { if (err.code === "ENOENT") return null; throw err; }
+  if (!info.isFile() || info.size > limit) throw new Error("not a small regular file");
+  return readFile(file);
+}
+
+function tomlField(bytes, field) {
+  const match = bytes.toString("utf8").match(new RegExp(`^${field} = ("[^"\\r\\n]*")\\r?$`, "m"));
+  if (!match) return null;
+  try { return JSON.parse(match[1]); } catch { return null; }
+}
+
+/** Read-only check of the installed project file against its receipt and choices. */
+async function inspectCodexProjectFiles(agents, layers, catalog, { home = os.homedir(), cwd = process.cwd() } = {}) {
+  const root = await repositoryRoot(cwd);
+  if (!root) return {};
+  const result = {};
+  let manifest;
+  try {
+    const bytes = await readSmall(path.join(projectStateDir(home, root), "install-manifest.json"));
+    manifest = bytes ? JSON.parse(bytes.toString("utf8")) : null;
+  } catch { manifest = null; }
+  const known = catalog?.harnesses?.codex?.status === "discovered" ? new Map(catalog.harnesses.codex.models.map((m) => [m.id, m])) : null;
+  const installedChoice = (resolved) => {
+    const choice = { model: resolved.model.value, effort: resolved.effort.value };
+    const model = known?.get(choice.model);
+    return model && choice.effort && !model.efforts.includes(choice.effort) ? { model: null, effort: null } : choice;
+  };
+  for (const agent of agents.filter((a) => a.tier === "core")) {
+    const here = resolve(agent, "codex", layers);
+    const mine = resolve(agent, "codex", { user: layers.user });
+    const expected = installedChoice(here);
+    const userExpected = installedChoice(mine);
+    const changed = expected.model !== userExpected.model || expected.effort !== userExpected.effort;
+    const relative = `.codex/agents/${agent.name}.toml`;
+    const id = `project:file:${relative}`;
+    const receipt = manifest?.roots?.project === root ? manifest?.entries?.[id] : null;
+    const file = path.join(root, ".codex", "agents", `${agent.name}.toml`);
+    if (!changed && !receipt && !existsSync(file)) continue;
+    let bytes;
+    try { bytes = await readSmall(file); }
+    catch { result[agent.name] = { status: "unsafe" }; continue; }
+    if (!changed) { result[agent.name] = { status: bytes ? receipt ? "retire-pending" : "unowned" : "missing" }; continue; }
+    if (!bytes) { result[agent.name] = { status: "missing" }; continue; }
+    if (receipt?.id !== id || receipt?.root !== "project" || receipt?.relative !== relative ||
+        !receipt?.owners?.includes("codex") || !/^[a-f0-9]{64}$/.test(receipt?.hash ?? "")) {
+      result[agent.name] = { status: "unowned" }; continue;
+    }
+    if (createHash("sha256").update(bytes).digest("hex") !== receipt.hash) {
+      result[agent.name] = { status: "edited" }; continue;
+    }
+    const expectedBody = `developer_instructions = '''\n${agent.body.replace(/\n+$/, "")}\n'''\n`;
+    result[agent.name] = { status: tomlField(bytes, "model") === expected.model &&
+      tomlField(bytes, "model_reasoning_effort") === expected.effort &&
+      tomlField(bytes, "name") === agent.name && tomlField(bytes, "description") === agent.description &&
+      bytes.toString("utf8").includes(expectedBody) ? "current" : "stale" };
+  }
+  return result;
 }
 
 async function show(ctx, agents, { json = false, harnesses = HARNESSES, home, cwd } = {}) {
@@ -75,7 +139,8 @@ async function show(ctx, agents, { json = false, harnesses = HARNESSES, home, cw
   } catch {
     catalog = null;
   }
-  const data = effective(agents, layers, catalog, harnesses);
+  const codexDeployment = harnesses.includes("codex") ? await inspectCodexProjectFiles(agents, layers, catalog, { home, cwd }) : {};
+  const data = effective(agents, layers, catalog, harnesses, codexDeployment);
   if (json) {
     ctx.log(JSON.stringify(data, null, 2));
     return 0;
@@ -86,14 +151,14 @@ async function show(ctx, agents, { json = false, harnesses = HARNESSES, home, cw
   for (const [harness, entry] of Object.entries(data.harnesses)) {
     ctx.log("");
     const c = entry.catalog;
-    const catalogNote = c.status === "missing" ? "no discovery yet" : c.status === "discovered" ? `discovered ${day(c.discoveredAt)}` : `unknown: ${c.reason ?? "no reason recorded"}`;
+    const catalogNote = c.status === "missing" ? "no discovery yet" : c.status === "discovered" ? `discovered ${day(c.discoveredAt)}${c.accountAvailability === "unconfirmed" ? "; account access unconfirmed" : ""}` : `unknown: ${c.reason ?? "no reason recorded"}`;
     if (!entry.applied) {
       ctx.log(`${LABEL[harness] ?? harness}: every agent inherits the session model and effort (model selection not yet supported; catalog: ${catalogNote})`);
       continue;
     }
     ctx.log(`${LABEL[harness] ?? harness} (catalog: ${catalogNote})`);
     for (const [name, a] of Object.entries(entry.agents)) {
-      ctx.log(`  ${name.padEnd(10)} ${a.need.padEnd(9)} model: ${cell(a.model).padEnd(34)} effort: ${cell(a.effort)}`);
+      ctx.log(`  ${name.padEnd(10)} ${a.need.padEnd(9)} model: ${cell(a.model).padEnd(34)} effort: ${cell(a.effort)}${a.projectFile && a.projectFile.status !== "current" ? ` (project file: ${a.projectFile.status})` : ""}`);
     }
   }
   if (Object.values(data.harnesses).some((h) => Object.values(h.agents).some((a) => a.model.unverified || a.effort.unverified))) {
@@ -113,7 +178,8 @@ async function refresh(ctx, { harnesses = HARNESSES, run, now, home, keepWithin 
     const h = data.harnesses[harness];
     if (h.status === "discovered") {
       const efforts = [...new Set(h.models.flatMap((m) => m.efforts))];
-      ctx.log(`${LABEL[harness]}: ${h.models.map((m) => m.id).join(", ")}; efforts ${efforts.join(", ")} (from ${h.source}, ${h.confidence})`);
+      const access = h.accountAvailability === "unconfirmed" ? "; account access unconfirmed" : "";
+      ctx.log(`${LABEL[harness]}: ${h.models.map((m) => m.id).join(", ")}; efforts ${efforts.join(", ")} (from ${h.source}, ${h.confidence}${access})`);
     } else {
       ctx.log(`${LABEL[harness]}: unknown — ${h.reason}; its agents inherit the session model`);
     }
@@ -184,7 +250,7 @@ async function pick(ask, { name, message, offered, current, none, other }) {
  * or kept from before) marks the entry unverified. Returns the entry to store,
  * or null for none.
  */
-async function askEntry(ask, { key, label, current, offer, none }) {
+async function askEntry(ask, { key, label, current, offer, none, effortsForModel }) {
   const model = await pick(ask, {
     name: `${key}-model`,
     message: `${label} · model`,
@@ -193,13 +259,15 @@ async function askEntry(ask, { key, label, current, offer, none }) {
     none: none.model,
     other: true,
   });
+  const offeredEfforts = effortsForModel ? effortsForModel(model) : offer.efforts;
+  const currentEffort = effortsForModel && !offeredEfforts.includes(current?.effort) ? undefined : current?.effort;
   let effort;
-  if (offer.efforts.length) {
+  if (offeredEfforts.length) {
     effort = await pick(ask, {
       name: `${key}-effort`,
       message: `${label} · effort`,
-      offered: offer.efforts,
-      current: current?.effort,
+      offered: offeredEfforts,
+      current: currentEffort,
       none: none.effort,
     });
   } else {
@@ -207,7 +275,7 @@ async function askEntry(ask, { key, label, current, offer, none }) {
       type: "text",
       name: `${key}-effort`,
       message: `${label} · effort (nothing discovered; empty for ${none.effort.title})`,
-      initial: current?.effort ?? "",
+      initial: currentEffort ?? "",
       validate: (v) => !v.trim() || VALUE.test(v.trim()) || VALUE_HINT,
     })).trim();
     effort = typed || undefined;
@@ -215,7 +283,7 @@ async function askEntry(ask, { key, label, current, offer, none }) {
   const entry = {};
   if (model !== undefined) entry.model = model;
   if (effort !== undefined) entry.effort = effort;
-  const unlisted = (model !== undefined && !offer.models.includes(model)) || (effort !== undefined && !offer.efforts.includes(effort));
+  const unlisted = (model !== undefined && !offer.models.includes(model)) || (effort !== undefined && !offeredEfforts.includes(effort));
   if (unlisted) entry.unverified = true;
   return Object.keys(entry).length ? entry : null;
 }
@@ -227,7 +295,7 @@ const LEVEL_NOTE = {
 };
 
 /**
- * Choose Claude Code models: one select per need level, then an optional
+ * Choose models: one select per need level, then an optional
  * multiselect of agents to override, then a summary and a save confirmation.
  * Nothing is written until that confirmation; Ctrl+C at any point writes
  * nothing. `fromInstall` drops the closing "run install" hint.
@@ -239,41 +307,45 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     if (!root) throw new Error("models setup --project: no project here; run it inside a repository (your home folder holds the user choices)");
     file = projectConfigPath(root);
   }
-  const unsupported = harnesses.filter((h) => !APPLIED.includes(h));
+  const selectable = harnesses.filter((h) => h === "claude" || h === "codex");
+  const unsupported = harnesses.filter((h) => !selectable.includes(h));
   if (unsupported.length) ctx.log(`${unsupported.map((h) => LABEL[h]).join(", ")}: model selection not yet supported; agents inherit the session model`);
-  if (!harnesses.includes("claude")) return 0;
+  if (!selectable.length) return 0;
   if (!isTTY && !ask) {
     throw new Error(`models setup needs a terminal. Without one, edit ${file} directly (format: docs/install.md, "Choosing models")`);
   }
   if (ctx.dryRun) {
-    ctx.log(`would ask for Claude Code choices and write ${file}`);
+    ctx.log(`would ask for ${selectable.map((h) => LABEL[h]).join(", ")} choices and write ${file}`);
     return 0;
   }
   // Read before discovery: an unsupported file stops here, before anything runs.
   const doc = await readChoices(file, { project });
-  const catalog = await refreshCatalog(["claude"], { run, now, file: catalogPath(home), home });
-  const claude = catalog.harnesses.claude;
-  const offer = claude.status === "discovered"
-    ? { models: claude.models.map((m) => m.id), efforts: [...new Set(claude.models.flatMap((m) => m.efforts))] }
-    : { models: [], efforts: [] };
-  if (claude.status !== "discovered") ctx.log(`Claude Code discovery: unknown — ${claude.reason}. Anything you choose is recorded as unverified.`);
+  const catalog = await refreshCatalog(selectable, { run, now, file: catalogPath(home), home });
   ask = strict(ask ?? await promptsAsker());
 
   try {
-    ctx.log(`Claude Code models for ${project ? "this project" : "you"} (${file})`);
+    for (const harness of selectable) {
+    const record = catalog.harnesses[harness];
+    const offer = record.status === "discovered"
+      ? { models: record.models.map((m) => m.id), efforts: [...new Set(record.models.flatMap((m) => m.efforts))] }
+      : { models: [], efforts: [] };
+    const effortsForModel = harness === "codex" ? (model) => record.status === "discovered"
+      ? (record.models.find((m) => m.id === model)?.efforts ?? []) : [] : undefined;
+    if (record.status !== "discovered") ctx.log(`${LABEL[harness]} discovery: unknown — ${record.reason}. Anything you choose is recorded as unverified.`);
+    ctx.log(`${LABEL[harness]} models for ${project ? "this project" : "you"} (${file})`);
     ctx.log("Each agent uses its need level's choice; you can override single agents after.");
     const inherit = { model: { title: "inherit", description: "the session's model" }, effort: { title: "inherit", description: "the session's effort" } };
     for (const need of NEED_ORDER) {
       const users = agents.filter((a) => a.need === need).map((a) => a.name);
       const label = `${need} — ${users.length ? users.join(", ") : `no agent by default; ${LEVEL_NOTE[need]}`}`;
-      setChoice(doc, "claude", "levels", need, await askEntry(ask, { key: need, label, current: doc.harnesses?.claude?.levels?.[need], offer, none: inherit }));
+      setChoice(doc, harness, "levels", need, await askEntry(ask, { key: `${harness === "claude" ? "" : `${harness}-`}${need}`, label, current: doc.harnesses?.[harness]?.levels?.[need], offer, none: inherit, effortsForModel }));
     }
 
-    const levels = doc.harnesses?.claude?.levels ?? {};
-    const overrides = doc.harnesses?.claude?.agents ?? {};
+    const levels = doc.harnesses?.[harness]?.levels ?? {};
+    const overrides = doc.harnesses?.[harness]?.agents ?? {};
     const chosen = await ask({
       type: "multiselect",
-      name: "agents",
+      name: harness === "claude" ? "agents" : `${harness}-agents`,
       message: "Override single agents (optional)",
       choices: agents.map((a) => ({
         title: a.name,
@@ -287,26 +359,28 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     });
     for (const a of agents) {
       if (!chosen.includes(a.name)) {
-        setChoice(doc, "claude", "agents", a.name, null);
+        setChoice(doc, harness, "agents", a.name, null);
         continue;
       }
       const lv = levels[a.need];
       const same = { title: `same as ${a.need}`, description: summarize(lv) };
-      setChoice(doc, "claude", "agents", a.name, await askEntry(ask, {
-        key: a.name,
+      setChoice(doc, harness, "agents", a.name, await askEntry(ask, {
+        key: harness === "claude" ? a.name : `${harness}-${a.name}`,
         label: a.name,
         current: overrides[a.name],
         offer,
         none: { model: { ...same, description: lv?.model ?? "inherit" }, effort: { ...same, description: lv?.effort ?? "inherit" } },
+        effortsForModel,
       }));
     }
 
-    for (const kind of ["levels", "agents"]) if (doc.harnesses?.claude?.[kind] && !Object.keys(doc.harnesses.claude[kind]).length) delete doc.harnesses.claude[kind];
-    if (doc.harnesses?.claude && !Object.keys(doc.harnesses.claude).length) delete doc.harnesses.claude;
+    for (const kind of ["levels", "agents"]) if (doc.harnesses?.[harness]?.[kind] && !Object.keys(doc.harnesses[harness][kind]).length) delete doc.harnesses[harness][kind];
+    if (doc.harnesses?.[harness] && !Object.keys(doc.harnesses[harness]).length) delete doc.harnesses[harness];
 
     ctx.log("");
-    for (const need of NEED_ORDER) ctx.log(`  ${need.padEnd(9)} ${summarize(doc.harnesses?.claude?.levels?.[need])}`);
-    for (const [name, entry] of Object.entries(doc.harnesses?.claude?.agents ?? {})) ctx.log(`  ${name.padEnd(9)} ${summarize(entry)} (override)`);
+    for (const need of NEED_ORDER) ctx.log(`  ${need.padEnd(9)} ${summarize(doc.harnesses?.[harness]?.levels?.[need])}`);
+    for (const [name, entry] of Object.entries(doc.harnesses?.[harness]?.agents ?? {})) ctx.log(`  ${name.padEnd(9)} ${summarize(entry)} (override)`);
+    }
     if (!(await ask({ type: "confirm", name: "save", message: `Save to ${file}?`, initial: true }))) {
       ctx.log("Not saved; nothing changed.");
       return 0;
@@ -317,24 +391,29 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
   }
   await writeChoices(file, doc, { project });
   ctx.log(`Saved ${file}`);
-  if (!fromInstall) ctx.log("Run npx canonkit install --claude to write the defaults into your agents; check with npx canonkit models show");
+  if (!fromInstall) ctx.log(`Run npx canonkit install ${selectable.map((h) => `--${h}`).join(" ")} to write the defaults into your agents; check with npx canonkit models show`);
   return 0;
 }
 
 /**
  * The model step of the interactive install: ask whether to choose (or
- * change) Claude Code models, and run setup when the answer is yes. Returns
+ * change) selected harness models, and run setup when the answer is yes. Returns
  * false when the person cancelled, so install writes nothing.
  */
 async function offerModelSetup(ctx, agents, { ask, home = os.homedir(), ...rest } = {}) {
   ask = strict(ask ?? await promptsAsker());
-  const current = (await readChoices(userConfigPath(home))).harnesses?.claude;
-  const has = !!(current && (Object.keys(current.levels ?? {}).length || Object.keys(current.agents ?? {}).length));
+  const harnesses = rest.harnesses ?? ["claude"];
+  const choices = (await readChoices(userConfigPath(home))).harnesses;
+  const has = harnesses.some((h) => {
+    const current = choices?.[h];
+    return current && (Object.keys(current.levels ?? {}).length || Object.keys(current.agents ?? {}).length);
+  });
+  const names = harnesses.map((h) => LABEL[h]).join(" and ");
   try {
     const go = await ask({
       type: "confirm",
       name: "models",
-      message: has ? "Change the models your Claude Code agents use?" : "Choose models for your Claude Code agents? (No: they run on the session's model)",
+      message: has ? `Change the models your ${names} agents use?` : `Choose models for your ${names} agents? (No: they run on the session's model)`,
       initial: !has,
     });
     if (!go) return true;
@@ -361,9 +440,16 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
     add("WARN", `${err.message} — its choices are ignored and agents fall back to inherit`);
     return rows;
   }
-  const docs = [["user", layers.user], ["project", layers.project]].filter(([, d]) => d?.harnesses?.claude);
-  if (!docs.length) {
-    add("OK", "no model choices configured; every agent inherits the session model (canonkit models setup to choose)");
+  const docs = [["user", layers.user], ["project", layers.project]];
+  const claudeDocs = docs.filter(([, d]) => d?.harnesses?.claude);
+  const codexDocs = docs.filter(([, d]) => d?.harnesses?.codex);
+  const shadowWarnings = (states) => {
+    const problems = Object.entries(states).filter(([, state]) => state.status !== "current");
+    for (const [name, state] of problems) add("WARN", `Codex project agent ${name}: project file ${state.status}; reinstall with npx canonkit install --codex from this repository and inspect any preserved local file`);
+    return problems.length;
+  };
+  if (!claudeDocs.length && !codexDocs.length) {
+    if (!shadowWarnings(await inspectCodexProjectFiles(agents, layers, null, { home, cwd }))) add("OK", "no model choices configured; every agent inherits the session model (canonkit models setup to choose)");
     return rows;
   }
   let catalog = null;
@@ -372,6 +458,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
   } catch (err) {
     add("WARN", `${err.message}`);
   }
+  if (claudeDocs.length) {
   const claude = catalog?.harnesses?.claude;
   if (!claude) add("WARN", "no Claude Code discovery recorded; configured models cannot be checked — run npx canonkit models refresh");
   else if (claude.status !== "discovered") add("WARN", `Claude Code discovery is unknown (${claude.reason}); configured models cannot be checked`);
@@ -405,7 +492,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
     if (changed.length) add("WARN", `project choices in ${projectConfigPath(layers.root)} override yours: ${changed.join(", ")} — check them before trusting a repository you did not write`);
   }
   let problems = 0;
-  for (const [layer, d] of docs) {
+  for (const [layer, d] of claudeDocs) {
     for (const kind of ["levels", "agents"]) {
       for (const [name, entry] of Object.entries(d.harnesses.claude[kind] ?? {})) {
         const where = `${layer} ${kind === "levels" ? "level" : "agent"} ${name}`;
@@ -423,6 +510,45 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
     }
   }
   if (!problems && !rows.some((r) => r.status === "WARN")) add("OK", `Claude Code choices match the discovery of ${day(claude.discoveredAt)}`);
+  }
+  if (codexDocs.length) {
+    const record = catalog?.harnesses?.codex;
+    shadowWarnings(await inspectCodexProjectFiles(agents, layers, catalog, { home, cwd }));
+    const known = record?.status === "discovered" && Array.isArray(record.models) ? new Map(record.models.map((m) => [m.id, m])) : null;
+    if (!record) add("WARN", "no Codex discovery recorded; configured models cannot be checked — run npx canonkit models refresh --codex");
+    else if (!known) add("WARN", `Codex discovery is unknown (${record.reason ?? "unrecognized catalog"}); configured models cannot be checked`);
+    else if (!((now - new Date(record.discoveredAt)) / 86400000 <= STALE_DAYS)) add("WARN", `Codex discovery is from ${day(record.discoveredAt)}, older than ${STALE_DAYS} days — run npx canonkit models refresh --codex`);
+    const changed = [];
+    const partial = [];
+    const incompatible = [];
+    for (const agent of agents) {
+      const here = resolve(agent, "codex", layers);
+      const mine = resolve(agent, "codex", { user: layers.user });
+      for (const field of ["model", "effort"]) {
+        if (here[field].source.startsWith("project") && here[field].value !== mine[field].value) changed.push(`${agent.name} ${field} ${mine[field].value ?? "inherit"} → ${here[field].value}`);
+      }
+      if ((here.model.value === null) !== (here.effort.value === null)) partial.push(agent.name);
+      if (known && here.model.value && here.effort.value && known.has(here.model.value) && !known.get(here.model.value).efforts.includes(here.effort.value)) {
+        incompatible.push(`${agent.name}: ${here.model.value} / ${here.effort.value}`);
+      }
+    }
+    if (changed.length) add("WARN", `project Codex choices in ${projectConfigPath(layers.root)} override yours: ${changed.join(", ")} — check them before trusting a repository you did not write`);
+    if (partial.length) add("WARN", `Codex agents ${partial.join(", ")} set only model or effort; compatibility with an inherited setting is unconfirmed`);
+    if (incompatible.length) add("WARN", `Codex model/effort pairs are incompatible: ${incompatible.join(", ")} — affected agents fall back to inherit on reinstall`);
+    for (const [layer, doc] of codexDocs) {
+      for (const kind of ["levels", "agents"]) {
+        for (const [name, entry] of Object.entries(doc.harnesses.codex[kind] ?? {})) {
+          const issues = [];
+          if (entry.unverified) issues.push("is marked unverified (entered by hand)");
+          if (known && entry.model && !known.has(entry.model)) issues.push(`model '${entry.model}' is not in the latest discovery`);
+          if (known && entry.model && entry.effort && known.has(entry.model) && !known.get(entry.model).efforts.includes(entry.effort)) issues.push(`effort '${entry.effort}' is not supported by '${entry.model}'`);
+          if (issues.length) add("WARN", `Codex ${layer} ${kind === "levels" ? "level" : "agent"} ${name}: ${issues.join("; ")} — affected agents may fall back to inherit`);
+        }
+      }
+    }
+    if (!rows.some((row) => row.status === "WARN")) add("OK", `Codex choices match the discovery of ${day(record.discoveredAt)}; account access unconfirmed`);
+  }
+  if (!codexDocs.length) shadowWarnings(await inspectCodexProjectFiles(agents, layers, catalog, { home, cwd }));
   return rows;
 }
 

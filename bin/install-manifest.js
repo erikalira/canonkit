@@ -403,6 +403,26 @@ export class InstallManifest {
     if (bytes !== null) await this.write(file, bytes);
   }
 
+  /** Retire a generated project file only while its receipt still matches. */
+  async retire(file) {
+    await this.start();
+    const spec = this.byPath.get(path.resolve(file));
+    if (!spec?.preserveModified) throw new Error(`Untracked project retirement refused: ${file}`);
+    const entry = this.data.entries[spec.id];
+    if (!entry) return false;
+    const target = this.target(spec);
+    await regularPath(target);
+    const current = await read(target);
+    if (current !== null && digest(current) !== entry.hash) {
+      this.log(`Preserved edited ${spec.id}; canonkit ownership detached`);
+      if (!this.dryRun) { delete this.data.entries[spec.id]; await this.save(); }
+      return false;
+    }
+    this.log(`${this.dryRun ? "would remove" : "Removing"} ${spec.id}`);
+    if (!this.dryRun) await this.commit(spec, current, null, null);
+    return true;
+  }
+
   wrap(ctx) {
     return { ...ctx, manifest: this, historyContext: ctx,
       write: (file, bytes) => this.write(file, bytes),
@@ -472,6 +492,11 @@ export class InstallManifest {
       let after = null;
       if (entry.provenance === "observed") {
         this.log(`Preserved preexisting ${entry.id} (observed)`);
+        if (!this.dryRun) { delete this.data.entries[entry.id]; await this.save(); }
+        continue;
+      }
+      if (spec.preserveModified && current !== null && digest(current) !== entry.hash) {
+        this.log(`Preserved edited ${entry.id}; canonkit ownership detached`);
         if (!this.dryRun) { delete this.data.entries[entry.id]; await this.save(); }
         continue;
       }

@@ -87,3 +87,15 @@ precedência sobre o frontmatter do agente.
   fraco que o dela.
 - O lead pode esquecer de passar os parâmetros. O frontmatter ainda dá o padrão do
   usuário, mas não a escolha do projeto. O `doctor` não detecta esse caso.
+
+## Adendo: Codex (2026-11-10)
+
+A mudança `codex-model-selection` aplica escolhas de modelo e effort aos agentes
+Codex. A rejeição de cópias core por projeto acima continua válida para Claude
+Code: seus parâmetros de dispatch podem levar a escolha do projeto. Codex dá
+precedência aos campos do arquivo de agente sobre os parâmetros de spawn. Por
+isso, o instalador cria cópias core em `.codex/agents/` somente quando a escolha
+efetiva do projeto difere da escolha do usuário. Elas pertencem a um manifesto
+por projeto; um arquivo preexistente ou editado pela pessoa é preservado. A
+precedência de um agente Codex de projeto sobre o homônimo global foi observada
+no CLI 0.166.0 antes desta implementação.

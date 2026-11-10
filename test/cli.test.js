@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import prompts from "prompts";
 
 import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES, codexAgent, copilotAgent, renderRoutingBlock } from "../bin/cli.js";
+import { modelDiagnosis } from "../bin/models-command.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
@@ -871,7 +872,7 @@ describe("codex custom agents", () => {
   test("CANONKIT_CODEX_MODEL is ignored with one warning, for install and add", async () => {
     const { home, project } = await scratch("codex-model-ignored");
     const env = { CANONKIT_CODEX_MODEL: "some-model" };
-    const warning = /WARN CANONKIT_CODEX_MODEL is ignored: Codex agents inherit the session model until model selection supports Codex/g;
+    const warning = /WARN CANONKIT_CODEX_MODEL is ignored: use canonkit models setup --codex and reinstall/g;
     const installed = run(["install", "--codex", "--no-reference"], { home, env });
     assert.equal(installed.status, 0, installed.out);
     assert.equal(installed.out.match(warning)?.length, 1, installed.out);
@@ -3223,6 +3224,171 @@ describe("model choices", () => {
     return { env: { PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) }, starts };
   }
 
+  async function recordingCodex(root) {
+    const bin = path.join(root, "codex-bin");
+    await mkdir(bin, { recursive: true });
+    const js = path.join(bin, "codex-fake.cjs");
+    const catalog = { models: [
+      { slug: "gpt-6-luna", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }] },
+      { slug: "gpt-6-astra", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "ultra" }] },
+    ] };
+    await writeFile(js, `process.stdout.write(process.argv[2] === "--version" ? "codex-cli 0.166.0\\n" : ${JSON.stringify(JSON.stringify(catalog))});\n`);
+    if (process.platform === "win32") await writeFile(path.join(bin, "codex.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
+    else {
+      await writeFile(path.join(bin, "codex"), `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+      await chmod(path.join(bin, "codex"), 0o755);
+    }
+    return { PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) };
+  }
+
+  test("Codex install writes, updates, clears and rejects incompatible model pairs", async () => {
+    const { root, home } = await scratch("codex-model-choice-applied");
+    const env = { ...await recordingCodex(root) };
+    const file = path.join(home, ".codex", "agents", "archie.toml");
+    const config = (model, effort) => ({ version: 1, harnesses: { codex: { levels: { deep: { model, effort } } } } });
+    await writeJson(userModels(home), config("gpt-6-luna", "low"));
+    let result = run(["install", "--codex", "--no-reference"], { home, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(await read(file), /^model = "gpt-6-luna"$/m);
+    assert.match(await read(file), /^model_reasoning_effort = "low"$/m);
+
+    await writeJson(userModels(home), config("gpt-6-astra", "ultra"));
+    result = run(["install", "--codex", "--no-reference"], { home, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(await read(file), /^model = "gpt-6-astra"$/m);
+    assert.match(await read(file), /^model_reasoning_effort = "ultra"$/m);
+
+    await writeJson(userModels(home), config("gpt-6-astra", "medium"));
+    result = run(["install", "--codex", "--no-reference"], { home, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /does not support effort medium; both settings inherit/);
+    assert.doesNotMatch(await read(file), /^model(?:_reasoning_effort)?\s*=/m);
+
+    await writeJson(userModels(home), { version: 1, harnesses: {} });
+    result = run(["install", "--codex", "--no-reference"], { home, env });
+    assert.equal(result.status, 0, result.out);
+    assert.doesNotMatch(await read(file), /^model(?:_reasoning_effort)?\s*=/m);
+  });
+
+  test("Codex project core shadows follow project choices and receipt-checked cleanup", async () => {
+    const { root, home, project } = await scratch("codex-project-shadows");
+    await mkdir(path.join(project, ".git"));
+    await writeFile(path.join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
+    const env = await recordingCodex(root);
+    const user = { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-luna", effort: "low" } } } } };
+    const override = { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra", effort: "ultra" } } } } };
+    const projectConfig = path.join(project, ".canonkit", "models.json");
+    const globalFile = path.join(home, ".codex", "agents", "archie.toml");
+    const shadow = path.join(project, ".codex", "agents", "archie.toml");
+    await writeJson(userModels(home), user);
+    await writeJson(projectConfig, override);
+    const shadowState = () => JSON.parse(run(["models", "show", "--json"], { home, cwd: project, env }).out).harnesses.codex.agents.archie.projectFile.status;
+    assert.equal(shadowState(), "missing");
+    assert.match(run(["doctor"], { home, cwd: project, env }).out, /Codex project agent archie: project file missing/);
+    let result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(shadowState(), "current");
+    assert.match(await read(globalFile), /^model = "gpt-6-luna"$/m);
+    assert.match(await read(shadow), /^model = "gpt-6-astra"$/m);
+    assert.match(await read(shadow), /^model_reasoning_effort = "ultra"$/m);
+    const revisedAgents = (await readAgents()).map((agent) => agent.name === "archie" ? { ...agent, body: `${agent.body}\nUPDATED_SOURCE` } : agent);
+    assert.ok((await modelDiagnosis(revisedAgents, { home, cwd: project })).some((row) => /Codex project agent archie: project file stale/.test(row.detail)));
+    await writeJson(projectConfig, { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra", effort: "low" } } } } });
+    assert.equal(shadowState(), "stale");
+    assert.match(run(["doctor"], { home, cwd: project, env }).out, /Codex project agent archie: project file stale/);
+    await writeJson(projectConfig, override);
+    result = run(["uninstall", "--project"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(existsSync(shadow), false);
+    result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(existsSync(shadow), true);
+
+    await writeJson(projectConfig, { version: 1, harnesses: {} });
+    assert.equal(shadowState(), "retire-pending");
+    assert.match(run(["doctor"], { home, cwd: project, env }).out, /Codex project agent archie: project file retire-pending/);
+    result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(existsSync(shadow), false);
+
+    await writeFile(shadow, "name = \"archie\"\n# personal agent\n");
+    await writeJson(projectConfig, override);
+    result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /preexisting project Codex agent preserved/);
+    assert.match(await read(shadow), /personal agent/);
+    assert.equal(shadowState(), "unowned");
+    await rm(shadow);
+
+    result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    await writeFile(shadow, (await read(shadow)) + "# edited\n");
+    assert.equal(shadowState(), "edited");
+    assert.match(run(["doctor"], { home, cwd: project, env }).out, /Codex project agent archie: project file edited/);
+    result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(result.out, /ownership detached/);
+    assert.match(await read(shadow), /# edited/);
+    result = run(["uninstall", "--project"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.match(await read(shadow), /# edited/);
+  });
+
+  test("Codex project specialist uses merged fields", async () => {
+    const { root, home, project } = await scratch("codex-specialist-choice");
+    const env = await recordingCodex(root);
+    await writeJson(userModels(home), { version: 1, harnesses: { codex: { levels: { standard: { model: "gpt-6-luna", effort: "low" } } } } });
+    await writeJson(path.join(project, ".canonkit", "models.json"), { version: 1, harnesses: { codex: { agents: { maya: { effort: "medium" } } } } });
+    const result = run(["add", "maya"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    const agent = await read(path.join(project, ".codex", "agents", "maya.toml"));
+    assert.match(agent, /^model = "gpt-6-luna"$/m);
+    assert.match(agent, /^model_reasoning_effort = "medium"$/m);
+  });
+
+  test("known incompatible user and project pairs both inherit without a shadow warning", async () => {
+    const { root, home, project } = await scratch("codex-both-incompatible");
+    const env = await recordingCodex(root);
+    await mkdir(path.join(project, ".git"));
+    await writeFile(path.join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
+    await writeJson(userModels(home), { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-luna", effort: "ultra" } } } } });
+    await writeJson(path.join(project, ".canonkit", "models.json"), { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra", effort: "medium" } } } } });
+    const result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 0, result.out);
+    assert.equal(existsSync(path.join(project, ".codex", "agents", "archie.toml")), false);
+    const doctor = run(["doctor"], { home, cwd: project, env });
+    assert.doesNotMatch(doctor.out, /Codex project agent archie: project file missing/);
+    assert.match(doctor.out, /Codex model\/effort pairs are incompatible/);
+  });
+
+  test("Codex specialist refuses linked project model choices before writes", async () => {
+    const { root, home, project } = await scratch("codex-specialist-config-link");
+    const env = await recordingCodex(root);
+    const outside = path.join(root, "external-config");
+    await writeJson(path.join(outside, "models.json"), { version: 1, harnesses: {} });
+    await symlink(outside, path.join(project, ".canonkit"), process.platform === "win32" ? "junction" : "dir");
+    const result = run(["add", "maya"], { home, cwd: project, env });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /symbolic link or junction/);
+    assert.equal(existsSync(path.join(project, ".codex", "agents", "maya.toml")), false);
+  });
+
+  test("Codex project install refuses a linked .codex directory before global writes", async () => {
+    const { root, home, project } = await scratch("codex-project-link");
+    const env = await recordingCodex(root);
+    await mkdir(path.join(project, ".git"));
+    await writeFile(path.join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
+    const outside = path.join(root, "outside");
+    await mkdir(outside);
+    await symlink(outside, path.join(project, ".codex"), process.platform === "win32" ? "junction" : "dir");
+    await writeJson(path.join(project, ".canonkit", "models.json"), { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-astra" } } } } });
+    const result = run(["install", "--codex", "--no-reference"], { home, cwd: project, env });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /symbolic link or junction/);
+    assert.equal(existsSync(path.join(home, ".codex", "agents", "archie.toml")), false);
+    assert.equal(existsSync(path.join(outside, "agents", "archie.toml")), false);
+  });
+
   test("no configuration: Claude agents are the source, byte for byte, with no model", async () => {
     const { root, home } = await scratch("models-none");
     const { env } = await recordingClaude(root);
@@ -3267,7 +3433,7 @@ describe("model choices", () => {
     assert.ok(starts().includes("--help"), starts().join(","));
     const catalog = JSON.parse(await read(path.join(home, ".canonkit", "model-catalog.json")));
     assert.equal(catalog.harnesses.claude.status, "discovered");
-    assert.equal(catalog.harnesses.codex.reason, "not yet supported");
+    assert.ok(["discovered", "unknown"].includes(catalog.harnesses.codex.status));
   });
 
   test("user-level agents ignore project choices; project specialists honor them", async () => {

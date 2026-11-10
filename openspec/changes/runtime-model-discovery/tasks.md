@@ -92,7 +92,11 @@ predates this change; consider targeting the repository root in a later change.
 - [x] 10.2 Offer the step in the interactive `install` after the harness menu when Claude Code is selected (Yes highlighted with no choices, No otherwise; cancel cancels the install); flag-driven and non-terminal installs never ask. Docs, README, release notes and spec updated.
 - [x] 10.4 Discovery adds the documented Claude aliases (`haiku` was missing: the help quotes examples) and honors `availableModels` from managed, else user, settings (design D2 amendment). Verified by `test/model-discovery.test.js` and a real `models refresh` (fable, opus, sonnet, haiku).
 - [x] 10.5 `other…` says "alias or full model ID"; values accept `[` `]` for `sonnet[1m]`-style aliases (still JSON-quoted when written). A per-name origin note in the menu was tried and removed at the user's request.
-- [ ] 10.3 Look at it in a real terminal (the user), including Windows redraw. Then rerun the full suite and the validators; the 9.4 reviews predate this edit, so re-review by Archie (command surface, D2 amendment) and Gard (discovery now reads Claude settings files: only `availableModels`, size-capped) before closing.
+- [x] 10.3 Look at it in a real terminal (the user), including Windows redraw. Then rerun the full suite and the validators; the 9.4 reviews predate this edit, so re-review by Archie (command surface, D2 amendment) and Gard (discovery now reads Claude settings files: only `availableModels`, size-capped) before closing.
+
+### 10.3 Closure evidence (2026-11-10)
+
+The user confirmed the Windows terminal menu inspection in this session. On HEAD `fe57a6d`, focused model tests passed 38/38 and the full suite passed 969/973 with 0 failures and 4 platform skips. `npm run validate:full` completed. Spencer found and verified a README correction: Claude agent frontmatter is generated while the body is preserved; the post-edit README roster tests passed 8/8. Archie approved the setup command and documented alias/`availableModels` amendment; Gard approved the settings policy path, noting it parses the settings JSON but stores and uses only `availableModels`. Spencer approved the final targeted documentation recheck. The full suite preceded the README-only correction; its affected roster tests and full validator passed afterward.
 
 ## Workflow follow-up
 
