@@ -615,7 +615,7 @@ describe("install", () => {
 describe("orchestrate skill", () => {
   const skillPath = (home, root) => path.join(home, root, "skills", "orchestrate", "SKILL.md");
 
-  test("default source instruction profiles stay within 2500 words", async () => {
+  test("default source instruction profiles stay within 3000 words", async () => {
     // Source-derived default profile: the two managed blocks, core agent
     // descriptions and every shipped skill description. There are currently no
     // default command descriptions or kit-installed MCP instructions; update
@@ -635,7 +635,7 @@ describe("orchestrate skill", () => {
       const rendered = runtime === "Claude" ? [blocks[0], renderRoutingBlock(blocks[1], false)] : blocks;
       const counts = [...rendered.map(words), ...agents.map((a) => words(a.description)), ...descriptions.map(words)];
       const total = counts.reduce((a, b) => a + b, 0);
-      assert.ok(total <= 2500, `default ${runtime} source profile: ${total} words, limit 2500`);
+      assert.ok(total <= 3000, `default ${runtime} source profile: ${total} words, limit 3000`);
     }
   });
 

@@ -84,6 +84,13 @@ A brief that asks for work outside the repository carries the block's rule
 ("Temporary work outside the repository"): the subagent starts cold, and its shell
 writes there land on the user as prompts and false gates.
 
+## Briefing verification
+
+A dispatch brief carries the evidence the lead already has: commands, counts and
+the work state they ran on. The subagent runs only what checks a claim it doubts
+or a gap that evidence leaves, and reports what it ran. A reviewer does not
+repeat the full suite to confirm a fresh result that matches the state under review.
+
 ## Relayed claims
 
 A claim relayed by another agent (an orchestrator's brief, a subagent's report:
@@ -136,14 +143,34 @@ For LOW work, a brief inspection or focused check can suffice; do not require an
 irrelevant build or E2E. Format/schema checks of instructions do not establish
 model obedience: behavioral efficacy stays **UNMEASURED** without measurements.
 
+### Verification by reach
+
+Match checks to what the change can break, not to the number of edits:
+
+- **While editing:** run the tests of the touched area and of its consumers
+  (callers and readers found by search or Graphify), plus the invariant tests the
+  change can reach (a change to instructions or install source always reaches the
+  budget, idempotent-install and security tests). The edited file's own tests
+  alone miss downstream breakage.
+- **Crossing modules or changing shared behavior:** the affected tests above plus
+  a smoke of the main interfaces.
+- **Full suite and project validations:** once, after the last edit, before
+  delivery or the final review; not per iteration. If review leads to edits, run
+  it again only after those. A baseline before editing is optional (worth it for
+  a large change or a suite with known failures). LOW work needs no baseline, and
+  a focused check can stand in for the full suite.
+- **A full-suite failure:** establish whether the change caused it or it predates
+  the change (rerun the failing tests on the base revision in a separate worktree
+  or checkout, not by stashing); do not call the delivery verified until that is
+  settled.
+
 Tie evidence to the inspected work state when reliably known (revision and dirty
 state, or the relevant diff); do not invent a fingerprint. A relevant later edit
-invalidates the affected result, not unrelated checks. Label old results as
-historical and rerun only what that edit affects. Before adopting a subagent's
-success claim, inspect the relevant diff and its evidence, including freshness
-and missing criteria. Reuse valid evidence for the same state; a report alone
-does not establish correctness, and a review does not automatically require a
-second test run. An unresolved failed check remains explicit, never a pass.
+invalidates the affected result, not unrelated checks; label old results as
+historical. Before adopting a subagent's success claim, inspect the relevant
+diff and its evidence, including freshness and missing criteria. Reuse valid
+evidence for the same state; a report alone does not establish correctness. An
+unresolved failed check remains explicit, never a pass.
 
 ## OpenSpec change lifecycle
 
