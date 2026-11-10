@@ -46,6 +46,8 @@ Migration: `opus → deep` (archie, iris), `sonnet → standard` (the rest). `li
 
 Runner: `execFile` without a shell, 30 s timeout, stdin closed, capped buffer; any error → `unknown`.
 
+*Amended 2026-11-10 (user decision):* the help text quotes aliases as examples ("e.g."), not as the list, so `haiku` was missing. The Claude adapter now adds the family aliases Claude Code documents (`fable`, `opus`, `sonnet`, `haiku`), dated with the source in `CLAUDE_DOCUMENTED_ALIASES`. That is one harness's own names, not the cross-vendor table this change removes. When Claude Code's `availableModels` applies (managed settings incl. `managed-settings.d/`, else user settings; project files not read because the catalog is per machine; macOS preferences and the Windows registry not read), the list keeps the aliases it permits and adds the versions it names; only that key is read from the file. No source lists every version an account can use, so versions remain `other…`.
+
 The catalog lists aliases, not full model IDs: aliases always point at Claude's current model, so they are the stable choice. A full ID can still be typed in setup and is recorded `unverified`.
 
 ### D3. Catalog separate from choices

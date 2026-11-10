@@ -86,9 +86,24 @@ Incidental finding (out of scope, LOW): `add` run from a subfolder writes specia
 folder's `.claude/agents`, while model choices now come from the repository root. The placement
 predates this change; consider targeting the repository root in a later change.
 
+## 10. Setup interface (user feedback, 2026-11-10)
+
+- [x] 10.1 Rebuild `models setup` on `prompts` (already the install menu's dependency) instead of raw readline: select menus per level with the current value preselected, `other…` for a typed ID, an agent-override checklist, summary and save confirmation; Ctrl+C writes nothing. Verified by `test/models-command.test.js` (fake asker).
+- [x] 10.2 Offer the step in the interactive `install` after the harness menu when Claude Code is selected (Yes highlighted with no choices, No otherwise; cancel cancels the install); flag-driven and non-terminal installs never ask. Docs, README, release notes and spec updated.
+- [x] 10.4 Discovery adds the documented Claude aliases (`haiku` was missing: the help quotes examples) and honors `availableModels` from managed, else user, settings (design D2 amendment). Verified by `test/model-discovery.test.js` and a real `models refresh` (fable, opus, sonnet, haiku).
+- [x] 10.5 `other…` says "alias or full model ID"; values accept `[` `]` for `sonnet[1m]`-style aliases (still JSON-quoted when written). A per-name origin note in the menu was tried and removed at the user's request.
+- [ ] 10.3 Look at it in a real terminal (the user), including Windows redraw. Then rerun the full suite and the validators; the 9.4 reviews predate this edit, so re-review by Archie (command surface, D2 amendment) and Gard (discovery now reads Claude settings files: only `availableModels`, size-capped) before closing.
+
 ## Workflow follow-up
 
-- Run the orchestrate Integration Review before closing.
+- Run the orchestrate Integration Review before closing. Done 2026-11-10 (reading step, inline):
+  no contradiction between Archie and Gard (both converged on `projectRoot`); trade-offs
+  documented (frontmatter `effort` kept on documentation only, Codex effort fallback lost,
+  Windows shim timeout, alias-only `model` parameter in `docs/install.md`); end-to-end
+  covered by 9.1/9.2; scope proportionate. **Open gap:** this is HIGH (public contract), and
+  the orchestrate lifecycle has Spencer check documentary drift at HIGH; no Spencer check is
+  recorded. Run it before closing. Note: the installed `~/.claude/skills/orchestrate` still
+  holds the pre-change text until reinstall.
 - Ask before commit/push; open a PR from the feature branch.
 - Archive after review and merge; verify `openspec/specs/model-selection/spec.md` is created.
 - Open the follow-up change for Codex (role-file application via `codex debug models`), OpenCode and Copilot.

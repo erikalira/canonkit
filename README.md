@@ -71,8 +71,9 @@ Native Windows remains supported with partial protection: Claude's shell
 commands there have no OS sandbox. [Environment coverage](docs/install.md#native-security-per-repository).
 
 Agents run on your session's model until you choose otherwise. To pick the model
-and effort per need level from what your harness actually offers, run
-`npx canonkit models setup`, then `npx canonkit install --claude`. Codex, OpenCode
+and effort per need level from what your harness actually offers, answer Yes when
+the interactive `npx canonkit install` asks, or run `npx canonkit models setup`,
+then `npx canonkit install --claude`. Codex, OpenCode
 and Copilot inherit the session model for now. See [Choosing models](docs/install.md#choosing-models).
 
 **Check that it worked:**

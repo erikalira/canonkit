@@ -56,9 +56,17 @@ Discovery SHALL run only the harness's own read-only commands, only from `models
 - **WHEN** the person runs setup and picks a discovered Claude model and effort for `standard`
 - **THEN** the chosen values are saved for Claude Code's `standard` level
 
-#### Scenario: Effort not offered
-- **WHEN** the person picks an effort the discovery did not report
-- **THEN** setup rejects it and shows the reported efforts
+#### Scenario: Choices are menus of what was discovered
+- **WHEN** discovery reported models and efforts
+- **THEN** setup offers them, plus inherit, as selectable lists with the current value preselected, and a model outside the list only through an explicit "other" entry
+
+#### Scenario: Nothing is written before confirmation
+- **WHEN** the person cancels at any question or declines the final save
+- **THEN** the choices file is unchanged
+
+#### Scenario: Offered during the interactive install
+- **WHEN** the person runs `install` in a terminal without a harness flag and selects Claude Code
+- **THEN** install offers the setup step before writing agents, and a cancel there cancels the install; a flag-driven or non-terminal install never asks
 
 ### Requirement: Need levels are the recommended path
 Setup SHALL offer need-level assignment first and present per-agent overrides as optional. Reports MUST mark per-agent overrides distinctly from level assignments.

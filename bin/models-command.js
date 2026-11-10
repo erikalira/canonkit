@@ -12,12 +12,11 @@
  * harnesses inherit the session model until their adapters land, and show
  * says so rather than printing values nothing acts on.
  */
-import { createInterface } from "node:readline";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { HARNESSES, catalogPath, readCatalog, refreshCatalog } from "./model-discovery.js";
-import { APPLIED, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve } from "./model-config.js";
+import { APPLIED, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, VALUE } from "./model-config.js";
 
 const NEED_ORDER = ["deep", "standard", "light"];
 // The shape of `models show --json`. Bumped only when a field changes meaning;
@@ -109,7 +108,7 @@ async function refresh(ctx, { harnesses = HARNESSES, run, now, home, keepWithin 
     ctx.log(`would run model discovery for: ${harnesses.join(", ")} (not run in a dry run)`);
     return 0;
   }
-  const data = await refreshCatalog(harnesses, { run, now, file: catalogPath(home), keepWithin });
+  const data = await refreshCatalog(harnesses, { run, now, file: catalogPath(home), keepWithin, home });
   for (const harness of harnesses) {
     const h = data.harnesses[harness];
     if (h.status === "discovered") {
@@ -123,86 +122,117 @@ async function refresh(ctx, { harnesses = HARNESSES, run, now, home, keepWithin 
   return 0;
 }
 
+class Aborted extends Error {}
+
+// Menu values that are not model or effort names: VALUE (model-config.js)
+// refuses "<", so neither can collide with a real choice.
+const NONE = "<none>";
+const OTHER = "<other>";
+const VALUE_HINT = "letters, digits and . _ : / @ + - [ ] only";
+
 /**
- * A line reader over any stream: setup is driven by a person at a terminal,
- * and by scripted stdin in tests. null means the input ended.
+ * The default asker: the `prompts` package, loaded only when a person is
+ * answering, as the install menu does. `ask(question)` resolves to the answer,
+ * or undefined when the person pressed Ctrl+C or Esc; tests pass their own.
  */
-function lineReader(input, output) {
-  const rl = createInterface({ input, terminal: false });
-  const lines = [];
-  const waiting = [];
-  let closed = false;
-  rl.on("line", (line) => (waiting.length ? waiting.shift()(line) : lines.push(line)));
-  rl.on("close", () => {
-    closed = true;
-    while (waiting.length) waiting.shift()(null);
-  });
-  return {
-    ask(question) {
-      output.write(question);
-      if (lines.length) return Promise.resolve(lines.shift());
-      if (closed) return Promise.resolve(null);
-      return new Promise((r) => waiting.push(r));
-    },
-    close: () => rl.close(),
+async function promptsAsker() {
+  const { default: prompts } = await import("prompts");
+  return async (question) => {
+    let cancelled = false;
+    const answers = await prompts(question, { onCancel: () => { cancelled = true; return false; } });
+    return cancelled ? undefined : answers[question.name];
   };
 }
 
-class Aborted extends Error {}
+/** Wrap an asker so a cancelled question aborts the whole flow. */
+const strict = (ask) => async (question) => {
+  const answer = await ask(question);
+  if (answer === undefined) throw new Aborted();
+  return answer;
+};
+
+const summarize = (entry) => entry && (entry.model || entry.effort)
+  ? `${entry.model ?? "inherit"} · ${entry.effort ?? "inherit"}${entry.unverified ? " (unverified)" : ""}`
+  : "inherit";
 
 /**
- * Ask for one model and effort. Enter keeps the current value, "-" clears it
- * (inherit). A model outside the discovered list is accepted only after an
- * explicit yes and is recorded unverified; an effort outside the list is
- * refused and asked again. Returns the entry to store, or null for none.
+ * One select over a discovered list. The current value starts highlighted, so
+ * Enter keeps it; a current value the discovery does not list stays offered.
+ * `none` is the first row: "inherit" for a level, "same as the level" for an
+ * agent. `other` adds a free-text row (models only).
  */
-async function askEntry(io, log, label, current, offer) {
-  const read = async (q) => {
-    const answer = await io.ask(q);
-    if (answer === null) throw new Aborted();
-    return answer.trim();
-  };
-  const now = (v) => (v ? `current: ${v}` : "current: inherit");
-  const entry = { ...(current ?? {}) };
-  delete entry.unverified;
-  let unverified = current?.unverified === true;
-
-  const model = await read(`${label} model [${offer.models.join(", ") || "none discovered"}] (${now(current?.model)}; Enter keeps, - inherits): `);
-  if (model === "-") {
-    delete entry.model;
-    unverified = false;
-  } else if (model) {
-    if (offer.models.includes(model)) {
-      entry.model = model;
-      unverified = false;
-    } else {
-      const yes = await read(`  '${model}' is not in the discovered list. Record it as unverified? [y/N] `);
-      if (/^y(es)?$/i.test(yes)) {
-        entry.model = model;
-        unverified = true;
-      } else log("  kept the previous model");
-    }
+async function pick(ask, { name, message, offered, current, none, other }) {
+  const choices = [{ title: none.title, description: none.description, value: NONE }];
+  for (const v of offered) choices.push({ title: v, value: v });
+  if (current && !offered.includes(current)) choices.push({ title: current, description: "current; not in the latest discovery", value: current });
+  if (other) choices.push({ title: "other…", description: "alias or full model ID; recorded as unverified", value: OTHER });
+  const initial = Math.max(0, choices.findIndex((c) => c.value === (current ?? NONE)));
+  let value = await ask({ type: "select", name, message, choices, initial, hint: "↑↓ to move, enter to choose" });
+  if (value === OTHER) {
+    value = (await ask({
+      type: "text",
+      name: `${name}-other`,
+      message: `${message}: alias or full model ID (e.g. sonnet[1m], claude-opus-5-2)`,
+      validate: (v) => VALUE.test(v.trim()) || VALUE_HINT,
+    })).trim();
   }
+  return value === NONE ? undefined : value;
+}
 
-  for (;;) {
-    const effort = await read(`${label} effort [${offer.efforts.join(", ") || "none discovered"}] (${now(current?.effort)}; Enter keeps, - inherits): `);
-    if (effort === "-") delete entry.effort;
-    else if (effort) {
-      if (offer.efforts.length && !offer.efforts.includes(effort)) {
-        log(`  '${effort}' is not an effort Claude Code reported. Reported: ${offer.efforts.join(", ")}`);
-        continue;
-      }
-      entry.effort = effort;
-      // With no discovery to check against, a typed effort is unverified too.
-      if (!offer.efforts.length) unverified = true;
-    }
-    break;
+/**
+ * Ask for one model and effort. A value the discovery did not report (typed,
+ * or kept from before) marks the entry unverified. Returns the entry to store,
+ * or null for none.
+ */
+async function askEntry(ask, { key, label, current, offer, none }) {
+  const model = await pick(ask, {
+    name: `${key}-model`,
+    message: `${label} · model`,
+    offered: offer.models,
+    current: current?.model,
+    none: none.model,
+    other: true,
+  });
+  let effort;
+  if (offer.efforts.length) {
+    effort = await pick(ask, {
+      name: `${key}-effort`,
+      message: `${label} · effort`,
+      offered: offer.efforts,
+      current: current?.effort,
+      none: none.effort,
+    });
+  } else {
+    const typed = (await ask({
+      type: "text",
+      name: `${key}-effort`,
+      message: `${label} · effort (nothing discovered; empty for ${none.effort.title})`,
+      initial: current?.effort ?? "",
+      validate: (v) => !v.trim() || VALUE.test(v.trim()) || VALUE_HINT,
+    })).trim();
+    effort = typed || undefined;
   }
-  if (unverified && (entry.model !== undefined || entry.effort !== undefined)) entry.unverified = true;
+  const entry = {};
+  if (model !== undefined) entry.model = model;
+  if (effort !== undefined) entry.effort = effort;
+  const unlisted = (model !== undefined && !offer.models.includes(model)) || (effort !== undefined && !offer.efforts.includes(effort));
+  if (unlisted) entry.unverified = true;
   return Object.keys(entry).length ? entry : null;
 }
 
-async function setup(ctx, agents, { project = false, harnesses = ["claude"], input = process.stdin, output = process.stdout, isTTY = !!(process.stdin.isTTY && process.stdout.isTTY), run, now, home = os.homedir(), cwd = process.cwd() } = {}) {
+const LEVEL_NOTE = {
+  deep: "structural or irreversible decisions",
+  standard: "most work",
+  light: "mechanical passes with a verifiable result",
+};
+
+/**
+ * Choose Claude Code models: one select per need level, then an optional
+ * multiselect of agents to override, then a summary and a save confirmation.
+ * Nothing is written until that confirmation; Ctrl+C at any point writes
+ * nothing. `fromInstall` drops the closing "run install" hint.
+ */
+async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask, isTTY = !!(process.stdin.isTTY && process.stdout.isTTY), run, now, home = os.homedir(), cwd = process.cwd(), fromInstall = false } = {}) {
   let file = userConfigPath(home);
   if (project) {
     const root = await projectRoot(cwd, home);
@@ -212,7 +242,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], inp
   const unsupported = harnesses.filter((h) => !APPLIED.includes(h));
   if (unsupported.length) ctx.log(`${unsupported.map((h) => LABEL[h]).join(", ")}: model selection not yet supported; agents inherit the session model`);
   if (!harnesses.includes("claude")) return 0;
-  if (!isTTY) {
+  if (!isTTY && !ask) {
     throw new Error(`models setup needs a terminal. Without one, edit ${file} directly (format: docs/install.md, "Choosing models")`);
   }
   if (ctx.dryRun) {
@@ -221,49 +251,99 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], inp
   }
   // Read before discovery: an unsupported file stops here, before anything runs.
   const doc = await readChoices(file, { project });
-  const catalog = await refreshCatalog(["claude"], { run, now, file: catalogPath(home) });
+  const catalog = await refreshCatalog(["claude"], { run, now, file: catalogPath(home), home });
   const claude = catalog.harnesses.claude;
   const offer = claude.status === "discovered"
     ? { models: claude.models.map((m) => m.id), efforts: [...new Set(claude.models.flatMap((m) => m.efforts))] }
     : { models: [], efforts: [] };
-  const log = (m) => output.write(`${m}\n`);
-  if (claude.status !== "discovered") log(`Claude Code discovery: unknown — ${claude.reason}. Anything you type is recorded as unverified.`);
+  if (claude.status !== "discovered") ctx.log(`Claude Code discovery: unknown — ${claude.reason}. Anything you choose is recorded as unverified.`);
+  ask = strict(ask ?? await promptsAsker());
 
-  const io = lineReader(input, output);
   try {
-    log(`Choosing Claude Code models for ${project ? `this project (${file})` : `you (${file})`}.`);
-    log("Need levels first; each agent uses its level unless you override it.");
+    ctx.log(`Claude Code models for ${project ? "this project" : "you"} (${file})`);
+    ctx.log("Each agent uses its need level's choice; you can override single agents after.");
+    const inherit = { model: { title: "inherit", description: "the session's model" }, effort: { title: "inherit", description: "the session's effort" } };
     for (const need of NEED_ORDER) {
       const users = agents.filter((a) => a.need === need).map((a) => a.name);
-      const label = `${need} (${users.length ? users.join(", ") : "no agents today"})`;
-      const current = doc.harnesses?.claude?.levels?.[need];
-      setChoice(doc, "claude", "levels", need, await askEntry(io, log, label, current, offer));
+      const label = `${need} — ${users.length ? users.join(", ") : `no agent by default; ${LEVEL_NOTE[need]}`}`;
+      setChoice(doc, "claude", "levels", need, await askEntry(ask, { key: need, label, current: doc.harnesses?.claude?.levels?.[need], offer, none: inherit }));
     }
-    const names = agents.map((a) => a.name);
-    for (;;) {
-      const answer = await io.ask("Optional: override one agent (name, or Enter to finish): ");
-      if (answer === null) throw new Aborted();
-      const name = answer.trim();
-      if (!name) break;
-      if (!names.includes(name)) {
-        log(`  not an agent: ${name}. Agents: ${names.join(", ")}`);
+
+    const levels = doc.harnesses?.claude?.levels ?? {};
+    const overrides = doc.harnesses?.claude?.agents ?? {};
+    const chosen = await ask({
+      type: "multiselect",
+      name: "agents",
+      message: "Override single agents (optional)",
+      choices: agents.map((a) => ({
+        title: a.name,
+        description: overrides[a.name] ? `override: ${summarize(overrides[a.name])}` : `${a.need}: ${summarize(levels[a.need])}`,
+        value: a.name,
+        selected: !!overrides[a.name],
+      })),
+      hint: "space toggles, enter confirms; none selected = no overrides",
+      // Same reason as the install menu: the instruction block breaks redraw on Windows.
+      instructions: false,
+    });
+    for (const a of agents) {
+      if (!chosen.includes(a.name)) {
+        setChoice(doc, "claude", "agents", a.name, null);
         continue;
       }
-      const current = doc.harnesses?.claude?.agents?.[name];
-      setChoice(doc, "claude", "agents", name, await askEntry(io, log, `${name} override`, current, offer));
+      const lv = levels[a.need];
+      const same = { title: `same as ${a.need}`, description: summarize(lv) };
+      setChoice(doc, "claude", "agents", a.name, await askEntry(ask, {
+        key: a.name,
+        label: a.name,
+        current: overrides[a.name],
+        offer,
+        none: { model: { ...same, description: lv?.model ?? "inherit" }, effort: { ...same, description: lv?.effort ?? "inherit" } },
+      }));
+    }
+
+    for (const kind of ["levels", "agents"]) if (doc.harnesses?.claude?.[kind] && !Object.keys(doc.harnesses.claude[kind]).length) delete doc.harnesses.claude[kind];
+    if (doc.harnesses?.claude && !Object.keys(doc.harnesses.claude).length) delete doc.harnesses.claude;
+
+    ctx.log("");
+    for (const need of NEED_ORDER) ctx.log(`  ${need.padEnd(9)} ${summarize(doc.harnesses?.claude?.levels?.[need])}`);
+    for (const [name, entry] of Object.entries(doc.harnesses?.claude?.agents ?? {})) ctx.log(`  ${name.padEnd(9)} ${summarize(entry)} (override)`);
+    if (!(await ask({ type: "confirm", name: "save", message: `Save to ${file}?`, initial: true }))) {
+      ctx.log("Not saved; nothing changed.");
+      return 0;
     }
   } catch (err) {
-    if (err instanceof Aborted) throw new Error(`models setup: input ended before the questions did; nothing was written to ${file}`);
+    if (err instanceof Aborted) throw new Error(`models setup: cancelled; nothing was written to ${file}`);
     throw err;
-  } finally {
-    io.close();
   }
-  for (const kind of ["levels", "agents"]) if (doc.harnesses?.claude?.[kind] && !Object.keys(doc.harnesses.claude[kind]).length) delete doc.harnesses.claude[kind];
-  if (doc.harnesses?.claude && !Object.keys(doc.harnesses.claude).length) delete doc.harnesses.claude;
   await writeChoices(file, doc, { project });
   ctx.log(`Saved ${file}`);
-  ctx.log("Run npx canonkit install --claude to write the defaults into your agents; check with npx canonkit models show");
+  if (!fromInstall) ctx.log("Run npx canonkit install --claude to write the defaults into your agents; check with npx canonkit models show");
   return 0;
+}
+
+/**
+ * The model step of the interactive install: ask whether to choose (or
+ * change) Claude Code models, and run setup when the answer is yes. Returns
+ * false when the person cancelled, so install writes nothing.
+ */
+async function offerModelSetup(ctx, agents, { ask, home = os.homedir(), ...rest } = {}) {
+  ask = strict(ask ?? await promptsAsker());
+  const current = (await readChoices(userConfigPath(home))).harnesses?.claude;
+  const has = !!(current && (Object.keys(current.levels ?? {}).length || Object.keys(current.agents ?? {}).length));
+  try {
+    const go = await ask({
+      type: "confirm",
+      name: "models",
+      message: has ? "Change the models your Claude Code agents use?" : "Choose models for your Claude Code agents? (No: they run on the session's model)",
+      initial: !has,
+    });
+    if (!go) return true;
+    await setup(ctx, agents, { ...rest, home, ask, fromInstall: true });
+    return true;
+  } catch (err) {
+    if (err instanceof Aborted || /cancelled; nothing was written/.test(err.message)) return false;
+    throw err;
+  }
 }
 
 /**
@@ -346,4 +426,4 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
   return rows;
 }
 
-export { show, refresh, setup, effective, loadLayers, modelDiagnosis, STALE_DAYS, SHOW_VERSION };
+export { show, refresh, setup, offerModelSetup, effective, loadLayers, modelDiagnosis, STALE_DAYS, SHOW_VERSION };

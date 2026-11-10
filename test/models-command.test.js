@@ -2,13 +2,12 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, mkdir, writeFile, readFile, chmod } from "node:fs/promises";
 import { readFileSync, realpathSync, existsSync } from "node:fs";
-import { PassThrough, Writable } from "node:stream";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { show, refresh, setup, modelDiagnosis } from "../bin/models-command.js";
+import { show, refresh, setup, offerModelSetup, modelDiagnosis } from "../bin/models-command.js";
 import { readAgents } from "../bin/cli.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -42,15 +41,6 @@ async function scratch() {
   return { root, home, project, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
-/** Scripted stdin: each answer is one line; the stream ends after the last. */
-function scripted(answers) {
-  const input = new PassThrough();
-  input.end(answers.map((a) => `${a}\n`).join(""));
-  let out = "";
-  const output = new Writable({ write(chunk, _enc, cb) { out += chunk; cb(); } });
-  return { input, output, out: () => out };
-}
-
 const writeJson = async (file, data) => {
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, JSON.stringify(data));
@@ -67,7 +57,7 @@ describe("models refresh", () => {
       assert.equal(data.harnesses.claude.status, "discovered");
       for (const h of ["codex", "opencode", "copilot"]) assert.deepEqual([data.harnesses[h].status, data.harnesses[h].reason], ["unknown", "not yet supported"]);
       assert.deepEqual(calls, ["claude --version", "claude --help"]);
-      assert.match(text(), /Claude Code: fable, opus, sonnet; efforts low, medium, high, xhigh, max/);
+      assert.match(text(), /Claude Code: fable, opus, sonnet, haiku; efforts low, medium, high, xhigh, max/);
       assert.match(text(), /Codex: unknown — not yet supported; its agents inherit the session model/);
     } finally {
       await s.cleanup();
@@ -167,53 +157,115 @@ describe("models show", () => {
 });
 
 describe("models setup", () => {
-  const base = (s, answers, extra = {}) => {
-    const io = scripted(answers);
+  /**
+   * A stand-in for the prompts asker. `answers` maps a question name to its
+   * answer; a question without one takes its default (the highlighted row,
+   * the preselected agents, the confirm's initial), which is what Enter does.
+   * `cancelAt` names the question where the person presses Ctrl+C.
+   */
+  const asker = (answers = {}, { cancelAt } = {}) => {
+    const asked = [];
+    const ask = async (q) => {
+      asked.push(q);
+      if (q.name === cancelAt) return undefined;
+      if (Object.hasOwn(answers, q.name)) return answers[q.name];
+      if (q.type === "select") return q.choices[q.initial].value;
+      if (q.type === "multiselect") return q.choices.filter((c) => c.selected).map((c) => c.value);
+      if (q.type === "confirm") return q.initial;
+      if (q.type === "text") return q.initial ?? "";
+      throw new Error(`unexpected question ${q.name}`);
+    };
+    return { ask, asked, q: (name) => asked.find((x) => x.name === name) };
+  };
+  const base = (s, answers, extra = {}, more = {}) => {
+    const a = asker(answers, more);
     const { run, calls } = claudeRunner();
-    return { io, calls, opts: { input: io.input, output: io.output, isTTY: true, run, now: NOW, home: s.home, cwd: s.project, ...extra } };
+    return { ...a, calls, opts: { ask: a.ask, run, now: NOW, home: s.home, cwd: s.project, ...extra } };
   };
   const userFile = (s) => path.join(s.home, ".canonkit", "models.json");
 
-  test("levels first, then an optional agent override; discovery runs first", async () => {
+  test("levels from discovered lists, then an agent override; discovery runs first", async () => {
     const s = await scratch();
     try {
-      // deep: opus/high; standard: sonnet/medium; light: keep; override quinn effort only.
-      const { io, calls, opts } = base(s, ["opus", "high", "sonnet", "medium", "", "", "quinn", "", "xhigh", ""]);
+      const { calls, opts, q } = base(s, {
+        "deep-model": "opus", "deep-effort": "high",
+        "standard-model": "sonnet", "standard-effort": "medium",
+        agents: ["quinn"], "quinn-effort": "xhigh",
+      });
       assert.equal(await setup(capture().ctx, agents, opts), 0);
       assert.deepEqual(calls, ["claude --version", "claude --help"]);
       assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")), { version: 1, harnesses: { claude: {
         levels: { deep: { model: "opus", effort: "high" }, standard: { model: "sonnet", effort: "medium" } },
         agents: { quinn: { effort: "xhigh" } },
       } } });
-      assert.match(io.out(), /deep \(archie, iris\) model \[fable, opus, sonnet\]/);
-      assert.match(io.out(), /light \(no agents today\) model/);
+      // Menus, not typed text: inherit first, then the discovered aliases, then "other…".
+      assert.deepEqual(q("deep-model").choices.map((c) => c.value), ["<none>", "fable", "opus", "sonnet", "haiku", "<other>"]);
+      assert.deepEqual(q("deep-effort").choices.map((c) => c.value), ["<none>", "low", "medium", "high", "xhigh", "max"]);
+      assert.match(q("deep-model").message, /^deep — archie, iris · model$/);
+      assert.match(q("light-model").message, /light — no agent by default/);
+      assert.equal(q("quinn-model").choices[0].title, "same as standard");
+      assert.match(q("agents").choices.find((c) => c.value === "quinn").description, /^standard: sonnet · medium$/);
     } finally {
       await s.cleanup();
     }
   });
 
-  test("an effort not offered is rejected with the reported list, then asked again", async () => {
+  test("the current value starts highlighted, so Enter keeps it; inherit clears it", async () => {
     const s = await scratch();
     try {
-      const { io, opts } = base(s, ["opus", "turbo", "high", "", "", "", "", ""]);
+      const file = path.join(s.project, ".canonkit", "models.json");
+      await writeJson(file, { version: 1, note: "kept", harnesses: { claude: { levels: { deep: { model: "opus", effort: "high" } }, agents: { quinn: { effort: "max" } } } } });
+      const { opts, q } = base(s, { "deep-effort": "<none>" }, { project: true });
       await setup(capture().ctx, agents, opts);
-      assert.match(io.out(), /'turbo' is not an effort Claude Code reported\. Reported: low, medium, high, xhigh, max/);
-      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.claude.levels, { deep: { model: "opus", effort: "high" } });
+      assert.equal(q("deep-model").choices[q("deep-model").initial].value, "opus");
+      // quinn's override was preselected and kept by Enter.
+      assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, note: "kept", harnesses: { claude: { levels: { deep: { model: "opus" } }, agents: { quinn: { effort: "max" } } } } });
+      assert.equal(existsSync(userFile(s)), false);
     } finally {
       await s.cleanup();
     }
   });
 
-  test("a model outside the list needs an explicit yes and is recorded unverified", async () => {
+  test("deselecting an agent removes its override", async () => {
     const s = await scratch();
     try {
-      const declined = base(s, ["claude-x-1", "n", "", "", "", "", "", ""]);
-      await setup(capture().ctx, agents, declined.opts);
-      assert.equal(existsSync(userFile(s)), true);
+      await writeJson(userFile(s), { version: 1, harnesses: { claude: { agents: { quinn: { effort: "max" } } } } });
+      const { opts } = base(s, { agents: [] });
+      await setup(capture().ctx, agents, opts);
       assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses, {});
-      const accepted = base(s, ["claude-x-1", "y", "", "", "", "", "", ""]);
-      await setup(capture().ctx, agents, accepted.opts);
-      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.claude.levels.deep, { model: "claude-x-1", unverified: true });
+    } finally {
+      await s.cleanup();
+    }
+  });
+
+  test("\"other…\" takes a typed alias or model ID, validated and recorded unverified", async () => {
+    const s = await scratch();
+    try {
+      const { opts, q } = base(s, { "deep-model": "<other>", "deep-model-other": "claude-x-1", "standard-model": "<other>", "standard-model-other": "sonnet[1m]" });
+      await setup(capture().ctx, agents, opts);
+      assert.match(q("deep-model").choices.at(-1).description, /^alias or full model ID; recorded as unverified$/);
+      assert.equal(q("deep-model-other").validate("bad name!"), "letters, digits and . _ : / @ + - [ ] only");
+      assert.equal(q("deep-model-other").validate("claude-x-1"), true);
+      const levels = JSON.parse(await readFile(userFile(s), "utf8")).harnesses.claude.levels;
+      assert.deepEqual(levels.deep, { model: "claude-x-1", unverified: true });
+      assert.deepEqual(levels.standard, { model: "sonnet[1m]", unverified: true });
+    } finally {
+      await s.cleanup();
+    }
+  });
+
+  test("declining the save, or Ctrl+C anywhere, writes nothing", async () => {
+    const s = await scratch();
+    try {
+      const declined = base(s, { "deep-model": "opus", save: false });
+      const c = capture();
+      assert.equal(await setup(c.ctx, agents, declined.opts), 0);
+      assert.match(c.text(), /deep +opus · inherit/);
+      assert.match(c.text(), /Not saved; nothing changed\./);
+      assert.equal(existsSync(userFile(s)), false);
+      const cancelled = base(s, { "deep-model": "opus" }, {}, { cancelAt: "standard-effort" });
+      await assert.rejects(setup(capture().ctx, agents, cancelled.opts), /cancelled; nothing was written/);
+      assert.equal(existsSync(userFile(s)), false);
     } finally {
       await s.cleanup();
     }
@@ -226,43 +278,26 @@ describe("models setup", () => {
       await writeFile(path.join(s.project, ".git", "HEAD"), "ref: refs/heads/main\n");
       const sub = path.join(s.project, "src");
       await mkdir(sub);
-      const { opts } = base(s, ["sonnet", "", "", "", "", "", ""], { project: true, cwd: sub });
+      const { opts } = base(s, { "deep-model": "sonnet" }, { project: true, cwd: sub });
       await setup(capture().ctx, agents, opts);
       assert.equal(existsSync(path.join(sub, ".canonkit")), false);
       assert.equal(JSON.parse(await readFile(path.join(s.project, ".canonkit", "models.json"), "utf8")).harnesses.claude.levels.deep.model, "sonnet");
       const c = capture();
       await show(c.ctx, agents, { json: true, home: s.home, cwd: sub });
       assert.equal(JSON.parse(c.text()).project, s.project);
-      const home = base(s, [], { project: true, cwd: s.home });
+      const home = base(s, {}, { project: true, cwd: s.home });
       await assert.rejects(setup(capture().ctx, agents, home.opts), /no project here/);
     } finally {
       await s.cleanup();
     }
   });
 
-  test("--project writes the project file; Enter keeps and - clears a current value", async () => {
+  test("no terminal is refused before anything runs", async () => {
     const s = await scratch();
     try {
-      const file = path.join(s.project, ".canonkit", "models.json");
-      await writeJson(file, { version: 1, note: "kept", harnesses: { claude: { levels: { deep: { model: "opus", effort: "high" } } } } });
-      const { opts } = base(s, ["", "-", "", "", "", "", ""], { project: true });
-      await setup(capture().ctx, agents, opts);
-      assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, note: "kept", harnesses: { claude: { levels: { deep: { model: "opus" } } } } });
-      assert.equal(existsSync(userFile(s)), false);
-    } finally {
-      await s.cleanup();
-    }
-  });
-
-  test("input that ends early writes nothing; no terminal is refused", async () => {
-    const s = await scratch();
-    try {
-      const { opts } = base(s, ["opus"]);
-      await assert.rejects(setup(capture().ctx, agents, opts), /input ended before the questions did; nothing was written/);
-      assert.equal(existsSync(userFile(s)), false);
-      const notty = base(s, []);
-      await assert.rejects(setup(capture().ctx, agents, { ...notty.opts, isTTY: false }), /models setup needs a terminal\. Without one, edit .*models\.json directly/);
-      assert.deepEqual(notty.calls, []);
+      const { calls, opts } = base(s, {});
+      await assert.rejects(setup(capture().ctx, agents, { ...opts, ask: undefined, isTTY: false }), /models setup needs a terminal\. Without one, edit .*models\.json directly/);
+      assert.deepEqual(calls, []);
     } finally {
       await s.cleanup();
     }
@@ -272,16 +307,74 @@ describe("models setup", () => {
     const s = await scratch();
     try {
       const { ctx, text } = capture();
-      const { calls, opts } = base(s, []);
+      const { calls, opts, asked } = base(s, {});
       assert.equal(await setup(ctx, agents, { ...opts, harnesses: ["codex"] }), 0);
       assert.match(text(), /Codex: model selection not yet supported; agents inherit the session model/);
       assert.deepEqual(calls, []);
+      assert.deepEqual(asked, []);
     } finally {
       await s.cleanup();
     }
   });
 });
 
+describe("models step of the interactive install", () => {
+  const userFile = (s) => path.join(s.home, ".canonkit", "models.json");
+  const fake = (answers, cancelAt) => {
+    const asked = [];
+    return { asked, ask: async (q) => {
+      asked.push(q);
+      if (q.name === cancelAt) return undefined;
+      if (Object.hasOwn(answers, q.name)) return answers[q.name];
+      if (q.type === "select") return q.choices[q.initial].value;
+      if (q.type === "multiselect") return q.choices.filter((c) => c.selected).map((c) => c.value);
+      return q.initial;
+    } };
+  };
+
+  test("first install offers the step with Yes highlighted, and saves without the install hint", async () => {
+    const s = await scratch();
+    try {
+      const { run } = claudeRunner();
+      const f = fake({ "deep-model": "opus" });
+      const c = capture();
+      assert.equal(await offerModelSetup(c.ctx, agents, { ask: f.ask, run, now: NOW, home: s.home, cwd: s.project }), true);
+      assert.equal(f.asked[0].initial, true);
+      assert.match(f.asked[0].message, /No: they run on the session's model/);
+      assert.equal(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.claude.levels.deep.model, "opus");
+      assert.doesNotMatch(c.text(), /Run npx canonkit install/);
+    } finally {
+      await s.cleanup();
+    }
+  });
+
+  test("with choices already saved, No is highlighted and Enter skips the step", async () => {
+    const s = await scratch();
+    try {
+      await writeJson(userFile(s), { version: 1, harnesses: { claude: { levels: { deep: { model: "opus" } } } } });
+      const { run, calls } = claudeRunner();
+      const f = fake({});
+      assert.equal(await offerModelSetup(capture().ctx, agents, { ask: f.ask, run, home: s.home, cwd: s.project }), true);
+      assert.equal(f.asked.length, 1);
+      assert.match(f.asked[0].message, /^Change the models/);
+      assert.deepEqual(calls, []);
+    } finally {
+      await s.cleanup();
+    }
+  });
+
+  test("Ctrl+C at the question or inside setup cancels the install", async () => {
+    const s = await scratch();
+    try {
+      const { run } = claudeRunner();
+      assert.equal(await offerModelSetup(capture().ctx, agents, { ask: fake({}, "models").ask, run, home: s.home, cwd: s.project }), false);
+      assert.equal(await offerModelSetup(capture().ctx, agents, { ask: fake({}, "deep-effort").ask, run, now: NOW, home: s.home, cwd: s.project }), false);
+      assert.equal(existsSync(userFile(s)), false);
+    } finally {
+      await s.cleanup();
+    }
+  });
+});
 describe("doctor model checks", () => {
   const catalog = (discoveredAt, models = ["fable", "opus", "sonnet"]) => ({ version: 1, harnesses: { claude: {
     status: "discovered", discoveredAt, harnessVersion: "2.1.322", source: "claude --help", confidence: "help-text",

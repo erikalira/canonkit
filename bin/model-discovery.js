@@ -18,7 +18,7 @@
  *     is advice, and a harness that cannot answer falls back to inherit.
  */
 import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { realpathSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { resolveBin, runBin } from "./exec.js";
@@ -31,6 +31,8 @@ const RUN_MAX_BUFFER = 1024 * 1024;
 // A model alias or effort as a harness prints it. Anything else in help text
 // is prose, not an option, and is not recorded.
 const TOKEN = /^[a-z][a-z0-9._-]{0,63}$/;
+// A value from a settings file, same rule as model-config.js VALUE.
+const VALUE_ID = /^[A-Za-z0-9][A-Za-z0-9._:/@+\[\]-]{0,127}$/;
 
 const catalogPath = (home = os.homedir()) => path.join(home, ".canonkit", "model-catalog.json");
 
@@ -121,10 +123,79 @@ function parseClaudeHelp(help) {
   return { status: "discovered", models: aliases.map((id) => ({ id, efforts: [...efforts] })) };
 }
 
+/**
+ * The help text quotes aliases as examples ("e.g. 'fable', 'opus', or
+ * 'sonnet'"), not as the full list. These are the family aliases Claude Code
+ * documents and the Agent tool's `model` parameter accepts. One harness's own
+ * names, not a cross-vendor mapping (ADR 0006). Source:
+ * https://code.claude.com/docs/en/model-config, checked 2026-11-10.
+ * Left out: `default` (= inherit), `best` (= opus), `opusplan` (switches by
+ * plan mode, meaningless for a subagent) and `[1m]` variants.
+ */
+const CLAUDE_DOCUMENTED_ALIASES = ["fable", "opus", "sonnet", "haiku"];
+const SETTINGS_MAX = 1024 * 1024;
+
+/** One settings file's `availableModels`, or undefined. Only that key is kept. */
+function availableModelsIn(file) {
+  try {
+    const st = statSync(file);
+    if (!st.isFile() || st.size > SETTINGS_MAX) return undefined;
+    const list = JSON.parse(readFileSync(file, "utf8"))?.availableModels;
+    return Array.isArray(list) ? list.filter((v) => typeof v === "string" && VALUE_ID.test(v)) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function managedDir(platform) {
+  if (platform === "win32") return "C:\\Program Files\\ClaudeCode";
+  if (platform === "darwin") return "/Library/Application Support/ClaudeCode";
+  return "/etc/claude-code";
+}
+
+/**
+ * Claude Code's `availableModels`, as it would apply outside any project: a
+ * managed list (managed-settings.json, then managed-settings.d/*.json in
+ * alphabetical order, the last that sets it) replaces everything; otherwise
+ * the user's list. Project lists are not read: the catalog is per machine.
+ * Not read: the macOS managed-preferences domain and the Windows registry
+ * policy. Source: https://code.claude.com/docs/en/settings,
+ * https://code.claude.com/docs/en/managed-settings, checked 2026-11-10.
+ */
+function claudeModelPolicy({ home = os.homedir(), platform = process.platform, managed = managedDir(platform) } = {}) {
+  let list;
+  const files = [path.join(managed, "managed-settings.json")];
+  try {
+    const dir = path.join(managed, "managed-settings.d");
+    for (const f of readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith(".")).sort()) files.push(path.join(dir, f));
+  } catch {
+    // no drop-in directory
+  }
+  for (const f of files) {
+    const found = availableModelsIn(f);
+    if (found !== undefined) list = { models: found, source: "managed settings" };
+  }
+  if (list) return list;
+  const user = availableModelsIn(path.join(home, ".claude", "settings.json"));
+  return user !== undefined ? { models: user, source: "user settings" } : null;
+}
+
+/**
+ * The alias list, narrowed by an `availableModels` policy when one applies.
+ * An alias stays when the policy names it or a version of its family
+ * (`claude-opus-…`); entries that are versions are offered as they are.
+ */
+function applyClaudePolicy(aliases, efforts, policy) {
+  if (!policy) return aliases.map((id) => ({ id, efforts: [...efforts] }));
+  const allowed = aliases.filter((a) => policy.models.some((m) => m === a || m.startsWith(`claude-${a}-`)));
+  const versions = policy.models.filter((m) => !aliases.includes(m));
+  return [...allowed, ...versions].map((id) => ({ id, efforts: [...efforts] }));
+}
+
 const ADAPTERS = {
   claude: {
     harness: "claude",
-    discover(run) {
+    discover(run, { policy = () => claudeModelPolicy() } = {}) {
       const version = run("claude", ["--version"]);
       const versionProblem = failure("claude --version", version);
       if (versionProblem) return unknown(versionProblem);
@@ -134,7 +205,18 @@ const ADAPTERS = {
       const parsed = parseClaudeHelp(help.stdout);
       if (parsed.status !== "discovered") return parsed;
       const m = /\d+\.\d+\.\d+/.exec(version.stdout);
-      return { ...parsed, harnessVersion: m ? m[0] : null, source: "claude --help", confidence: "help-text" };
+      const efforts = parsed.models[0].efforts;
+      const aliases = [...new Set([...parsed.models.map((x) => x.id), ...CLAUDE_DOCUMENTED_ALIASES])];
+      const rule = policy();
+      const models = applyClaudePolicy(aliases, efforts, rule);
+      if (!models.length) return unknown(`availableModels in ${rule.source} permits none of the known aliases`);
+      return {
+        status: "discovered",
+        models,
+        harnessVersion: m ? m[0] : null,
+        source: rule ? `claude --help + documented aliases, narrowed by availableModels (${rule.source})` : "claude --help + documented aliases",
+        confidence: "help-text",
+      };
     },
   },
   // Not yet supported: no process is started. The follow-up change fills these
@@ -145,12 +227,12 @@ const ADAPTERS = {
 };
 
 /** Ask each named harness; never throws for a harness that cannot answer. */
-function discover(harnesses, { run, now = new Date() } = {}) {
+function discover(harnesses, { run, now = new Date(), policy } = {}) {
   const out = {};
   for (const name of harnesses) {
     let entry;
     try {
-      entry = ADAPTERS[name] ? ADAPTERS[name].discover(run) : unknown("no adapter");
+      entry = ADAPTERS[name] ? ADAPTERS[name].discover(run, policy ? { policy } : {}) : unknown("no adapter");
     } catch (err) {
       entry = unknown(`discovery failed: ${err.message}`);
     }
@@ -219,11 +301,11 @@ async function writeCatalog(fresh, file = catalogPath(), { keepWithin = 0, now =
 }
 
 /** Discover and store in one step: what `models refresh` and install run. */
-async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0 } = {}) {
+async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0, home, policy = home ? () => claudeModelPolicy({ home }) : undefined } = {}) {
   // Only harnesses with a working adapter need a process; skip the repository
   // walk when none will start one.
   const runner = run ?? (harnesses.some((h) => h === "claude") ? await trustedRunner() : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
-  return writeCatalog(discover(harnesses, { run: runner, now }), file, { keepWithin, now });
+  return writeCatalog(discover(harnesses, { run: runner, now, policy }), file, { keepWithin, now });
 }
 
-export { HARNESSES, ADAPTERS, CATALOG_VERSION, catalogPath, systemRunner, trustedRunner, parseClaudeHelp, discover, readCatalog, writeCatalog, refreshCatalog };
+export { HARNESSES, ADAPTERS, CATALOG_VERSION, CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy, applyClaudePolicy, catalogPath, systemRunner, trustedRunner, parseClaudeHelp, discover, readCatalog, writeCatalog, refreshCatalog };

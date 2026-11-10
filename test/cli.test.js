@@ -3308,7 +3308,7 @@ describe("model choices", () => {
     const startsBefore = starts().length;
     const after = run(["doctor"], { home, env });
     assert.equal(after.status, before.status, after.out);
-    assert.match(after.out, /^WARN models: Claude Code user level deep: model 'gone-model' is not in the latest discovery \(fable, opus, sonnet\) — affects agents archie, iris; if Claude Code rejects it they fall back to inherit$/m);
+    assert.match(after.out, /^WARN models: Claude Code user level deep: model 'gone-model' is not in the latest discovery \(fable, opus, sonnet, haiku\) — affects agents archie, iris; if Claude Code rejects it they fall back to inherit$/m);
     // doctor's security check may ask `claude --version`; discovery's `--help` must not run.
     assert.ok(!starts().slice(startsBefore).includes("--help"), starts().slice(startsBefore).join(","));
   });

@@ -6,7 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { ADAPTERS, discover, parseClaudeHelp, readCatalog, writeCatalog, refreshCatalog, systemRunner, trustedRunner } from "../bin/model-discovery.js";
+import { ADAPTERS, discover, parseClaudeHelp, readCatalog, writeCatalog, refreshCatalog, systemRunner, trustedRunner, claudeModelPolicy, applyClaudePolicy } from "../bin/model-discovery.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const HELP = readFileSync(path.join(REPO, "test", "fixtures", "claude", "help-2.1.322.txt"), "utf8");
@@ -32,11 +32,12 @@ async function tempDir() {
 describe("claude adapter", () => {
   test("reads aliases and efforts from the captured help text", () => {
     const { run, calls } = claudeOk();
-    assert.deepEqual(ADAPTERS.claude.discover(run), {
+    assert.deepEqual(ADAPTERS.claude.discover(run, { policy: () => null }), {
       status: "discovered",
-      models: ["fable", "opus", "sonnet"].map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })),
+      // The help quotes three examples; haiku comes from the documented aliases.
+      models: ["fable", "opus", "sonnet", "haiku"].map((id) => ({ id, efforts: ["low", "medium", "high", "xhigh", "max"] })),
       harnessVersion: "2.1.322",
-      source: "claude --help",
+      source: "claude --help + documented aliases",
       confidence: "help-text",
     });
     assert.deepEqual(calls, ["claude --version", "claude --help"]);
@@ -88,7 +89,7 @@ describe("unsupported harnesses", () => {
 describe("discover and the catalog", () => {
   test("records each harness with the discovery time; an adapter that throws is unknown", () => {
     const { run } = claudeOk();
-    const out = discover(["claude", "codex", "nonesuch"], { run, now: NOW });
+    const out = discover(["claude", "codex", "nonesuch"], { run, now: NOW, policy: () => null });
     assert.equal(out.claude.status, "discovered");
     assert.equal(out.claude.discoveredAt, NOW.toISOString());
     assert.deepEqual(out.codex, { status: "unknown", reason: "not yet supported", discoveredAt: NOW.toISOString() });
@@ -101,7 +102,7 @@ describe("discover and the catalog", () => {
     const dir = await tempDir();
     try {
       const file = path.join(dir, ".canonkit", "model-catalog.json");
-      await refreshCatalog(["claude", "codex", "opencode", "copilot"], { run: claudeOk().run, now: NOW, file });
+      await refreshCatalog(["claude", "codex", "opencode", "copilot"], { run: claudeOk().run, now: NOW, file, policy: () => null });
       const later = new Date("2026-11-11T12:00:00.000Z");
       await refreshCatalog(["claude"], { run: stub({}).run, now: later, file });
       const data = JSON.parse(await readFile(file, "utf8"));
@@ -119,10 +120,10 @@ describe("discover and the catalog", () => {
     const dir = await tempDir();
     try {
       const file = path.join(dir, "model-catalog.json");
-      await refreshCatalog(["claude", "codex"], { run: claudeOk().run, now: NOW, file });
+      await refreshCatalog(["claude", "codex"], { run: claudeOk().run, now: NOW, file, policy: () => null });
       const before = await readFile(file, "utf8");
       const soon = new Date(NOW.getTime() + 60_000);
-      await refreshCatalog(["claude", "codex"], { run: claudeOk().run, now: soon, file, keepWithin: 86_400_000 });
+      await refreshCatalog(["claude", "codex"], { run: claudeOk().run, now: soon, file, keepWithin: 86_400_000, policy: () => null });
       assert.equal(await readFile(file, "utf8"), before, "unchanged within the window");
       await refreshCatalog(["claude"], { run: stub({}).run, now: soon, file, keepWithin: 86_400_000 });
       assert.equal((await readCatalog(file)).harnesses.claude.status, "unknown", "a changed answer is written");
@@ -235,5 +236,48 @@ describe("system runner", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("claude availableModels", () => {
+  const E = ["low", "medium", "high", "xhigh", "max"];
+  const ALIASES = ["fable", "opus", "sonnet", "haiku"];
+  const ids = (models) => models.map((m) => m.id);
+
+  test("no policy offers every alias; a policy keeps named aliases, families of named versions, and the versions", () => {
+    assert.deepEqual(ids(applyClaudePolicy(ALIASES, E, null)), ALIASES);
+    assert.deepEqual(ids(applyClaudePolicy(ALIASES, E, { models: ["sonnet", "haiku"] })), ["sonnet", "haiku"]);
+    assert.deepEqual(ids(applyClaudePolicy(ALIASES, E, { models: ["sonnet", "claude-opus-5-2"] })), ["opus", "sonnet", "claude-opus-5-2"]);
+    assert.deepEqual(ids(applyClaudePolicy(ALIASES, E, { models: ["sonnet[1m]"] })), ["sonnet[1m]"]);
+  });
+
+  test("managed settings (file, then drop-ins in order) replace the user's list", async () => {
+    const root = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-policy-")));
+    try {
+      const home = path.join(root, "home");
+      const managed = path.join(root, "managed");
+      const put = async (file, data) => { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, typeof data === "string" ? data : JSON.stringify(data)); };
+      assert.equal(claudeModelPolicy({ home, managed }), null);
+      await put(path.join(home, ".claude", "settings.json"), { env: { SECRET: "x" }, availableModels: ["sonnet", "bad name!"] });
+      // Only valid names are kept, and nothing else from the file.
+      assert.deepEqual(claudeModelPolicy({ home, managed }), { models: ["sonnet"], source: "user settings" });
+      await put(path.join(managed, "managed-settings.json"), { availableModels: ["opus"] });
+      await put(path.join(managed, "managed-settings.d", "20-team.json"), { availableModels: ["haiku"] });
+      await put(path.join(managed, "managed-settings.d", "10-base.json"), { other: true });
+      await put(path.join(managed, "managed-settings.d", "30-broken.json"), "{ not json");
+      assert.deepEqual(claudeModelPolicy({ home, managed }), { models: ["haiku"], source: "managed settings" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("discovery records the narrowed list and says why; a policy permitting nothing is unknown", () => {
+    const { run } = claudeOk();
+    const narrowed = ADAPTERS.claude.discover(run, { policy: () => ({ models: ["sonnet"], source: "user settings" }) });
+    assert.deepEqual(ids(narrowed.models), ["sonnet"]);
+    assert.match(narrowed.source, /narrowed by availableModels \(user settings\)/);
+    assert.deepEqual(ADAPTERS.claude.discover(run, { policy: () => ({ models: [], source: "managed settings" }) }), {
+      status: "unknown", reason: "availableModels in managed settings permits none of the known aliases",
+    });
   });
 });

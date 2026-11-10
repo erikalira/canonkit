@@ -436,7 +436,13 @@ npx canonkit install --claude          # write the user-level defaults into ~/.c
 **Discovery.** `models refresh` runs the harness's own read-only commands and
 records the answer in `~/.canonkit/model-catalog.json`, a cache on this machine.
 For Claude Code it runs `claude --version` and `claude --help`, and reads the model
-aliases and effort levels the help text lists. That text is not a contract, so the
+aliases and effort levels the help text lists. The help quotes only example aliases,
+so the list adds the family aliases Claude Code documents (`fable`, `opus`,
+`sonnet`, `haiku`; the ones its Agent tool accepts). When Claude Code's
+`availableModels` applies (managed settings, else your `~/.claude/settings.json`;
+only that key is read), the list keeps the aliases it permits and adds the
+versions it names. Claude Code has no command that lists every version your account
+can use, so other versions go through `other…`. That text is not a contract, so the
 record says `confidence: "help-text"`, and anything it does not recognize becomes
 `unknown` with the reason, never an error. The binary is looked up on PATH outside
 the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
@@ -447,11 +453,23 @@ leaves a record that is under a day old and unchanged as it is, so reinstalling
 rewrites nothing. `models show` and `doctor` only read files, and a dry run starts
 nothing.
 
-**Setup.** `models setup` needs a terminal. It asks for each need level first, then
-offers per-agent overrides. Enter keeps the current value and `-` clears it. An
-effort the harness did not report is refused, with the list. A model outside the
-list (a full model ID, say) is recorded only after you confirm it, and marked
-`"unverified": true`. Without a terminal, edit the file directly:
+**Setup.** `models setup` needs a terminal. For each need level it shows two menus,
+model and effort, listing what the harness reported plus `inherit`; the current
+value starts highlighted, so Enter keeps it. Then a checklist of agents to
+override (agents that already have an override start checked; unchecking one
+removes it), a summary, and a save confirmation. Nothing is written before that
+confirmation, and Ctrl+C at any point writes nothing. A model outside the list (a
+newer alias, `sonnet[1m]`, or a full model ID such as `claude-opus-5-2`) goes
+through `other…` and is marked `"unverified": true`. The Agent tool's `model`
+parameter takes only the listed aliases, so such a value reaches an agent through
+its installed frontmatter (your user choices), not through a dispatch.
+
+The interactive `install` (no harness flag, in a terminal) offers the same step
+right after the harness menu when Claude Code is selected, so the agents are
+written with the choices just made: Yes is highlighted on a first install, No
+once you have choices. A flag-driven or scripted install never asks.
+
+Without a terminal, edit the file directly:
 
 ```json
 {

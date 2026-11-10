@@ -31,7 +31,7 @@ import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } fro
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
-import { show as showModels, refresh as refreshModels, setup as setupModels, modelDiagnosis } from "./models-command.js";
+import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
 import { HARNESSES as DISCOVERABLE } from "./model-discovery.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
@@ -3209,8 +3209,11 @@ async function main(argv) {
 
   switch (command) {
     case "install": {
+      // The menu (no harness flag, a terminal) also offers the model step, so
+      // the agents are written with the choices made a moment ago.
+      const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && !!(process.stdin.isTTY && process.stdout.isTTY);
       const targets = await chooseTargets(flags);
-      if (!targets) {
+      if (!targets || (menu && !ctx.dryRun && targets.includes("claude") && !(await offerModelSetup(ctx, await readAgents())))) {
         console.error("Cancelled: nothing was installed.");
         return 1;
       }

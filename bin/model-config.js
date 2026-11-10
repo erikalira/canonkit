@@ -57,7 +57,9 @@ const FIELDS = ["model", "effort"];
 // A model or effort is passed to a harness as a parameter and written into
 // generated files. It is serialized safely there; this keeps it a short,
 // printable string so a cloned project's file cannot smuggle structure in.
-const VALUE = /^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}$/;
+// Brackets are allowed for Claude Code's `[1m]` suffix (`sonnet[1m]`); the
+// value is always written JSON-quoted, never raw.
+const VALUE = /^[A-Za-z0-9][A-Za-z0-9._:/@+\[\]-]{0,127}$/;
 const NAME = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 const userConfigPath = (home = os.homedir()) => path.join(home, ".canonkit", "models.json");
@@ -69,7 +71,7 @@ function checkEntry(file, where, entry) {
   if (typeof entry !== "object" || entry === null || Array.isArray(entry)) throw new Error(`${file}: ${where} must be an object`);
   for (const field of FIELDS) {
     if (entry[field] !== undefined && (typeof entry[field] !== "string" || !VALUE.test(entry[field]))) {
-      throw new Error(`${file}: ${where}.${field} must be a model or effort name (letters, digits and . _ : / @ + -)`);
+      throw new Error(`${file}: ${where}.${field} must be a model or effort name (letters, digits and . _ : / @ + - [ ])`);
     }
   }
   if (entry.unverified !== undefined && typeof entry.unverified !== "boolean") throw new Error(`${file}: ${where}.unverified must be true or false`);
@@ -215,4 +217,4 @@ function resolve(agent, harness, { user = empty(), project = null } = {}) {
   return out;
 }
 
-export { CONFIG_VERSION, HONORED_FIELDS, APPLIED, SOURCES, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, validate };
+export { CONFIG_VERSION, HONORED_FIELDS, APPLIED, SOURCES, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, validate, VALUE };
