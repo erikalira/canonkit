@@ -100,3 +100,11 @@ regression tests retain their historical or negative assertions. Whitespace
 checks passed. Current resident totals supersede the earlier counts: Claude
 **2,427** / Codex **2,320** / OpenCode **2,366** words, with margins **73 / 180 /
 134**. The full runtime suite above was not rerun for this documentation-only fix.
+
+## Archive decision — 2026-11-09
+
+The user explicitly requested archiving this change. All nine tracked tasks are
+complete; the three capability deltas were synchronized to main specs. Strict
+validation passed for this change and all six main specs. Existing implementation
+and review evidence remains historical; the runtime suite was not rerun for this
+documentation-only sync/archive operation. Behavioral efficacy remains UNMEASURED.

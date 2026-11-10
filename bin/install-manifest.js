@@ -2,6 +2,8 @@ import { readFile, writeFile, mkdir, open, rename, unlink, rmdir, lstat, chmod }
 import { createHash, randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
+import { isDeepStrictEqual } from "node:util";
+import { setTimeout as delay } from "node:timers/promises";
 
 const digest = (bytes) => bytes === null ? null : createHash("sha256").update(bytes).digest("hex");
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -90,6 +92,7 @@ async function exclusivePrivate(file, bytes, { privateParent = false, publicCont
 
 async function atomic(file, bytes, { keepMode = false, privateParent = false, publicContent = false } = {}) {
   await regularPath(file);
+  const beforeHash = digest(await read(file));
   await mkdir(path.dirname(file), { recursive: true });
   const temp = `${file}.canonkit-${randomUUID()}.tmp`;
   try {
@@ -97,8 +100,19 @@ async function atomic(file, bytes, { keepMode = false, privateParent = false, pu
     if (keepMode && process.platform !== "win32") {
       try { await chmod(temp, (await lstat(file)).mode & 0o7777); } catch (err) { if (!absent(err)) throw err; }
     }
-    await regularPath(file);
-    await rename(temp, file);
+    // Windows readers/scanners can briefly deny replacement. Keep the original
+    // in place and retry the rename, never unlink or truncate it as a fallback.
+    for (let attempt = 0; ; attempt++) {
+      await regularPath(file);
+      if (digest(await read(file)) !== beforeHash) throw new Error(`Concurrent edit detected: ${file}`);
+      try {
+        await rename(temp, file);
+        break;
+      } catch (err) {
+        if (process.platform !== "win32" || !["EPERM", "EACCES", "EBUSY"].includes(err.code) || attempt === 5) throw err;
+        await delay(100 * (attempt + 1));
+      }
+    }
   } finally { await unlink(temp).catch((err) => { if (!absent(err)) throw err; }); }
 }
 
@@ -108,7 +122,7 @@ async function atomic(file, bytes, { keepMode = false, privateParent = false, pu
  * Only global install/reference use this store; project tools own their setup.
  */
 export class InstallManifest {
-  constructor({ home, roots, catalog, targets, dryRun = false, log = () => {}, checkpoint = async () => {} }) {
+  constructor({ home, roots, catalog, targets, stateDir, dryRun = false, log = () => {}, checkpoint = async () => {} }) {
     this.home = path.resolve(home);
     this.roots = roots;
     this.catalog = new Map(catalog.map((entry) => [entry.id, entry]));
@@ -117,7 +131,11 @@ export class InstallManifest {
     this.dryRun = dryRun;
     this.log = log;
     this.checkpoint = checkpoint;
-    this.dir = path.join(this.home, ".canonkit");
+    const globalDir = path.join(this.home, ".canonkit");
+    this.dir = stateDir === undefined ? globalDir : path.resolve(stateDir);
+    if (this.dir !== globalDir && (path.dirname(this.dir) !== path.join(globalDir, "projects") || !/^[a-f0-9]{64}$/.test(path.basename(this.dir)))) {
+      throw new Error("Invalid scoped install state directory");
+    }
     this.file = path.join(this.dir, "install-manifest.json");
     this.lock = path.join(this.dir, "install.lock");
     this.data = { schemaVersion: 1, roots: { ...roots }, entries: {}, pending: null };
@@ -138,8 +156,9 @@ export class InstallManifest {
 
   validate(data) {
     const hash = (value) => value === null || (typeof value === "string" && /^[a-f0-9]{64}$/.test(value));
-    if (!data || data.schemaVersion !== 1 || !data.roots || !data.entries || Array.isArray(data.entries) ||
-        Object.keys(this.roots).some((root) => typeof data.roots[root] !== "string" || !path.isAbsolute(data.roots[root]))) {
+    if (!data || data.schemaVersion !== 1 || !data.roots || typeof data.roots !== "object" || Array.isArray(data.roots) ||
+        !data.entries || typeof data.entries !== "object" || Array.isArray(data.entries) ||
+        Object.entries(data.roots).some(([root, value]) => !Object.hasOwn(this.roots, root) || typeof value !== "string" || !path.isAbsolute(value))) {
       throw new Error("Invalid or unsupported install manifest; nothing was changed");
     }
     const validateEntry = (entry, id) => {
@@ -155,12 +174,25 @@ export class InstallManifest {
         }
       }
       if (entry.beforeHash !== undefined && !hash(entry.beforeHash)) throw new Error("Invalid snapshot hash");
+      if (entry.securityChanges !== undefined) {
+        if (!spec.securityOwnership) throw new Error("Security ownership is not supported by this catalog entry");
+        spec.securityOwnership.validate(entry.securityChanges);
+      }
     };
-    for (const [id, entry] of Object.entries(data.entries)) validateEntry(entry, id);
+    for (const [id, entry] of Object.entries(data.entries)) {
+      validateEntry(entry, id);
+      if (typeof data.roots[entry.root] !== "string" || !path.isAbsolute(data.roots[entry.root])) {
+        throw new Error("Invalid install manifest root; nothing was changed");
+      }
+    }
     if (data.pending !== null && data.pending !== undefined) {
       const pending = data.pending;
       if (!this.catalog.has(pending.id) || !hash(pending.beforeHash) || !hash(pending.afterHash)) throw new Error("Invalid pending install operation");
       if (pending.entry !== null) validateEntry(pending.entry, pending.id);
+      const root = this.catalog.get(pending.id).root;
+      if (typeof data.roots[root] !== "string" || !path.isAbsolute(data.roots[root])) {
+        throw new Error("Invalid install manifest root; nothing was changed");
+      }
     }
     return data;
   }
@@ -288,8 +320,8 @@ export class InstallManifest {
     const bytes = await read(file);
     if (bytes === null) return null;
     // OpenCode discovers every file in plugins/. A backup there is executable.
-    const plugin = this.byPath.get(path.resolve(file))?.plugin;
-    if (plugin) return path.join(this.dir, "backups", await this.snapshot(bytes));
+    const spec = this.byPath.get(path.resolve(file));
+    if (spec?.plugin || spec?.root === "project") return path.join(this.dir, "backups", await this.snapshot(bytes));
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     for (let n = 0; ; n++) {
       const suffix = dated ? `.canonkit-${stamp}${n ? `-${n}` : ""}.bak` : `.local${n ? `-${n}` : ""}.bak`;
@@ -342,6 +374,11 @@ export class InstallManifest {
       if (!changed) entry.hash = old.hash;
       for (const key of ["beforeSnapshot", "beforeHash", "afterSnapshot"]) if (old[key] !== undefined) entry[key] = old[key];
     }
+    if (spec.securityOwnership) {
+      const owned = spec.securityOwnership.capture(before, after, old?.securityChanges ?? {});
+      spec.securityOwnership.validate(owned);
+      if (Object.keys(owned).length) entry.securityChanges = owned;
+    }
     if (this.dryRun) { this.log(`would track ${spec.id} (${entry.provenance})`); return; }
     if (changed && before !== null && spec.kind !== "json" && (!old || digest(oldBlock) !== old.hash)) {
       const backup = await this.backup(target);
@@ -356,7 +393,7 @@ export class InstallManifest {
       entry.afterSnapshot = await this.snapshot(after);
     }
     if (!changed) {
-      if (!same(old, entry)) { this.data.entries[spec.id] = entry; await this.save(); }
+      if (!isDeepStrictEqual(old, entry)) { this.data.entries[spec.id] = entry; await this.save(); }
     } else await this.commit(spec, before, after, entry);
   }
 
@@ -397,7 +434,7 @@ export class InstallManifest {
             if (current !== null) {
               const before = await this.snapshotBytes(entry.beforeSnapshot, entry.beforeHash);
               const after = await this.snapshotBytes(entry.afterSnapshot, entry.hash);
-              configs.set(file, await this.catalog.get(entry.id).undo(before, after, current));
+              configs.set(file, await this.catalog.get(entry.id).undo(before, after, current, entry));
             }
           }
           if (this.catalog.get(entry.id).plugin && entry.provenance === "observed" && await read(file) !== null) throw new Error("The preexisting OpenCode plugin is observed, so its runtime must stay");
@@ -438,7 +475,7 @@ export class InstallManifest {
         if (!this.dryRun) { delete this.data.entries[entry.id]; await this.save(); }
         continue;
       }
-      if (entry.kind === "json") after = current === null ? null : configs.get(file) ?? current;
+      if (entry.kind === "json") after = current === null ? null : configs.has(file) ? configs.get(file) : current;
       else if (entry.kind === "block") after = removeManagedBlock(current ?? Buffer.alloc(0), spec.markers).bytes;
       this.log(`${this.dryRun ? "would remove" : "Removing"} ${entry.id}`);
       if (this.dryRun) continue;

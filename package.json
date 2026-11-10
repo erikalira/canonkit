@@ -1,7 +1,7 @@
 {
   "name": "canonkit",
-  "version": "2.5.0",
-  "description": "A versioned agent team for Claude Code, Codex and OpenCode. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
+  "version": "3.0.0",
+  "description": "A versioned agent team for Claude Code, Codex, OpenCode and GitHub Copilot. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
   "type": "module",
   "bin": {
     "canonkit": "bin/cli.js"
@@ -20,7 +20,9 @@
   ],
   "scripts": {
     "test": "node --test \"test/*.test.js\"",
-    "validate": "bash scripts/validate.sh",
+    "validate": "node scripts/validate.mjs --portable",
+    "validate:portable": "node scripts/validate.mjs --portable",
+    "validate:full": "node scripts/validate.mjs --full",
     "pack:dry": "npm pack --dry-run",
     "prepublishOnly": "npm test",
     "eval": "node scripts/eval-routing.mjs",
@@ -31,6 +33,8 @@
     "claude-code",
     "codex",
     "opencode",
+    "copilot",
+    "github-copilot",
     "agents",
     "subagents",
     "ai",

@@ -9,7 +9,7 @@ Measuring whether the instructions still work is in [evals.md](evals.md).
 2. If it is core, run `npx canonkit install` (or the clone's script).
 3. If it is a specialist, run `npx canonkit add <name>` again in the projects that
    use it.
-4. Run `./scripts/validate.sh` and `npm test`.
+4. Run `npm run validate` and `npm test`.
 5. Commit.
 6. Before a release that changes instructions (blocks, descriptions, an agent
    body): `node bin/cli.js install` and `npm run eval -- --runs 3`; if the body of
@@ -67,12 +67,33 @@ installed only where it applies, or in the project's own `AGENTS.md`.
 ## Validation
 
 ```bash
-./scripts/validate.sh          # full report
-./scripts/validate.sh --quiet  # only failures and the summary
+npm run validate                # portable checks; reports Bash checks as not run
+npm run validate:portable       # explicit portable mode
+npm run validate:full           # complete checks, including bash -n
+npm run validate -- --quiet     # failures and summary only
 ```
 
-Read-only, exits non-zero on any failure. It automates Virgo's protocol and checks
-the conventions in [team.md](team.md#conventions):
+Validation is read-only and exits non-zero on a failure. Node.js and Python 3.11+
+are required: Python retains the AST and TOML parser checks. The default and
+portable commands run natively on Windows, Linux and macOS without invoking Bash.
+They report a partial result because they do not run `bash -n`; they never count
+that check as passed. Full validation also requires Bash and checks every
+`scripts/*.sh` file. CI must use `npm run validate:full`.
+Set `CANONKIT_PYTHON` or `CANONKIT_BASH` to select an explicit interpreter when
+automatic executable discovery is unsuitable.
+
+In PowerShell, invoke npm through `npm.cmd` if the local execution policy blocks
+`npm.ps1`:
+
+```powershell
+npm.cmd run validate
+npm.cmd run validate:full # requires Bash on PATH
+npm.cmd run validate -- --quiet
+```
+
+The legacy `./scripts/validate.sh` entry point remains available in Bash and
+selects full validation. Validation automates Virgo's protocol and checks the
+conventions in [team.md](team.md#conventions):
 
 - frontmatter — `name` matches the filename, `model` and `tier` declared and
   valid, `description` opening with "Use ...", including "Not for ..." and under 300 UTF-8 bytes (Claude
@@ -90,10 +111,9 @@ the conventions in [team.md](team.md#conventions):
   specialists the project installed;
 - the veto rule — whoever declares a veto also says what to do when overruled;
 - the core/specialist split — every agent declares `tier`, all have a summary line
-  in `reference/agents-block.md`, the roster lists no name without a file, and the
+  in   `reference/agents-block.md`, the roster lists no name without a file, and the
   roster's two sections match the declared `tier`; the README core table matches
-  its names, order, ownership and authority (comparison runs when Node is
-  available; otherwise validation skips it with a warning);
+  its names, order, ownership and authority;
 - the escalation graph — no isolated core agent, and nobody escalating to a
   generic role ("the security owner") instead of a named agent;
 - the roster and the routing block — every agent appears in the roster, the
@@ -111,7 +131,8 @@ the conventions in [team.md](team.md#conventions):
   `reference/` (the published CLI reads them at runtime, and a clone always has
   them — it is the packaging mistake that running from a clone never catches),
   `bin` points to the right file, LICENSE exists;
-- script syntax and repository hygiene.
+- Node and Python script syntax, shell-script syntax in full mode, and repository
+  hygiene.
 
 It checks the rule, not uniformity: `pipe` uses "Operational authority", `virgo`
 does not classify product risk, and both pass.
@@ -134,6 +155,9 @@ tarball carries `bin/`, `agents/`, `reference/`, `hooks/`, `dashboard/`, `skills
 ## Stack packs
 
 Edit `stack-packs/<stack>/SKILL.md`, not a consuming project's generated copy.
+Packs can supply language/framework or design-practice knowledge. Keep each source
+self-contained in one `SKILL.md` under the current lifecycle; optional knowledge
+creates no owner, automatic installation or mandatory dispatch.
 Its YAML name is `canonkit-<stack>`, matching the installed directory; the short
 source ID is the argument to `canonkit add`. Keep pack sources outside `skills/`,
 whose direct children are automatically installed at user scope.

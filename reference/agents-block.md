@@ -38,7 +38,7 @@ then lists it with its authority. Absence is intentional: it keeps the team from
 growing without need.
 
 - **maya** — game design: core loop, progression, reward, difficulty, balance, playtest.
-- **nova** — visual direction: identity, palette, composition, VFX language, aesthetic coherence.
+- **nova** — UI visual design and cross-media art direction: typography, composition, colour, characters and VFX.
 - **echo** — audio: sonic identity, mix hierarchy, SFX as feedback, adaptive music.
 - **dana** — data and experimentation: event taxonomy, telemetry schemas, metric definitions, funnels, A/B tests.
 - **iris** — ML/computer vision: extraction from unstructured data, datasets, model evaluation, prediction confidence.
@@ -94,6 +94,7 @@ elsewhere, a separate checkout), never one shared tree. When and how: the `orche
 ## Orchestration rules
 
 - Every planned dispatch names its model and effort (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result); the rationale is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
+- **Optional Laya advice on HIGH handoffs:** consult it when a concrete semantic uncertainty about omissions warrants another signal and the MCP is available. Skip when direct inspection suffices; reuse advice while task context and evidence are unchanged. Follow the `orchestrate` skill's procedure and record actual calls, results and failures. Laya never replaces owners, evidence checks or independent review.
 - MEDIUM/HIGH multi-discipline changes get an Integration Review before the decision is closed: run the `orchestrate` skill.
 
 ## Proportionality

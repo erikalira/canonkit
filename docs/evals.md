@@ -154,9 +154,9 @@ reviews the diff in plan mode. The cases include defects in code, tests, scope
 proposals, performance evidence, operational plans, documentation and team
 configuration, plus defect-free controls to detect an invented block on LOW.
 
-The corpus has **61 cases for the 10 core agents** (7 original, 26 from Phase 3,
-4 from Phase 7, 3 from the reviewer pre-report gate, 5 from review-noise and
-3 from the learning loop and 13 for stack packs). Each core has
+The corpus has **77 cases for the 10 core agents**, including nine visual-workflow
+cases and seven engineering/continuity cases added to the earlier 61-case corpus.
+Each core has
 `kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
 no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
 guarded or compatible, where the right report approves with no finding; it is not
@@ -222,7 +222,7 @@ arguments: call the script directly and quote the list, as in
 
 ### Stack-pack cases
 
-Thirteen `stack-*` cases cover ten packs and use Quinn with an optional
+The original thirteen `stack-*` cases cover ten language/framework packs and use Quinn with an optional
 `stackPack` ID: TypeScript
 runtime validation, C++ dangling views, C# early disposal, Java resource cleanup,
 Python shared defaults, React stale results, Rust spawned-task ownership, Go
@@ -235,6 +235,17 @@ The runner validates the ID against the shipped catalog and appends that pack's
 checkout `SKILL.md` body explicitly to the eval agent's instructions. Existing
 cases without `stackPack` retain their original definitions. Dry-run output
 identifies the pack supplied to each case.
+
+Additional `visual-*` cases cover UI design, rendered review and game-art direction.
+They exercise identity-preserving finish (M1), applicable states and final/recovery
+outcomes (M2), content/themes/locales, access and relevant failures (M3), and
+reduced/interruptible motion, stable geometry, gesture alternatives and cleanup
+(M4). Counterexamples cover missing browser/baseline, untested access, absent
+owners, ordinary game UI and focused LOW work. Routing cases separate Pixie's UX
+requirements from Nova's expression and Perry's measurement/budget authority.
+The loader supplies only the selected pack while preserving the agent/model.
+These are offline fixture/judge contracts; behavioural efficacy and native
+discovery remain **UNMEASURED**, without paid model or real-interface runs.
 
 The fixtures need no language toolchains for offline schema/judge checks.
 Tests cover pack inclusion, catalog coverage and representative correct and

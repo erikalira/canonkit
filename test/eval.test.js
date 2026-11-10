@@ -14,6 +14,51 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const line = (content) => JSON.stringify({ type: "assistant", message: { content } });
 
 describe("routing eval", () => {
+
+  test("visual routing keeps domain decisions, discoverability and LOW boundaries", async () => {
+    const data = validateCases(JSON.parse(readFileSync(path.join(REPO, "evals", "routing-cases.json"), "utf8")));
+    const probes = {
+      "visual-ux-confusing": [
+        { dispatches: ["pixie"], plan: "Pixie reviews task comprehension and recovery." },
+        { dispatches: ["nova"], plan: "Nova settles all visual questions." },
+      ],
+      "visual-nova-ui": [
+        { dispatches: ["nova"], plan: "Nova reviews typography and spacing." },
+        { dispatches: ["pixie", "maya"], plan: "Treat the visual mismatch as accessibility." },
+      ],
+      "visual-nova-game-discovery": [
+        { dispatches: ["nova"], plan: "Nova reviews silhouette at scale with the available principles." },
+        { dispatches: ["maya"], plan: "Game art belongs to gameplay." },
+      ],
+      "visual-owner-missing": [
+        { dispatches: [], plan: "Nova is absent; disclose missing visual owner for new direction and continue concrete requirements." },
+        { dispatches: ["nova"], plan: "Automatically install Nova and let the skill act as the owner." },
+      ],
+      "visual-motion-boundary": [
+        { dispatches: ["pixie", "nova", "perry"], plan: "Pixie owns reduced-motion access, Nova expression, Perry measurement/budgets." },
+        { dispatches: ["nova"], plan: "Nova approves reduced-motion requirements and budgets alone." },
+      ],
+      "visual-low-game-menu": [
+        { dispatches: [], plan: "LOW: focused fit/access check for existing label." },
+        { dispatches: ["maya", "nova"], plan: "A game requires a full art audit." },
+      ],
+      "visual-usable-without-game-art": [
+        { dispatches: ["nova"], plan: "Nova retains authority; scale evidence is unavailable." },
+        { dispatches: [], plan: "Must install the pack before ordinary coherence can be reviewed." },
+      ],
+    };
+    for (const [id, [good, bad]] of Object.entries(probes)) {
+      const c = data.cases.find((c) => c.id === id);
+      assert.ok(c, id);
+      assert.equal(judge(c.expect, good).pass, true, id);
+      assert.equal(judge(c.expect, bad).pass, false, id);
+    }
+    const nova = (await readAgents()).find((a) => a.name === "nova");
+    assert.equal(nova.tier, "specialist");
+    assert.equal(nova.model, "sonnet");
+    assert.match(nova.description, /UI visual design/);
+    assert.match(nova.description, /characters.*environments.*VFX/);
+  });
   test("reads dispatches from stream-json, under either tool name", () => {
     const stream = [
       '{"type":"system","subtype":"init"}',
@@ -345,6 +390,15 @@ describe("quality eval", () => {
       return [`Approved. No blockers.\n${body}`, `Approved. No blockers. ${body}`];
     };
     const examples = {
+      "visual-design-identity": ["Changes needed: preserve the established identity and reuse the Row exemplar. Align icon scale and spacing; show a representative screen with reusable responsive/state rules before the four-screen rollout.","Changes needed: the identity differs, icons are inconsistent and a representative screen is missing. Recommend rebrand the identity into a generic landing page.",{"good":["Block: restore the direction using the Row exemplar; fix icon scale. Provide a representative screen and relevant state/layout rules."],"bad":["Approved: a new brand is more fashionable."]}],
+      "visual-review-flow-states": ["Block: distinguish available and unavailable partial data. Verify the promised saved record/final result, preserve input for retry/recovery, reject older out-of-order results. Permission is untested due to access; restore trigger, feedback and next action for each applicable state.","Block: partial data is unavailable, the final result is missing and retry loses input; older out-of-order updates remain. Mark permission N/A because access is unavailable.",{"bad":["Approved: build passed and Done appeared."]}],
+      "visual-review-rendered-access": ["Changes needed: correct supported locale/RTL text fit and order, dark contrast; restore modal focus return, field-error association and status announcements. Fix the missing icon asset (404); expected 403 exercises recovery, not unintended breakage. Recheck affected narrow/theme/locale conditions.","Changes needed: locale/RTL, focus, error association, status and icon 404 are wrong; expected 403 is present. Install Locakit translation service and claim full accessibility compliance verified.",{"good":["Block: fix Arabic RTL locale ordering and label fit. Restore focus, associate field error, announce status; correct asset 404 while expected 403 remains recovery evidence."]}],
+      "visual-review-motion": ["Block: reduced motion must keep content/actions visible. Recheck reversal/navigation final state, focus and exiting target removal. Reserve stable geometry for loading target shifts. Drag gesture needs an operable alternative; continuous animation must pause/stop and cleanup. Perry owns measurement/budgets; component tests leave motion unverified.","Block: reduced motion hides content, reversal strands focus, geometry shifts target, drag needs alternative and continuous animation cleanup. Perry should measure; raise performance budget anyway.",{"bad":["Approved: component tests prove motion and a smooth screenshot establishes performance."]}],
+      "visual-review-evidence": ["Partial: rendered keyboard/focus/motion remain unverified without browser access. Baseline comparison is inconclusive because conditions differ; permission is untested due to missing data. Recheck affected structure and interactions after correction. Current visible defects remain reportable.","Partial: keyboard and motion are unverified, baseline comparison inconclusive, permission untested. Recheck affected structure; report full accessibility pass anyway.",{"bad":["Approved: screenshot and build establish regression safety."]}],
+      "visual-review-composite": ["Changes needed: exercise hover per region and keyboard focus. Compare computed transitions/colours across icon, label and caret, then unify whole-control state and visible focus. Recheck rendered interaction, not only markup.","Changes needed: hover region and focus are wrong; computed transitions differ from one target. Just screenshot is enough.",{}],
+      "visual-game-art-scale": ["Block: separate silhouettes/value at gameplay size and make VFX effects distinct in context. Correct visual shape/palette using the established lighting/material language; gameplay owner retains event meaning/reward. Archie owns rendering architecture and Perry budgets.","Block: silhouettes merge at gameplay size and VFX effects need distinction; Maya owns meaning. Implement reward rule changes to separate visual feedback.",{}],
+      "visual-owner-absent": ["Changes needed: no visual owner is designated; missing Nova is an authority gap for the new direction. Continue existing concrete requirements and seek an explicit decision owner; the skill creates none.","Changes needed: no visual owner or Nova; existing requirements can continue with a designated owner. Automatically install Nova.",{}],
+      "visual-ui-low-game-menu": ["Approved: LOW ordinary game UI label correction; focused fit/access checks suffice.","Approved: LOW, but mandatory Maya game-art full audit and motion tests before acceptance.",{"good":["LOW: existing UI label is correct and focused checks pass; no additional review needed."]}],
       "spencer-incomplete-handoff": ["Changes needed: validation state is missing, and the next step was removed. Restore actual validation (not run) and the next action: inspect sorting and run the focused test, linking the existing change.", "Approved: implementation is done, so the handoff is complete.",
         { good: ["Block: missing validation evidence and missing next action prevent a reliable resume. Keep the authoritative change and restore the pending check without inventing results."],
           bad: ["Changes needed: missing validation and missing next action, but tests passed.", "Changes needed: validation missing; next step removed. Create a session database to record everything."] }],

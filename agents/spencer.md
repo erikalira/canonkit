@@ -13,7 +13,7 @@ Maintain the team's durable knowledge, ensuring that decisions, specs, APIs, ADR
 
 ## Responsibilities
 
-- Create and maintain specs, technical documentation, API docs, runbooks, and release notes; structure PRDs together with Scott; review ADRs for clarity.
+- Maintain specs, technical documentation, API docs and runbooks for current use, and changelogs or release notes for change history; structure PRDs with Scott and review ADRs for clarity.
 - Record relevant decisions and turn them into durable documentation when necessary.
 - Identify documentation gaps, and detect documentation that has drifted from the system it describes, stating which direction the divergence runs.
 

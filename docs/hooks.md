@@ -1,6 +1,9 @@
 # Hooks and gates
 
-The routing block promises `[ENFORCED]` gates: confirmation on `git commit`,
+Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-09.
+
+The routing block describes active `[ENFORCED]` gates only when their
+hooks are registered: confirmation on `git commit`,
 blocking of git hook and signing bypasses, blocking of secrets, and the
 definition-of-done gate on `Stop`. What each gate
 says and what to do when it fires is in the README
@@ -10,6 +13,103 @@ is wired, how it fails, and how a project tunes which paths count.
 Claude Code has the full hook. Codex has the two deny gates, and OpenCode has the
 same two through a plugin, plus two permission asks (see Codex and OpenCode below).
 Everything on this page outside that section is about Claude Code.
+
+## Native controls and optional hooks
+
+The default Claude installation keeps the harness's native approval modes and
+automatically merges supported security restrictions into the validated current
+repository's `.claude/settings.json`. It does not set `defaultMode`, change Auto
+policy, add blanket approvals or register decision hooks. Outside a validated
+repository it reports project security as pending instead of installing a
+project-policy fallback. The sole added user-level access-policy key is the
+supported `sandbox.network.strictAllowlist: true` lock; it adds no destinations,
+changes no modes and registers no hooks. Separately, a plain Claude install
+removes attributable older canonkit hook registrations from user and validated
+current-repository settings. [Installation and environment coverage](install.md#native-security-per-repository).
+
+These layers serve different purposes:
+
+| Layer | What it controls |
+| --- | --- |
+| Native permission mode | Ordinary Manual, Auto, Edit automatically and Plan approval behavior |
+| Native file-tool restrictions | Supported reads/writes outside working directories, with the harness's internal exceptions |
+| OS-backed shell sandbox | Shell filesystem/network access on supported macOS, Linux and WSL2 environments; unavailable for Claude shell commands on native Windows |
+| Web, MCP, hooks and subagents | Separate controls; shell sandbox settings do not establish their coverage |
+| Instructions | Authorization, routing and independent-review governance; not a mechanical filesystem/network boundary |
+| Optional canonkit decision hooks | Specific asks/denies and review tripwires, with the limitations documented below |
+
+The read-boundary control requires a supported Claude version (2.1.257 or later);
+the general file-tool write-boundary control requires 2.1.314 or later. The read
+control also informs shell reads where the native sandbox supports it; project
+read/write exceptions are not a substitute for that boundary. A settings key on
+disk never proves that every surface is isolated.
+
+An `allow` entry is preauthorization, not containment. A broad interpreter,
+package-runner or file-reading rule can authorize much more than the current
+repository. A URL containing `localhost`, or a Playwright `baseURL`, does not
+confine the process's network traffic. Canonkit adds no new project-process
+destinations automatically. Preserve deliberate exceptions, report expanded or
+unknown effective access, and use supported external controls when an immutable
+network boundary is required. The supported user-scoped strict network lock
+(Claude 2.1.219 or later) applies to the sandbox proxy's approved destinations;
+it is not a substitute for a running sandbox and does not cover other tool
+surfaces. Canonkit's remaining sandbox switches use a conservative 2.1.302
+support floor. Native Windows shell coverage stays partial.
+
+The [key/version matrix and illustrative doctor output](install.md#environment-and-version-coverage)
+separate static settings from runtime evidence. On native Windows, reapply
+supported settings with `npx canonkit install --claude`, then run
+`npx canonkit doctor`; review reported conflicts before changing personal rules.
+An existing required sandbox can still fail on that host and is preserved.
+WSL2 or a validated container is an optional preparation for stronger isolation,
+with its own boundary tests. Canonkit does not provision it or monitor arbitrary
+direct launches. User paths shown as `~/.claude` follow an absolute
+`CLAUDE_CONFIG_DIR` when set; repository settings keep their repository scope.
+
+`--wire-hooks` is an explicit choice to add the optional gates. A hook returning
+`ask` can force a prompt even in Auto; removing such a hook gives ordinary
+approval decisions back to the harness, without promising the same historical
+number of prompts. The current hook emits `ask`, `deny` or Stop `block` decisions;
+an internal allow result emits no permission override. Native restrictions and
+instruction-based review rules do not require these hooks.
+
+### Returning to native approvals
+
+For a user who previously wired canonkit and wants the native approval flow:
+
+1. Preview with `npx canonkit install --claude --dry-run`, then apply with
+   `npx canonkit install --claude` from the repository. Without `--wire-hooks`,
+   this removes attributable simple `node <absolute-path>` handlers pointing to
+   the active Claude root's `hooks/canonkit-hook.js` or `hooks/meu-time-hook.js`.
+   Native controls and hook removal share one tracked write per settings file.
+2. Inspect Claude's `/hooks` view for remaining sources. Ambiguous commands
+   remain with indexed-location `WARN`s; wrappers, local/managed settings and
+   other repositories require manual inspection. Preserve unrelated handlers,
+   matchers and integrations. Payloads, the legacy forwarder and logs remain.
+3. Keep your selected approval mode and saved personal rules. Review the
+   refreshed managed instructions, then start a fresh Claude session. With
+   `--no-reference`, cleanup still runs and an existing canonkit block in the
+   active Claude root's `CLAUDE.md` is reconciled on every native-default install,
+   including retries after hook removal. No new document, block, roster or skills
+   are distributed, and bytes outside that block are preserved, including BOM
+   and mixed line endings. A preserved third-party command sharing the hook's
+   filename does not establish active gates; claims require canonical
+   registrations. Instructions still govern commit/push authorization
+   and independent HIGH-risk review.
+4. Run `npx canonkit doctor` from the repository. Confirm the native project
+   controls and the reported gaps. Absent optional hooks are different from a
+   broken hook you intended to keep active. If a later installation stage fails,
+   completed changes remain: fix the reported condition and re-run install.
+
+`--wire-hooks` skips this migration and explicitly wires optional user-level
+hooks. Uninstall never recreates migrated registrations. Private snapshots
+support selective manual recovery; see the
+[migration and recovery procedure](install.md#returning-existing-claude-installations-to-native-approvals).
+
+Keep a private backup before editing settings: they can contain environment
+credentials. Global saved permissions are personal decisions; canonkit does not
+silently delete them based on a heuristic. Review broad rules explicitly and
+remember that removing `allow` is not adding `deny`.
 
 ## Codex and OpenCode
 
@@ -131,25 +231,38 @@ They are pattern-limited:
   OpenCode's pattern-limited asks.
 - **No Stop gate.** "No self-merge on HIGH risk" holds by judgment in both: no
   hook checks that a reviewer ran after the last edit.
-- **`doctor` is not target-aware yet.** A Codex- or OpenCode-only install still
-  gets `FAIL` rows for the Claude Code agents, block and hook.
+- **Security diagnosis does not prove runtime containment.** Doctor is
+  target-aware, but hidden CLI/managed overrides, unsupported configuration
+  formats and unavailable container/network evidence remain unknown. It does
+  not test live boundaries by starting authenticated sessions or project code.
 
 ## Wiring
 
 The gates only exist while `~/.claude/hooks/canonkit-hook.js` is on disk **and**
-is referenced by `settings.json`. `install` copies the file; registering it in
-`settings.json` is, by default, only **reported**, with the JSON ready to paste.
+is referenced by `settings.json`. `install` copies the file; a plain Claude
+install unregisters attributable older canonkit handlers in user and validated
+current-repository settings. New registrations require `--wire-hooks` or a
+deliberate manual edit. A default install uses native security in the current
+repository's `.claude/settings.json` without requiring decision hooks.
 
 `npx canonkit install --wire-hooks` registers the hook in `~/.claude/settings.json`
 (a dated backup `settings.json.canonkit-<timestamp>.bak`, only when something
-changes; nothing besides the hook entries is changed; `settings.local.json` is
-never written). To undo, restore the `.bak`. It holds the same values as
-`settings.json`, `env` included: keep it out of a dotfiles repository.
+changes). The hook-wiring delta changes only attributable hook entries;
+automatic security can separately apply the approved user-scoped network lock.
+`settings.local.json` is never written. To return to native approvals, reinstall
+without `--wire-hooks` and inspect preserved sources as described above.
+The `.bak` is for deliberate recovery: restoring it wholesale
+also discards later settings changes. It holds the same values as `settings.json`,
+`env` included, so keep it out of a dotfiles repository.
 `npx canonkit doctor` checks the installation (agents, blocks, hook, registration,
 log, forwarder, config), only reads, and exits with 1 if any check is `FAIL`.
 
-The split is deliberate. `settings.json` is yours — it carries permissions, env
-and model choice that this installer does not rewrite unless you ask. A hook on
+The split is deliberate. Global `settings.json` carries your permissions, env
+and model choices. Automatic access-policy additions are limited to its supported
+strict-network lock; a plain Claude install also removes attributable older
+hook registrations, while explicit hook wiring opts back into the gates.
+The project file separately receives supported access restrictions while its
+unrelated values are preserved. A hook on
 disk that no event references, on the other hand, does nothing and does not
 complain, which is the worst possible failure mode for a gate: everyone keeps
 believing it runs.

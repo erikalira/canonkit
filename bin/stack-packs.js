@@ -6,8 +6,8 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-export const STACK_PACK_IDS = Object.freeze(["typescript", "cpp", "csharp", "java", "python", "react", "rust", "go", "kotlin", "swift"]);
-const TARGETS = Object.freeze({ agents: ".agents", claude: ".claude" });
+export const STACK_PACK_IDS = Object.freeze(["typescript", "cpp", "csharp", "java", "python", "react", "rust", "go", "kotlin", "swift", "ui-design", "ui-review", "game-art-direction"]);
+const TARGETS = Object.freeze({ agents: ".agents", claude: ".claude", copilot: ".github" });
 const HASH = /^[a-f0-9]{64}$/;
 const digest = (bytes) => bytes === null ? null : createHash("sha256").update(bytes).digest("hex");
 const absent = (err) => err.code === "ENOENT";
@@ -72,7 +72,7 @@ async function exists(project, file) {
   try { await lstat(file); return true; } catch (err) { if (absent(err)) return false; throw err; }
 }
 
-/** A small project-only receipt: it owns two fixed SKILL.md targets per pack. */
+/** A small project-only receipt: it owns three fixed SKILL.md targets per pack. */
 export class StackPackStore {
   constructor({ project = process.cwd(), home = os.homedir(), repo = PACKAGE_ROOT, dryRun = false, log = () => {}, checkpoint = async () => {} } = {}) {
     this.project = realpathSync.native(project);
@@ -301,6 +301,7 @@ export class StackPackStore {
   async list() {
     await this.load();
     const rows = [];
+    const targetCount = Object.keys(TARGETS).length;
     for (const pack of STACK_PACK_IDS) {
       let tracked = 0, present = 0, modified = false, untracked = false;
       for (const [id, spec] of this.catalog) {
@@ -310,7 +311,7 @@ export class StackPackStore {
         else if (await exists(this.project, spec.directory)) untracked = true;
       }
       const pending = this.data.pending && this.catalog.get(this.data.pending.id).pack === pack;
-      const state = pending ? "partial (pending)" : modified ? "locally modified" : untracked ? "untracked/collision" : tracked === 2 && present === 2 ? "installed" : tracked ? "partial" : "absent";
+      const state = pending ? "partial (pending)" : modified ? "locally modified" : untracked ? "untracked/collision" : tracked === targetCount && present === targetCount ? "installed" : tracked ? "partial" : "absent";
       rows.push({ pack, state });
     }
     return rows;

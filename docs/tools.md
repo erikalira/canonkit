@@ -198,26 +198,46 @@ existing judge; they do not run a real refresh.
   and canonkit's hook both fire on `PreToolUse` with no guaranteed order; do not
   count on one running before the other.
 
-## Evaluated and rejected
+## Experimental handoff checks
 
 ### Laya
 
-An MCP server that suggests which files to read for a question. Rejected on
-2026-10-18, after a controlled A/B in a private project: 8 paired read-only
-exploration tasks (`claude -p`, Opus 5.5), arm A with Laya mandatory after
-graphify, arm B without it.
+Laya's MCP provides typed advisory signals. Use `laya_predict` with independent
+`noul` questions for acceptance criteria and validation planning before dispatch,
+then reported tests when applicable and review status after return.
+Consult it selectively on HIGH handoffs when a concrete semantic uncertainty
+about omissions warrants another signal and the MCP is available. Skip when
+direct inspection suffices; reuse advice while task context and evidence are
+unchanged. Signals prompt inspection of the source; high scores do not prove
+completeness or establish that tests or review occurred.
+See [the procedure](../skills/orchestrate/laya-handoffs.md) for request examples,
+long-text and large-candidate tools, language hints, batching and fallback.
 
-- Arm A cost 19% more (cheaper in 1 of 8 tasks), with 53% more input tokens, 40%
-  more output tokens and 84% more wall time.
-- Files read fell 18% overall, but the one task where Laya cut reads (1 file
-  instead of 4) lost answer quality.
-- Laya picked the right primary file in 5 of 8 tasks (always the one obvious by
-  name), the wrong one in 1, and abstained in 1; its "second best" always repeated
-  the first.
-- Before the A/B: zero organic calls in 11 days, while its tool schemas cost about
-  5k tokens per session.
+Maintainer direction on 2026-11-09: adopt this in real work rather than requiring
+more synthetic evaluations. Quality takes priority over latency. Record a brief
+useful finding, false alarm or missed problem in existing task evidence when
+encountered; do not add a usage database, transcript archive or reporting quota.
+Existing synthetic audits are historical, version-specific evidence, not a
+prerequisite to practical use or a guarantee of real-task accuracy.
 
-The kill criterion, agreed before the run, was at least 15% fewer tokens with no
-quality loss; it failed. Do not propose it again for token savings without new
-evidence. If it is ever reinstalled, the connection timeout is fixed with
-`LAYA_PRELOAD=0` and `HF_HUB_OFFLINE=1` (handshake from 14s to 2s).
+The earlier rejection recorded here concerned file selection/token savings.
+Maintainer correction on 2026-11-09: Laya was not actually called; the rejection
+was an adoption/integration failure, not a measurement of model quality. The
+previous aggregate claims do not establish Laya efficacy without invocation
+evidence and must not be used as a quality verdict.
+
+For consultations actually selected, record decision-call evidence for the relevant
+phase, with failures, abstentions and the orchestrator's response visible. It makes no
+token-savings or accuracy claim. Laya remains advisory; direct validation and
+independent HIGH review remain required. CanonKit does not install or configure
+the server, and missing/failed calls fall back to the normal manual check with
+an explicit status.
+
+Historical integration smoke test on 2026-11-09 (previous three-label procedure):
+two real `laya_decide` calls on a synthetic
+HIGH authentication brief/return completed (`english`, CPU, no input truncation).
+Both abstained on all four fields at the experimental 0.8 threshold; reported
+confidence ranges were 0.0444–0.0524 before and 0.0026–0.0051 after. Disposition:
+manual check; the synthetic return lacked validation and required review.
+This verifies tool invocation/schema compatibility, not automatic agent
+compliance or classifier usefulness on real HIGH delegations.

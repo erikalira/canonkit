@@ -1,0 +1,2026 @@
+{
+  "suite_version": 1,
+  "environment": {
+    "laya": "0.4.30",
+    "torch": "2.15.0+cpu",
+    "device": "cpu",
+    "checkpoints": [
+      "english",
+      "multilingual"
+    ]
+  },
+  "records": [
+    {
+      "id": "status",
+      "tool": "laya_status",
+      "status": "CALLED",
+      "result": {
+        "device": "cpu",
+        "torch_cuda": false,
+        "torch_version": "2.15.0+cpu",
+        "device_is_preference": false,
+        "checkpoint_devices": {
+          "english": "cpu",
+          "multilingual": "cpu"
+        },
+        "loaded": [
+          "english",
+          "multilingual"
+        ],
+        "router_preload": true,
+        "router_ready": true,
+        "package_versions": {
+          "laya": "0.4.30",
+          "torch": "2.15.0+cpu",
+          "transformers": "5.22.2"
+        }
+      }
+    },
+    {
+      "id": "owner-auth",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "Gard",
+            "probabilities": {
+              "Archie": 0.092,
+              "Gard": 0.796,
+              "Pipe": 0.0396,
+              "none": 0.0723
+            },
+            "confidence": 0.4814,
+            "answer_confidence": 0.796,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 337.872,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "owner-contract",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "Archie",
+            "probabilities": {
+              "Archie": 0.7702,
+              "Gard": 0.0092,
+              "Pipe": 0.0373,
+              "none": 0.1834
+            },
+            "confidence": 0.5111,
+            "answer_confidence": 0.7702,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "multilingual",
+          "repo": "convaiinnovations/laya/multilingual",
+          "reason": "Latin script, language not identified and no non-English letters; using default (multilingual)",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": null,
+            "is_english": true,
+            "language_undecided": true,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 170.576,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "owner-migration-run",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "Pipe",
+            "probabilities": {
+              "Archie": 0.1967,
+              "Gard": 0.0741,
+              "Pipe": 0.6492,
+              "none": 0.08
+            },
+            "confidence": 0.2821,
+            "answer_confidence": 0.6492,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 283.775,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "owner-spelling",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "none",
+            "probabilities": {
+              "Archie": 0.2263,
+              "Gard": 0.055,
+              "Pipe": 0.0517,
+              "none": 0.667
+            },
+            "confidence": 0.337,
+            "answer_confidence": 0.667,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 303.286,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "owner-auth-pt",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "Gard",
+            "probabilities": {
+              "Archie": 0.0035,
+              "Gard": 0.9889,
+              "Pipe": 0.0007,
+              "none": 0.0069
+            },
+            "confidence": 0.9493,
+            "answer_confidence": 0.9889,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "multilingual",
+          "repo": "convaiinnovations/laya/multilingual",
+          "reason": "explicit lang='pt'",
+          "detection": null,
+          "workflow": null
+        },
+        "latency_ms": 114.113,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "evidence-present",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "tests_reported": {
+            "type": "noul",
+            "noul": 0.8218,
+            "confidence": 0.8218,
+            "answer_confidence": 0.8218,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 399.232,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "evidence-absent",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "tests_reported": {
+            "type": "noul",
+            "noul": 0.1431,
+            "confidence": 0.8569,
+            "answer_confidence": 0.8569,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 308.605,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "ticket-en",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "billing": 0.9885,
+              "other": 0.0044,
+              "sales": 0.0035,
+              "technical": 0.0036
+            },
+            "confidence": 0.9456,
+            "answer_confidence": 0.9885,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "refund": {
+            "type": "noul",
+            "noul": 0.9166,
+            "confidence": 0.9166,
+            "answer_confidence": 0.9166,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.9281,
+            "legend": {
+              "0": "no deadline",
+              "1": "soon",
+              "2": "today or immediately"
+            },
+            "probabilities": {
+              "0": 0.0233,
+              "1": 0.0253,
+              "2": 0.9514
+            },
+            "confidence": 0.7925,
+            "answer_confidence": 0.9514,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 526.661,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "ticket-pt",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "billing": 1,
+              "other": 0,
+              "sales": 0,
+              "technical": 0
+            },
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "refund": {
+            "type": "noul",
+            "noul": 0.9913,
+            "confidence": 0.9913,
+            "answer_confidence": 0.9913,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.9066,
+            "legend": {
+              "0": "no deadline",
+              "1": "soon",
+              "2": "today or immediately"
+            },
+            "probabilities": {
+              "0": 0.0044,
+              "1": 0.0846,
+              "2": 0.911
+            },
+            "confidence": 0.7107,
+            "answer_confidence": 0.911,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "multilingual",
+          "repo": "convaiinnovations/laya/multilingual",
+          "reason": "explicit lang='pt'",
+          "detection": null,
+          "workflow": null
+        },
+        "latency_ms": 354.426,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "schema-values",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "department": "billing",
+          "refund": true,
+          "urgency": 2
+        },
+        "confidence": {
+          "department": 0.8552,
+          "refund": 0.9123,
+          "urgency": 0.2246
+        },
+        "probabilities": {
+          "department": {
+            "billing": 0.9625,
+            "technical": 0.0119,
+            "sales": 0.0111,
+            "other": 0.0145
+          },
+          "refund": {
+            "false": 0.0877,
+            "true": 0.9123
+          },
+          "urgency": {
+            "0": 0.2212,
+            "1": 0.1135,
+            "2": 0.6653
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 508.739,
+        "usage": {
+          "input_tokens": 151,
+          "output_tokens": 0,
+          "state_tokens": 16,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "schema-gated",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "department": "billing",
+          "refund": true,
+          "urgency": null
+        },
+        "confidence": {
+          "department": 0.8552,
+          "refund": 0.9123,
+          "urgency": 0.2246
+        },
+        "probabilities": {
+          "department": {
+            "billing": 0.9625,
+            "technical": 0.0119,
+            "sales": 0.0111,
+            "other": 0.0145
+          },
+          "refund": {
+            "false": 0.0877,
+            "true": 0.9123
+          },
+          "urgency": {
+            "0": 0.2212,
+            "1": 0.1135,
+            "2": 0.6653
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 648.505,
+        "usage": {
+          "input_tokens": 151,
+          "output_tokens": 0,
+          "state_tokens": 16,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "handoff-legacy-complete",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "acceptance": null,
+          "evidence": null
+        },
+        "confidence": {
+          "acceptance": 0.3403,
+          "evidence": 0.2949
+        },
+        "probabilities": {
+          "acceptance": {
+            "adequate": 0.7538,
+            "needs_attention": 0.1455,
+            "insufficient_context": 0.1007
+          },
+          "evidence": {
+            "adequate": 0.7215,
+            "needs_attention": 0.1763,
+            "insufficient_context": 0.1022
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 616.384,
+        "usage": {
+          "input_tokens": 197,
+          "output_tokens": 0,
+          "state_tokens": 75,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "handoff-legacy-incomplete",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "acceptance": null,
+          "evidence": null
+        },
+        "confidence": {
+          "acceptance": 0.0477,
+          "evidence": 0.0394
+        },
+        "probabilities": {
+          "acceptance": {
+            "adequate": 0.4569,
+            "needs_attention": 0.1989,
+            "insufficient_context": 0.3442
+          },
+          "evidence": {
+            "adequate": 0.4688,
+            "needs_attention": 0.233,
+            "insufficient_context": 0.2981
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 513.002,
+        "usage": {
+          "input_tokens": 141,
+          "output_tokens": 0,
+          "state_tokens": 47,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "handoff-described-complete",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "acceptance": null,
+          "evidence": null
+        },
+        "confidence": {
+          "acceptance": 0.3592,
+          "evidence": 0.4342
+        },
+        "probabilities": {
+          "acceptance": {
+            "adequate": 0.7663,
+            "needs_attention": 0.1305,
+            "insufficient_context": 0.1031
+          },
+          "evidence": {
+            "adequate": 0.8065,
+            "needs_attention": 0.1158,
+            "insufficient_context": 0.0777
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 788.473,
+        "usage": {
+          "input_tokens": 245,
+          "output_tokens": 0,
+          "state_tokens": 75,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "handoff-described-incomplete",
+      "tool": "laya_decide",
+      "status": "CALLED",
+      "result": {
+        "values": {
+          "acceptance": null,
+          "evidence": null
+        },
+        "confidence": {
+          "acceptance": 0.0322,
+          "evidence": 0.0552
+        },
+        "probabilities": {
+          "acceptance": {
+            "adequate": 0.3448,
+            "needs_attention": 0.2213,
+            "insufficient_context": 0.4339
+          },
+          "evidence": {
+            "adequate": 0.4566,
+            "needs_attention": 0.1852,
+            "insufficient_context": 0.3582
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 971.515,
+        "usage": {
+          "input_tokens": 189,
+          "output_tokens": 0,
+          "state_tokens": 47,
+          "state_tokens_dropped": 0,
+          "truncated": false,
+          "truncated_questions": []
+        },
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-guard-benign",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "jailbreak": {
+            "type": "noul",
+            "noul": 0,
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "prompt_injection": {
+            "type": "noul",
+            "noul": 0.1405,
+            "confidence": 0.8595,
+            "answer_confidence": 0.8595,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "sensitive_data": {
+            "type": "noul",
+            "noul": 0.0619,
+            "confidence": 0.9381,
+            "answer_confidence": 0.9381,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "harm_severity": {
+            "type": "score",
+            "score": 0.8874,
+            "legend": {
+              "0": "none: ordinary request",
+              "1": "minor: mildly inappropriate",
+              "2": "serious: unsafe advice or abuse",
+              "3": "severe: dangerous or illegal"
+            },
+            "probabilities": {
+              "0": 0.2938,
+              "1": 0.5528,
+              "2": 0.1255,
+              "3": 0.0278
+            },
+            "confidence": 0.2443,
+            "answer_confidence": 0.5528,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "topic": {
+            "type": "choice",
+            "choice": "coding",
+            "probabilities": {
+              "product_support": 0.0104,
+              "coding": 0.6471,
+              "general_knowledge": 0.2868,
+              "personal_advice": 0.0042,
+              "security_testing": 0.011,
+              "other": 0.0404
+            },
+            "confidence": 0.5033,
+            "answer_confidence": 0.6471,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 997.419,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-guard-injection",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "jailbreak": {
+            "type": "noul",
+            "noul": 0.9859,
+            "confidence": 0.9859,
+            "answer_confidence": 0.9859,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "prompt_injection": {
+            "type": "noul",
+            "noul": 0.9364,
+            "confidence": 0.9364,
+            "answer_confidence": 0.9364,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "sensitive_data": {
+            "type": "noul",
+            "noul": 0.09,
+            "confidence": 0.91,
+            "answer_confidence": 0.91,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "harm_severity": {
+            "type": "score",
+            "score": 2.0867,
+            "legend": {
+              "0": "none: ordinary request",
+              "1": "minor: mildly inappropriate",
+              "2": "serious: unsafe advice or abuse",
+              "3": "severe: dangerous or illegal"
+            },
+            "probabilities": {
+              "0": 0.0653,
+              "1": 0.1734,
+              "2": 0.3706,
+              "3": 0.3906
+            },
+            "confidence": 0.1221,
+            "answer_confidence": 0.3906,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "topic": {
+            "type": "choice",
+            "choice": "coding",
+            "probabilities": {
+              "product_support": 0.0195,
+              "coding": 0.8051,
+              "general_knowledge": 0.0067,
+              "personal_advice": 0.0326,
+              "security_testing": 0.1329,
+              "other": 0.0031
+            },
+            "confidence": 0.6188,
+            "answer_confidence": 0.8051,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 2559.691,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-email-benign",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "category": {
+            "type": "choice",
+            "choice": "other",
+            "probabilities": {
+              "billing": 0.0139,
+              "technical": 0.0229,
+              "sales": 0.0219,
+              "security": 0.0215,
+              "hr": 0.0954,
+              "other": 0.8243
+            },
+            "confidence": 0.6117,
+            "answer_confidence": 0.8243,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_spam": {
+            "type": "noul",
+            "noul": 0.0006,
+            "confidence": 0.9994,
+            "answer_confidence": 0.9994,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_phishing": {
+            "type": "noul",
+            "noul": 0.0562,
+            "confidence": 0.9438,
+            "answer_confidence": 0.9438,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 0.8336,
+            "legend": {
+              "0": "no time pressure",
+              "1": "needs attention soon",
+              "2": "blocking issue or hard deadline"
+            },
+            "probabilities": {
+              "0": 0.2826,
+              "1": 0.6012,
+              "2": 0.1162
+            },
+            "confidence": 0.1688,
+            "answer_confidence": 0.6012,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "needs_reply": {
+            "type": "noul",
+            "noul": 0.1184,
+            "confidence": 0.8816,
+            "answer_confidence": 0.8816,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 3876.372,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-email-phishing",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "category": {
+            "type": "choice",
+            "choice": "security",
+            "probabilities": {
+              "billing": 0.0012,
+              "technical": 0.0054,
+              "sales": 0.0004,
+              "security": 0.9924,
+              "hr": 0.0003,
+              "other": 0.0003
+            },
+            "confidence": 0.971,
+            "answer_confidence": 0.9924,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_spam": {
+            "type": "noul",
+            "noul": 1,
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_phishing": {
+            "type": "noul",
+            "noul": 0.9727,
+            "confidence": 0.9727,
+            "answer_confidence": 0.9727,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "urgency": {
+            "type": "score",
+            "score": 1.3501,
+            "legend": {
+              "0": "no time pressure",
+              "1": "needs attention soon",
+              "2": "blocking issue or hard deadline"
+            },
+            "probabilities": {
+              "0": 0.0279,
+              "1": 0.5942,
+              "2": 0.378
+            },
+            "confidence": 0.2929,
+            "answer_confidence": 0.5942,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "needs_reply": {
+            "type": "noul",
+            "noul": 0.2491,
+            "confidence": 0.7509,
+            "answer_confidence": 0.7509,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 4659.638,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-triage-neutral",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "other",
+            "probabilities": {
+              "refund": 0.0341,
+              "technical_help": 0.1019,
+              "billing_question": 0.0073,
+              "information": 0.2317,
+              "cancellation": 0.0142,
+              "other": 0.6107
+            },
+            "confidence": 0.3948,
+            "answer_confidence": 0.6107,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_urgent": {
+            "type": "noul",
+            "noul": 0.1384,
+            "confidence": 0.8616,
+            "answer_confidence": 0.8616,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "frustration": {
+            "type": "score",
+            "score": 0.6165,
+            "legend": {
+              "0": "calm and neutral",
+              "1": "concerned but civil",
+              "2": "clearly annoyed",
+              "3": "very angry or using strong language"
+            },
+            "probabilities": {
+              "0": 0.534,
+              "1": 0.342,
+              "2": 0.0975,
+              "3": 0.0265
+            },
+            "confidence": 0.2605,
+            "answer_confidence": 0.534,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "refund_requested": {
+            "type": "noul",
+            "noul": 0.0002,
+            "confidence": 0.9998,
+            "answer_confidence": 0.9998,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "churn_risk": {
+            "type": "noul",
+            "noul": 0.2094,
+            "confidence": 0.7906,
+            "answer_confidence": 0.7906,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 4922.963,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-triage-refund",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "intent": {
+            "type": "choice",
+            "choice": "refund",
+            "probabilities": {
+              "refund": 0.9998,
+              "technical_help": 0,
+              "billing_question": 0.0001,
+              "information": 0,
+              "cancellation": 0,
+              "other": 0.0001
+            },
+            "confidence": 0.9988,
+            "answer_confidence": 0.9998,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_urgent": {
+            "type": "noul",
+            "noul": 0.1484,
+            "confidence": 0.8516,
+            "answer_confidence": 0.8516,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "frustration": {
+            "type": "score",
+            "score": 1.3412,
+            "legend": {
+              "0": "calm and neutral",
+              "1": "concerned but civil",
+              "2": "clearly annoyed",
+              "3": "very angry or using strong language"
+            },
+            "probabilities": {
+              "0": 0.1841,
+              "1": 0.333,
+              "2": 0.4405,
+              "3": 0.0424
+            },
+            "confidence": 0.1539,
+            "answer_confidence": 0.4405,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "refund_requested": {
+            "type": "noul",
+            "noul": 0.7954,
+            "confidence": 0.7954,
+            "answer_confidence": 0.7954,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "churn_risk": {
+            "type": "noul",
+            "noul": 0.0228,
+            "confidence": 0.9772,
+            "answer_confidence": 0.9772,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 4733.027,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-moderation-benign",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "toxic": {
+            "type": "noul",
+            "noul": 0.0001,
+            "confidence": 0.9999,
+            "answer_confidence": 0.9999,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "harassment": {
+            "type": "noul",
+            "noul": 0,
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "threat": {
+            "type": "noul",
+            "noul": 0,
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "spam": {
+            "type": "noul",
+            "noul": 0,
+            "confidence": 1,
+            "answer_confidence": 1,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "severity": {
+            "type": "score",
+            "score": 0.2889,
+            "legend": {
+              "0": "no rule-breaking: ordinary on-topic post",
+              "1": "mild: rude tone or off-topic, no target",
+              "2": "clear violation: insults, harassment or spam aimed at someone",
+              "3": "severe: threats, hate speech or calls for violence"
+            },
+            "probabilities": {
+              "0": 0.7777,
+              "1": 0.169,
+              "2": 0.0399,
+              "3": 0.0134
+            },
+            "confidence": 0.5079,
+            "answer_confidence": 0.7777,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 4391.812,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-moderation-toxic",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "toxic": {
+            "type": "noul",
+            "noul": 0.7043,
+            "confidence": 0.7043,
+            "answer_confidence": 0.7043,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "harassment": {
+            "type": "noul",
+            "noul": 0.6691,
+            "confidence": 0.6691,
+            "answer_confidence": 0.6691,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "threat": {
+            "type": "noul",
+            "noul": 0.2339,
+            "confidence": 0.7661,
+            "answer_confidence": 0.7661,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "spam": {
+            "type": "noul",
+            "noul": 0.1015,
+            "confidence": 0.8985,
+            "answer_confidence": 0.8985,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "severity": {
+            "type": "score",
+            "score": 1.3829,
+            "legend": {
+              "0": "no rule-breaking: ordinary on-topic post",
+              "1": "mild: rude tone or off-topic, no target",
+              "2": "clear violation: insults, harassment or spam aimed at someone",
+              "3": "severe: threats, hate speech or calls for violence"
+            },
+            "probabilities": {
+              "0": 0.1126,
+              "1": 0.4278,
+              "2": 0.4238,
+              "3": 0.0358
+            },
+            "confidence": 0.2121,
+            "answer_confidence": 0.4278,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 2438.114,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-model_router-simple",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "difficulty": {
+            "type": "score",
+            "score": 1.4114,
+            "legend": {
+              "0": "trivial: a lookup or one-liner",
+              "1": "easy: short answer, no reasoning",
+              "2": "moderate: several steps",
+              "3": "hard: long multi-step reasoning or specialist knowledge"
+            },
+            "probabilities": {
+              "0": 0.1186,
+              "1": 0.44,
+              "2": 0.3526,
+              "3": 0.0887
+            },
+            "confidence": 0.1368,
+            "answer_confidence": 0.44,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "domain": {
+            "type": "choice",
+            "choice": "chitchat",
+            "probabilities": {
+              "code": 0.0097,
+              "math_or_logic": 0.0051,
+              "writing": 0.0074,
+              "factual_lookup": 0.0034,
+              "data_analysis": 0.002,
+              "chitchat": 0.9723
+            },
+            "confidence": 0.9065,
+            "answer_confidence": 0.9723,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "needs_tools": {
+            "type": "noul",
+            "noul": 0.0789,
+            "confidence": 0.9211,
+            "answer_confidence": 0.9211,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_sensitive": {
+            "type": "noul",
+            "noul": 0.0371,
+            "confidence": 0.9629,
+            "answer_confidence": 0.9629,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 2539.247,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "preset-model_router-tools",
+      "tool": "laya_preset",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "difficulty": {
+            "type": "score",
+            "score": 0.9426,
+            "legend": {
+              "0": "trivial: a lookup or one-liner",
+              "1": "easy: short answer, no reasoning",
+              "2": "moderate: several steps",
+              "3": "hard: long multi-step reasoning or specialist knowledge"
+            },
+            "probabilities": {
+              "0": 0.3809,
+              "1": 0.3315,
+              "2": 0.2516,
+              "3": 0.036
+            },
+            "confidence": 0.1341,
+            "answer_confidence": 0.3809,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "domain": {
+            "type": "choice",
+            "choice": "factual_lookup",
+            "probabilities": {
+              "code": 0.0648,
+              "math_or_logic": 0.0222,
+              "writing": 0.0123,
+              "factual_lookup": 0.6708,
+              "data_analysis": 0.1984,
+              "chitchat": 0.0315
+            },
+            "confidence": 0.4342,
+            "answer_confidence": 0.6708,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "needs_tools": {
+            "type": "noul",
+            "noul": 0.2769,
+            "confidence": 0.7231,
+            "answer_confidence": 0.7231,
+            "action": {
+              "act_probability": 1
+            }
+          },
+          "is_sensitive": {
+            "type": "noul",
+            "noul": 0.0737,
+            "confidence": 0.9263,
+            "answer_confidence": 0.9263,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 2430.038,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "route-english",
+      "tool": "laya_route",
+      "status": "CALLED",
+      "result": {
+        "model": "english",
+        "repo": "convaiinnovations/laya",
+        "reason": "English Latin text"
+      }
+    },
+    {
+      "id": "route-batch",
+      "tool": "laya_route_batch",
+      "status": "CALLED",
+      "result": {
+        "decisions": [
+          {
+            "model": "english",
+            "repo": "convaiinnovations/laya",
+            "reason": "English Latin text"
+          },
+          {
+            "model": "multilingual",
+            "repo": "convaiinnovations/laya/multilingual",
+            "reason": "explicit lang='pt'"
+          },
+          {
+            "model": "typed-decisions",
+            "repo": "convaiinnovations/laya/typed-decisions",
+            "reason": "explicit task='typed_decisions'"
+          }
+        ],
+        "model_counts": {
+          "english": 1,
+          "multilingual": 1,
+          "typed-decisions": 1
+        }
+      }
+    },
+    {
+      "id": "ticket-batch",
+      "tool": "laya_predict_batch",
+      "status": "CALLED",
+      "result": {
+        "requests": [
+          {
+            "answers": {
+              "department": {
+                "type": "choice",
+                "choice": "billing",
+                "probabilities": {
+                  "billing": 0.9894,
+                  "technical": 0.0032,
+                  "sales": 0.0034,
+                  "other": 0.0041
+                },
+                "confidence": 0.9491,
+                "answer_confidence": 0.9894,
+                "action": {
+                  "act_probability": 1
+                }
+              },
+              "urgency": {
+                "type": "score",
+                "score": 1.9281,
+                "legend": {
+                  "0": "no deadline",
+                  "1": "soon",
+                  "2": "today or immediately"
+                },
+                "probabilities": {
+                  "0": 0.0233,
+                  "1": 0.0253,
+                  "2": 0.9514
+                },
+                "confidence": 0.7925,
+                "answer_confidence": 0.9514,
+                "action": {
+                  "act_probability": 1
+                }
+              },
+              "refund": {
+                "type": "noul",
+                "noul": 0.9166,
+                "confidence": 0.9166,
+                "answer_confidence": 0.9166,
+                "action": {
+                  "act_probability": 1
+                }
+              }
+            },
+            "routing": {
+              "model": "english",
+              "repo": "convaiinnovations/laya",
+              "reason": "English Latin text",
+              "detection": {
+                "script": "latin",
+                "script_profile": {
+                  "latin": 1
+                },
+                "language": "en",
+                "is_english": true,
+                "language_undecided": false,
+                "diacritic_rate": 0,
+                "non_latin_fraction": 0,
+                "mixed_segment": null
+              },
+              "workflow": null
+            },
+            "device": "cpu"
+          },
+          {
+            "answers": {
+              "department": {
+                "type": "choice",
+                "choice": "billing",
+                "probabilities": {
+                  "billing": 1,
+                  "technical": 0,
+                  "sales": 0,
+                  "other": 0
+                },
+                "confidence": 1,
+                "answer_confidence": 1,
+                "action": {
+                  "act_probability": 1
+                }
+              },
+              "urgency": {
+                "type": "score",
+                "score": 1.9066,
+                "legend": {
+                  "0": "no deadline",
+                  "1": "soon",
+                  "2": "today or immediately"
+                },
+                "probabilities": {
+                  "0": 0.0044,
+                  "1": 0.0846,
+                  "2": 0.911
+                },
+                "confidence": 0.7107,
+                "answer_confidence": 0.911,
+                "action": {
+                  "act_probability": 1
+                }
+              },
+              "refund": {
+                "type": "noul",
+                "noul": 0.9913,
+                "confidence": 0.9913,
+                "answer_confidence": 0.9913,
+                "action": {
+                  "act_probability": 1
+                }
+              }
+            },
+            "routing": {
+              "model": "multilingual",
+              "repo": "convaiinnovations/laya/multilingual",
+              "reason": "explicit lang='pt'",
+              "detection": null,
+              "workflow": null
+            },
+            "device": "cpu"
+          }
+        ],
+        "model_counts": {
+          "english": 1,
+          "multilingual": 1
+        },
+        "total_latency_ms": 1814.67,
+        "per_request_latency_ms": 907.335
+      }
+    },
+    {
+      "id": "many-options",
+      "tool": "laya_shortlist",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "department": {
+            "type": "choice",
+            "choice": "billing",
+            "probabilities": {
+              "sales": 0.0113,
+              "security": 0.0167,
+              "billing": 0.9458,
+              "hr": 0.0117,
+              "technical": 0.0145
+            },
+            "confidence": 0.8229,
+            "answer_confidence": 0.9458,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text"
+        },
+        "shortlist": {
+          "department": {
+            "labels": [
+              "sales",
+              "security",
+              "billing",
+              "hr",
+              "technical"
+            ],
+            "scores": [
+              0.9052959506096642,
+              0.8627583012816722,
+              0.8590794161866909,
+              0.8505189609439311,
+              0.8338625601994716
+            ],
+            "k": 5,
+            "n": 25,
+            "passthrough": false
+          }
+        },
+        "latency_ms": 2732.585,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "owner-reversed",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "owner": {
+            "type": "choice",
+            "choice": "Gard",
+            "probabilities": {
+              "Archie": 0.0688,
+              "Gard": 0.7997,
+              "none": 0.0998,
+              "Pipe": 0.0317
+            },
+            "confidence": 0.4933,
+            "answer_confidence": 0.7997,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "english",
+          "repo": "convaiinnovations/laya",
+          "reason": "English Latin text",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": "en",
+            "is_english": true,
+            "language_undecided": false,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 354.028,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "context-truncated",
+      "tool": "laya_predict",
+      "status": "CALLED",
+      "result": {
+        "answers": {
+          "filler": {
+            "type": "noul",
+            "noul": 0.8742,
+            "confidence": 0.8742,
+            "answer_confidence": 0.8742,
+            "action": {
+              "act_probability": 1
+            }
+          }
+        },
+        "routing": {
+          "model": "multilingual",
+          "repo": "convaiinnovations/laya/multilingual",
+          "reason": "Latin script, language not identified and no non-English letters; using default (multilingual)",
+          "detection": {
+            "script": "latin",
+            "script_profile": {
+              "latin": 1
+            },
+            "language": null,
+            "is_english": true,
+            "language_undecided": true,
+            "diacritic_rate": 0,
+            "non_latin_fraction": 0,
+            "mixed_segment": null
+          },
+          "workflow": null
+        },
+        "latency_ms": 167.474,
+        "device": "cpu"
+      }
+    },
+    {
+      "id": "reject-free-string",
+      "tool": "laya_decide",
+      "status": "FAILED",
+      "error": "properties.note: a free string cannot be a fixed option set; use 'enum' or a boolean"
+    },
+    {
+      "id": "reject-routing-conflict",
+      "tool": "laya_route",
+      "status": "FAILED",
+      "error": "task routes between checkpoints; with a pinned model there is nothing to route"
+    }
+  ]
+}

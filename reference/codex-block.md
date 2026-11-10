@@ -7,9 +7,9 @@ down to the working directory), so read `~/AGENTS.md` before dispatching any
 agent. This block holds only what is specific to Codex, and is reinstalled like
 the agents: local rules go outside the markers.
 
-On any task, including LOW without delegation, preserve concrete incidental
-findings using the `orchestrate` skill's incidental-findings procedure; do
-nothing extra without findings.
+Before delivery, follow `orchestrate` completion for documentation and release
+impact; LOW stays inline. Preserve incidental findings through its procedure;
+otherwise, do nothing extra.
 
 - **The team are Codex subagents** in `$CODEX_HOME/agents/` (`~/.codex` by default). Ask for one by name.
 - **Generated agents set effort and, by default, model.** The installer maps

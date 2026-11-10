@@ -6,12 +6,25 @@ project outside it, read `~/AGENTS.md` before dispatching any agent. This block
 holds only what is specific to Claude Code, and is reinstalled like the agents:
 local rules go outside the markers.
 
-On any task, including LOW without delegation, preserve concrete incidental
-findings using the `orchestrate` skill's incidental-findings procedure; do
-nothing extra without findings.
+Before delivery, follow `orchestrate` completion for documentation and release
+impact; LOW stays inline. Preserve incidental findings through its procedure;
+otherwise, do nothing extra.
 
-Each rule below is `[ENFORCED]`: a hook (`~/.claude/hooks/canonkit-hook.js`)
-backs it, independently of my judgment.
+Claude Code's native permission modes remain authoritative. Do not change the
+user's selected mode, bypass permission checks, or add broad automatic approvals.
+Repository access restrictions live in `.claude/settings.json`; supported user-only
+controls remain in the user's settings. Instructions govern review and authorization:
+ask before git commit or git push, never bypass Git hooks or signing, protect secrets,
+and obtain independent review after the final edit of a HIGH-risk change.
+
+Without optional canonkit hooks, those rules hold by judgment: do not claim automatic
+hook prompts, secret blocks, dispatch logging or a Stop-hook review gate.
+
+<!-- canonkit:optional-hooks:start -->
+Optional canonkit hook registrations have been observed with the required matchers
+and this package's payload. Runtime activation and higher-priority overrides still
+belong to Claude Code. The following `[ENFORCED]` claims apply only while those hooks
+actually run; they do not replace the native permission mode or provide OS isolation.
 
 - `[ENFORCED]` **Only Perry loosens a performance budget**, and only with a measured floor
   justifying the new number. Raising a threshold to make a build pass is how a performance gate dies
@@ -32,3 +45,4 @@ backs it, independently of my judgment.
   was edited and no independent reviewer was dispatched, or resumed with a message, **after that
   edit**; a reviewer subagent's own probes outside the project do not count as edits. Who counts as a reviewer
   and how to answer the gate: "No self-merge on HIGH risk" in `~/AGENTS.md`. <!-- enforced-by: definition-of-done -->
+<!-- canonkit:optional-hooks:end -->

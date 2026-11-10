@@ -6,9 +6,9 @@ working directory; if it is not in context, read `~/AGENTS.md` before
 dispatching any agent. This block holds only what is specific to OpenCode, and
 is reinstalled like the agents: local rules go outside the markers.
 
-On any task, including LOW without delegation, preserve concrete incidental
-findings using the `orchestrate` skill's incidental-findings procedure; do
-nothing extra without findings.
+Before delivery, follow `orchestrate` completion for documentation and release
+impact; LOW stays inline. Preserve incidental findings through its procedure;
+otherwise, do nothing extra.
 
 - **The team are subagents.** The core team is in `~/.config/opencode/agents/`, a
   project's specialists in its `.opencode/agents/`. Dispatch one with the task

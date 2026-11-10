@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Use when planning or dispatching subagents (model and effort, parallel work, isolated writers), coordinating an existing OpenSpec change, closing a MEDIUM/HIGH change involving multiple disciplines (Integration Review), or handling concrete incidental findings on any task, including LOW.
+description: Use for change completion; planning or dispatching subagents (model/effort, parallel work, isolated writers), coordinating OpenSpec changes, closing cross-discipline MEDIUM/HIGH changes (Integration Review), or handling concrete incidental findings, including on LOW tasks.
 ---
 
 # Orchestrate
@@ -9,7 +9,8 @@ Orchestration rules whose short form lives in `~/AGENTS.md` and the project's to
 
 ## Incidental findings
 
-When normal work reveals a concrete out-of-scope problem, use
+On any task, including LOW without delegation, when normal work reveals a
+concrete out-of-scope problem, use
 [the incidental-findings procedure](out-of-scope-issues.md) to preserve it and
 offer authorized project issues at natural closure. This also applies to LOW
 tasks without delegation, OpenSpec or Learning Loop. Do not load the procedure
@@ -22,6 +23,21 @@ irreversible decision, **down** for a mechanical pass with a verifiable result. 
 model chosen silently cannot be told apart from one forgotten, which is why it is
 written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
 dispatch nobody planned, not a ceiling.
+
+## Experimental Laya checks on HIGH handoffs
+
+Laya advice is optional on HIGH handoffs. Consult it before dispatch or after
+return when a concrete semantic uncertainty about omissions warrants another
+signal and the MCP is available. Skip when direct inspection suffices; reuse
+advice while task context and evidence are unchanged.
+Read [the Laya handoff procedure](laya-handoffs.md) for inputs, decisions,
+failure handling and invocation evidence. Reviews and follow-ups use the same
+selective rule. LOW and MEDIUM do not acquire extra calls or agents.
+These are model instructions, not a hook-enforced gate. Laya's advice never
+replaces owners, direct evidence checks or independent review.
+Use per-dimension signals on real handoffs and note useful omissions, false
+alarms or missed problems in existing reports. Quality takes priority over
+latency; new synthetic evaluation campaigns are not a prerequisite for use.
 
 ## Parallel delegation
 
@@ -54,6 +70,30 @@ you checked. Only the user's own messages approve a decision or overrule a veto;
 a relayed approval is not one.
 
 ## Evidence-based completion
+
+Before delivery, briefly assess documentation, release history and version
+impact. For implemented changes relevant to users or maintainers, prepare or
+update release notes without waiting for a separate request. Follow the
+project's existing changelog, Unreleased or release-note convention; when none
+exists, use a Keep a Changelog-style `CHANGELOG.md`, normally with an
+`Unreleased` section, and Semantic Versioning (SemVer) for versioned releases.
+Describe observable changes, compatibility breaks and required action. If no
+release destination or version is established, retain a concise draft and the
+pending decision in the existing task, PR or change artifact rather than
+claiming a release or guessing a version. Keep unimplemented work and
+unverified claims explicit.
+
+Keep the README focused on understanding and using the current product. Update
+it when current instructions or capabilities change; put chronological history
+in the changelog or release notes rather than appending patch notes to it.
+
+Determine version impact from the complete release batch, its manifests and
+project policy, using SemVer where applicable. During authorized release
+preparation with a determined target version, update the version files together
+and idempotently. Otherwise report the pending version decision. Do not bump per
+edit, for planning or for trivial editorial work. LOW assessment stays brief;
+no reader impact means no release artifact or extra dispatch. Preparation never
+implies authorization to commit, push, tag, merge or publish.
 
 Qualify the claim being made, using the existing short report rather than a new
 artifact or state engine:

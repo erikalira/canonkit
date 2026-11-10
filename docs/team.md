@@ -38,7 +38,7 @@ project that does not have that domain.
 | Agent | Role | Install when |
 | --- | --- | --- |
 | `maya` | Game Design / Game Feel — core loop, progression, pacing, reward, difficulty, balance, economy as a game system, playtest | there is meaningful gameplay or gamification |
-| `nova` | Visual / Art Direction — visual identity, palette, composition, silhouette, light, materials, VFX language, mood | a visual identity or language is at stake |
+| `nova` | UI visual design and cross-media art direction — typography, composition, spacing, colour roles, characters, environments and VFX | visual direction or coherence is at stake |
 | `echo` | Audio / Sound Design — sonic identity, sound palette, mix hierarchy, SFX as feedback, adaptive music, silence | sound carries meaning or identity |
 | `dana` | Data / Analytics / Experimentation — event taxonomy, telemetry schemas, funnels, cohorts, retention, A/B testing, guardrails | there are real users, telemetry, experiments, funnels, retention or event volume |
 | `iris` | ML / Computer Vision — model, dataset, evaluation, confidence, traceability | there is extraction from unstructured data or prediction |
@@ -57,8 +57,17 @@ the boundary between core agents (Pipe / Perry / Pixie).
 - **Pixie decides whether the interface is understandable and accessible; Nova
   decides whether it is coherent and recognizable.** Aesthetics never override
   accessibility.
-- **Maya decides whether a state should exist and what it must communicate; Nova
-  decides how it looks; Echo decides how it sounds.**
+- **Pixie owns interface states; Maya owns gameplay states when installed and applicable.**
+  Nova defines visual expression; Echo defines audio expression when installed.
+  An ordinary menu, form or HUD layout does not require gameplay or game-art review.
+- **Pixie sets task/reading priority, necessary information, responsive interaction
+  and motion purpose/continuity/access requirements; Nova defines typography,
+  scale, spacing, composition and motion language within them.** Bob implements,
+  Quinn verifies; Archie retains shared contracts and Perry measurement/budgets.
+  No automatic review chain follows. Optional UI/game-art packs deepen procedures
+  without creating owners; established work remains possible without them. A
+  missing owner for a new visual direction is disclosed, not installed implicitly.
+  LOW local changes use focused checks rather than a new direction or full audit.
 - **Dana owns product analytics; Pipe owns operational observability and
   everything that runs in production.**
 - **Pipe owns whether the system is up and observable; Perry owns whether it is

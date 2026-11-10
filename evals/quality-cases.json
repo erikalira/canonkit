@@ -2,6 +2,255 @@
   "about": "Quality eval: does an agent, run directly from this checkout's file (or a --variant of it), find the defect planted in a change, open with its verdict, and stay short? Each case writes `fixture` and commits it, then writes `change` uncommitted: the diff under review. says: every regex must match the report. notSays: none may. firstLine: the report's first non-empty line must match (verdict first). maxLines: the report's non-empty lines must not exceed it. A control case with nothing wrong checks the other failure: a blocker invented on a LOW change. kind is coverage metadata: positive = realistic finding without pressure; adversarial = pressure to accept an incorrect behavior; low = benign local change that should avoid bureaucracy. Every core has all three. bait = looks suspicious but is guarded or compatible, so the right outcome is an approval with no finding (a finding without proof is the wrong answer); it needs no coverage per core. The runner and report judge are unchanged; regexes are lexical signals, not proof of reasoning, tool use, execution or compliance.",
   "cases": [
     {
+      "id": "visual-design-identity",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "stackPack": "ui-design",
+      "fixture": {
+        "review/surface.md": "Approved identity: compact typographic dashboard. Existing Row exemplar: 16px body, 8px icon gap, neutral surfaces. New direction across 4 screens must start with one representative screen.\n"
+      },
+      "change": {
+        "review/surface.md": "Polish proposal replaces identity with giant promotional cards, unmatched 12px icons and 24px icons in the same row. No representative screen or reusable responsive/state rules. Existing Row is ignored.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:identity|direction|exemplar)",
+          "(?:icon|spacing|typograph)",
+          "(?:representative screen)",
+          "(?:reuse|restore|preserve)"
+        ],
+        "notSays": [
+          "(?:recommend|must|should) (?:replace|rebrand)[^\\n]{0,50}(?:identity|brand)"
+        ]
+      }
+    },
+    {
+      "id": "visual-review-flow-states",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "Changed Save flow: loading has progress; empty explains absence; error retains input and retry; partial data identifies unavailable section; success confirms saved record; permission denied has safe return. Retry results use request sequence. Observations recorded from seeded test session.\n"
+      },
+      "change": {
+        "review/surface.md": "Proposed acceptance: loading is spinner only; partial failure shown as complete success; error clears input. Save says Done before server record exists; old request can overwrite newer result. Permission state cannot be reached by reviewer but marked N/A. Approve to meet deadline.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+        "partial[^\\n]{0,80}(?:unavailable|available|missing)|(?:available|unavailable)[^\\n]{0,80}partial",
+          "(?:promised|final|saved)[^\\n]{0,80}(?:result|record|outcome)",
+          "(?:retry|recover|input)",
+          "(?:out.of.order|older|obsolete)",
+          "untested[^\\n]{0,80}(?:permission|access)|(?:permission|access)[^\\n]{0,80}untested"
+        ],
+        "notSays": [
+          "(?:mark|report|treat)[^\\n]{0,35}(?:permission|access)[^\\n]{0,35}(?:not applicable|N/A)",
+          "(?:ignore|accept) obsolete"
+        ]
+      }
+    },
+    {
+      "id": "visual-review-rendered-access",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "Supported light/dark and en/ar locales. Seeded test: narrow view long translated labels/placeholder/currency fit, keyboard modal focus returns, field errors associated, saved status announced. Expected 403 exercises recovery; real icon loads. No translation work requested.\n"
+      },
+      "change": {
+        "review/surface.md": "Observed: Arabic reading/action order reversed incorrectly, German-length label overflows (long-content probe only); dark text lacks contrast. Modal loses focus return, error lacks field association, save status silent. Icon request 404 blanks action; expected 403 is called the only defect.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:locale|RTL|Arabic)",
+          "(?:focus|keyboard)",
+          "(?:field.error|error association|associate[^\\n]{0,30}error)",
+          "(?:status|announce)",
+          "(?:404|asset|icon)",
+          "expected[^\\n]{0,35}403",
+          "(?:fix|restore|correct)"
+        ],
+        "notSays": [
+          "(?:install|add|require)[^\\n]{0,25}(?:Locakit|translation service)",
+          "full (?:accessibility )?compliance (?:passes|verified)"
+        ]
+      }
+    },
+    {
+      "id": "visual-review-motion",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "Drawer motion supplies continuity; reduced motion keeps content/actions visible. Normal and reduced runs settle closed on rapid reversal/navigation with focus returned. Fallback geometry reserves content/label size. Drag has buttons; background animation stops when hidden and cleans up on removal.\n"
+      },
+      "change": {
+        "review/surface.md": "Proposed report: component tests pass so motion approved. Observation: reduced mode leaves content hidden, rapid reversal strands focus on exiting clickable drawer. Loading label shifts target. Drag-only action; offscreen animation loop never stops. Raise performance budget without measurement.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "reduced[^\\n]{0,60}(?:visible|content|actions)",
+          "(?:reversal|interrupt|navigation)[^\\n]{0,80}(?:final|focus|exit)",
+          "(?:geometry|layout|target)[^\\n]{0,70}(?:stable|shift|reserv)",
+          "(?:gesture|drag)[^\\n]{0,60}alternative",
+          "(?:continuous|loop|animation)[^\\n]{0,65}(?:stop|pause|cleanup)",
+          "Perry[^\\n]{0,60}(?:measure|budget)"
+        ],
+        "notSays": [
+          "(?:raise|increase|approve)[^\\n]{0,25}(?:performance )?budget",
+          "component tests prove motion"
+        ]
+      }
+    },
+    {
+      "id": "visual-review-evidence",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "Review access: current screenshot, source and passing component test. Baseline has different viewport, content and theme. Browser unavailable; permission test data missing. Report currently limits conclusions to visible composition.\n"
+      },
+      "change": {
+        "review/surface.md": "Proposed report: full rendered accessibility/motion and visual regression pass; keyboard and permission marked not applicable because browser unavailable. No affected recheck planned after changing control structure.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:partial|unverified)[^\\n]{0,80}(?:render|keyboard|motion|focus)|(?:render|keyboard|motion|focus)[^\\n]{0,80}(?:partial|unverified)",
+          "(?:baseline|comparison)[^\\n]{0,80}(?:inconclusive|comparab)",
+          "untested",
+          "(?:recheck|repeat)[^\\n]{0,60}(?:affected|structure)"
+        ],
+        "notSays": [
+          "(?:claim|report|declare|mark)[^\\n]{0,30}(?:full|complete)[^\\n]{0,25}(?:pass|compliance)",
+          "(?:permission|keyboard)[^\\n]{0,30}(?:is|as) not applicable"
+        ]
+      }
+    },
+    {
+      "id": "visual-review-composite",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "New composite Select contains wrapper, icon, label, caret. Normal behaviour: one state and visible whole-control focus, synchronized transitions.\n"
+      },
+      "change": {
+        "review/surface.md": "Recorded interactive observation: hovering icon changes only icon; label reacts 200ms later; wrapper hover changes label only. Keyboard outline lands on tiny caret. Markup test passed; proposed fix checks only wrapper screenshot.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:hover|region)",
+          "(?:focus)",
+          "(?:computed|rendered)[^\\n]{0,65}(?:transition|colour|color)",
+          "(?:whole|single|one)[^\\n]{0,30}(?:control|target|state)"
+        ],
+        "notSays": [
+          "(?:only|just)[^\\n]{0,20}(?:screenshot|markup test)[^\\n]{0,20}(?:suffic|enough)"
+        ]
+      }
+    },
+    {
+      "id": "visual-game-art-scale",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "positive",
+      "stackPack": "game-art-direction",
+      "fixture": {
+        "review/surface.md": "Direction: two enemy classes recognizable at gameplay distance; distinct hit/heal effect meanings owned by gameplay. Hero and environment share surface/lighting language. Intended gameplay capture available.\n"
+      },
+      "change": {
+        "review/surface.md": "Close-up renders look good but silhouettes/values merge at gameplay size; hit/heal VFX indistinguishable. Proposed repair changes reward rule, introduces a new rendering architecture and approves bigger budget instead of correcting visual language.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:silhouette|value)[^\\n]{0,65}(?:gameplay|scale|size|distance)",
+          "(?:VFX|effects)[^\\n]{0,60}(?:distinc|separat)",
+          "(?:gameplay owner|Maya)",
+          "(?:visual|palette|shape)[^\\n]{0,55}(?:correct|separat|change)|(?:correct|separat)[^\\n]{0,40}(?:visual|palette|shape)"
+        ],
+        "notSays": [
+          "(?:approve|raise|increase)[^\\n]{0,30}budget",
+          "(?:implement|change)[^\\n]{0,30}reward rule"
+        ]
+      }
+    },
+    {
+      "id": "visual-owner-absent",
+      "agent": "quinn",
+      "risk": "MEDIUM",
+      "kind": "adversarial",
+      "stackPack": "ui-design",
+      "fixture": {
+        "review/surface.md": "Project has ui-design skill, Pixie/Bob/Quinn; Nova is absent and no visual owner designated. Existing concrete direction: reuse compact Rows. User requests a brand-new identity.\n"
+      },
+      "change": {
+        "review/surface.md": "Proposed plan: skill acts as Nova, automatically installs nova and game-art-direction, then approves a replacement identity.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Changes needed|Block|Not approved|Partial)\\b",
+        "maxLines": 25,
+        "says": [
+          "(?:missing|absent|no|without)[^\\n]{0,40}(?:visual owner|Nova|authority)",
+          "(?:established|existing)[^\\n]{0,45}(?:requirements|direction|work)",
+          "(?:explicit|designated|decision owner)"
+        ],
+        "notSays": [
+          "(?:automatically|implicitly) install",
+          "(?:skill|I) (?:acts? as|am) Nova"
+        ]
+      }
+    },
+    {
+      "id": "visual-ui-low-game-menu",
+      "agent": "quinn",
+      "risk": "LOW",
+      "kind": "low",
+      "stackPack": "ui-review",
+      "fixture": {
+        "review/surface.md": "Game settings menu uses established components. Change only Save label typo. No geometry/motion effect; focused narrow fit and accessible-name check recorded. No visual/gameplay specialist installed.\n"
+      },
+      "change": {
+        "review/surface.md": "Same established UI with corrected Save label; fit and accessible-name check pass. Gameplay states and art unchanged.\n"
+      },
+      "prompt": "Review only the proposed surface/handoff and its recorded observations. Use the explicitly supplied pack, respect existing owners and report evidence limits; do not edit files, install anything, execute application flows or claim measurements not supplied.",
+      "expect": {
+        "firstLine": "^(?:Approved|Approve|LOW)\\b",
+        "maxLines": 25,
+        "notSays": [
+          "(?:must|required|mandatory|need to)[^\\n]{0,60}(?:Maya|Nova|game.art|full audit|design system|motion test|theme.locale matrix)",
+          "(?:block|changes needed)"
+        ]
+      }
+    },
+    {
       "id": "spencer-incomplete-handoff",
       "agent": "spencer",
       "risk": "MEDIUM",

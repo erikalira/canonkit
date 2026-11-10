@@ -11,7 +11,7 @@ and are documented in the project that installed them: listing one here would
 claim it is always available, which is the one thing a specialist is not. So the
 absence of a specialist is an invariant to enforce, not a gap to report.
 
-Prints TAB-separated OK/FAIL lines for validate.sh to render.
+Prints TAB-separated OK/FAIL lines for validate.mjs to render.
 """
 import pathlib
 import re
@@ -64,7 +64,7 @@ for a in sorted(named):
         )
 
 # The dispatcher names the model per dispatch; frontmatter is the fallback and
-# is validated in validate.sh directly. The block must still carry the rule —
+# is validated in validate.mjs directly. The block must still carry the rule —
 # without it the decision goes unrecorded — but it no longer restates which
 # agent runs on what, because a prose copy of frontmatter is the drift this
 # check exists to prevent.

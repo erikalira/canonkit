@@ -13,6 +13,7 @@ const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "bin", "cli.js");
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const target = (project, pack = "react", root = ".agents") => path.join(project, root, "skills", `canonkit-${pack}`, "SKILL.md");
+const roots = [".agents", ".claude", ".github"];
 const receipt = (project) => path.join(project, ".canonkit", "stack-packs.json");
 let sandbox;
 before(async () => { sandbox = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-stacks-"))); });
@@ -42,13 +43,13 @@ async function snapshot(root, prefix = "") {
 }
 
 describe("project stack packs", () => {
-  test("each explicit pack installs two namespaced copies, never agents or other packs, and is idempotent", async () => {
+  test("each explicit pack installs three namespaced copies, never agents or other packs, and is idempotent", async () => {
     for (const id of STACK_PACK_IDS) {
       const s = await setup(`install-${id}`);
       const beforeHome = await snapshot(s.home);
       const first = s.run(["add", id]);
       assert.equal(first.status, 0, first.out);
-      for (const root of [".agents", ".claude"]) assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text);
+      for (const root of roots) assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text);
       assert.equal(existsSync(path.join(s.project, "AGENTS.md")), false);
       assert.equal(existsSync(path.join(s.project, ".codex")), false);
       for (const other of STACK_PACK_IDS.filter((name) => name !== id)) assert.equal(existsSync(target(s.project, other)), false);
@@ -63,8 +64,7 @@ describe("project stack packs", () => {
       assert.deepEqual(await snapshot(s.project), before, "list is read-only");
       const remove = s.run(["remove", id]);
       assert.equal(remove.status, 0, remove.out);
-      assert.equal(existsSync(target(s.project, id)), false);
-      assert.equal(existsSync(target(s.project, id, ".claude")), false);
+      for (const root of roots) assert.equal(existsSync(target(s.project, id, root)), false);
       assert.equal(s.run(["remove", id]).status, 0);
       assert.equal(s.run(["add", id]).status, 0, "removed pack can be added again");
     }
@@ -98,15 +98,62 @@ describe("project stack packs", () => {
     assert.deepEqual(await snapshot(s.project), before, "list cannot mutate multiple pack receipts");
     const removed = s.run(["remove", "kotlin"]);
     assert.equal(removed.status, 0, removed.out);
-    for (const root of [".agents", ".claude"]) {
+    for (const root of roots) {
       assert.equal(existsSync(target(s.project, "kotlin", root)), false);
       for (const id of ["react", "go", "swift"]) assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text);
     }
     const state = JSON.parse(await readFile(receipt(s.project), "utf8"));
     assert.equal(state.schemaVersion, initial.schemaVersion);
     assert.equal(state.pending, null);
-    assert.deepEqual(Object.keys(state.files).sort(), ["go", "react", "swift"].flatMap((id) => ["agents", "claude"].map((root) => `${id}:${root}:SKILL.md`)).sort());
+    assert.deepEqual(Object.keys(state.files).sort(), ["go", "react", "swift"].flatMap((id) => ["agents", "claude", "copilot"].map((root) => `${id}:${root}:SKILL.md`)).sort());
     for (const [file, digest] of Object.entries(initial.files)) assert.equal(state.files[file], digest, "adding/removing new packs preserves existing ownership hashes");
+  });
+
+  test("React and design packs preserve schema-1 bytes/hashes through selective removal and local conflicts", async () => {
+    const s = await setup("react-design");
+    const design = ["ui-design", "ui-review", "game-art-direction"];
+    assert.equal(s.run(["add", "react"]).status, 0);
+    const initial = JSON.parse(await readFile(receipt(s.project), "utf8"));
+    const reactBytes = new Map();
+    for (const root of roots) reactBytes.set(root, await readFile(target(s.project, "react", root)));
+    const added = s.run(["add", ...design]);
+    assert.equal(added.status, 0, added.out);
+    const all = await snapshot(s.project);
+    const allReceipt = JSON.parse(await readFile(receipt(s.project), "utf8"));
+    assert.equal(allReceipt.schemaVersion, 1);
+    assert.equal(allReceipt.pending, null);
+    assert.equal(Object.keys(allReceipt.files).length, 12);
+    for (const [file, digest] of Object.entries(initial.files)) assert.equal(allReceipt.files[file], digest);
+    for (const root of roots) assert.deepEqual(await readFile(target(s.project, "react", root)), reactBytes.get(root));
+    assert.equal(s.run(["list"]).status, 0);
+    assert.deepEqual(await snapshot(s.project), all);
+    assert.equal(existsSync(path.join(s.project, "AGENTS.md")), false);
+
+    const removed = s.run(["remove", "ui-design"]);
+    assert.equal(removed.status, 0, removed.out);
+    for (const root of roots) {
+      assert.equal(existsSync(target(s.project, "ui-design", root)), false);
+      for (const id of ["react", "ui-review", "game-art-direction"]) {
+        assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text);
+      }
+    }
+    const state = JSON.parse(await readFile(receipt(s.project), "utf8"));
+    assert.equal(state.schemaVersion, initial.schemaVersion);
+    assert.equal(state.pending, null);
+    assert.deepEqual(state.files, Object.fromEntries(Object.entries(allReceipt.files).filter(([key]) => !key.startsWith("ui-design:"))));
+
+    const edited = target(s.project, "ui-review");
+    await writeFile(edited, "local review guidance\n");
+    const conflict = s.run(["remove", "ui-review"]);
+    assert.equal(conflict.status, 1, conflict.out);
+    assert.equal(await readFile(edited, "utf8"), "local review guidance\n");
+    assert.equal(existsSync(target(s.project, "ui-review", ".claude")), false);
+    const unresolved = JSON.parse(await readFile(receipt(s.project), "utf8"));
+    assert.equal(unresolved.files["ui-review:agents:SKILL.md"], state.files["ui-review:agents:SKILL.md"]);
+    assert.equal("ui-review:claude:SKILL.md" in unresolved.files, false);
+    for (const root of roots) for (const id of ["react", "game-art-direction"]) {
+      assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text);
+    }
   });
 
   test("mixed specialist and pack requests work, and all names/preflight precede specialist writes", async () => {
@@ -210,7 +257,7 @@ describe("project stack packs", () => {
     const probe = await setup("link-probe");
     try { await symlink(probe.home, path.join(probe.project, "probe"), process.platform === "win32" ? "junction" : "dir"); }
     catch (err) { if (["EPERM", "EACCES", "ENOTSUP"].includes(err.code)) { t.skip("links unavailable"); return; } throw err; }
-    for (const point of [".agents", ".claude", ".canonkit", ".agents/skills", ".agents/skills/canonkit-react"]) {
+    for (const point of [".agents", ".claude", ".github", ".canonkit", ".agents/skills", ".agents/skills/canonkit-react"]) {
       const s = await setup(`link-${point.replaceAll("/", "-")}`), linked = path.join(s.project, point), outside = path.join(s.root, "external");
       await mkdir(outside); await writeFile(path.join(outside, "sentinel"), "safe");
       await mkdir(path.dirname(linked), { recursive: true });
@@ -303,6 +350,6 @@ describe("project stack packs", () => {
     await assert.rejects(s.store().change(["python"]), /running/);
     release(); assert.equal(await first, 0);
     assert.equal(await s.store().change(["python"]), 0);
-    assert.equal(Object.keys(JSON.parse(await readFile(receipt(s.project), "utf8")).files).length, 4);
+    assert.equal(Object.keys(JSON.parse(await readFile(receipt(s.project), "utf8")).files).length, 6);
   });
 });

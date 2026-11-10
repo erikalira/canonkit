@@ -16,6 +16,95 @@
   },
   "cases": [
     {
+      "id": "visual-ux-confusing",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise: cores and Nova are installed. A polished multi-step form hides its recovery action and users cannot identify the primary task. Choose the owner and explain the boundary; do not implement or install anything.",
+      "expect": {
+        "includes": [
+          "pixie"
+        ],
+        "says": "(?:comprehension|recovery|task)",
+        "notSays": "(?:aesthetic|visual) approval waives"
+      }
+    },
+    {
+      "id": "visual-nova-ui",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise: Nova is installed for visual direction across media, alongside core agents. A usable dashboard diverges from established typography, icon scale and spacing across screens. Accessibility and interaction are unchanged. Plan the visual review without inventing an access defect or installing packs.",
+      "expect": {
+        "includes": [
+          "nova"
+        ],
+        "says": "(?:typography|spacing|visual)",
+        "avoids": [
+          "maya"
+        ]
+      }
+    },
+    {
+      "id": "visual-nova-game-discovery",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise: Nova is installed alongside cores. Her description: Use for UI visual design: typography, composition, spacing, colour and coherence; cross-media art direction for characters, environments and VFX. Pixie owns UX/accessibility. Not for interface usability alone. Characters merge at intended gameplay scale; lighting and VFX drift from direction. Who reviews? The game-art-direction pack is absent; do not install it.",
+      "expect": {
+        "includes": [
+          "nova"
+        ],
+        "says": "(?:scale|silhouette|visual)",
+        "notSays": "(?:must|required to|automatically) install"
+      }
+    },
+    {
+      "id": "visual-owner-missing",
+      "risk": "MEDIUM",
+      "prompt": "The ui-design pack is present, but Nova and any designated visual owner are absent. A new visual identity is requested. Plan how to handle missing decision authority while allowing implementation of existing concrete visual requirements. No installation is authorized.",
+      "expect": {
+        "excludes": [
+          "nova"
+        ],
+        "says": "(?:visual|Nova)[^\\n]{0,65}(?:absent|missing|no owner|not installed)|(?:absent|missing|no owner)[^\\n]{0,65}(?:visual|Nova)",
+        "notSays": "(?:automatically|implicitly) install"
+      }
+    },
+    {
+      "id": "visual-motion-boundary",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise: cores and Nova are installed. Proposed drawer motion delays task feedback and hides content with reduced motion; it also raises a credible render-cost concern. State who defines functional/access requirements, visual expression and measurement/budget decisions. Do not impose a fixed library or raise a budget.",
+      "expect": {
+        "includes": [
+          "pixie",
+          "nova",
+          "perry"
+        ],
+        "says": "reduced.motion",
+        "notSays": "(?:raise|increase) (?:the )?budget"
+      }
+    },
+    {
+      "id": "visual-low-game-menu",
+      "risk": "LOW",
+      "prompt": "Correct a label typo in a game settings menu within established components. It changes no geometry, motion or gameplay states. No specialist is installed. Existing focused fit/access checks suffice; plan only the necessary work.",
+      "expect": {
+        "none": true,
+        "avoids": [
+          "maya",
+          "nova"
+        ],
+        "notSays": "(?:required|mandatory|must)[^\\n]{0,45}(?:full audit|design system|motion test)"
+      }
+    },
+    {
+      "id": "visual-usable-without-game-art",
+      "risk": "MEDIUM",
+      "prompt": "Planning exercise: Nova is installed but game-art-direction is absent. Review visual coherence of an existing asset family against its established principles. No new direction or pipeline change is requested, and detailed scale captures are unavailable. Retain authority, disclose evidence gaps and do not require installation.",
+      "expect": {
+        "includes": [
+          "nova"
+        ],
+        "says": "(?:evidence|untested|unverified|unavailable)",
+        "notSays": "(?:must|required to|automatically) install"
+      }
+    },
+    {
       "id": "graphify-dirty-current",
       "risk": "LOW",
       "prompt": "Planning exercise using supplied Git/graph state; do not execute commands or edit files. A tracked caller has staged changes, src/utils/format.js has unstaged edits, and a new untracked adapter calls it. All affect the question: which callers use the helper in the current working tree? The graph predates these edits; graphify update is available. Give the check, refresh and report/query sequence before using the graph as current structural evidence. No architecture change is requested.",

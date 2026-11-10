@@ -117,6 +117,23 @@ test("shared roster and skills survive partial uninstall; install does not forge
   assert.equal((await readFile(path.join(home, "AGENTS.md"), "utf8")).includes("agent-team-config:start"), false);
 });
 
+test("Copilot profiles and skills are tracked and removed independently", async (t) => {
+  const { home } = await scratch(t);
+  ok(run(home, ["install", "--copilot"]));
+  const profile = path.join(home, ".copilot", "agents", "bob.agent.md");
+  const skill = path.join(home, ".copilot", "skills", "orchestrate", "SKILL.md");
+  assert.ok(existsSync(profile));
+  assert.ok(existsSync(skill));
+  assert.ok((await manifest(home)).entries["copilot:file:agents/bob.agent.md"]);
+
+  ok(run(home, ["uninstall", "--copilot"]));
+  assert.equal(existsSync(profile), false);
+  assert.equal(existsSync(skill), false);
+  assert.equal(existsSync(path.join(home, ".claude")), false);
+  assert.equal(existsSync(path.join(home, ".codex")), false);
+  assert.equal((await readFile(path.join(home, "AGENTS.md"), "utf8")).includes("agent-team-config:start"), false);
+});
+
 test("core agent edits are preserved on reinstall and uninstall; previous backups are never overwritten", async (t) => {
   const { home } = await scratch(t);
   ok(run(home, ["install", "--claude", "--no-reference"]));
@@ -233,7 +250,7 @@ for (const harness of ["claude", "codex", "opencode"]) {
       assert.equal(after.model, "later-choice");
       assert.deepEqual(after.personal, { keep: "later edit" });
       if (harness === "opencode") assert.deepEqual(after.permissions, []);
-      else assert.doesNotMatch(JSON.stringify(after.hooks), /canonkit-(?:hook|codex)\.js/);
+      else assert.doesNotMatch(JSON.stringify(after.hooks ?? {}), /canonkit-(?:hook|codex)\.js/);
       const payload = path.join(dir, harness === "claude" ? "hooks" : "canonkit", harness === "claude" ? "canonkit-hook.js" : `canonkit-${harness}.js`);
       assert.equal(existsSync(payload), false, "the harness must not be retained by inconsistent snapshot evidence");
       assert.deepEqual((await manifest(home)).entries, {});
