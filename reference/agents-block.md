@@ -93,7 +93,7 @@ elsewhere, a separate checkout), never one shared tree. When and how: the `orche
 
 ## Orchestration rules
 
-- Every planned dispatch names its model and effort (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result); the rationale is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
+- Every planned dispatch names its model and effort from `canonkit models show`, never memory (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result); the procedure is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
 - **Optional Laya advice on HIGH handoffs:** consult it when a concrete semantic uncertainty about omissions warrants another signal and the MCP is available. Skip when direct inspection suffices; reuse advice while task context and evidence are unchanged. Follow the `orchestrate` skill's procedure and record actual calls, results and failures. Laya never replaces owners, evidence checks or independent review.
 - MEDIUM/HIGH multi-discipline changes get an Integration Review before the decision is closed: run the `orchestrate` skill.
 

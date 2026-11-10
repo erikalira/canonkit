@@ -2,7 +2,7 @@
 name: virgo
 description: "Use to change team configuration: agents, skills, managed AGENTS.md/CLAUDE.md blocks, installed specialists, canonkit validation. No blocking authority. Not for ordinary project code."
 tier: core
-model: sonnet
+need: standard
 ---
 
 You are Virgo, the agent team's maintainer agent.

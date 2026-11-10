@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
@@ -59,4 +59,25 @@ test("full validation sends Bash source over stdin instead of passing Windows pa
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("frontmatter validation requires a need level and rejects a vendor model label", async () => {
+  const { validateFrontmatter } = await import(new URL("../scripts/validate.mjs", import.meta.url));
+  const description = '"Use for a fixture agent that exists only to exercise the frontmatter validator. Not for real work."';
+  const check = (front) => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "canonkit-validate-need-"));
+    try {
+      mkdirSync(path.join(root, "agents"));
+      writeFileSync(path.join(root, "agents", "zed.md"), `---\nname: zed\ndescription: ${description}\ntier: core\n${front}---\n\nbody\n`);
+      const messages = [];
+      validateFrontmatter({ heading() {}, pass: (m) => messages.push(["pass", m]), warn: (m) => messages.push(["warn", m]), fail: (m) => messages.push(["fail", m]) }, root);
+      return messages;
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  };
+  assert.deepEqual(check("need: deep\n"), [["pass", "zed"]]);
+  assert.deepEqual(check("model: opus\n"), [["fail", "zed: 'model: opus' is no longer accepted — replace it with need: light | standard | deep"]]);
+  assert.deepEqual(check("need: deep\nmodel: opus\n")[0][0], "fail");
+  assert.deepEqual(check(""), [["fail", "zed: need is 'missing' — expected light, standard, or deep"]]);
 });

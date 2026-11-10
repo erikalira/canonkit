@@ -21,8 +21,32 @@ or run discovery tools when there are no findings.
 Every planned dispatch names its model and effort: **up** for a structural or
 irreversible decision, **down** for a mechanical pass with a verifiable result. A
 model chosen silently cannot be told apart from one forgotten, which is why it is
-written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
-dispatch nobody planned, not a ceiling.
+written down.
+
+The values come from the person's choices, never from memory: agents declare
+a `need` level, and `canonkit models setup` maps each level (and optionally an
+agent) to a model and effort the harness reported.
+
+- **Claude Code:** before a planned dispatch, run `npx canonkit models show
+  --json` from the project and read `harnesses.claude.agents.<agent>`. Pass its
+  `model.value` as the Agent tool's `model` parameter and its `effort.value` as
+  the `effort` parameter. This instruction is the explicit request that
+  parameter needs. Omit a parameter whose value is `null` (inherit). The `model`
+  parameter takes an alias only: pass `model.value` when `model.alias` is
+  `true`; otherwise omit it and let the agent's frontmatter carry it.
+  The parameters are how a project's choices reach user-level agents; text in
+  the prompt selects nothing. A `source` starting with "project" comes from the
+  repository's own file: name it in the plan, and before giving a reviewer
+  with a veto a weaker model or lower effort than `canonkit doctor` says your
+  own choices give, tell the person.
+- **Up or down** means another level the person configured, the `deep` or
+  `light` entry in the same output, not a model named from memory. When nothing
+  is configured, name the dispatch "inherit" and pass no parameter.
+- **Other harnesses** inherit the session's model and effort until model
+  selection supports them; name the dispatch "inherit".
+
+The `model:` and `effort:` that `canonkit install` writes into a Claude Code
+agent are the fallback for an ad-hoc dispatch nobody planned, not a ceiling.
 
 ## Experimental Laya checks on HIGH handoffs
 

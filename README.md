@@ -70,10 +70,10 @@ manual review. [Migration and recovery](docs/install.md#returning-existing-claud
 Native Windows remains supported with partial protection: Claude's shell
 commands there have no OS sandbox. [Environment coverage](docs/install.md#native-security-per-repository).
 
-Codex agents default to `gpt-6.1-sol`. To follow your Codex session's model
-instead of pinning a version, set `CANONKIT_CODEX_MODEL=inherit` when installing.
-See [model configuration](docs/install.md#follow-the-session-model) for PowerShell
-examples, overrides and updating existing agents.
+Agents run on your session's model until you choose otherwise. To pick the model
+and effort per need level from what your harness actually offers, run
+`npx canonkit models setup`, then `npx canonkit install --claude`. Codex, OpenCode
+and Copilot inherit the session model for now. See [Choosing models](docs/install.md#choosing-models).
 
 **Check that it worked:**
 

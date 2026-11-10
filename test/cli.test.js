@@ -135,7 +135,7 @@ describe("agent roster", () => {
 name: zed
 description: x
 tier: specialist
-${extra}model: sonnet
+${extra}need: standard
 ---
 
 body
@@ -147,10 +147,20 @@ body
     assert.doesNotThrow(() => parseAgent("zed.md", file("").replace("specialist", "core")));
   });
 
-  test("every agent declares a model the runtime accepts", async () => {
-    for (const agent of await readAgents()) {
-      assert.ok(["opus", "sonnet", "haiku"].includes(agent.model), `${agent.name}: model is ${agent.model}`);
+  test("every agent declares a vendor-neutral need level", async () => {
+    const needs = Object.fromEntries((await readAgents()).map((a) => [a.name, a.need]));
+    for (const [name, need] of Object.entries(needs)) {
+      assert.equal(need, ["archie", "iris"].includes(name) ? "deep" : "standard", name);
     }
+  });
+
+  test("need is required, closed, and replaces the legacy model field", () => {
+    const file = (front) => `---\nname: zed\ndescription: x\ntier: core\n${front}---\n\nbody\n`;
+    for (const need of ["light", "standard", "deep"]) assert.equal(parseAgent("zed.md", file(`need: ${need}\n`)).need, need);
+    assert.throws(() => parseAgent("zed.md", file("")), /need is 'missing'/);
+    assert.throws(() => parseAgent("zed.md", file("need: heavy\n")), /need is 'heavy' — expected light, standard, deep/);
+    assert.throws(() => parseAgent("zed.md", file("model: opus\n")), /'model:' is no longer accepted — replace it with need:/);
+    assert.throws(() => parseAgent("zed.md", file("need: deep\nmodel: opus\n")), /replace it with need:/);
   });
 
   test("the roster block carries a summary for every specialist", async () => {
@@ -845,70 +855,33 @@ describe("codex custom agents", () => {
     assert.match(archie, /## Anti-patterns/);
   });
 
-  test("carries the frontmatter model onto the Codex axis", async () => {
+  test("generates Codex agents with no model or reasoning effort, so they inherit the session's", async () => {
     const { home } = await scratch("codex-model");
-    run(["install", "--no-reference"], { home });
-    const dest = path.join(home, ".codex", "agents");
-
-    // archie is opus in frontmatter — the demanding end of the map.
-    const archie = await read(path.join(dest, "archie.toml"));
-    assert.match(archie, /^model = "gpt-6\.1-sol"$/m);
-    assert.match(archie, /^model_reasoning_effort = "high"$/m);
-
-    // scott is sonnet — the balanced default.
-    const scott = await read(path.join(dest, "scott.toml"));
-    assert.match(scott, /^model = "gpt-6\.1-sol"$/m);
-    assert.match(scott, /^model_reasoning_effort = "medium"$/m);
-  });
-
-  test("keeps the lightweight tier and rejects unknown source models", () => {
-    const agent = { name: "scanner", description: "Focused work", model: "haiku", body: "Instructions" };
-    assert.match(codexAgent(agent), /^model = "gpt-6-luna"$/m);
-    assert.match(codexAgent(agent), /^model_reasoning_effort = "low"$/m);
-    assert.throws(() => codexAgent({ ...agent, model: "unknown" }), /no Codex equivalent/);
-    assert.match(codexAgent(agent, 'custom/"quoted"\\model'), /^model = "custom\/\\"quoted\\"\\\\model"$/m);
-  });
-
-  for (const model of ["inherit", "gpt-6.1-terra"]) {
-    test(`applies ${model} to core installation and specialist add`, async () => {
-      const { home, project } = await scratch(`codex-override-${model}`);
-      const env = { CANONKIT_CODEX_MODEL: model };
-      assert.equal(run(["install", "--codex", "--no-reference"], { home, env }).status, 0);
-      const added = run(["add", "iris", "maya"], { home, cwd: project, env });
-      assert.equal(added.status, 0, added.out);
-      for (const [dir, names] of [
-        [path.join(home, ".codex", "agents"), CORE],
-        [path.join(project, ".codex", "agents"), ["iris", "maya"]],
-      ]) {
-        for (const name of names) {
-          const text = await read(path.join(dir, `${name}.toml`));
-          if (model === "inherit") assert.doesNotMatch(text, /^model\s*=/m);
-          else assert.match(text, /^model = "gpt-6\.1-terra"$/m);
-          assert.match(text, new RegExp(`^model_reasoning_effort = "${["archie", "iris"].includes(name) ? "high" : "medium"}"$`, "m"));
-          assert.match(text, /^developer_instructions = '''$/m);
-        }
-      }
-      // Reinstalling without the variable restores defaults, not a stale override.
-      assert.equal(run(["install", "--codex", "--no-reference"], { home }).status, 0);
-      assert.match(await read(path.join(home, ".codex", "agents", "archie.toml")), /^model = "gpt-6\.1-sol"$/m);
-      assert.equal(await read(path.join(project, ".claude", "agents", "maya.md")), await read(path.join(REPO, "agents", "maya.md")));
-      assert.doesNotMatch(await read(path.join(project, ".opencode", "agents", "maya.md")), /^model:/m);
-    });
-  }
-
-  test("rejects invalid model overrides before writing agents", async () => {
-    for (const [index, model] of ["", "   ", "gpt-6.1-sol\nother", "bad\tmodel"].entries()) {
-      const { home, project } = await scratch(`codex-invalid-model-${index}`);
-      const env = { CANONKIT_CODEX_MODEL: model };
-      const installed = run(["install", "--no-reference"], { home, env });
-      assert.equal(installed.status, 1, installed.out);
-      assert.match(installed.out, /CANONKIT_CODEX_MODEL must be/);
-      assert.equal(existsSync(path.join(home, ".claude", "agents")), false);
-      assert.equal(existsSync(path.join(home, ".codex", "agents")), false);
-      const added = run(["add", "maya"], { home, cwd: project, env });
-      assert.equal(added.status, 1, added.out);
-      assert.equal(existsSync(path.join(project, ".claude")), false);
+    assert.equal(run(["install", "--no-reference"], { home }).status, 0);
+    for (const name of CORE) {
+      const text = await read(path.join(home, ".codex", "agents", `${name}.toml`));
+      assert.doesNotMatch(text, /^model\s*=/m, name);
+      assert.doesNotMatch(text, /^model_reasoning_effort\s*=/m, name);
     }
+    const agent = { name: "scanner", description: "Focused work", need: "deep", body: "Instructions" };
+    assert.doesNotMatch(codexAgent(agent), /model/);
+    assert.doesNotMatch(copilotAgent(agent), /^model:/m);
+  });
+
+  test("CANONKIT_CODEX_MODEL is ignored with one warning, for install and add", async () => {
+    const { home, project } = await scratch("codex-model-ignored");
+    const env = { CANONKIT_CODEX_MODEL: "some-model" };
+    const warning = /WARN CANONKIT_CODEX_MODEL is ignored: Codex agents inherit the session model until model selection supports Codex/g;
+    const installed = run(["install", "--codex", "--no-reference"], { home, env });
+    assert.equal(installed.status, 0, installed.out);
+    assert.equal(installed.out.match(warning)?.length, 1, installed.out);
+    const added = run(["add", "iris", "maya"], { home, cwd: project, env });
+    assert.equal(added.status, 0, added.out);
+    assert.equal(added.out.match(warning)?.length, 1, added.out);
+    for (const file of [path.join(home, ".codex", "agents", "archie.toml"), path.join(project, ".codex", "agents", "iris.toml")]) {
+      assert.doesNotMatch(await read(file), /^model/m);
+    }
+    assert.doesNotMatch(run(["install", "--codex", "--no-reference"], { home }).out, /CANONKIT_CODEX_MODEL/);
   });
 
   test("every agent body survives as a TOML literal string", async () => {
@@ -3219,5 +3192,124 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
   test("canonkit list points at tool list", async () => {
     const { home, project } = await scratch("list-pointer");
     assert.match(run(["list"], { home, cwd: project }).out, /canonkit tool list/);
+  });
+});
+
+/* ---------------------------------------------------------- model choices */
+
+describe("model choices", () => {
+  const HELP = readFileSync(path.join(REPO, "test", "fixtures", "claude", "help-2.1.322.txt"), "utf8");
+  const userModels = (home) => path.join(home, ".canonkit", "models.json");
+  const writeJson = async (file, data) => {
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify(data));
+  };
+  const source = async (name) => (await read(path.join(REPO, "agents", `${name}.md`))).replace(/\r\n/g, "\n");
+  const body = (text) => text.slice(text.indexOf("\n---", 4));
+
+  // A `claude` on PATH that answers like Claude Code and records every start.
+  async function recordingClaude(root) {
+    const bin = path.join(root, "claude-bin");
+    const log = path.join(root, "claude-starts.log");
+    await mkdir(bin, { recursive: true });
+    const js = path.join(bin, "claude-fake.cjs");
+    await writeFile(js, `require("fs").appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdout.write(process.argv[2] === "--version" ? "2.1.322 (Claude Code)\\n" : ${JSON.stringify(HELP)});\n`);
+    if (process.platform === "win32") await writeFile(path.join(bin, "claude.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
+    else {
+      await writeFile(path.join(bin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
+      await chmod(path.join(bin, "claude"), 0o755);
+    }
+    const starts = () => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean) : []);
+    return { env: { PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) }, starts };
+  }
+
+  test("no configuration: Claude agents are the source, byte for byte, with no model", async () => {
+    const { root, home } = await scratch("models-none");
+    const { env } = await recordingClaude(root);
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
+    for (const name of CORE) {
+      const text = await read(path.join(home, ".claude", "agents", `${name}.md`));
+      assert.equal(text, await source(name), name);
+      assert.doesNotMatch(text, /^(model|effort):/m);
+    }
+  });
+
+  test("configured choices land in the frontmatter, the body is untouched, and removal clears them", async () => {
+    const { root, home } = await scratch("models-configured");
+    const { env } = await recordingClaude(root);
+    await writeJson(userModels(home), { version: 1, harnesses: { claude: { levels: { deep: { model: "opus", effort: "high" } }, agents: { quinn: { effort: "xhigh" } } } } });
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
+    const archie = await read(path.join(home, ".claude", "agents", "archie.md"));
+    assert.match(archie, /^need: deep\nmodel: "opus"\neffort: "high"\n---$/m);
+    assert.equal(body(archie), body(await source("archie")));
+    const quinn = await read(path.join(home, ".claude", "agents", "quinn.md"));
+    assert.match(quinn, /^effort: "xhigh"$/m);
+    assert.doesNotMatch(quinn, /^model:/m);
+    assert.equal(await read(path.join(home, ".claude", "agents", "bob.md")), await source("bob"));
+    const doctor = run(["doctor"], { home, env });
+    assert.match(doctor.out, /^OK\s+agents: /m, "doctor compares with the generated agent");
+
+    await writeJson(userModels(home), { version: 1, harnesses: {} });
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
+    assert.equal(await read(path.join(home, ".claude", "agents", "archie.md")), await source("archie"));
+  });
+
+  test("install refreshes discovery; a dry run starts nothing and says so", async () => {
+    const { root, home } = await scratch("models-discovery");
+    const { env, starts } = await recordingClaude(root);
+    const dry = run(["install", "--claude", "--codex", "--no-reference", "--dry-run"], { home, env });
+    assert.equal(dry.status, 0, dry.out);
+    assert.match(dry.out, /would run model discovery for: claude, codex \(not run in a dry run\)/);
+    assert.deepEqual(starts(), []);
+    assert.equal(existsSync(path.join(home, ".canonkit", "model-catalog.json")), false);
+    const real = run(["install", "--claude", "--codex", "--no-reference"], { home, env });
+    assert.equal(real.status, 0, real.out);
+    assert.ok(starts().includes("--help"), starts().join(","));
+    const catalog = JSON.parse(await read(path.join(home, ".canonkit", "model-catalog.json")));
+    assert.equal(catalog.harnesses.claude.status, "discovered");
+    assert.equal(catalog.harnesses.codex.reason, "not yet supported");
+  });
+
+  test("user-level agents ignore project choices; project specialists honor them", async () => {
+    const { root, home, project } = await scratch("models-project");
+    const { env } = await recordingClaude(root);
+    await writeJson(userModels(home), { version: 1, harnesses: { claude: { levels: { standard: { model: "sonnet" } } } } });
+    await writeJson(path.join(project, ".canonkit", "models.json"), { version: 1, harnesses: { claude: { levels: { standard: { model: "fable", effort: "low" } } } } });
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, cwd: project, env }).status, 0);
+    const bob = await read(path.join(home, ".claude", "agents", "bob.md"));
+    assert.match(bob, /^model: "sonnet"$/m);
+    assert.doesNotMatch(bob, /^effort:/m);
+    const added = run(["add", "maya"], { home, cwd: project, env });
+    assert.equal(added.status, 0, added.out);
+    const maya = await read(path.join(project, ".claude", "agents", "maya.md"));
+    assert.match(maya, /^model: "fable"\neffort: "low"\n---$/m);
+    assert.equal(body(maya), body(await source("maya")));
+    assert.doesNotMatch(await read(path.join(project, ".codex", "agents", "maya.toml")), /model/);
+  });
+
+  test("an unsupported choices file stops install before anything is written", async () => {
+    const { root, home } = await scratch("models-bad-version");
+    const { env } = await recordingClaude(root);
+    await writeJson(userModels(home), { version: 3 });
+    const result = run(["install", "--claude", "--no-reference"], { home, env });
+    assert.equal(result.status, 1, result.out);
+    assert.match(result.out, /version 3 is not supported/);
+    assert.equal(existsSync(path.join(home, ".claude", "agents")), false);
+  });
+
+  test("doctor warns on drift from stored files, keeps its exit status, and never runs discovery", async () => {
+    const { root, home } = await scratch("models-doctor");
+    const { env, starts } = await recordingClaude(root);
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
+    const before = run(["doctor"], { home, env });
+    assert.match(before.out, /^OK\s+models: no model choices configured/m);
+    await writeJson(userModels(home), { version: 1, harnesses: { claude: { levels: { deep: { model: "gone-model", effort: "high" } } } } });
+    assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
+    const startsBefore = starts().length;
+    const after = run(["doctor"], { home, env });
+    assert.equal(after.status, before.status, after.out);
+    assert.match(after.out, /^WARN models: Claude Code user level deep: model 'gone-model' is not in the latest discovery \(fable, opus, sonnet\) — affects agents archie, iris; if Claude Code rejects it they fall back to inherit$/m);
+    // doctor's security check may ask `claude --version`; discovery's `--help` must not run.
+    assert.ok(!starts().slice(startsBefore).includes("--help"), starts().slice(startsBefore).join(","));
   });
 });

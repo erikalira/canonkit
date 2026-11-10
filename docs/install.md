@@ -100,7 +100,7 @@ reference blocks (`--no-reference` skips distribution, with the existing-block
 correction for migrated Claude hooks described below).
 
 The core/specialist split is declared in **each agent's frontmatter** (`tier:`),
-beside `name` and `model` — where the runtime already reads the other facts about
+beside `name` and `need` — where the runtime already reads the other facts about
 the agent. It used to be a literal list repeated in three installers, and keeping
 the three honest cost a whole section of `validate.sh`. A new file in `agents/`
 without a valid `tier` does not install: it fails, instead of assuming a default
@@ -407,6 +407,120 @@ a `true` value that already existed before installation is not adopted as kit
 ownership. Other settings remain intact. Migrated hook removals are not reversed;
 use the selective manual recovery above if a registration must be restored.
 
+## Choosing models
+
+Each agent declares how demanding its normal work is, as a **need level** in its
+frontmatter: `light`, `standard` or `deep` (archie and iris are `deep`, the others
+`standard`, nothing is `light` today). The level names no vendor model. You map
+each level to a model and a reasoning effort that your harness actually offers, and
+canonkit applies that. With no choices, every agent inherits the session's model
+and effort.
+
+Canonkit used to ship that map itself (a Claude label per agent, and a table
+translating it to Codex models). Catalogs and effort levels change monthly and
+differ between subscriptions, so a shipped table goes stale for someone. The
+harness is asked instead.
+
+This version applies choices to **Claude Code**. Codex, OpenCode and GitHub Copilot
+agents inherit the session model until their support lands.
+
+```bash
+npx canonkit models refresh            # ask each harness what it offers
+npx canonkit models setup              # choose per need level, then optional per-agent overrides
+npx canonkit models setup --project    # the same, for this project only
+npx canonkit models show               # what each agent resolves to, and from where
+npx canonkit models show --json        # the same, for tools and the orchestrate skill
+npx canonkit install --claude          # write the user-level defaults into ~/.claude/agents
+```
+
+**Discovery.** `models refresh` runs the harness's own read-only commands and
+records the answer in `~/.canonkit/model-catalog.json`, a cache on this machine.
+For Claude Code it runs `claude --version` and `claude --help`, and reads the model
+aliases and effort levels the help text lists. That text is not a contract, so the
+record says `confidence: "help-text"`, and anything it does not recognize becomes
+`unknown` with the reason, never an error. The binary is looked up on PATH outside
+the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
+any subfolder), with no shell, closed stdin, a 30-second timeout and no
+`NODE_OPTIONS`-style loader variables. No credential is read and nothing goes over
+the network. A non-dry-run `install` and `models setup` refresh it too; `install`
+leaves a record that is under a day old and unchanged as it is, so reinstalling
+rewrites nothing. `models show` and `doctor` only read files, and a dry run starts
+nothing.
+
+**Setup.** `models setup` needs a terminal. It asks for each need level first, then
+offers per-agent overrides. Enter keeps the current value and `-` clears it. An
+effort the harness did not report is refused, with the list. A model outside the
+list (a full model ID, say) is recorded only after you confirm it, and marked
+`"unverified": true`. Without a terminal, edit the file directly:
+
+```json
+{
+  "version": 1,
+  "harnesses": {
+    "claude": {
+      "levels": { "standard": { "model": "sonnet", "effort": "medium" }, "deep": { "model": "opus", "effort": "high" } },
+      "agents": { "quinn": { "effort": "high" } }
+    }
+  }
+}
+```
+
+These values are an example of a person's choice, not defaults. Unknown keys are
+kept when canonkit rewrites the file. A file with another `version` is refused, not
+overwritten; new keys keep version 1, and the version changes only when an existing
+field changes meaning.
+
+**Where choices live, and which wins.** User choices are in
+`~/.canonkit/models.json`. Project choices are in `.canonkit/models.json` at the
+root of the Git repository you run from (from any subfolder; outside a repository,
+the current folder), which you can commit. A file in a folder above the repository
+never applies, and a project file or `.canonkit` folder that is a symbolic link or
+junction is refused. For each agent, model and effort resolve separately, first
+match wins:
+
+1. project agent override
+2. project level
+3. user agent override
+4. user level
+5. inherit
+
+So a project can raise only the effort of `standard` and keep your model. `models
+show` prints the layer each value came from; "agent override" marks a per-agent
+entry. In `models show --json` (`"version": 1`), each agent has `model` and `effort`
+as `{ value, source, unverified }`, and `model.alias` says whether the value is an
+alias, the only kind of value the Agent tool's `model` parameter takes. `source`
+is text for people; read `value`.
+
+A project file comes with the repository, so a repository you cloned can change
+which model your agents run on. `doctor` lists every agent whose model or effort a
+project file changes from what your own choices give.
+
+**How Claude Code receives them.** Two ways:
+
+- `install` writes the user-level result into each agent's frontmatter in
+  `~/.claude/agents` (`model:` and `effort:`, the fields Claude Code
+  [documents](https://code.claude.com/docs/en/sub-agents) for agents). That is the
+  default for a dispatch that names nothing. `add` does the same for a project's
+  specialists in `.claude/agents`, with the project's choices on top. Re-run
+  `install` after changing your choices. A value you removed disappears on the
+  next install.
+- A planned dispatch passes the effective values as the Agent tool's `model` and
+  `effort` parameters, read from `models show --json` (the `orchestrate` skill
+  says how). The parameters win over the frontmatter, and they are how a
+  project's choices reach the user-level core agents, which install never
+  rewrites per project. The `model` parameter takes an alias only, so a full
+  model ID reaches an agent through its frontmatter.
+
+Model choices are verified by running Claude Code; the `effort` field is documented
+but showed no observable effect in the same test (the evidence is in
+`openspec/changes/runtime-model-discovery/evidence.md`).
+
+**Doctor.** `doctor` warns, never fails, when the discovery is missing or older
+than 30 days, when a configured model or effort is not in the latest discovery,
+or when a choice is unverified. Each warning names the level or agent and the
+agents affected; if Claude Code rejects a value, those agents fall back to
+inherit.
+
 ## Codex
 
 Every Codex path is under `$CODEX_HOME`, or `~/.codex` when it is not set; this
@@ -415,66 +529,17 @@ so if you set `CODEX_HOME`, the agents now go where Codex reads them, and the ol
 copies in `~/.codex/agents` are yours to delete (the 10 core names only).
 
 The same core also goes to `$CODEX_HOME/agents/<name>.toml`, in the custom-agent
-format Codex reads: `name`, `description`, `developer_instructions`, plus `model`
-and `model_reasoning_effort`. The instructions are the body of the same
-`agents/<name>.md` — there is no second editable copy. Before this, the only thing
-this repository could tell Codex was the roster in prose in `AGENTS.md`, which
-describes the team but cannot call anyone.
+format Codex reads: `name`, `description` and `developer_instructions`. The
+instructions are the body of the same `agents/<name>.md` — there is no second
+editable copy. Before this, the only thing this repository could tell Codex was
+the roster in prose in `AGENTS.md`, which describes the team but cannot call
+anyone.
 
-The frontmatter `model` says how much the agent's *normal* work demands, on
-Claude's axis. Codex has its own axis, so the intent crosses over through a
-declared map — and not through a second model field in each agent, which would be
-fifteen more lines to keep in sync and one more thing to drift:
-
-| frontmatter | Codex | reasoning effort |
-| --- | --- | --- |
-| `opus` | `gpt-6.1-sol` | `high` |
-| `sonnet` | `gpt-6.1-sol` | `medium` |
-| `haiku` | `gpt-6-luna` | `low` |
-
-Every agent on this team is a judgment agent, not a scanner optimized for speed —
-which is why the fast models sit at the end of the map and nothing selects
-`gpt-6-luna` today. These defaults are centralized in `CODEX_MODELS` in
-`bin/cli.js`; they were checked against the [official model documentation](https://learn.chatgpt.com/docs/models?surface=web)
-on 2026-11-03. Availability depends on the account and client.
-
-### Follow the session model
-
-Set `CANONKIT_CODEX_MODEL=inherit` when installing to avoid pinning a model
-version in the generated agents:
-
-```bash
-CANONKIT_CODEX_MODEL=inherit node bin/cli.js install --codex
-```
-
-In PowerShell, from this checkout:
-
-```powershell
-$env:CANONKIT_CODEX_MODEL = 'inherit'
-node bin/cli.js install --codex
-```
-
-For the published package, use `npx canonkit install --codex` with the same
-environment variable. `inherit` omits the TOML `model` key and keeps each agent's
-reasoning effort. [Codex resolves the model](https://learn.chatgpt.com/docs/agent-configuration/subagents)
-from an explicit spawn selection, then its subagent default, then the parent
-session. This follows your configuration; it does not guarantee the newest
-model. If you also leave the top-level Codex model unset, the client uses its
-recommended model.
-
-You can set the variable to a concrete model ID instead, such as
-`gpt-6.1-terra`. That pins the same model for every tier; efforts stay mapped as
-above. The installer does not probe account access or fetch models from the
-network. Unset the variable to restore the shipped mapping on the next install
-(`Remove-Item Env:CANONKIT_CODEX_MODEL` in PowerShell, `unset CANONKIT_CODEX_MODEL`
-in Bash).
-
-This is an **install-time** choice, shared by `install` and specialist `add`.
-Changing the variable alone does not update existing files. Re-run installation
-to regenerate core agents, and `canonkit add <name>` in each project to
-regenerate its specialists; start a new Codex session afterward. `reference`
-only updates blocks and skills, so it does not regenerate agents. Historical
-plans, eval records and hook fixtures retain the model IDs actually used.
+The generated agents set no `model` and no `model_reasoning_effort`, so each runs
+on the parent session's model and effort. Canonkit no longer ships a map from its
+agents to Codex models; see [Choosing models](#choosing-models) for why, and for
+what applies today. `CANONKIT_CODEX_MODEL` is ignored: `install` and `add` print
+one warning when it is set and carry on.
 
 Your own Codex custom agents live in the same directory and are none of the
 installer's business. The only thing it comments on is narrower: a file that

@@ -48,6 +48,10 @@ export function classifyEnvironment({ platform = process.platform, release = os.
   return { platform, wsl, container: containerIndicators.length ? "indicated" : "not-observed", containerIndicators, dependencies: { bwrap: Boolean(bwrap), socat: Boolean(socat) }, sandboxCapability: supported ? "available-unverified" : "unavailable", runtimeCoverage: "unknown" };
 }
 
+// Variables that make an interpreter load code before a probed program runs.
+// Every probe of a harness binary (here and in model-discovery.js) drops them.
+export const LOADER_ENV = /^(?:NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|BASH_ENV|ENV|RUBYOPT|PERL5OPT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*)$/i;
+
 export async function collectEnvironment({ cwd = process.cwd(), env = process.env, platform = process.platform, release = os.release(), dryRun = false, read = readFile, exists = existsSync, resolve = resolveBin, version = binVersion } = {}) {
   let procVersion = "";
   if (platform === "linux") {
@@ -65,7 +69,7 @@ export async function collectEnvironment({ cwd = process.cwd(), env = process.en
       if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) claude = null;
     } catch (err) { if (!["ENOENT", "EACCES", "EPERM"].includes(err.code)) throw err; claude = null; }
   }
-  const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !/^(?:NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|BASH_ENV|ENV|RUBYOPT|PERL5OPT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*)$/i.test(key)));
+  const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !LOADER_ENV.test(key)));
   return { ...evidence, claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform }) : null, versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : "binary-unavailable" };
 }
 

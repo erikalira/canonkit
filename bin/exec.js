@@ -195,7 +195,7 @@ const display = (abs, args) => [abs.includes(" ") ? `"${abs}"` : abs, ...args].j
  * `project` is what the child's PATH is filtered against; it defaults to cwd,
  * and differs only when a probe runs somewhere else (binVersion).
  */
-function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capture = false, env = process.env, platform = process.platform } = {}) {
+function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capture = false, maxBuffer, env = process.env, platform = process.platform } = {}) {
   if (!cwd || !path.isAbsolute(cwd)) throw new Error("runBin: cwd must be an absolute, validated project root");
   const cmd = commandFor(abs, args, { env, platform });
   const result = spawnSync(cmd.file, cmd.args, {
@@ -208,6 +208,9 @@ function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capt
     encoding: "utf8",
     timeout,
     killSignal: "SIGTERM",
+    // undefined keeps Node's default cap (1 MiB); a caller parsing output it
+    // does not control passes its own.
+    ...(maxBuffer === undefined ? {} : { maxBuffer }),
   });
   const timedOut = result.error?.code === "ETIMEDOUT";
   return {

@@ -2,7 +2,7 @@
 name: quinn
 description: "Use for quality: acceptance criteria, test strategy/coverage, edge cases, regression risk, code review, independent review after HIGH-risk edits. Veto on quality. Not for implementation alone."
 tier: core
-model: sonnet
+need: standard
 ---
 
 ## Mission
