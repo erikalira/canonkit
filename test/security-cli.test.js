@@ -153,7 +153,7 @@ test("no-repository installation adds no project fallback and dry run writes not
   assert.equal(dry.status, 0, dry.out);
   assert.deepEqual(await bytes(f.root), before);
   assert.match(dry.out, /checks not executed in dry run/);
-  const global = f.run(["install", "--claude", "--no-reference"], f.home);
+  const global = f.run(["install", "--claude", "--no-reference", "--verbose"], f.home);
   assert.equal(global.status, 0, global.out);
   assert.match(global.out, /no validated repository/);
   assert.equal(existsSync(f.local), false);
