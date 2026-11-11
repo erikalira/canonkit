@@ -3350,7 +3350,12 @@ async function main(argv) {
 // Only run when invoked as the CLI. The tests import applyBlock directly, and
 // an unguarded call here would install the team as a side effect of importing.
 const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] && (() => {
+    // npx and global installs launch through a link or shim: compare real paths,
+    // or the CLI exits silently without running.
+    const real = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+    return real(process.argv[1]) === real(fileURLToPath(import.meta.url));
+  })();
 
 if (invokedDirectly) {
   main(process.argv.slice(2))
