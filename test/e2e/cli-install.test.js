@@ -490,6 +490,29 @@ describe("install", () => {
     assert.ok(existsSync(path.join(dest, "unrelated.md")));
   });
 
+  test("removes the 2.0 ~/.agents copies that are identical, keeps edited and unrelated ones", async () => {
+    const { home } = await scratch("install-agents-leftovers");
+    const dir = path.join(home, ".agents");
+    await mkdir(dir, { recursive: true });
+    const source = (name) => readFileSync(path.join(REPO, "agents", `${name}.md`), "utf8");
+    await writeFile(path.join(dir, "scott.md"), source("scott"));
+    await writeFile(path.join(dir, "bob.md"), source("bob").replace(/\r?\n/g, "\r\n"));
+    await writeFile(path.join(dir, "gard.md"), source("gard") + "\nmy edit\n");
+    await writeFile(path.join(dir, "notes.md"), "mine");
+
+    const dry = run(["install", "--dry-run"], { home });
+    assert.equal(dry.status, 0, dry.out);
+    assert.ok(existsSync(path.join(dir, "scott.md")), "a dry run deletes nothing");
+
+    const result = run(["install"], { home });
+    assert.equal(result.status, 0, result.out);
+    assert.ok(!existsSync(path.join(dir, "scott.md")));
+    assert.ok(!existsSync(path.join(dir, "bob.md")), "line endings do not make a copy different");
+    assert.equal(await read(path.join(dir, "gard.md")), source("gard") + "\nmy edit\n");
+    assert.equal(await read(path.join(dir, "notes.md")), "mine");
+    assert.match(result.out, /kept .*gard\.md: differs/);
+  });
+
   test("preserves everything outside the markers", async () => {
     const { home } = await scratch("install-preserve");
     await mkdir(path.join(home, ".claude"), { recursive: true });

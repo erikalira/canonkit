@@ -18,7 +18,7 @@
  * an installer that runs before you trust the repo should not ask you to trust
  * a dependency tree first.
  */
-import { readdir, readFile, writeFile, mkdir, copyFile, rm, rename, chmod } from "node:fs/promises";
+import { readdir, lstat, readFile, writeFile, mkdir, copyFile, rm, rename, chmod } from "node:fs/promises";
 import { existsSync, readFileSync, readdirSync, realpathSync, statSync, accessSync, constants as fsc } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -559,6 +559,31 @@ async function install(ctx, options = {}) {
   } finally { await projectManifest?.close(); }
 }
 
+/**
+ * Delete the ~/.agents/<core>.md copies that 2.0 wrote, but only those that are
+ * byte-identical (line endings aside) to this package's agent. A modified copy,
+ * a symlink or anything that is not a regular file is left alone.
+ */
+async function removeAgentsLeftovers(ctx, coreAgents) {
+  const dir = path.join(os.homedir(), ".agents");
+  for (const agent of coreAgents) {
+    const file = path.join(dir, `${agent.name}.md`);
+    try {
+      if (!(await lstat(file)).isFile()) continue;
+      if (toLf(await readFile(file, "utf8")) !== agent.source) {
+        ctx.log(`  kept ${file}: differs from this package's ${agent.name} (delete it by hand if unwanted)`);
+        continue;
+      }
+    } catch (err) {
+      if (err.code === "ENOENT") continue;
+      ctx.log(`  kept ${file}: ${err.code ?? err.message}`);
+      continue;
+    }
+    await ctx.remove(file);
+    ctx.log(`  ${ctx.dryRun ? "would remove" : "removed"} 2.0 leftover: ${file}`);
+  }
+}
+
 async function installDistribution(ctx, options = {}) {
   const reference = options.reference !== false;
   const wire = options.wireHooks === true;
@@ -616,6 +641,11 @@ async function installDistribution(ctx, options = {}) {
       }
     }
   }
+
+  // 2.0 also copied the core agents to ~/.agents/<agent>.md, which no harness reads.
+  // Only a regular file identical to this package's agent goes; one the person
+  // edited stays, and doctor keeps reporting it.
+  if (claude) await removeAgentsLeftovers(ctx, core(agents));
 
   if (codex) {
     await installCodex(ctx, agents, path.join(codexHome(), "agents"), { userChoices, record: codexCatalog?.harnesses?.codex });
@@ -2076,10 +2106,10 @@ async function doctor({ verbose = false } = {}) {
   }
 
   // Leftovers from installs before 2.1: ~/.agents/<core>.md is read by no harness.
-  // Only reported; 3.0 removes byte-identical copies.
+  // Install removes the byte-identical ones; doctor reports what is left.
   const leftovers = agents.filter((a) => text(path.join(home, ".agents", `${a.name}.md`)) !== null).map((a) => a.name);
   if (leftovers.length) {
-    add("WARN", "agents leftovers", `~/.agents has core-named copies: ${leftovers.join(", ")} — not read by any harness; 3.0 removes byte-identical copies`);
+    add("WARN", "agents leftovers", `~/.agents has core-named copies: ${leftovers.join(", ")} — not read by any harness; npx canonkit install removes the byte-identical ones`);
   }
 
   // opencode agents: checked only where OpenCode was installed for, which is

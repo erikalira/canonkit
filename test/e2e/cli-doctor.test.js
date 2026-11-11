@@ -277,7 +277,7 @@ describe("doctor", () => {
     await writeFile(path.join(home, ".agents", "gard.md"), "---\nname: gard\n---\nold\n");
     const { out, status } = doctor({ home });
     assert.equal(status, 0, out);
-    assert.match(line(out, /^WARN +agents leftovers/), /gard.*not read by any harness; 3\.0 removes byte-identical copies/);
+    assert.match(line(out, /^WARN +agents leftovers/), /gard.*not read by any harness; npx canonkit install removes the byte-identical ones/);
   });
 
   test("a hook that does not parse FAILs the syntax check", async () => {

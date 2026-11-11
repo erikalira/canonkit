@@ -974,14 +974,15 @@ is always preserved by uninstall.
 ## Upgrading from 2.0: leftover `~/.agents/*.md`
 
 2.0 also copied the core agents to `~/.agents/<agent>.md`. 2.1 stops writing
-them and deletes nothing. The leftover copies are harmless: no harness reads
-them, and nothing breaks if you leave them. `npx canonkit doctor` WARNs on each
-one ("not read by any harness; 3.0 removes byte-identical copies"). 3.0 deletes
-the copies that are byte-identical to the packaged agent; a copy you modified is
-kept. Until then you can delete them by hand, including a modified one if you no
-longer want it.
+them; no harness reads them. From 3.0, `npx canonkit install` (with Claude Code
+selected) deletes each copy that is a regular file byte-identical to the
+packaged agent (line endings aside) and logs it. A copy you modified, or one
+that is not a regular file, is kept and logged as kept. `npx canonkit doctor`
+WARNs on what is left. `--dry-run` shows nothing deleted.
 
-Delete them one file at a time. The 10 core names are `scott`, `archie`, `bob`,
+To remove a kept copy you no longer want, delete it yourself.
+
+Delete by hand one file at a time. The 10 core names are `scott`, `archie`, `bob`,
 `quinn`, `gard`, `pixie`, `perry`, `pipe`, `spencer` and `virgo`:
 
 ```bash
