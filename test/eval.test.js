@@ -55,7 +55,7 @@ describe("routing eval", () => {
     }
     const nova = (await readAgents()).find((a) => a.name === "nova");
     assert.equal(nova.tier, "specialist");
-    assert.equal(nova.model, "sonnet");
+    assert.equal(nova.need, "standard");
     assert.match(nova.description, /UI visual design/);
     assert.match(nova.description, /characters.*environments.*VFX/);
   });
@@ -587,7 +587,7 @@ describe("quality eval", () => {
     assert.deepEqual(validateStackPacks(REPO, data.cases), STACK_PACK_IDS);
     for (const id of STACK_PACK_IDS) {
       const selected = agentDefinition("quinn", null, REPO, id);
-      assert.equal(selected.quinn.model, plain.quinn.model);
+      assert.equal(selected.quinn.model, undefined);
       assert.ok(selected.quinn.prompt.startsWith(plain.quinn.prompt));
       assert.ok(selected.quinn.prompt.endsWith(readStackPack(id).body));
       for (const other of STACK_PACK_IDS.filter((name) => name !== id)) assert.ok(!selected.quinn.prompt.includes(`Explicitly loaded stack pack: canonkit-${other}`));
@@ -696,7 +696,7 @@ describe("quality eval", () => {
 
   test("defines the agent from this checkout, or swaps in a variant body under the same name", () => {
     const shipped = agentDefinition("gard");
-    assert.equal(shipped.gard.model, "sonnet");
+    assert.equal("model" in shipped.gard, false, "agents name a need level, not a vendor model");
     assert.match(shipped.gard.prompt, /^## Mission/);
     assert.doesNotMatch(shipped.gard.prompt, /^---/m, "frontmatter is not part of the body");
     const dir = mkdtempSync(path.join(os.tmpdir(), "canonkit-variant-"));

@@ -103,9 +103,11 @@ changes need proportional accuracy, link and consistency checks, without claimin
 behavioral gains. Changing obligations or routing is not purely editorial. HIGH
 changes require applicable independent review after the last edit.
 
-Changes to resident instructions must retain the default profile's 2,500-word
-ceiling, measured with the [rubric](../evals/instruction-rubric.json). Record the
-profile, components and before/after delta. On-demand bodies are excluded.
+Changes to resident instructions must retain the default profile's 3,000-word
+ceiling, measured with the [rubric](../evals/instruction-rubric.json), whose
+context-cost score stays 10 up to about 3,050 words. Headroom is not a quota:
+record the profile, components and before/after delta, and prefer consolidating
+to adding. On-demand bodies are excluded.
 
 ## Source changes and installation
 

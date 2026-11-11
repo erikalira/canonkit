@@ -86,6 +86,17 @@ def validate_split():
         specialists = sorted(agent for agent, tier in tiers.items() if tier == "specialist")
         print(f"OK\tevery agent declares a tier ({len(core)} core, {len(specialists)} specialist)")
 
+    # `need` replaced a vendor `model:` label, which Claude Code would act on.
+    needs = {agent: front(agent, "need") for agent in agents}
+    legacy = sorted(agent for agent in agents if front(agent, "model") is not None)
+    bad_need = sorted(agent for agent, need in needs.items() if need not in ("light", "standard", "deep"))
+    for agent in legacy:
+        print(f"FAIL\t{agent}: 'model:' is no longer accepted — replace it with need: light | standard | deep")
+    for agent in bad_need:
+        print(f"FAIL\t{agent}: need is '{needs[agent] or 'missing'}' — expected light, standard or deep")
+    if not legacy and not bad_need:
+        print("OK\tevery agent declares a need level and no vendor model")
+
     bullets = set(re.findall(r"^-\s+\*\*([a-z0-9-]+)\*\*\s+—\s+\S", block, re.M))
     rows = {name.lower() for name in re.findall(r"^\|\s*\*\*([A-Za-z0-9-]+)\*\*\s*\|\s*\S", block, re.M)}
     listed = bullets | rows

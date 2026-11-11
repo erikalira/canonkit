@@ -5,10 +5,9 @@ import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
-import { projectStateDir } from "../bin/security.js";
+import { projectStateDir } from "../../bin/security.js";
+import { CLI, runCli, startCli, writeCommand } from "../helpers/cli-harness.js";
 
-const CLI = fileURLToPath(new URL("../bin/cli.js", import.meta.url));
 async function fixture(t, version = "2.1.314") {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-cli-")));
   t.after(async () => { assert.equal(path.dirname(root), await realpath(os.tmpdir())); await rm(root, { recursive: true, force: true }); });
@@ -17,17 +16,16 @@ async function fixture(t, version = "2.1.314") {
   await writeFile(path.join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
   const script = path.join(bin, "version.cjs");
   await writeFile(script, `if (process.argv.slice(2).join(' ') !== '--version') process.exit(2); console.log(${JSON.stringify(version)});`);
-  if (process.platform === "win32") await writeFile(path.join(bin, "claude.cmd"), `@"${process.execPath}" "${script}" %*\r\n`);
-  else { await writeFile(path.join(bin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${script}" "$@"\n`); await chmod(path.join(bin, "claude"), 0o755); }
-  const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), PATH: bin };
-  for (const key of Object.keys(env)) if ((key.toUpperCase() === "PATH" && key !== "PATH") || ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "NODE_OPTIONS", "NODE_PATH", "CANONKIT_CODEX_MODEL"].includes(key)) delete env[key];
+  await writeCommand(bin, "claude", script);
+  const env = { PATH: bin };
   const run = (args, cwd = project, extra = {}) => {
-    const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
+    const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
+    const result = runCli(argv, { home, cwd, env: { ...env, ...extra } });
     assert.ifError(result.error);
-    return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
+    return result;
   };
   const global = path.join(home, ".claude", "settings.json"), local = path.join(project, ".claude", "settings.json");
-  const start = (args, cli = CLI) => spawn(process.execPath, [cli, ...args], { cwd: project, env, windowsHide: true });
+  const start = (args, cli = CLI) => startCli(args, { home, cwd: project, env, cli });
   return { root, home, project, bin, run, start, global, local };
 }
 async function put(file, value) { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, typeof value === "string" ? value : JSON.stringify(value)); }
@@ -152,7 +150,7 @@ test("no-repository installation adds no project fallback and dry run writes not
   assert.equal(dry.status, 0, dry.out);
   assert.deepEqual(await bytes(f.root), before);
   assert.match(dry.out, /checks not executed in dry run/);
-  const global = f.run(["install", "--claude", "--no-reference"], f.home);
+  const global = f.run(["install", "--claude", "--no-reference", "--verbose"], f.home);
   assert.equal(global.status, 0, global.out);
   assert.match(global.out, /no validated repository/);
   assert.equal(existsSync(f.local), false);

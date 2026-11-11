@@ -5,7 +5,7 @@
  * a regression in it is silent by construction: it fails open, so a broken gate
  * looks exactly like a clean session. Nothing else in this repo would notice.
  *
- * Real process, real stdin, throwaway HOME — same reasoning as cli.test.js: the
+ * Real process, real stdin, throwaway HOME — same reasoning as the cli-*.test.js files: the
  * failure this hook can actually cause is deciding "allow" on something the rules
  * say to stop, and a mocked runner proves nothing about that.
  *

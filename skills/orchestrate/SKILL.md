@@ -21,8 +21,40 @@ or run discovery tools when there are no findings.
 Every planned dispatch names its model and effort: **up** for a structural or
 irreversible decision, **down** for a mechanical pass with a verifiable result. A
 model chosen silently cannot be told apart from one forgotten, which is why it is
-written down. The `model:` in an agent's frontmatter is the fallback for an ad-hoc
-dispatch nobody planned, not a ceiling.
+written down.
+
+The values come from the person's choices, never from memory: agents declare
+a `need` level, and `canonkit models setup` maps each level (and optionally an
+agent) to a model and effort the harness reported.
+
+- **Claude Code:** before a planned dispatch, run `npx canonkit models show
+  --json` from the project and read `harnesses.claude.agents.<agent>`. Pass its
+  `model.value` as the Agent tool's `model` parameter and its `effort.value` as
+  the `effort` parameter. This instruction is the explicit request that
+  parameter needs. Omit a parameter whose value is `null` (inherit). The `model`
+  parameter takes an alias only: pass `model.value` when `model.alias` is
+  `true`; otherwise omit it and let the agent's frontmatter carry it.
+  The parameters are how a project's choices reach user-level agents; text in
+  the prompt selects nothing. A `source` starting with "project" comes from the
+  repository's own file: name it in the plan, and before giving a reviewer
+  with a veto a weaker model or lower effort than `canonkit doctor` says your
+  own choices give, tell the person.
+- **Up or down** means another level the person configured, the `deep` or
+  `light` entry in the same output, not a model named from memory. When nothing
+  is configured, name the dispatch "inherit" and pass no parameter.
+- **Codex:** read `harnesses.codex.agents.<agent>` in the same `models show
+  --json` output. Pass configured values as `model` and
+  `reasoning_effort` spawn overrides when supported. Codex custom agent
+  files win over spawn overrides, so reinstall with `npx canonkit install
+  --codex` after changing user choices and in each project with core overrides.
+  A project shadow in `.codex/agents/` carries those overrides. The Codex
+  catalog is experimental; an offered model does not prove account access.
+  Name unset fields "inherit" and check the effective runtime for critical work.
+- **OpenCode and Copilot** inherit the session's model and effort; name the
+  dispatch "inherit".
+
+The `model:` and `effort:` that `canonkit install` writes into a Claude Code
+agent are the fallback for an ad-hoc dispatch nobody planned, not a ceiling.
 
 ## Experimental Laya checks on HIGH handoffs
 
@@ -59,6 +91,13 @@ other's edits and invalidates the other's test run.
 A brief that asks for work outside the repository carries the block's rule
 ("Temporary work outside the repository"): the subagent starts cold, and its shell
 writes there land on the user as prompts and false gates.
+
+## Briefing verification
+
+A dispatch brief carries the evidence the lead already has: commands, counts and
+the work state they ran on. The subagent runs only what checks a claim it doubts
+or a gap that evidence leaves, and reports what it ran. A reviewer does not
+repeat the full suite to confirm a fresh result that matches the state under review.
 
 ## Relayed claims
 
@@ -112,14 +151,34 @@ For LOW work, a brief inspection or focused check can suffice; do not require an
 irrelevant build or E2E. Format/schema checks of instructions do not establish
 model obedience: behavioral efficacy stays **UNMEASURED** without measurements.
 
+### Verification by reach
+
+Match checks to what the change can break, not to the number of edits:
+
+- **While editing:** run the tests of the touched area and of its consumers
+  (callers and readers found by search or Graphify), plus the invariant tests the
+  change can reach (a change to instructions or install source always reaches the
+  budget, idempotent-install and security tests). The edited file's own tests
+  alone miss downstream breakage.
+- **Crossing modules or changing shared behavior:** the affected tests above plus
+  a smoke of the main interfaces.
+- **Full suite and project validations:** once, after the last edit, before
+  delivery or the final review; not per iteration. If review leads to edits, run
+  it again only after those. A baseline before editing is optional (worth it for
+  a large change or a suite with known failures). LOW work needs no baseline, and
+  a focused check can stand in for the full suite.
+- **A full-suite failure:** establish whether the change caused it or it predates
+  the change (rerun the failing tests on the base revision in a separate worktree
+  or checkout, not by stashing); do not call the delivery verified until that is
+  settled.
+
 Tie evidence to the inspected work state when reliably known (revision and dirty
 state, or the relevant diff); do not invent a fingerprint. A relevant later edit
-invalidates the affected result, not unrelated checks. Label old results as
-historical and rerun only what that edit affects. Before adopting a subagent's
-success claim, inspect the relevant diff and its evidence, including freshness
-and missing criteria. Reuse valid evidence for the same state; a report alone
-does not establish correctness, and a review does not automatically require a
-second test run. An unresolved failed check remains explicit, never a pass.
+invalidates the affected result, not unrelated checks; label old results as
+historical. Before adopting a subagent's success claim, inspect the relevant
+diff and its evidence, including freshness and missing criteria. Reuse valid
+evidence for the same state; a report alone does not establish correctness. An
+unresolved failed check remains explicit, never a pass.
 
 ## OpenSpec change lifecycle
 

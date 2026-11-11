@@ -1,16 +1,14 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, readlink, lstat } from "node:fs/promises";
 import { realpathSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { STACK_PACK_IDS, StackPackStore, readStackPack } from "../bin/stack-packs.js";
+import { STACK_PACK_IDS, StackPackStore, readStackPack } from "../../bin/stack-packs.js";
+import { REPO, runCli } from "../helpers/cli-harness.js";
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = path.join(REPO, "bin", "cli.js");
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const target = (project, pack = "react", root = ".agents") => path.join(project, root, "skills", `canonkit-${pack}`, "SKILL.md");
 const roots = [".agents", ".claude", ".github"];
@@ -22,13 +20,8 @@ after(async () => { await rm(sandbox, { recursive: true, force: true }); });
 async function setup(name) {
   const root = path.join(sandbox, name), home = path.join(root, "home"), project = path.join(root, "project");
   await mkdir(home, { recursive: true }); await mkdir(project, { recursive: true });
-  const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") };
-  delete env.CODEX_HOME;
-  return { root, home, project, env, store: (options = {}) => new StackPackStore({ project, home, ...options }),
-    run: (args, cwd = project) => {
-      const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8" });
-      return { ...r, out: (r.stdout ?? "") + (r.stderr ?? "") };
-    } };
+  return { root, home, project, store: (options = {}) => new StackPackStore({ project, home, ...options }),
+    run: (args, cwd = project) => runCli(args, { home, cwd }) };
 }
 
 async function snapshot(root, prefix = "") {

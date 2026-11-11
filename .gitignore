@@ -2,6 +2,7 @@
 *.local
 *.secret
 *.token
+*.log
 auth-profiles.json
 tokens.json
 sessions/

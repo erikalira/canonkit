@@ -141,12 +141,29 @@ The tests are separate and run the real CLI against a real filesystem, in a
 throwaway `HOME`:
 
 ```bash
-npm test
+npm run test:fast   # test/*.test.js: unit and light integration, well under a minute
+npm test            # also test/e2e/*.test.js: the full suite, the publish gate
 ```
+
+`npm test` is what `prepublishOnly` and CI run. Use `test:fast` while editing and
+`npm test` once after your last edit. The end-to-end files live in `test/e2e/`;
+a file that spawns the CLI for most of its tests belongs there, and moving it is
+all it takes to change its tier.
 
 No mocks: the failure this installer can actually cause is writing the wrong bytes
 into a file you already had — `~/AGENTS.md`, `~/.claude/CLAUDE.md`, a project's
 `AGENTS.md` — and a mocked filesystem proves nothing about that.
+
+Tests spawn the CLI only through `test/helpers/cli-harness.js` (`runCli`,
+`startCli`); a structural test fails if a test file spawns `bin/cli.js` itself.
+The harness gives each run a clean environment and a `PATH` with no `claude` or
+`codex`, so runtime discovery never executes your own binaries; a test that needs
+one puts a stub on its own `PATH`. On Windows it also stubs the ACL tools
+(`test/support/stub-acl.mjs`, a `node --import` preload; production code has no
+switch for it). The real ACLs are covered, with no stub, by
+`test/e2e/acl-windows.test.js`; a test that is about permissions passes
+`realAcl: true`. Shared fixtures for the `cli-*` files are in
+`test/helpers/cli-fixtures.js`.
 
 `scripts/`, `test/`, `evals/` and `docs/` do not go into the npm package — the
 tarball carries `bin/`, `agents/`, `reference/`, `hooks/`, `dashboard/`, `skills/`,
@@ -168,7 +185,7 @@ from paths in the receipt. New target files require a deliberate catalog and
 receipt-compatibility decision; do not discard descriptors for previously owned
 files. Keep project receipt logic separate from the global install manifest.
 
-Use `test/stack-packs.test.js` for installation/removal, isolation, local-file
+Use `test/e2e/stack-packs.test.js` for installation/removal, isolation, local-file
 preservation, dry-run, links, lock contention and interrupted-operation recovery.
 Each pack needs a quality fixture declaring `stackPack` in
 `evals/quality-cases.json`. `test/eval.test.js` checks explicit content loading
@@ -198,7 +215,7 @@ preserves its receipt and uninstalls the retired artifact. A schema change requi
 an explicit migration; unsupported schemas and unrecognized IDs refuse writes.
 Never broaden the allowlist using paths read from a manifest.
 
-The lifecycle tests are `test/uninstall.test.js`. Keep tests for interruptions at
+The lifecycle tests are `test/e2e/uninstall.test.js`. Keep tests for interruptions at
 intent/mutation boundaries, concurrent config edits after preflight, protected
 backups, shared owners and per-harness wiring. Final unwiring changes require
 independent security review. Paid routing/quality evals are not needed for uninstall.

@@ -12,12 +12,12 @@ impact; LOW stays inline. Preserve incidental findings through its procedure;
 otherwise, do nothing extra.
 
 - **The team are Codex subagents** in `$CODEX_HOME/agents/` (`~/.codex` by default). Ask for one by name.
-- **Generated agents set effort and, by default, model.** The installer maps
-  frontmatter to Codex model settings. `CANONKIT_CODEX_MODEL=inherit` during
-  `install` or `add` omits `model`, letting Codex resolve its defaults and the
-  parent session; a concrete ID overrides the model for every tier. Effort stays
-  mapped. Regenerate existing agents to change this choice. Name the intended
-  model and effort in a dispatch plan; check what the runtime actually runs.
+- **Use the selected Codex model and effort.** Run `npx canonkit models show
+  --json` in the project and read `harnesses.codex.agents.<agent>`. A generated
+  custom agent file carries configured `model` and `model_reasoning_effort`;
+  project core overrides require `npx canonkit install --codex` in that project.
+  Its file wins over spawn parameters. Name "inherit" for unset fields and
+  verify the effective runtime when it matters.
 - `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
   a hook denies `--no-verify`, `--no-gpg-sign` and `-c core.hooksPath=...` on
   git commands. <!-- enforced-by: git-bypass -->

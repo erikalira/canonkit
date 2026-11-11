@@ -122,7 +122,7 @@ async function atomic(file, bytes, { keepMode = false, privateParent = false, pu
  * Only global install/reference use this store; project tools own their setup.
  */
 export class InstallManifest {
-  constructor({ home, roots, catalog, targets, stateDir, dryRun = false, log = () => {}, checkpoint = async () => {} }) {
+  constructor({ home, roots, catalog, targets, stateDir, dryRun = false, log = () => {}, checkpoint = async () => {}, onChange = null }) {
     this.home = path.resolve(home);
     this.roots = roots;
     this.catalog = new Map(catalog.map((entry) => [entry.id, entry]));
@@ -130,6 +130,7 @@ export class InstallManifest {
     this.targets = targets;
     this.dryRun = dryRun;
     this.log = log;
+    this.onChange = onChange;
     this.checkpoint = checkpoint;
     const globalDir = path.join(this.home, ".canonkit");
     this.dir = stateDir === undefined ? globalDir : path.resolve(stateDir);
@@ -364,6 +365,7 @@ export class InstallManifest {
     const newBlock = spec.kind === "block" ? removeManagedBlock(after, spec.markers).block : after;
     if (spec.kind === "block" && !newBlock) throw new Error("Managed block missing from planned install");
     const changed = digest(before) !== digest(after);
+    if (changed) this.onChange?.(target);
     const entry = { id: spec.id, kind: spec.kind, root: spec.root, relative: spec.relative, owners,
       provenance: old?.provenance ?? (changed ? (before === null ? "created" : "modified") : "observed"), hash: digest(newBlock) };
     if (old?.provenance === "observed" && changed) entry.provenance = "modified";
@@ -401,6 +403,26 @@ export class InstallManifest {
     await regularPath(file);
     const bytes = await read(file);
     if (bytes !== null) await this.write(file, bytes);
+  }
+
+  /** Retire a generated project file only while its receipt still matches. */
+  async retire(file) {
+    await this.start();
+    const spec = this.byPath.get(path.resolve(file));
+    if (!spec?.preserveModified) throw new Error(`Untracked project retirement refused: ${file}`);
+    const entry = this.data.entries[spec.id];
+    if (!entry) return false;
+    const target = this.target(spec);
+    await regularPath(target);
+    const current = await read(target);
+    if (current !== null && digest(current) !== entry.hash) {
+      this.log(`Preserved edited ${spec.id}; canonkit ownership detached`);
+      if (!this.dryRun) { delete this.data.entries[spec.id]; await this.save(); }
+      return false;
+    }
+    this.log(`${this.dryRun ? "would remove" : "Removing"} ${spec.id}`);
+    if (!this.dryRun) await this.commit(spec, current, null, null);
+    return true;
   }
 
   wrap(ctx) {
@@ -472,6 +494,11 @@ export class InstallManifest {
       let after = null;
       if (entry.provenance === "observed") {
         this.log(`Preserved preexisting ${entry.id} (observed)`);
+        if (!this.dryRun) { delete this.data.entries[entry.id]; await this.save(); }
+        continue;
+      }
+      if (spec.preserveModified && current !== null && digest(current) !== entry.hash) {
+        this.log(`Preserved edited ${entry.id}; canonkit ownership detached`);
         if (!this.dryRun) { delete this.data.entries[entry.id]; await this.save(); }
         continue;
       }

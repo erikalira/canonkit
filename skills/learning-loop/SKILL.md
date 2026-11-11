@@ -115,8 +115,10 @@ the descriptions of default agents, skills and commands, and any instructions
 of kit-installed MCP servers. Exclude on-demand bodies and user text outside
 managed markers. Record the profile, per-file component counts, total and
 before/after delta; report other profiles separately.
-The anchor is at most 2,500 words. If exceeded, propose a compensating cut and
-remeasure the combined diff; never silently raise the budget.
+The ceiling is at most 3,000 words; the rubric's context-cost score stays 10 up
+to about 3,050. Headroom is not a quota: record the delta and prefer consolidating
+to adding. If exceeded, propose a compensating cut and remeasure the combined
+diff; never silently raise the budget.
 
 Quinn reviews acceptance and coverage when applicable; route the actual change to
 owners required by its risk. HIGH changes require an applicable independent review

@@ -2,9 +2,8 @@
 /**
  * Install the agent team into the local Claude Code / Codex / OpenCode / GitHub Copilot runtime.
  *
- * Agents in this repo are stored in the exact format the runtime reads, so
- * installing is a copy — there is no generation step and nothing to reconcile
- * by hand. Edit agents/<name>.md, run `install`, done.
+ * Agent source lives in agents/<name>.md. Installation writes Claude frontmatter
+ * and Codex TOML with the model choices resolved for each destination.
  *
  * This is the single implementation. The shell and PowerShell scripts under
  * scripts/ are wrappers around it. That is deliberate: the core/specialist
@@ -29,8 +28,13 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
+import { renderInstallReport } from "./install-report.js";
+import { renderDoctorReport } from "./doctor-report.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
+import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
+import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-discovery.js";
+import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
 import { collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, compileSecurity, compileNetworkSecurity, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
@@ -123,6 +127,9 @@ async function readAgents() {
 }
 
 const AUTHORITIES = ["veto", "blocks", "none"];
+// How demanding an agent's normal work is, in words no vendor owns. The person
+// maps each level to a model and effort per harness (`canonkit models setup`).
+const NEEDS = ["light", "standard", "deep"];
 
 /**
  * Parse one agent file (already newline-normalized). A specialist must declare
@@ -155,16 +162,27 @@ function parseAgent(file, text) {
       `agents/${file}: authority is '${front.authority ?? "missing"}' — a specialist must declare ${AUTHORITIES.join(", ")}`,
     );
   }
+  // A vendor model label in the source is the coupling `need` replaced: Claude
+  // Code acts on a `model:` field itself, so a stale one would pin a model.
+  if ("model" in front) {
+    throw new Error(`agents/${file}: 'model:' is no longer accepted — replace it with need: ${NEEDS.join(" | ")}`);
+  }
+  if (!NEEDS.includes(front.need)) {
+    throw new Error(`agents/${file}: need is '${front.need ?? "missing"}' — expected ${NEEDS.join(", ")}`);
+  }
 
   return {
     name,
     tier: front.tier,
     authority: front.authority,
-    model: front.model,
+    need: front.need,
     description: front.description ?? "",
     // Everything after the frontmatter is the agent's actual instructions.
     // Claude Code reads the file as-is; Codex needs them as a TOML field.
     body: text.slice(end + 4).replace(/^\n+/, ""),
+    // The whole file: Claude Code agents are this text with the person's
+    // choices added to the frontmatter, so with none they stay byte-identical.
+    source: text,
     file: path.join(AGENTS_DIR, file),
   };
 }
@@ -208,39 +226,24 @@ const claudeHome = () => {
  * tell Codex was the roster prose in AGENTS.md — which describes the team but
  * cannot spawn anyone.
  *
- * The frontmatter `model` says how demanding the agent's normal work is, on
- * Claude's axis. Codex has its own axis, so the intent is carried across by one
- * declared mapping instead of a second model field per agent, which would be
- * fifteen more lines to keep in sync and one more thing to drift. Every agent
- * here is a judgment agent rather than a speed-optimized scanner, which is why
- * the fast models sit at the bottom of the map and nothing selects them today.
+ * Codex model and effort are resolved from the user's and project's version-1
+ * models.json choices. Unconfigured agents inherit the session settings.
  */
-const CODEX_MODELS = {
-  opus: { model: "gpt-6.1-sol", effort: "high" },
-  sonnet: { model: "gpt-6.1-sol", effort: "medium" },
-  haiku: { model: "gpt-6-luna", effort: "low" },
-};
 
-// Resolve once, before either installer writes. `null` means leave model
-// selection to Codex; undefined keeps the shipped, tier-specific defaults.
-function codexModelOverride() {
-  const value = process.env.CANONKIT_CODEX_MODEL;
-  if (value === undefined) return undefined;
-  if (!value.trim() || /[\x00-\x1f\x7f]/.test(value)) {
-    throw new Error("CANONKIT_CODEX_MODEL must be a model ID or 'inherit', without control characters");
-  }
-  return value.trim() === "inherit" ? null : value.trim();
+// CANONKIT_CODEX_MODEL pinned one model for every Codex agent. It is ignored
+// now; say so once per run rather than fail an install that used to work.
+let codexModelWarned = false;
+function warnIgnoredCodexModel(ctx) {
+  if (process.env.CANONKIT_CODEX_MODEL === undefined || codexModelWarned) return;
+  codexModelWarned = true;
+  ctx.log("WARN CANONKIT_CODEX_MODEL is ignored: use canonkit models setup --codex and reinstall");
 }
 
 // TOML basic strings escape these two; the multi-line literal string used for
 // the body escapes nothing, which is exactly what Markdown needs.
 const tomlString = (s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 
-function codexAgent(agent, modelOverride) {
-  const mapped = CODEX_MODELS[agent.model];
-  if (!mapped) {
-    throw new Error(`agents/${agent.name}.md: model '${agent.model}' has no Codex equivalent`);
-  }
+function codexAgent(agent, choice = {}) {
   // A literal string cannot contain its own delimiter, and there is no escape
   // for it. Failing here beats emitting a file that silently truncates the
   // agent's instructions at the first occurrence.
@@ -248,15 +251,45 @@ function codexAgent(agent, modelOverride) {
     throw new Error(`agents/${agent.name}.md: body contains ''' and cannot be written as a TOML literal string`);
   }
 
-  const model = modelOverride === undefined ? mapped.model : modelOverride;
   return `# Generated by canonkit from agents/${agent.name}.md — do not edit here.
 name = ${tomlString(agent.name)}
 description = ${tomlString(agent.description)}
-${model === null ? "" : `model = ${tomlString(model)}\n`}model_reasoning_effort = ${tomlString(mapped.effort)}
-developer_instructions = '''
+${choice.model ? `model = ${tomlString(choice.model)}\n` : ""}${choice.effort ? `model_reasoning_effort = ${tomlString(choice.effort)}\n` : ""}developer_instructions = '''
 ${agent.body.replace(/\n+$/, "")}
 '''
 `;
+}
+
+function codexChoiceFor(agent, layers, record, ctx) {
+  const choice = choiceFor(agent, "codex", layers);
+  const model = record?.status === "discovered" ? record.models.find((m) => m.id === choice.model) : null;
+  if (model && choice.effort && !model.efforts.includes(choice.effort)) {
+    ctx.log(`WARN Codex ${agent.name}: ${choice.model} does not support effort ${choice.effort}; both settings inherit`);
+    return {};
+  }
+  return choice;
+}
+
+/* ------------------------------------------------------------------ claude */
+
+/** { model, effort } values (null = inherit) for one agent from the layers given. */
+function choiceFor(agent, harness, layers) {
+  const r = resolveChoice(agent, harness, layers);
+  return { model: r.model.value, effort: r.effort.value };
+}
+
+/**
+ * A Claude Code agent: the source file, with the resolved choices added to the
+ * frontmatter in the fields Claude Code honors. This is the default for a
+ * dispatch that passes no model or effort; a planned dispatch passes them as
+ * parameters (the orchestrate skill), which is how project choices reach
+ * user-level agents. Values are JSON-quoted, which is valid YAML whatever they
+ * hold.
+ */
+function claudeAgent(agent, choice = {}) {
+  const end = agent.source.indexOf("\n---", 4);
+  const fields = HONORED_FIELDS.claude.filter((f) => choice[f]).map((f) => `\n${f}: ${JSON.stringify(choice[f])}`).join("");
+  return agent.source.slice(0, end) + fields + agent.source.slice(end);
 }
 
 /* ---------------------------------------------------------------- opencode */
@@ -266,11 +299,11 @@ ${agent.body.replace(/\n+$/, "")}
  * .opencode/agents (project-scoped), named by the filename. Same format as the
  * source, but not the same frontmatter, so the file is generated rather than
  * copied or linked: a custom agent without `mode` loads as a primary agent,
- * and `model: sonnet` is not a model id OpenCode accepts.
+ * and the source frontmatter (`need`, `tier`) is not OpenCode's.
  *
  * No model and no variant, by decision: OpenCode is run on whatever models
  * the session has, and a subagent without one uses the model of the agent
- * that invoked it. `name`, `tier` and `model` are this repo's bookkeeping.
+ * that invoked it. `name`, `tier` and `need` are this repo's bookkeeping.
  * The description is written JSON-quoted, which is a valid YAML string: most
  * descriptions carry a ": ", which a strict YAML parser rejects unquoted.
  */
@@ -287,7 +320,7 @@ ${agent.body.replace(/\n+$/, "")}
 
 /**
  * Copilot custom agents use Markdown profiles with required descriptions. The
- * source model labels are not Copilot model IDs, so let Copilot choose the
+ * source declares a need level, not a Copilot model ID, so let Copilot choose the
  * active session's model instead of pinning an incompatible value.
  */
 function copilotAgent(agent) {
@@ -423,10 +456,15 @@ async function optionalBytes(file) {
   return readSecurityBytes(file);
 }
 
-function scopedSecurityManifest(ctx, root) {
+const PROJECT_CORE_NAMES = ["archie", "bob", "gard", "perry", "pipe", "pixie", "quinn", "scott", "spencer", "virgo"];
+function scopedSecurityManifest(ctx, root, targets = ["claude", "codex"]) {
+  const codexEntries = PROJECT_CORE_NAMES.map((name) => ({
+    id: `project:file:.codex/agents/${name}.toml`, root: "project",
+    relative: `.codex/agents/${name}.toml`, kind: "file", owners: ["codex"], preserveModified: true,
+  }));
   return new InstallManifest({ home: os.homedir(), roots: { project: root },
-    catalog: [{ id: "project:json:.claude/settings.json", root: "project", relative: ".claude/settings.json", kind: "json", owners: ["claude"], undo: undoSecurity, securityOwnership: projectSecurityOwnership }],
-    stateDir: projectStateDir(os.homedir(), root), targets: ["claude"], dryRun: ctx.dryRun, log: ctx.log });
+    catalog: [{ id: "project:json:.claude/settings.json", root: "project", relative: ".claude/settings.json", kind: "json", owners: ["claude"], undo: undoSecurity, securityOwnership: projectSecurityOwnership }, ...codexEntries],
+    stateDir: projectStateDir(os.homedir(), root), targets, dryRun: ctx.dryRun, log: ctx.log });
 }
 
 async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
@@ -470,9 +508,12 @@ async function install(ctx, options = {}) {
   if (options.wireHooks && targets.includes("claude")) await readSettingsForWiring(settingsPath());
   if (options.wireHooks && targets.includes("codex")) { refuseUnquotableCodexPath(); await readCodexHooksForWiring(codexHooksPath()); }
   if (options.wireHooks && targets.includes("opencode")) { await readOpencodeConfigForWiring(); if (!ctx.dryRun) refuseOpencodeBelow2(); }
-  if (targets.includes("codex")) codexModelOverride();
+  warnIgnoredCodexModel(ctx);
   const security = await prepareSecurity(ctx, targets, options);
-  const projectManifest = security?.project ? scopedSecurityManifest(ctx, security.project.root) : null;
+  const codexRoot = targets.includes("codex") ? await repositoryRoot() : null;
+  const projectRootForInstall = security?.project?.root ?? codexRoot;
+  const projectCodexChoices = codexRoot ? await readChoices(projectConfigPath(codexRoot), { project: true }) : null;
+  const projectManifest = projectRootForInstall ? scopedSecurityManifest(ctx, projectRootForInstall, targets) : null;
   if (projectManifest) await projectManifest.load();
   for (const manifest of [ctx.manifest, projectManifest].filter(Boolean)) {
     for (const spec of manifest.catalog.values()) if (spec.owners.some((owner) => targets.includes(owner))) await safePath(manifest.target(spec));
@@ -493,6 +534,9 @@ async function install(ctx, options = {}) {
       if (!ctx.dryRun && security.global.changes.length) completed.push("user Claude settings");
     }
     await installDistribution(configured, options);
+    if (projectManifest && targets.includes("codex")) {
+      await installProjectCodex(ctx, projectManifest, projectRootForInstall, projectCodexChoices);
+    }
     if (security) {
       for (const gap of security.global.gaps) ctx.log(`WARN security network: ${gap}`);
       const project = security.project;
@@ -523,7 +567,6 @@ async function installDistribution(ctx, options = {}) {
   const codex = targets.includes("codex");
   const opencode = targets.includes("opencode");
   const copilot = targets.includes("copilot");
-  const modelOverride = codex ? codexModelOverride() : undefined;
   // Each harness's wiring is written only for a harness in the install: wiring
   // one the person said no to would be writing it anyway.
   const agents = await readAgents();
@@ -543,6 +586,13 @@ async function installDistribution(ctx, options = {}) {
     else refuseOpencodeBelow2();
   }
 
+  // User-level agents follow the user's choices only: a project's choices
+  // reach them through dispatch parameters, never by rewriting them here.
+  // Read before any write, so a file this version cannot trust stops the install.
+  const userChoices = claude || codex ? await readChoices(userConfigPath()) : null;
+  await discoverModels(ctx, targets);
+  const codexCatalog = codex ? await readCatalog(catalogPath()).catch(() => null) : null;
+
   // Claude Code reads ~/.claude/agents only; no verified harness reads
   // ~/.agents/<agent>.md, so install no longer writes it (doctor warns on leftovers).
   const dests = claude ? [path.join(claudeHome(), "agents")] : [];
@@ -550,7 +600,7 @@ async function installDistribution(ctx, options = {}) {
   for (const dest of dests) {
     await ctx.mkdir(dest);
     for (const agent of core(agents)) {
-      await ctx.copy(agent.file, path.join(dest, `${agent.name}.md`));
+      await ctx.write(path.join(dest, `${agent.name}.md`), claudeAgent(agent, choiceFor(agent, "claude", { user: userChoices })));
     }
     ctx.log(`Installed ${core(agents).length} agents -> ${dest}`);
 
@@ -568,7 +618,7 @@ async function installDistribution(ctx, options = {}) {
   }
 
   if (codex) {
-    await installCodex(ctx, agents, path.join(codexHome(), "agents"), modelOverride);
+    await installCodex(ctx, agents, path.join(codexHome(), "agents"), { userChoices, record: codexCatalog?.harnesses?.codex });
     await installCodexHooks(ctx, { wire });
   }
   if (opencode) {
@@ -602,13 +652,28 @@ async function installDistribution(ctx, options = {}) {
 }
 
 /**
+ * Refresh the model catalog for the harnesses being installed, so `models
+ * setup` and doctor compare against what is installed now. Advice only: a
+ * failure is a warning, and a dry run starts no program.
+ */
+async function discoverModels(ctx, targets) {
+  const harnesses = targets.filter((t) => DISCOVERABLE.includes(t));
+  if (!harnesses.length) return;
+  try {
+    await refreshModels(ctx, { harnesses, keepWithin: 24 * 60 * 60 * 1000 });
+  } catch (err) {
+    ctx.log(`WARN model discovery: ${err.message}; agents keep their configured choices or inherit`);
+  }
+}
+
+/**
  * Write the core team as Codex custom agents. Same split as everywhere else:
  * core at user level, specialists per project.
  */
-async function installCodex(ctx, agents, dest, modelOverride) {
+async function installCodex(ctx, agents, dest, { userChoices, record } = {}) {
   await ctx.mkdir(dest);
   for (const agent of core(agents)) {
-    await ctx.write(path.join(dest, `${agent.name}.toml`), codexAgent(agent, modelOverride));
+    await ctx.write(path.join(dest, `${agent.name}.toml`), codexAgent(agent, codexChoiceFor(agent, { user: userChoices }, record, ctx)));
   }
   ctx.log(`Installed ${core(agents).length} agents -> ${dest}`);
 
@@ -632,6 +697,38 @@ async function installCodex(ctx, agents, dest, modelOverride) {
   if (stale.length) {
     ctx.log(`  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`);
     ctx.log("  Codex does not load these — remove them yourself once you have checked.");
+  }
+}
+
+async function installProjectCodex(ctx, manifest, root, project) {
+  const agents = core(await readAgents());
+  const user = await readChoices(userConfigPath());
+  const record = (await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
+  for (const agent of agents) {
+    const file = path.join(root, ".codex", "agents", `${agent.name}.toml`);
+    const relative = path.relative(root, file);
+    if (!relative || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) throw new Error("Project Codex destination escapes repository root");
+    await safePath(file);
+    const spec = manifest.byPath.get(path.resolve(file));
+    if (!spec) throw new Error(`Uncatalogued project Codex agent: ${agent.name}`);
+    const userChoice = codexChoiceFor(agent, { user }, record, ctx);
+    const projectChoice = codexChoiceFor(agent, { user, project }, record, ctx);
+    const desired = project && (userChoice.model !== projectChoice.model || userChoice.effort !== projectChoice.effort);
+    if (!desired) { await manifest.retire(file); continue; }
+    const receipt = manifest.data.entries[spec.id];
+    if (existsSync(file) && !receipt) {
+      ctx.log(`WARN preexisting project Codex agent preserved: ${file}`);
+      continue;
+    }
+    if (receipt) {
+      const bytes = await readFile(file).catch((err) => { if (err.code === "ENOENT") return null; throw err; });
+      if (bytes && createHash("sha256").update(bytes).digest("hex") !== receipt.hash) {
+        await manifest.retire(file);
+        continue;
+      }
+    }
+    await manifest.write(file, codexAgent(agent, projectChoice));
+    ctx.log(`${ctx.dryRun ? "would install" : "Installed"} project Codex agent: ${agent.name}`);
   }
 }
 
@@ -1657,7 +1754,7 @@ async function installSkills(ctx, targets = DEFAULT_TARGETS) {
  * sees it too — is automated.
  */
 async function addSpecialists(ctx, names, options = {}) {
-  const modelOverride = options.remove ? undefined : codexModelOverride();
+  if (!options.remove) warnIgnoredCodexModel(ctx);
   const remove = options.remove === true;
   const agents = await readAgents();
   const project = process.cwd();
@@ -1685,8 +1782,16 @@ async function addSpecialists(ctx, names, options = {}) {
   // Codex .codex/agents/<name>.toml, OpenCode .opencode/agents/<name>.md,
   // Copilot .github/agents/<name>.agent.md, and the AGENTS.md block below
   // tells the main agent when to reach for a project specialist.
+  // Project specialists live in the project, so the project's choices apply
+  // on top of the user's. "The project" for choices is the repository root,
+  // the same one `models show` and the orchestrate skill read.
+  const choicesRoot = remove ? null : await projectRoot(project);
+  const layers = remove ? null : { user: await readChoices(userConfigPath()), project: choicesRoot ? await readChoices(projectConfigPath(choicesRoot), { project: true }) : null };
+  const codexRecord = remove ? null : (await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
   const agentsDir = path.join(project, ".claude", "agents");
   const codexDir = path.join(project, ".codex", "agents");
+  await safePath(codexDir);
+  for (const name of names) await safePath(path.join(codexDir, `${name}.toml`));
   const opencodeProjectDir = path.join(project, ".opencode", "agents");
   const copilotProjectDir = path.join(project, ".github", "agents");
   await ctx.mkdir(agentsDir);
@@ -1710,8 +1815,8 @@ async function addSpecialists(ctx, names, options = {}) {
         ctx.log(`Not installed: ${name}`);
       }
     } else {
-      await ctx.copy(known.get(name).file, target);
-      await ctx.write(codexTarget, codexAgent(known.get(name), modelOverride));
+      await ctx.write(target, claudeAgent(known.get(name), choiceFor(known.get(name), "claude", layers)));
+      await ctx.write(codexTarget, codexAgent(known.get(name), codexChoiceFor(known.get(name), layers, codexRecord, ctx)));
       await ctx.write(opencodeTarget, opencodeAgent(known.get(name)));
       await ctx.write(copilotTarget, copilotAgent(known.get(name)));
       ctx.log(`Installed ${name} -> .claude/agents/${name}.md, .codex/agents/${name}.toml, .opencode/agents/${name}.md and .github/agents/${name}.agent.md`);
@@ -1844,7 +1949,7 @@ async function list(ctx) {
 
   ctx.log(`Core team (user level: ${userDest})`);
   for (const a of core(agents)) {
-    ctx.log(`  ${a.name.padEnd(10)} ${String(a.model).padEnd(7)} ${mark(userDest, a.name)}`);
+    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${mark(userDest, a.name)}`);
   }
 
   ctx.log("");
@@ -1856,7 +1961,7 @@ async function list(ctx) {
   ctx.log("");
   ctx.log(`Domain specialists (this project: ${projectDest})`);
   for (const a of specialists(agents)) {
-    ctx.log(`  ${a.name.padEnd(10)} ${String(a.model).padEnd(7)} ${mark(projectDest, a.name)}`);
+    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${mark(projectDest, a.name)}`);
   }
 
   ctx.log("");
@@ -1943,20 +2048,24 @@ async function securityDiagnosis() {
   return rows;
 }
 
-async function doctor() {
+async function doctor({ verbose = false } = {}) {
   const home = os.homedir();
   const claudeDir = claudeHome();
   const results = [];
   const add = (status, check, detail, more = []) => results.push({ status, check, detail, more });
   const text = (p) => { try { return toLf(readFileSync(p, "utf8")); } catch { return null; } };
 
-  // agents: every core agent in ~/.claude/agents, matching this package's copy.
+  // agents: every core agent in ~/.claude/agents, matching what install would
+  // write now (this package's agent plus the user's model choices). A choices
+  // file doctor cannot read is reported by the models check below.
   const agents = core(await readAgents());
+  let userChoices;
+  try { userChoices = await readChoices(userConfigPath(home)); } catch { userChoices = undefined; }
   const missing = [], stale = [];
   for (const a of agents) {
     const x = text(path.join(claudeDir, "agents", `${a.name}.md`));
     if (x === null) missing.push(a.name);
-    else if (x !== (await readOwned(a.file))) stale.push(a.name);
+    else if (x !== claudeAgent(a, choiceFor(a, "claude", { user: userChoices }))) stale.push(a.name);
   }
   if (missing.length) {
     add("FAIL", "agents", `missing from ~/.claude/agents: ${missing.join(", ")} — run npx canonkit install`);
@@ -2193,12 +2302,20 @@ async function doctor() {
   ];
   add(ignored.length ? "WARN" : "OK", "config", parts.join(", "), ignored);
 
+  // models: stored choices against the stored discovery; never starts a harness.
+  for (const row of await modelDiagnosis(await readAgents(), { home, cwd: process.cwd() })) add(row.status, row.check, row.detail);
+
   const claudeInstalled = agents.some((agent) => existsSync(path.join(claudeDir, "agents", `${agent.name}.md`)));
   const otherInstalled = agents.some((agent) => existsSync(path.join(codexHome(), "agents", `${agent.name}.toml`)) || existsSync(path.join(opencodeAgentsDir(), `${agent.name}.md`)));
   const claudeChecks = new Set(["agents", "reference", "hook file", "hook syntax", "hook wiring", "log", "forwarder", "config"]);
   const optionalChecks = new Set(["hook file", "hook syntax", "log"]);
   const report = results.filter((row) => (claudeInstalled || !otherInstalled || !claudeChecks.has(row.check)) && (claudeHooksActive || !optionalChecks.has(row.check)));
   report.push(...await securityDiagnosis());
+  if (!verbose) {
+    const { lines, failed: bad } = renderDoctorReport(report);
+    console.log(lines.join("\n"));
+    return bad ? 1 : 0;
+  }
   for (const r of report) {
     console.log(`${r.status.padEnd(4)} ${r.check}: ${r.detail}`);
     for (const m of r.more) console.log(`       ${m}`);
@@ -2902,7 +3019,7 @@ function unwireTrackedPermissions(beforeBytes, afterBytes, currentBytes) {
 }
 
 async function globalManifest(ctx, targets) {
-  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log });
+  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log, onChange: ctx.onChange });
 }
 
 async function trackedGlobal(ctx, targets, action) {
@@ -2963,6 +3080,7 @@ async function uninstallProject(ctx) {
   const root = await repositoryRoot();
   if (!root) throw new Error("uninstall --project requires the current validated repository");
   await safePath(path.join(root, ".claude", "settings.json"));
+  for (const name of PROJECT_CORE_NAMES) await safePath(path.join(root, ".codex", "agents", `${name}.toml`));
   const manifest = scopedSecurityManifest(ctx, root);
   try { return await manifest.uninstall(); }
   finally { await manifest.close(); }
@@ -2976,7 +3094,8 @@ Usage:
            [--claude] [--codex]       for these runtimes only (asked in a terminal;
            [--opencode] [--copilot]   default Claude Code and Codex)
            [--wire-hooks]             also wire hooks for selected runtimes that support them
-  canonkit doctor                     check the install; exits 1 on any FAIL
+           [--verbose]                print every step instead of the short summary
+  canonkit doctor [--verbose]         check the install; exits 1 on any FAIL (--verbose: every row in full)
   canonkit uninstall [--claude] [--codex] [--opencode] [--copilot]
                                       remove tracked global entries (default: all recorded runtimes)
   canonkit reference [--claude] [--codex] [--opencode] [--copilot]
@@ -2987,14 +3106,19 @@ Usage:
   canonkit tool add <tool> [--yes]    run an installed tool's setup here (graphify, openspec)
   canonkit tool remove <tool>         take a tool out of this project's AGENTS.md
   canonkit tool list                  show the tools, their pins, and which are active here
+  canonkit models refresh             ask each harness which models and efforts it offers
+  canonkit models setup [--project]   choose a model and effort per need level (and agent)
+  canonkit models show [--json]       print each agent's effective model and effort, and why
 
 Options:
   --dry-run       report what would change without writing (or running) anything
-  --project       uninstall: reverse only tracked security settings in this repository
-  --claude        install, reference, uninstall: select Claude Code
-  --codex         install, reference, uninstall: select Codex
-  --opencode      install, reference, uninstall: select OpenCode
-  --copilot       install, reference, uninstall: select GitHub Copilot. Flags combine; install/reference without flags:
+  --project       uninstall: reverse tracked security settings and Codex core shadows in this repository;
+                  models setup: write this project's .canonkit/models.json
+  --json          models show: machine-readable output
+  --claude        install, reference, uninstall, models: select Claude Code
+  --codex         install, reference, uninstall, models: select Codex
+  --opencode      install, reference, uninstall, models: select OpenCode
+  --copilot       install, reference, uninstall, models: select GitHub Copilot. Flags combine; install/reference without flags:
                   a terminal shows a menu, a script or CI gets Claude Code and Codex
   --wire-hooks   install: wire hooks for selected runtimes that support them, with a dated
                   backup of each file it changes and every other key kept.
@@ -3099,7 +3223,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--claude", "--codex", "--opencode", "--copilot", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -3124,31 +3248,61 @@ async function main(argv) {
   }
 
   const ctx = context(flags.includes("--dry-run"));
-  if (flags.includes("--project") && (command !== "uninstall" || rest.length || flags.some((flag) => !["--project", "--dry-run"].includes(flag)))) {
-    console.error("--project is only valid for: canonkit uninstall --project [--dry-run]");
+  const modelsSetup = command === "models" && rest[0] === "setup";
+  if (flags.includes("--project") && !modelsSetup && (command !== "uninstall" || rest.length || flags.some((flag) => !["--project", "--dry-run"].includes(flag)))) {
+    console.error("--project is only valid for: canonkit uninstall --project [--dry-run], canonkit models setup --project");
+    return 1;
+  }
+  if (flags.includes("--json") && !(command === "models" && rest[0] === "show")) {
+    console.error("--json is only valid for: canonkit models show");
     return 1;
   }
   if (flags.includes("--with-git-hooks") && (command !== "tool" || rest.length !== 2 || rest[0] !== "add" || rest[1] !== "graphify")) {
     console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
     return 1;
   }
+  if (flags.includes("--verbose") && !["install", "doctor"].includes(command)) {
+    console.error("--verbose is only valid for: canonkit install, canonkit doctor");
+    return 1;
+  }
   if (flags.includes("--wire-hooks") && command !== "install") {
     console.error("--wire-hooks is only valid for: canonkit install");
     return 1;
   }
-  if (TARGETS.some((t) => flags.includes(`--${t}`)) && !["install", "reference", "uninstall"].includes(command)) {
-    console.error("--claude, --codex, --opencode and --copilot are only valid for: canonkit install, canonkit reference, canonkit uninstall");
+  if (TARGETS.some((t) => flags.includes(`--${t}`)) && !["install", "reference", "uninstall", "models"].includes(command)) {
+    console.error("--claude, --codex, --opencode and --copilot are only valid for: canonkit install, canonkit reference, canonkit uninstall, canonkit models");
     return 1;
   }
 
   switch (command) {
     case "install": {
+      // The menu (no harness flag, a terminal) also offers the model step, so
+      // the agents are written with the choices made a moment ago.
+      const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && !!(process.stdin.isTTY && process.stdout.isTTY);
       const targets = await chooseTargets(flags);
-      if (!targets) {
+      if (!targets || (menu && !ctx.dryRun && targets.some((h) => h === "claude" || h === "codex") && !(await offerModelSetup(ctx, await readAgents(), { harnesses: targets.filter((h) => h === "claude" || h === "codex") })))) {
         console.error("Cancelled: nothing was installed.");
         return 1;
       }
-      await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
+      // Default output is a short grouped summary; --verbose prints every step as it happens.
+      const verbose = flags.includes("--verbose");
+      const lines = [];
+      const changed = new Set();
+      if (!verbose) {
+        const tag = ctx.dryRun ? "[dry-run] " : "";
+        ctx.log = (m) => { lines.push(m ? tag + m : ""); };
+        ctx.onChange = (file) => changed.add(file);
+      }
+      let failed = true;
+      try {
+        await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
+        failed = false;
+      } finally {
+        if (!verbose) {
+          const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
+          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed }).join("\n"));
+        }
+      }
       return 0;
     }
     case "uninstall":
@@ -3156,7 +3310,7 @@ async function main(argv) {
       if (rest.length || flags.some((flag) => !["--dry-run", "--claude", "--codex", "--opencode", "--copilot"].includes(flag))) throw new Error("uninstall accepts only --dry-run and harness selection flags");
       return uninstallGlobal(ctx, flags);
     case "doctor":
-      return doctor();
+      return doctor({ verbose: flags.includes("--verbose") });
     case "reference":
       // No menu here: reference is the re-sync after editing a block, run
       // from scripts as often as by hand.
@@ -3178,6 +3332,20 @@ async function main(argv) {
       return 0;
     case "tool":
       return toolCommand(ctx, rest, flags);
+    case "models": {
+      const [sub, ...extra] = rest;
+      const picked = TARGETS.filter((t) => flags.includes(`--${t}`));
+      if (!["refresh", "show", "setup"].includes(sub) || extra.length) {
+        console.error(`models: expected refresh, show or setup${sub && !extra.length ? `, not '${sub}'` : ""}
+`);
+        console.error(usage());
+        return 1;
+      }
+      const agents = await readAgents();
+      if (sub === "refresh") return refreshModels(ctx, { harnesses: picked.length ? picked : TARGETS });
+      if (sub === "show") return showModels(ctx, agents, { json: flags.includes("--json"), harnesses: picked.length ? picked : TARGETS });
+      return setupModels(ctx, agents, { project: flags.includes("--project"), harnesses: picked.length ? picked : ["claude"] });
+    }
     default:
       console.error(`Unknown command: ${command}\n`);
       console.error(usage());
@@ -3188,7 +3356,12 @@ async function main(argv) {
 // Only run when invoked as the CLI. The tests import applyBlock directly, and
 // an unguarded call here would install the team as a side effect of importing.
 const invokedDirectly =
-  process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  process.argv[1] && (() => {
+    // npx and global installs launch through a link or shim: compare real paths,
+    // or the CLI exits silently without running.
+    const real = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
+    return real(process.argv[1]) === real(fileURLToPath(import.meta.url));
+  })();
 
 if (invokedDirectly) {
   main(process.argv.slice(2))
@@ -3208,7 +3381,8 @@ export {
   parseAgent,
   summaries,
   codexAgent,
-  CODEX_MODELS,
+  claudeAgent,
+  HONORED_FIELDS,
   HOOK_FILES,
   OPENCODE_PLUGIN,
   renderRoutingBlock,

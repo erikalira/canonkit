@@ -11,9 +11,9 @@ add specific gates when you explicitly wire them. Codex and OpenCode have their
 own controls and can opt into the git-bypass and secret-write tripwires.
 
 Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
-Claude Code reads. For Claude Code, installing is a plain copy. Codex, OpenCode
-and Copilot get native profiles generated from the same body. Either way there
-is one source per agent, and nothing to reconcile by hand.
+Claude Code reads. Installing generates Claude Code frontmatter while preserving
+the agent body. Codex, OpenCode and Copilot get native profiles generated from
+that same body. There is one source per agent, and nothing to reconcile by hand.
 
 > **canonkit 1.x is not canonkit 0.x.** Versions up to `0.2.0` were a different
 > tool. It generated Spec-Kit-style governance templates (`.specify/`, a
@@ -70,10 +70,12 @@ manual review. [Migration and recovery](docs/install.md#returning-existing-claud
 Native Windows remains supported with partial protection: Claude's shell
 commands there have no OS sandbox. [Environment coverage](docs/install.md#native-security-per-repository).
 
-Codex agents default to `gpt-6.1-sol`. To follow your Codex session's model
-instead of pinning a version, set `CANONKIT_CODEX_MODEL=inherit` when installing.
-See [model configuration](docs/install.md#follow-the-session-model) for PowerShell
-examples, overrides and updating existing agents.
+Agents run on your session's model until you choose otherwise. To pick the model
+and effort per need level from what your harness actually offers, answer Yes when
+the interactive `npx canonkit install` asks, or run `npx canonkit models setup`,
+then reinstall with `npx canonkit install --claude --codex`. Claude Code and
+Codex apply these choices; OpenCode and Copilot inherit the session model.
+See [Choosing models](docs/install.md#choosing-models).
 
 **Check that it worked:**
 
@@ -317,6 +319,7 @@ Which gate does what in each runtime:
 | Command | What it does |
 | --- | --- |
 | `install` | global core distribution; supported native Claude security and user-scoped strict-network lock; unregisters attributable older Claude hooks in user/current-repository settings (`--claude` / `--codex` / `--opencode` / `--copilot` skip the menu) |
+| `install --verbose` | prints every step; the default is a short summary per runtime that says whether anything changed |
 | `install --wire-hooks` | distribution and native security; skips Claude hook cleanup and wires supported hooks (Claude Code, Codex, OpenCode) |
 | `doctor` | read-only installation and security diagnosis; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |

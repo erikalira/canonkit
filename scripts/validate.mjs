@@ -209,9 +209,9 @@ function frontmatterField(lines, key, fullLine = false) {
   return "";
 }
 
-function validateFrontmatter(reporter) {
+function validateFrontmatter(reporter, root = REPO_ROOT) {
   reporter.heading("Frontmatter");
-  for (const file of filesIn(path.join(REPO_ROOT, "agents"), ".md")) {
+  for (const file of filesIn(path.join(root, "agents"), ".md")) {
     const base = path.basename(file, ".md");
     const text = readFileSync(file, "utf8");
     const lines = text.split("\n");
@@ -223,12 +223,15 @@ function validateFrontmatter(reporter) {
     const name = frontmatterField(lines, "name");
     const description = frontmatterField(lines, "description", true);
     const model = frontmatterField(lines, "model");
+    const need = frontmatterField(lines, "need");
     const tier = frontmatterField(lines, "tier");
     if (!name) reporter.fail(`${base}: no name in frontmatter`);
     else if (name !== base) reporter.fail(`${base}: frontmatter name is '${name}' — must match the filename`);
     else if (!description) reporter.fail(`${base}: no description in frontmatter`);
-    else if (!model) reporter.fail(`${base}: no model in frontmatter — without it the runtime silently uses the session default`);
-    else if (!["opus", "sonnet", "haiku"].includes(model)) reporter.fail(`${base}: model is '${model}' — expected opus, sonnet, or haiku`);
+    // A vendor label here would be acted on by Claude Code itself; the person
+    // maps each need level to a model with `canonkit models setup`.
+    else if (model) reporter.fail(`${base}: 'model: ${model}' is no longer accepted — replace it with need: light | standard | deep`);
+    else if (!["light", "standard", "deep"].includes(need)) reporter.fail(`${base}: need is '${need || "missing"}' — expected light, standard, or deep`);
     else if (!["core", "specialist"].includes(tier)) reporter.fail(`${base}: tier is '${tier || "missing"}' — the installers derive the split from it`);
     else {
       const length = Buffer.byteLength(description, "utf8");
@@ -519,4 +522,4 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   });
 }
 
-export { checkBashScript };
+export { checkBashScript, validateFrontmatter };

@@ -1,14 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, chmod, symlink, lstat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, lstat } from "node:fs/promises";
 import { existsSync, realpathSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { InstallManifest, removeManagedBlock } from "../bin/install-manifest.js";
+import { InstallManifest, removeManagedBlock } from "../../bin/install-manifest.js";
+import { runCli, writeCommand } from "../helpers/cli-harness.js";
 
-const CLI = fileURLToPath(new URL("../bin/cli.js", import.meta.url));
 async function scratch(t) {
   const root = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-uninstall-test-")));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -17,12 +15,9 @@ async function scratch(t) {
   return { root, home };
 }
 function run(home, args, extra = {}) {
-  const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...extra };
-  if (!("CODEX_HOME" in extra)) delete env.CODEX_HOME;
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd: home, env, encoding: "utf8" });
-  const out = (result.stdout ?? "") + (result.stderr ?? "");
+  const result = runCli(args, { home, env: extra });
   assert.ifError(result.error);
-  return { ...result, out };
+  return result;
 }
 const manifestFile = (home) => path.join(home, ".canonkit", "install-manifest.json");
 const manifest = async (home) => JSON.parse(await readFile(manifestFile(home), "utf8"));
@@ -43,12 +38,7 @@ async function opencodeBin(root) {
   await mkdir(dir);
   const js = path.join(dir, "version.cjs");
   await writeFile(js, 'process.stdout.write("2.1.4\\n");');
-  if (process.platform === "win32") await writeFile(path.join(dir, "opencode.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
-  else {
-    const file = path.join(dir, "opencode");
-    await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
-    await chmod(file, 0o755);
-  }
+  await writeCommand(dir, "opencode", js);
   return { PATH: dir };
 }
 

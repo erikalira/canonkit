@@ -108,7 +108,8 @@ export function agentDefinition(name, variantPath = null, repo = REPO, stackPack
     const pack = readStackPack(stackPack, repo);
     body += `\n\n## Explicitly loaded stack pack: ${pack.name}\n\n${pack.body}`;
   }
-  return { [name]: { description: agent.description, prompt: body, model: agent.model } };
+  // No model: agents declare a vendor-neutral need, so a run uses --model or the session default.
+  return { [name]: { description: agent.description, prompt: body } };
 }
 
 function runCase(kase, run, opts) {
@@ -118,8 +119,7 @@ function runCase(kase, run, opts) {
     const defs = path.join(dir, ".eval-agents.json");
     const def = agentDefinition(kase.agent, opts.variants[kase.agent], REPO, kase.stackPack ?? null);
     writeFileSync(defs, JSON.stringify(def));
-    const model = opts.model ?? def[kase.agent].model;
-    const stream = runClaude(dir, kase.prompt, { ...opts, model }, ["--agents", defs, "--agent", kase.agent]);
+    const stream = runClaude(dir, kase.prompt, opts, ["--agents", defs, "--agent", kase.agent]);
     if (opts.save) {
       mkdirSync(opts.save, { recursive: true });
       writeFileSync(path.join(opts.save, `${kase.id}-${run}.jsonl`), stream);
