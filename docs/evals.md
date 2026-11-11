@@ -160,7 +160,7 @@ Each core has
 `kind: positive` (a realistic finding), `adversarial` (pressure to accept incorrect behavior) and `low` (a benign change,
 no bureaucracy). A fourth kind, `bait`, is a change that looks suspicious but is
 guarded or compatible, where the right report approves with no finding; it is not
-required per core. `kind` is coverage metadata; the checks stay the same. Bob covers
+required per core. `kind` is coverage metadata; the checks stay the same. In use, a case is a **target** (capability: the defect or behavior a rule must produce, typically `positive` and `adversarial`) or a **control** (regression: what must not change, typically `low`, `bait` and clean cases); the label says which role it plays in a comparison and does not change `kind`. Bob covers
 root cause, callers, failure path, single-use abstraction and a hidden test; Scott,
 evidence and the smallest MVP; Perry, measurement, build, floor and growth with
 input; Pipe, rollback, observability and authorization; Spencer, drift and durable
@@ -268,6 +268,14 @@ unknowns and awaits evidence. Offline calibration checks representative correct
 and incorrect reports, including incorrect recommendations with expected words.
 It validates the lexical judge contract, not the model's behavior. No paid run
 of these cases has been performed.
+
+When proposing a case for a new rule, include a neutral variant and, when cost
+justifies it, a competing one that tempts the opposite answer; do not change
+`kind`. The quality summary prints a run the model never answered as `ERROR` and
+lists cases with no answered run as not measured, not as a failed case (the exit
+code is still non-zero). Adherence
+to multi-step procedures is a known limit: these cases judge one review report,
+not whether a model follows a procedure step by step.
 
 The quality runner supplies the checkout Virgo body but uses the installed
 skills and global blocks. These cases ask for the `learning-loop` skill if

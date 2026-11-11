@@ -1,6 +1,6 @@
 # Handoff — conhecimentos das skills do ECC para revisão no CanonKit
 
-Data: 2026-11-11. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 reaberto em 2026-11-11 (adiamento levantado; deltas propostos); G05–G28 revisados (lotes 1 a 4, sem implementação); nenhum grupo pendente**.
+Data: 2026-11-11. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 reaberto em 2026-11-11 (adiamento levantado; deltas propostos); G05–G28 revisados (lotes 1 a 4); deltas de prioridade 1–2 aplicados nas fontes locais em 2026-11-11, exceto os listados em "Não aplicados"; nenhum grupo pendente**.
 
 Atualização do apply em 2026-11-09: os V/L aceitos de G01–G03 foram implementados nas fontes locais
 da change visual; progresso, evidências offline, reviews e limites atuais ficam
@@ -1323,7 +1323,13 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ## Deltas propostos por destino
 
-Consolidação de 2026-11-11 das linhas de prioridade 1–2 (e dos condicionais) dos 28 grupos. **Nada foi aplicado.** Cada linha é uma ou duas frases na fonte indicada; as de prioridade 3 e 4 ficam como demanda futura e não entram aqui. Aplicar muda instruções de agentes e packs: pede decisão do usuário, mudança de risco MEDIUM com Bob implementando, Quinn revisando e Virgo validando a configuração, e atualização da documentação afetada na mesma change.
+Consolidação de 2026-11-11 das linhas de prioridade 1–2 (e dos condicionais) dos 28 grupos. Cada linha é uma ou duas frases na fonte indicada; as de prioridade 3 e 4 ficam como demanda futura e não entram aqui.
+
+**Estado de aplicação (2026-11-11):** todos os deltas da tabela abaixo foram aplicados nas fontes locais, exceto os listados em "Não aplicados". Virgo implementou (configuração do time), Quinn revisou de forma independente (APPROVE WITH NOTES, sem bloqueio; seis notas de redação foram acatadas e duas ficaram como estão). `npm test` passou (1018 testes, 0 falhas, 4 pulados) e `npm run validate` passou com um aviso (modo portátil sem as checagens de sintaxe do Bash). Isso prova só o que a suíte e a revisão cobrem: **eficácia comportamental continua não medida** e nada foi instalado em `~/.claude` nem em projetos consumidores.
+
+**Não aplicados:** o delta de rede em Pipe (G28, rede fora do escopo); a linha de licença de asset em Gard (G23, vive só no pack `game-art-direction`); qualquer edição em Quinn (Archie já assume a checagem de consumidores); gate novo de comandos destrutivos no hook.
+
+**Pendentes, com o usuário:** `npm run eval:quality -- --runs 3` antes de lançar versão, porque os sete corpos de agente alterados (archie, bob, gard, perry, pipe, scott, spencer) têm casos de qualidade ([maintaining.md](../maintaining.md)); `node bin/cli.js install` para levar os agentes ao `~/.claude`; as linhas de `permissions.allow` que a trava de escrita do `settings.json` impediu de gravar.
 
 | Destino | Deltas (grupo) |
 | --- | --- |
@@ -1338,7 +1344,7 @@ Consolidação de 2026-11-11 das linhas de prioridade 1–2 (e dos condicionais)
 | `docs/evals.md` | rótulo alvo/controle, limite de adesão a procedimentos de vários passos não medida, guia de variantes neutra e competidora, e verificação de ERROR × falha (G16) |
 | `stack-packs/` | `ui-design` e `ui-review`: condições nativas e mobile (G04, prioridade 1); `cpp`, `rust`, `kotlin`: cláusulas curtas (G05); `game-art-direction`: proveniência e licença de asset (G23) |
 
-Fora desta lista, sem delta proposto: G26 e G27 (domínios sem dono instalado), G22 e G25 (fora do foco) e os itens de prioridade 3 e 4 de todos os grupos. Dois pontos a decidir antes de qualquer apply: o hook **não tem gate para comandos destrutivos genéricos nem para a execução de migração** (hoje depende do modo nativo e do `deny` do usuário; um novo gate seria change própria com Gard e Pipe), e os links quebrados citados nos achados de documentação.
+Fora desta lista, sem delta proposto: G26 e G27 (domínios sem dono instalado), G22 e G25 (fora do foco) e os itens de prioridade 3 e 4 de todos os grupos. Dois pontos ainda a decidir: o hook **não tem gate para comandos destrutivos genéricos nem para a execução de migração** (hoje depende do modo nativo e do `deny` do usuário; um novo gate seria change própria com Gard e Pipe), e os links quebrados citados nos achados de documentação.
 
 ## Se retomar a revisão de um grupo
 

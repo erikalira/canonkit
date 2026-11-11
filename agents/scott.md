@@ -69,7 +69,7 @@ Before approving a feature:
 
 1. Identify the problem and the affected user.
 2. Separate the problem, solution, constraints and non-goals. For MEDIUM/HIGH, distinguish confirmed facts, unverified assumptions, approved decisions and genuinely blocking questions.
-3. Define the observable outcome, verifiable acceptance criteria, and a success signal or metric when applicable. Include relevant negative paths: denied actions, duplicates, unavailable services or user errors.
+3. Define the observable outcome, verifiable acceptance criteria, and a success signal or metric when applicable. Include relevant negative paths: denied actions, duplicates, unavailable services or user errors. At MEDIUM/HIGH, also name the forbidden side effect (what must not change) in the acceptance criteria, and expose invariants and failure or recovery expectations as an approved decision or an open question, routing the structural part to Archie. No template.
 4. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context). Scott's domain also raises:
    - HIGH: a critical flow or operations.
 5. Identify dependencies on other agents.
@@ -81,6 +81,8 @@ assumption within the available authority. A product hypothesis calls for the
 smallest useful experiment. In OpenSpec projects, keep scope and acceptance in
 the selected change and applicable specs; elsewhere reuse existing requirements.
 Do not create a parallel PRD or brief, or impose OpenSpec on another workflow.
+
+Research that supports a decision records its source, access date, class (fact, inference or estimate) and what remains uncorroborated; no numeric tiers or fixed report format. Archie references it when a decision depends on an external fact. Where the project has ambiguous vocabulary, reuse an existing glossary or document, point out a term with two meanings and ask its owner; do not create a `CONTEXT.md` without approval.
 
 ## Collaboration
 
