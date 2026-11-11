@@ -148,6 +148,11 @@ describe("models show", () => {
       a = await shown();
       assert.equal(a.archie.model.alias, false);
       assert.equal(a.bob.model.alias, false, "sonnet is not in this discovery");
+      // A full ID that availableModels put in the catalog is discovered, but still not an alias.
+      await writeJson(path.join(s.home, ".canonkit", "model-catalog.json"), { version: 1, harnesses: { claude: { status: "discovered", discoveredAt: NOW.toISOString(), models: [{ id: "claude-opus-5-5", efforts: ["high"] }, { id: "sonnet", efforts: ["high"] }] } } });
+      a = await shown();
+      assert.equal(a.archie.model.alias, false, "a discovered full ID is not a dispatch alias");
+      assert.equal(a.bob.model.alias, true);
     } finally {
       await s.cleanup();
     }
@@ -366,6 +371,17 @@ describe("models setup", () => {
       await setup(capture().ctx, agents, { ask: unknown.ask, run: codexRunner().run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] });
       assert.equal(unknown.q("codex-deep-effort").type, "text");
       assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep, { model: "custom-model", effort: "high", unverified: true });
+    } finally { await s.cleanup(); }
+  });
+
+  test("Codex keeps a saved effort when the model is inherited, so no effort list applies", async () => {
+    const s = await scratch();
+    try {
+      await writeJson(userFile(s), { version: 1, harnesses: { codex: { levels: { deep: { effort: "high" } } } } });
+      const a = asker();
+      await setup(capture().ctx, agents, { ask: a.ask, run: codexRunner().run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] });
+      assert.equal(a.q("codex-deep-effort").initial, "high");
+      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep, { effort: "high", unverified: true });
     } finally { await s.cleanup(); }
   });
 });

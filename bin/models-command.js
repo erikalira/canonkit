@@ -51,7 +51,11 @@ function effective(agents, layers, catalog, harnesses = HARNESSES, codexDeployme
     // takes as its `model` parameter: by the discovery when there is one, else
     // by shape (an alias is one lowercase word; a full ID has digits or dashes).
     const aliases = record?.status === "discovered" ? record.models.map((m) => m.id) : null;
-    const alias = (v) => (v === null ? null : aliases ? aliases.includes(v) : /^[a-z]+$/.test(v));
+    // A discovered catalog also lists full IDs (from availableModels), so
+    // membership alone is not enough: the value must also have the alias shape,
+    // one lowercase word with an optional [suffix] such as sonnet[1m].
+    const aliasShape = /^[a-z]+(\[[^\]]+\])?$/;
+    const alias = (v) => (v === null ? null : aliasShape.test(v) && (aliases ? aliases.includes(v) : true));
     const entry = {
       applied: APPLIED.includes(harness),
       catalog: record ? { status: record.status, discoveredAt: record.discoveredAt ?? null, ...(record.reason ? { reason: record.reason } : {}), ...(record.confidence ? { confidence: record.confidence } : {}), ...(record.accountAvailability ? { accountAvailability: record.accountAvailability } : {}) } : { status: "missing" },
@@ -260,7 +264,9 @@ async function askEntry(ask, { key, label, current, offer, none, effortsForModel
     other: true,
   });
   const offeredEfforts = effortsForModel ? effortsForModel(model) : offer.efforts;
-  const currentEffort = effortsForModel && !offeredEfforts.includes(current?.effort) ? undefined : current?.effort;
+  // Drop a saved effort only when a known list proves it incompatible; with no
+  // list (inherited or unlisted model) compatibility is unknown, so keep it.
+  const currentEffort = effortsForModel && offeredEfforts.length && !offeredEfforts.includes(current?.effort) ? undefined : current?.effort;
   let effort;
   if (offeredEfforts.length) {
     effort = await pick(ask, {
