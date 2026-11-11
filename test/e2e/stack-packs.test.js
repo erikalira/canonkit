@@ -6,8 +6,8 @@ import { realpathSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { STACK_PACK_IDS, StackPackStore, readStackPack } from "../bin/stack-packs.js";
-import { REPO, runCli } from "./helpers/cli-harness.js";
+import { STACK_PACK_IDS, StackPackStore, readStackPack } from "../../bin/stack-packs.js";
+import { REPO, runCli } from "../helpers/cli-harness.js";
 
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const target = (project, pack = "react", root = ".agents") => path.join(project, root, "skills", `canonkit-${pack}`, "SKILL.md");

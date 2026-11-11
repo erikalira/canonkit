@@ -58,8 +58,9 @@ At least one test SHALL run on Windows without the preload and verify the result
 
 #### Scenario: Install, reinstall and uninstall round trip
 - **WHEN** the unstubbed test installs, reinstalls and uninstalls in an isolated HOME
-- **THEN** the state directory and a backup file have inheritance protected
-- **AND** only the user's SID, S-1-5-18 and S-1-5-32-544 have access
+- **THEN** the state directory and the backups directory have inheritance protected
+- **AND** the state directory, the backups directory, each backup and the manifest grant access only to the user's SID, S-1-5-18 and S-1-5-32-544
+- **AND** files inside a private directory may inherit that ACL instead of carrying a protected one of their own
 
 ### Requirement: Real end-to-end behavior is preserved
 The suite SHALL keep exercising the CLI as a subprocess with real argv, exit codes, stdout/stderr, a real filesystem in an isolated HOME, an install-reinstall-uninstall round trip with byte checks, hook execution, and at least one install per stack-pack kind.
@@ -67,11 +68,10 @@ The suite SHALL keep exercising the CLI as a subprocess with real argv, exit cod
 #### Scenario: Stack packs
 - **WHEN** the suite runs
 - **THEN** each stack-pack kind has at least one real CLI install test
-- **AND** the remaining pack ids are validated in-process
 
 #### Scenario: Test count
 - **WHEN** the refactor is complete
-- **THEN** every test that passed before still exists and passes, and any assertion moved from end-to-end to in-process is listed in the change
+- **THEN** every test title present before still exists and passes, and any assertion moved from end-to-end to in-process is listed in the change
 
 ### Requirement: CLI spawns go through the shared harness
 Test files outside the helpers directory SHALL NOT spawn `bin/cli.js` directly. A structural test SHALL fail when one does.

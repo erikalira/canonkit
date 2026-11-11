@@ -5,8 +5,8 @@ import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { projectStateDir } from "../bin/security.js";
-import { CLI, runCli, startCli, writeCommand } from "./helpers/cli-harness.js";
+import { projectStateDir } from "../../bin/security.js";
+import { CLI, runCli, startCli, writeCommand } from "../helpers/cli-harness.js";
 
 async function fixture(t, version = "2.1.314") {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-cli-")));

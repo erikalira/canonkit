@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const CLI = path.join(REPO, "bin", "cli.js");
@@ -45,15 +45,21 @@ export function isolatedEnv(home, env = {}) {
   return { ...base, PATH: DEFAULT_TEST_PATH, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
 }
 
+// Windows ACL hardening costs several child processes per install. Tests that
+// are not about permissions load this preload (as a node argument, never through
+// NODE_OPTIONS, which is dropped). A test about the real ACL passes realAcl.
+const ACL_STUB = path.join(REPO, "test", "support", "stub-acl.mjs");
+export const nodeArgs = ({ realAcl = false } = {}) => (realAcl || process.platform !== "win32" ? [] : ["--import", pathToFileURL(ACL_STUB).href]);
+
 /** Run `canonkit <args>` synchronously; `out` is stdout followed by stderr. */
-export function runCli(args, { home, cwd, env = {} }) {
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
+export function runCli(args, { home, cwd, env = {}, realAcl = false }) {
+  const result = spawnSync(process.execPath, [...nodeArgs({ realAcl }), CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
 
 /** Start the CLI without waiting (a test that signals or races it). */
-export function startCli(args, { home, cwd, env = {}, cli = CLI }) {
-  return spawn(process.execPath, [cli, ...args], { cwd: cwd ?? home, env: isolatedEnv(home, env), windowsHide: true });
+export function startCli(args, { home, cwd, env = {}, cli = CLI, realAcl = false }) {
+  return spawn(process.execPath, [...nodeArgs({ realAcl }), cli, ...args], { cwd: cwd ?? home, env: isolatedEnv(home, env), windowsHide: true });
 }
 
 /**

@@ -4,8 +4,8 @@ import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, lstat } from
 import { existsSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { InstallManifest, removeManagedBlock } from "../bin/install-manifest.js";
-import { runCli, writeCommand } from "./helpers/cli-harness.js";
+import { InstallManifest, removeManagedBlock } from "../../bin/install-manifest.js";
+import { runCli, writeCommand } from "../helpers/cli-harness.js";
 
 async function scratch(t) {
   const root = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-uninstall-test-")));

@@ -392,7 +392,7 @@ default profiles by 13 words, including the new risk-rule rationale:
 
 Method: whitespace-separated words in `reference/agents-block.md`, the runtime's
 adapter block, ten core descriptions and every shipped global skill description,
-as in `test/cli.test.js`'s default-profile guard. Before is the pre-item-8 Git
+as in `test/cli-install.test.js`'s default-profile guard. Before is the pre-item-8 Git
 HEAD; after is the working-tree source. All 15 complete `description:` lines
 are below 300 UTF-8 bytes. Specialist descriptions are excluded from the default
 profiles. These are source word counts, not tokenizer output, installed-profile
