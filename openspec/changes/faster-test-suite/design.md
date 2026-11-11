@@ -46,4 +46,31 @@ See proposal.md for motivation. Findings behind the decisions (Bob's profile, Ar
 
 - Does `cli.test.js` already assert real ACLs that D3 can reuse? (Resolved by reading the file in task 3.)
 - Which `cli.test.js` tests assert discovered-model output and need a stub? (Resolved in task 2.)
-- Is `claude --help` startup a bigger share than ACL? The baseline in task 1 splits the two and decides whether D2 is needed at all.
+- ~~Is `claude --help` startup a bigger share than ACL?~~ Answered by the baseline below: yes.
+
+## Baseline (2026-11-11, idle machine, commit 36a553c, files run one at a time)
+
+Earlier numbers (Bob) came from a saturated machine (Kilo Code extension and a runaway `vite dev`) and overstated everything about 5x; use these instead.
+
+| File | Seconds | Tests | Pass |
+|---|---|---|---|
+| cli.test.js | 358.8 | 241 | 239 |
+| uninstall.test.js | 65.2 | 30 | 30 |
+| security-cli.test.js | 63.2 | 25 | 25 |
+| canonkit-hook.test.js | 33.2 | 192 | 191 |
+| stack-packs.test.js | 20.7 | 19 | 19 |
+| validate.test.js | 7.3 | 5 | 5 |
+| install-manifest.test.js | 5.1 | 9 | 8 |
+| other 16 files | 8.8 total | 419 | 419 |
+
+Total: 23 test files, 992 tests, 988 pass, 0 fail, 4 not passing (skipped; not investigated). Sum of per-file times 564 s; with files in parallel, wall time is bounded below by `cli.test.js` (about 6 min).
+
+Fresh `install --claude` in a new HOME, 3 runs each:
+
+| Variant | Seconds |
+|---|---|
+| normal PATH | 1.66-1.72 |
+| no `claude` on PATH | 1.06-1.13 |
+| no `claude` + ACL spawns stubbed | 0.78-0.92 |
+
+Discovery costs about 0.6 s per install (35%), ACL about 0.25 s (15%), the rest about 0.85 s is the install itself. Consequences: D1 is the biggest single saving per install; D2 alone saves little (the stub preload was an inline probe and its application was not asserted); the dominant lever is D4, since `cli.test.js` is 64% of all time and runs serially. Targets of the proposal stand, but the full-suite goal of about 4 minutes depends on splitting `cli.test.js` into at least 3 files. D2 stays in scope as it is cheap once the harness exists, but task 3 should re-measure after D1 and D4 and drop D2 if its gain is under about 10%.

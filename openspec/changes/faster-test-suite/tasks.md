@@ -2,15 +2,15 @@
 
 ## 1. Green baseline and measurement
 
-- [ ] 1.1 Fix the stale expectation in `test/security-cli.test.js:149-158` (install now prints the short summary without `--verbose`) in its own LOW commit; verify `node --test test/security-cli.test.js` passes.
-- [ ] 1.2 On an idle machine (stop the runaway `vite dev` in PID 10456 first), record per-file times with `--test-reporter=spec` and split a fresh install's time between ACL spawns and discovery spawns; verify the numbers are recorded in this change and state whether D2 is needed.
-- [ ] 1.3 Record the baseline test count (files, tests, passing) to compare after the refactor; verify it is written in this change.
+- [x] 1.1 Fix the stale expectation in `test/security-cli.test.js:149-158` (install now prints the short summary without `--verbose`) in its own LOW commit; verify `node --test test/security-cli.test.js` passes.
+- [x] 1.2 On an idle machine (stop the runaway `vite dev` in PID 10456 first), record per-file times with `--test-reporter=spec` and split a fresh install's time between ACL spawns and discovery spawns; verify the numbers are recorded in this change and state whether D2 is needed.
+- [x] 1.3 Record the baseline test count (files, tests, passing) to compare after the refactor; verify it is written in this change.
 
 ## 2. Shared harness and discovery isolation (D1, D4 helpers)
 
-- [ ] 2.1 Create `test/helpers/cli-harness.js` with `run`, env isolation (removing `NODE_OPTIONS`, `NODE_PATH`, `CLAUDE_CONFIG_DIR`), scratch HOME and stub-bin builders; migrate `cli.test.js` and `security-cli.test.js` to it and verify both files pass with the same test counts.
-- [ ] 2.2 Give the harness a test-owned `PATH` with no `claude`/`codex`; add stubs only for tests that assert discovered output; verify the real `claude` is never executed (e.g. a stub that records calls shows none in default tests) and the discovery tests pass.
-- [ ] 2.3 Add the structural test that fails when a test file outside `test/helpers/` spawns `bin/cli.js` directly; verify it passes and fails when a direct spawn is temporarily introduced.
+- [x] 2.1 Create `test/helpers/cli-harness.js` with `run`, env isolation (removing `NODE_OPTIONS`, `NODE_PATH`, `CLAUDE_CONFIG_DIR`), scratch HOME and stub-bin builders; migrate `cli.test.js` and `security-cli.test.js` to it and verify both files pass with the same test counts.
+- [x] 2.2 Give the harness a test-owned `PATH` with no `claude`/`codex`; add stubs only for tests that assert discovered output; verify the real `claude` is never executed (e.g. a stub that records calls shows none in default tests) and the discovery tests pass.
+- [x] 2.3 Add the structural test that fails when a test file outside `test/helpers/` spawns `bin/cli.js` directly; verify it passes and fails when a direct spawn is temporarily introduced.
 
 ## 3. ACL stub and real ACL coverage (D2, D3)
 

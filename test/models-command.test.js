@@ -1,17 +1,14 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, mkdir, writeFile, readFile, chmod } from "node:fs/promises";
+import { mkdtemp, rm, mkdir, writeFile, readFile } from "node:fs/promises";
 import { readFileSync, realpathSync, existsSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath } from "node:url";
 
 import { show, refresh, setup, offerModelSetup, modelDiagnosis } from "../bin/models-command.js";
 import { readAgents } from "../bin/cli.js";
+import { REPO, runCli, writeCommand } from "./helpers/cli-harness.js";
 
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = path.join(REPO, "bin", "cli.js");
 const HELP = readFileSync(path.join(REPO, "test", "fixtures", "claude", "help-2.1.322.txt"), "utf8");
 const NOW = new Date("2026-11-10T12:00:00.000Z");
 const agents = await readAgents();
@@ -530,22 +527,11 @@ describe("CLI", () => {
     await mkdir(bin, { recursive: true });
     const js = path.join(bin, "claude-fake.cjs");
     await writeFile(js, `require("fs").appendFileSync(${JSON.stringify(log)}, process.argv.slice(2).join(" ") + "\\n");\nprocess.stdout.write(process.argv[2] === "--version" ? "2.1.322 (Claude Code)\\n" : ${JSON.stringify(HELP)});\n`);
-    if (process.platform === "win32") await writeFile(path.join(bin, "claude.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
-    else {
-      await writeFile(path.join(bin, "claude"), `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
-      await chmod(path.join(bin, "claude"), 0o755);
-    }
+    await writeCommand(bin, "claude", js);
     return { bin, log };
   }
-  const cli = (args, { home, cwd, bin }) => {
-    const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config") };
-    for (const k of Object.keys(env)) if (k.toUpperCase() === "PATH") delete env[k];
-    env.PATH = [bin, path.dirname(process.execPath)].join(path.delimiter);
-    delete env.CODEX_HOME;
-    delete env.CLAUDE_CONFIG_DIR;
-    const r = spawnSync(process.execPath, [CLI, ...args], { cwd, env, encoding: "utf8" });
-    return { ...r, out: r.stdout + r.stderr };
-  };
+  const cli = (args, { home, cwd, bin }) =>
+    runCli(args, { home, cwd, env: { PATH: [bin, path.dirname(process.execPath)].join(path.delimiter) } });
 
   test("show reads files only; refresh is what starts the harness", async () => {
     const s = await scratch();

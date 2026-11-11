@@ -13,15 +13,14 @@ import { mkdtemp, rm, mkdir, readFile, writeFile, readdir, chmod, symlink, lstat
 import { existsSync, realpathSync, readFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 
 import prompts from "prompts";
 
+import { REPO, isolatedEnv, runCli, writeCommand } from "./helpers/cli-harness.js";
+
 import { applyBlock, chooseTargets, readAgents, parseAgent, summaries, replaceProjectBlock, readProjectBlock, readTools, parseTool, HOOK_FILES, codexAgent, copilotAgent, renderRoutingBlock } from "../bin/cli.js";
 import { modelDiagnosis } from "../bin/models-command.js";
-
-const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const CLI = path.join(REPO, "bin", "cli.js");
 
 const CORE = ["archie", "bob", "gard", "perry", "pipe", "pixie", "quinn", "scott", "spencer", "virgo"];
 // What --wire-hooks appends to opencode.json `permissions`, in order.
@@ -57,27 +56,7 @@ async function scratch(name) {
 function run(args, { home, cwd, env = {}, compact = false }) {
   // The tests below read the detailed steps; install's default is a short summary (tested separately).
   const argv = (args[0] === "install" || args[0] === "doctor") && !compact && !args.includes("--verbose") ? [...args, "--verbose"] : args;
-  const result = spawnSync(process.execPath, [CLI, ...argv], {
-    cwd: cwd ?? home,
-    encoding: "utf8",
-    // os.homedir() reads USERPROFILE on Windows and HOME elsewhere. Setting
-    // both is what makes this test suite run the same on all three platforms.
-    // OpenCode's folder follows XDG_CONFIG_HOME, so it is pinned inside HOME too.
-    env: isolatedEnv(home, env),
-  });
-  return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
-}
-
-// A developer's own CODEX_HOME would send every Codex write to their real
-// Codex: it is dropped unless the test sets one.
-function isolatedEnv(home, env) {
-  const base = { ...process.env };
-  // Windows spells it Path: a test's PATH replaces it, never sits beside it.
-  if ("PATH" in env) for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
-  const e = { ...base, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
-  if (!("CODEX_HOME" in env)) delete e.CODEX_HOME;
-  if (!("CANONKIT_CODEX_MODEL" in env)) delete e.CANONKIT_CODEX_MODEL;
-  return e;
+  return runCli(argv, { home, cwd, env });
 }
 
 /**
@@ -91,13 +70,7 @@ async function opencodeOnPath(root, version) {
   if (version !== null) {
     const js = path.join(bin, "opencode-version.cjs");
     await writeFile(js, `process.stdout.write(${JSON.stringify(`${version}\n`)});\n`);
-    if (process.platform === "win32") {
-      await writeFile(path.join(bin, "opencode.cmd"), `@"${process.execPath}" "${js}" %*\r\n`);
-    } else {
-      const file = path.join(bin, "opencode");
-      await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" "$@"\n`);
-      await chmod(file, 0o755);
-    }
+    await writeCommand(bin, "opencode", js);
   }
   return { PATH: bin };
 }
@@ -1461,11 +1434,8 @@ describe("hooks", () => {
 // The harness sets CLAUDE_PROJECT_DIR for every command it runs, this suite
 // included: a test that means one passes it explicitly.
 function runIn(args, { home, cwd, env = {} }) {
-  const e = isolatedEnv(home, env);
-  if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
   const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
-  const result = spawnSync(process.execPath, [CLI, ...argv], { cwd: cwd ?? home, encoding: "utf8", env: e });
-  return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
+  return runCli(argv, { home, cwd, env: "CLAUDE_PROJECT_DIR" in env ? env : { ...env, CLAUDE_PROJECT_DIR: undefined } });
 }
 
 const REQUIRED = {
@@ -2642,16 +2612,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
 `;
 
   /** A shim on PATH named like the tool: a .cmd on Windows (what npm installs), sh elsewhere. */
-  async function shim(dir, name, js) {
-    await mkdir(dir, { recursive: true });
-    if (WIN) {
-      await writeFile(path.join(dir, `${name}.cmd`), `@"${process.execPath}" "${js}" ${name} %*\r\n`);
-    } else {
-      const file = path.join(dir, name);
-      await writeFile(file, `#!/bin/sh\nexec "${process.execPath}" "${js}" ${name} "$@"\n`);
-      await chmod(file, 0o755);
-    }
-  }
+  const shim = (dir, name, js) => writeCommand(dir, name, js, { passName: true });
 
   async function setup(name, { git = false } = {}) {
     const { root, home, project } = await scratch(`tool-${name}`);
@@ -2670,12 +2631,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     };
     if (git) spawnSync("git", ["init", "-q", project], { env: env() });
     const tool = (args, extra, PATH) => {
-      const r = spawnSync(process.execPath, [CLI, "tool", ...args], {
-        cwd: project,
-        encoding: "utf8",
-        env: { ...env(extra, PATH), HOME: home, USERPROFILE: home },
-      });
-      return { ...r, out: (r.stdout ?? "") + (r.stderr ?? "") };
+      return runCli(["tool", ...args], { home, cwd: project, env: env(extra, PATH) });
     };
     const calls = async () =>
       existsSync(log) ? (await read(log)).trim().split("\n").filter(Boolean).map((l) => JSON.parse(l)) : [];
