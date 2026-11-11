@@ -30,6 +30,20 @@ who can stop a change.
 | **Spencer** | documentation: ADRs, specs, API docs, runbooks, release notes | veto |
 | **Virgo** | the team's own configuration: agents, skills, these managed blocks | none |
 
+**Tool access and implementation.** Agents declare an `access` level in their
+source (`read`, `inspect`, `write-docs`, `full`); in Claude Code it limits the
+tools the agent is given. It is not a security boundary (a shell can still
+write files), and an agent without `access` has every tool. Do not assume an
+agent can do what its level withholds: `read` agents (Archie, Quinn, Scott,
+Gard) review and advise, `inspect` agents (Pixie, Perry) also use browser/MCP
+evidence, Spencer may edit documentation, and Bob, Pipe and Virgo are `full`.
+
+**Who implements.** At MEDIUM and HIGH, code and test changes are made by Bob;
+Pipe and Virgo write only inside their own domain (operations and team
+configuration). Owners and reviewers return findings, not patches. At LOW the
+lead may edit inline. This is a routing rule, not an enforced one: nothing
+prevents another agent from writing, so the lead checks who made each edit.
+
 ## Domain specialists — installed per project (the repository's `.claude/agents/`)
 
 **Not available by default.** A specialist exists in a project only if someone

@@ -10,6 +10,7 @@
  * Only refresh and setup start a program; show and doctor read stored files.
  * Claude Code and Codex apply choices; the other harnesses inherit.
  */
+import { describeRestriction } from "./agent-access.js";
 import { existsSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -65,7 +66,7 @@ function effective(agents, layers, catalog, harnesses = HARNESSES, codexDeployme
       const r = entry.applied ? resolve(agent, harness, layers) : null;
       const inherit = { value: null, source: "inherit", unverified: false };
       const model = r?.model ?? inherit;
-      entry.agents[agent.name] = { need: agent.need, model: { ...model, alias: alias(model.value) }, effort: r?.effort ?? inherit,
+      entry.agents[agent.name] = { need: agent.need, access: agent.access ?? null, restriction: describeRestriction(agent.access, harness), model: { ...model, alias: alias(model.value) }, effort: r?.effort ?? inherit,
         ...(harness === "codex" && codexDeployment[agent.name] ? { projectFile: codexDeployment[agent.name] } : {}) };
     }
     out.harnesses[harness] = entry;
@@ -157,12 +158,13 @@ async function show(ctx, agents, { json = false, harnesses = HARNESSES, home, cw
     const c = entry.catalog;
     const catalogNote = c.status === "missing" ? "no discovery yet" : c.status === "discovered" ? `discovered ${day(c.discoveredAt)}${c.accountAvailability === "unconfirmed" ? "; account access unconfirmed" : ""}` : `unknown: ${c.reason ?? "no reason recorded"}`;
     if (!entry.applied) {
-      ctx.log(`${LABEL[harness] ?? harness}: every agent inherits the session model and effort (model selection not yet supported; catalog: ${catalogNote})`);
+      ctx.log(`${LABEL[harness] ?? harness}: every agent inherits the session model and effort (model selection not yet supported; catalog: ${catalogNote}). \`access\` levels are not translated for this harness either, so no access rows are shown`);
       continue;
     }
     ctx.log(`${LABEL[harness] ?? harness} (catalog: ${catalogNote})`);
     for (const [name, a] of Object.entries(entry.agents)) {
       ctx.log(`  ${name.padEnd(10)} ${a.need.padEnd(9)} model: ${cell(a.model).padEnd(34)} effort: ${cell(a.effort)}${a.projectFile && a.projectFile.status !== "current" ? ` (project file: ${a.projectFile.status})` : ""}`);
+      ctx.log(`  ${"".padEnd(10)} access: ${a.access ?? "(none)"} -> ${a.restriction}`);
     }
   }
   if (Object.values(data.harnesses).some((h) => Object.values(h.agents).some((a) => a.model.unverified || a.effort.unverified))) {

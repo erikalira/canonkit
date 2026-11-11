@@ -3,6 +3,7 @@ name: gard
 description: "Use for security: auth, permissions, sessions, secrets, exposure, dependencies/supply chain, Docker/Compose, sensitive scripts. Veto on security. Not for lockfile-only patch bumps alone."
 tier: core
 need: standard
+access: read
 ---
 
 ## Mission

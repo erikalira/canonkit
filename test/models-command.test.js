@@ -105,7 +105,7 @@ describe("models show", () => {
       const o = JSON.parse(outside.text());
       assert.equal(o.project, null);
       assert.equal(o.version, 1);
-      assert.deepEqual(o.harnesses.claude.agents.archie, { need: "deep", model: { value: "opus", source: "user level", unverified: false, alias: true }, effort: { value: "high", source: "user level", unverified: false } });
+      assert.deepEqual(o.harnesses.claude.agents.archie, { need: "deep", access: "read", restriction: "allowlist: Read, Grep, Glob, Bash, WebSearch, WebFetch, Skill", model: { value: "opus", source: "user level", unverified: false, alias: true }, effort: { value: "high", source: "user level", unverified: false } });
       assert.deepEqual(o.harnesses.claude.agents.quinn.effort, { value: "xhigh", source: "user agent override", unverified: false });
       assert.deepEqual(o.harnesses.codex.agents.archie.model, { value: null, source: "inherit", unverified: false, alias: null });
       assert.equal(o.harnesses.codex.applied, true);

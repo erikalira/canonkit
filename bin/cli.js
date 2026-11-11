@@ -34,6 +34,7 @@ import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
 import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
 import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-discovery.js";
+import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
 import { collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, compileSecurity, compileNetworkSecurity, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
@@ -171,11 +172,15 @@ function parseAgent(file, text) {
     throw new Error(`agents/${file}: need is '${front.need ?? "missing"}' — expected ${NEEDS.join(", ")}`);
   }
 
+  const problem = accessProblem(text.slice(4, end).split(/\r?\n/));
+  if (problem) throw new Error(`agents/${file}: ${problem}`);
+
   return {
     name,
     tier: front.tier,
     authority: front.authority,
     need: front.need,
+    access: front.access,
     description: front.description ?? "",
     // Everything after the frontmatter is the agent's actual instructions.
     // Claude Code reads the file as-is; Codex needs them as a TOML field.
@@ -288,8 +293,13 @@ function choiceFor(agent, harness, layers) {
  */
 function claudeAgent(agent, choice = {}) {
   const end = agent.source.indexOf("\n---", 4);
+  // The restriction comes only from translating `access`: drop any harness
+  // restriction key a source smuggled past validation.
+  const head = agent.source.slice(0, end).split("\n").filter((l) => !reservedKeyOf(l)).join("\n");
+  const r = claudeRestriction(agent.access);
+  const restriction = r ? `\n${r.key}: ${r.value}` : "";
   const fields = HONORED_FIELDS.claude.filter((f) => choice[f]).map((f) => `\n${f}: ${JSON.stringify(choice[f])}`).join("");
-  return agent.source.slice(0, end) + fields + agent.source.slice(end);
+  return head + restriction + fields + agent.source.slice(end);
 }
 
 /* ---------------------------------------------------------------- opencode */
