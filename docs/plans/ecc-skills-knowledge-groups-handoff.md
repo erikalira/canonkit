@@ -1,6 +1,6 @@
 # Handoff — conhecimentos das skills do ECC para revisão no CanonKit
 
-Data: 2026-11-11. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 reaberto em 2026-11-11 (adiamento levantado; deltas propostos); G08, G09, G10, G12 e G16 revisados (lote 1, sem implementação); demais pendentes**.
+Data: 2026-11-11. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 reaberto em 2026-11-11 (adiamento levantado; deltas propostos); G05–G13, G15, G16, G18 e G19 revisados (lotes 1 e 2, sem implementação); G14, G17 e G20–G28 pendentes**.
 
 Atualização do apply em 2026-11-09: os V/L aceitos de G01–G03 foram implementados nas fontes locais
 da change visual; progresso, evidências offline, reviews e limites atuais ficam
@@ -78,21 +78,21 @@ Cada skill aparece em um único grupo principal, mesmo quando toca vários assun
 | [G02](#g02) | Motion de interfaces | 3 | 2 | Princípios gerais | Revisado; V/L no planejamento |
 | [G03](#g03) | Frontend web e ferramentas | 10 | 2 | React parcial | Revisado; V/L no planejamento |
 | [G04](#g04) | Mobile e interfaces nativas | 9 | 3 | Linguagens parciais | Revisado; adiamento levantado, deltas propostos, não aplicados |
-| [G05](#g05) | Linguagens, concorrência e runtime | 12 | 2 | Packs de linguagem existentes | Pendente |
-| [G06](#g06) | Arquitetura, APIs e frameworks backend | 14 | 2 | Arquitetura geral | Pendente |
-| [G07](#g07) | Bancos, ORM e migrações | 10 | 2 | Governança geral | Pendente |
+| [G05](#g05) | Linguagens, concorrência e runtime | 12 | 2 | Packs de linguagem existentes | Revisado; deltas propostos, não aplicados |
+| [G06](#g06) | Arquitetura, APIs e frameworks backend | 14 | 2 | Arquitetura geral | Revisado; deltas propostos, não aplicados |
+| [G07](#g07) | Bancos, ORM e migrações | 10 | 2 | Governança geral | Revisado; deltas propostos, não aplicados |
 | [G08](#g08) | Testes, regressão e verificação | 25 | 1 | Protocolos parciais | Revisado; deltas propostos, não aplicados |
 | [G09](#g09) | Segurança, permissões e supply chain | 12 | 1 | Segurança parcial | Revisado; deltas propostos, não aplicados |
 | [G10](#g10) | Prática de engenharia, revisão e Git | 12 | 1 | Recortes presentes | Revisado; deltas propostos, não aplicados |
-| [G11](#g11) | Produto, escopo e planejamento | 7 | 2 | Descoberta parcial | Pendente |
+| [G11](#g11) | Produto, escopo e planejamento | 7 | 2 | Descoberta parcial | Revisado; deltas propostos, não aplicados |
 | [G12](#g12) | Documentação e navegação de código | 7 | 1 | Documentação parcial | Revisado; deltas propostos, não aplicados |
-| [G13](#g13) | Orquestração de equipes e execução paralela | 16 | 2 | Orquestração parcial | Pendente |
+| [G13](#g13) | Orquestração de equipes e execução paralela | 16 | 2 | Orquestração parcial | Revisado; deltas propostos, não aplicados |
 | [G14](#g14) | Construção de agentes e loops autônomos | 11 | 3 | Sem runtime equivalente demonstrado | Pendente |
-| [G15](#g15) | Contexto, memória e aprendizado | 11 | 2 | Continuidade e aprendizado manual | Pendente |
+| [G15](#g15) | Contexto, memória e aprendizado | 11 | 2 | Continuidade e aprendizado manual | Revisado; deltas propostos, não aplicados |
 | [G16](#g16) | Avaliação e diagnóstico de agentes | 7 | 1 | Infraestrutura de eval existente | Revisado; deltas propostos, não aplicados |
 | [G17](#g17) | Catálogo, instalação e ferramentas do ECC | 18 | 3 | Lifecycle próprio | Pendente |
-| [G18](#g18) | Operações, deploy e ambientes | 13 | 2 | Operações gerais | Pendente |
-| [G19](#g19) | Desempenho, custos e orçamento | 10 | 2 | Medição parcial | Pendente |
+| [G18](#g18) | Operações, deploy e ambientes | 13 | 2 | Operações gerais | Revisado; deltas propostos, não aplicados |
+| [G19](#g19) | Desempenho, custos e orçamento | 10 | 2 | Medição parcial | Revisado; deltas propostos, não aplicados |
 | [G20](#g20) | Dados, ML e aplicações de IA | 10 | 3 | Autoridade de especialistas | Pendente |
 | [G21](#g21) | Pesquisa e evidência científica | 10 | 3 | Pesquisa sem catálogo equivalente demonstrado | Pendente |
 | [G22](#g22) | Marca, conteúdo e crescimento | 17 | 4 | Fora do foco atual do núcleo | Pendente |
@@ -286,7 +286,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G05 — Linguagens, concorrência e runtime
 
-**Prioridade 2; revisão pendente; 12 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 12 skills.**
 
 **Evidência local:** [Plano e referências dos dez packs](stack-packs-design.md), [catálogo](../../bin/stack-packs.js).
 
@@ -313,13 +313,28 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Correspondência inicial:** C++ → `cpp`; C#/.NET → `csharp`; Go → `go`; Java → `java`; Kotlin/corrotinas → `kotlin`; Python → `python`; Rust → `rust`; Swift/concorrência → `swift`; TypeScript → `typescript`. O décimo pack, `react`, está em G03. Esta relação identifica onde comparar, sem afirmar paridade das receitas.
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 12 entrypoints lidos, nenhum falhou; o WebFetch devolve resumo, não o texto bruto; auxiliares não lidos).** Fontes locais: os nove `stack-packs/<lang>/SKILL.md`, [catálogo](../../bin/stack-packs.js), [spec de alvos](../../openspec/specs/stack-pack-project-targets/spec.md).
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| núcleo portável (propriedade de recurso, erro com contexto, cancelamento, fronteira de dado externo, escopo de tarefa, `unknown`/união discriminada, verificar no limite alterado) | C | Seções "Implementation and diagnosis" e "Verify" dos nove packs | Nada | — |
+| `cpp-coding-standards`: guard de lock sem nome, `condition_variable` com predicado, evitar `detach`, destrutor virtual | L | Pack cpp cobre dono de recurso, views e escopo de lock, sem esses quatro pontos | 2–3 cláusulas curtas na seção de concorrência/ownership do pack `cpp` | 2 |
+| `rust-patterns`: `match` sem coringa em enum crítico, `Result` descartado, canal ilimitado | L | Pack rust cobre `unwrap`, unsafe, lock em `await`, tarefa que sobrevive ao escopo | Duas cláusulas no pack `rust` e uma sobre canal ilimitado; capacidades/timeouts do ECC não adotados | 2 |
+| `kotlin-coroutines-flows`: `NonCancellable` na limpeza, escopo do `flowOn`, `runTest`/tempo virtual | L | Pack kotlin cobre `finally`, escopo, `StateFlow`, dispatcher, sem esses três | Três frases no pack `kotlin` (diagnóstico e Verify); operadores e `WhileSubscribed` ficam como receita Android (P) | 2 |
+| `golang-patterns`: `ctx` em struct; interface pequena, zero value, opções funcionais | V / D | Pack go cobre propagação de contexto, `-race`, erros | No máximo uma frase sobre `ctx` em struct; o resto é estilo | 3 |
+| refinos em Python/TS/C#/Java (`ProcessPool`×`ThreadPool`, `allSettled`, `Task.WhenAll`, `raise from`) | V | Packs já cobrem o essencial | Reabrir só diante de falha concreta | 3 |
+| `swift-concurrency-6-2`: `@concurrent`, isolated conformances | P / D | Pack swift manda ler o modo de linguagem e isolamento configurados | Não importar o modelo 6.2 como regra; pack de versão sob demanda | 3 |
+| `bun-runtime` e `perl-patterns` (sem pack) | P | Catálogo é lista fixa (`STACK_PACK_IDS`) e cada pack exige cópia em três alvos | Não criar pack agora: Bun é escolha de toolchain (caso de `tooling-fit`), Perl sem demanda; pack curto só se um projeto os usar | 3 |
+| receitas de framework (Spring, Quarkus, EF, Compose, Zod, DSL) | P | Packs dizem aplicar framework "só quando presente" | Packs por demanda concreta | 3 |
+| `strict` obrigatório, `!!` proibido, "sem `unwrap`", black 88, `max_workers`, perlcritic, versões fixas | D | Packs dizem não mudar strictness/flags/versão como conserto incidental | Rejeitar como política universal | — |
+
+**Decisão:** deltas de uma a três frases só em packs existentes (C++, Rust, Kotlin), aplicáveis quando a superfície aparecer. Não criar packs Bun/Perl, não adotar `strict` obrigatório, proibições absolutas, limiares, regras do Swift 6.2 nem receitas de framework. Bob implementaria, Quinn revisaria, Virgo validaria o pack. **Achado incidental (média):** `validateStackPacks` só exige caso de qualidade por pack quando `cases` é passado; para um pack novo isso depende do chamador.
 
 <a id="g06"></a>
 
 ### G06 — Arquitetura, APIs e frameworks backend
 
-**Prioridade 2; revisão pendente; 14 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 14 skills.**
 
 **Evidência local:** [Archie](../../agents/archie.md), [Bob](../../agents/bob.md), [pack Java](../../stack-packs/java/SKILL.md).
 
@@ -346,13 +361,25 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [springboot-patterns](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/springboot-patterns/SKILL.md) | Serviços, dados, cache, async e logging em Spring Boot | A comparar |
 | [tinystruct-patterns](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/tinystruct-patterns/SKILL.md) | Convenções e ferramentas específicas do framework tinystruct | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 14 entrypoints lidos, nenhum falhou).** Fontes locais: Archie, Bob, Quinn, packs Java/Python/TypeScript/Kotlin (trechos por grep), hook (grep). Gard e Pipe não foram abertos nesta revisão; segurança e operação embutidas nas skills ficam para G09 e G18.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `api-design`: classificar mudança de contrato como aditiva ou quebrante; forma de erro e ordenação de listas como parte do contrato | V | [Archie](../../agents/archie.md) pergunta por versionamento e Quinn cobre consumidores, sem dizer como classificar | Uma frase em Archie: classificar a mudança, nomear consumidores afetados; erro e ordenação fazem parte do contrato revisado. Só em API pública; sem checklist REST | 2 |
+| `contract-first`: uma autoridade versionada verificada nos dois lados | V | Archie: "do not create an artificial contract"; hook marca contratos/OpenAPI como HIGH | Fundir com a linha Quinn/Archie de G08; nenhuma ferramenta imposta | 2 |
+| jobs assíncronos: enfileirar após o commit, passar identificadores, registrar falha esgotada | V | Bob cobre repetição e idempotência, não esses três pontos | Uma cláusula em Bob, só quando a mudança cria/altera job ou consumidor | 2 |
+| idempotência e retry, unicidade por constraint, transação, N+1, camadas finas, validar na fronteira | C | Bob, Archie (anti-padrões), pack TypeScript | Nada | — |
+| `hexagonal-architecture` | C / D | Archie recusa Clean/Hexagonal/DDD cosmético e julga quando cabe | Rejeitar "toda dependência vira porta" como padrão | — |
+| receitas Django/DRF, FastAPI, Ktor, Laravel, NestJS, Quarkus, Rails, Spring Boot | P | Pack Java aplica Spring/Quarkus só "when detected"; Python/Kotlin sem framework web | Packs por demanda de projeto; nada residente | 3 |
+| `tinystruct-patterns`; números fixos (2 versões, 6 meses, 100 req/min, `per_page` 20, 8 caracteres); segurança embutida | D | Sem dono local; Gard/Pipe adiados para G09/G18 | Rejeitar como política universal | — |
+
+**Decisão:** duas adições condicionais à superfície (Archie: classificação de mudança de contrato; Bob: jobs assíncronos). Não adotar hexagonal por padrão, checklist REST, versionamento por URL, limiares, ferramentas de contrato nem agente novo. **Achado incidental (alta):** a "Evidência local" de G06 cita só o pack Java, e ele só reconhece frameworks "when detected" (`stack-packs/java/SKILL.md`).
 
 <a id="g07"></a>
 
 ### G07 — Bancos, ORM e migrações
 
-**Prioridade 2; revisão pendente; 10 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 10 skills.**
 
 **Evidência local:** [Archie](../../agents/archie.md), [Gard](../../agents/gard.md), [Pipe](../../agents/pipe.md).
 
@@ -375,13 +402,26 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [redis-patterns](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/redis-patterns/SKILL.md) | Cache, estruturas, locks, rate limiting e pub/sub | A comparar |
 | [swift-actor-persistence](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/swift-actor-persistence/SKILL.md) | Persistência em arquivos e cache com isolamento por actors | Parcial |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 10 entrypoints lidos, nenhum falhou).** Fontes locais: Archie, Gard, Pipe, Bob (grep dirigido), packs Java/Kotlin/Swift, hook (grep), regra de migrações do `~/AGENTS.md`. A situação "Parcial" do inventário para `database-migrations` e `swift-actor-persistence` era só sobreposição genérica, não cobertura.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `database-migrations`: expand-contract; compatibilidade entre código antigo e novo durante a janela | V | Archie trata impacto e reversibilidade de migração; Pipe pede plano de migração e rollback simples; nenhum cita a janela de compatibilidade | Uma frase em Archie: mudança destrutiva de esquema declara em que fase cada lado continua compatível, ou declara "irreversível". Receita de fases fica no projeto | 1 |
+| rollback "forward-only" e plano antes de aplicar | V | Pipe bloqueia deploy sem rollback; falta o caso de migração sem volta limpa | Uma frase em Pipe: migração sem volta registra a mitigação (correção para frente, restore ou "irreversível" aceito) antes de rodar. Sem down-migration universal | 1 |
+| backfill em lotes, índice sem bloqueio, `NOT NULL` sem default, teste com volume | V | Pipe cobre jobs, não carga/lock de migração | Na mesma linha de Pipe: nomear risco de lock/duração e como é observado ou abortado; sem tamanho de lote fixo | 2 |
+| autoria × execução: Archie modela, Pipe roda, Gard em permissões | S | `~/AGENTS.md`; hook tem gate `MIGRATION` na **edição** do arquivo (`high-risk-surface`) | Nada. **Não há gate para o comando que executa a migração** (confiança baixa, só grep); a execução depende de Pipe pedir autorização | — |
+| permissões do usuário da aplicação no banco | C | Gard: banco é HIGH | Nada | — |
+| transações curtas, lock em ordem, deadlock, `SKIP LOCKED` | C / P | Gard cobre o caso de segurança; resto é receita SQL/ORM | Pack de dados por demanda | 3 |
+| ORMs (JPA, MyBatis, Exposed, Prisma) e bancos (Postgres, MySQL, ClickHouse, Redis); `swift-actor-persistence` | P / D | Sem pack de dados; limiares fixos do ECC (pool 20/300, TTL, lotes) | Pack por demanda; rejeitar números como política. `clickhouse-io` conflita com a orientação usual de chave de ordenação: conferir a documentação oficial antes de adotar | 3 |
+| custo de consulta e índice (`EXPLAIN`) | D | Perry decide só com orçamento declarado | Sem acréscimo | — |
+
+**Decisão:** dois acréscimos de uma frase (Archie: compatibilidade na janela; Pipe: mitigação de rollback e risco de lock). Não adotar down-migration obrigatória, tamanhos de lote, limiares, runner de migração, novo banco nem agente por ORM.
 
 <a id="g08"></a>
 
 ### G08 — Testes, regressão e verificação
 
-**Prioridade 1; revisão pendente; 25 skills.**
+**Prioridade 1; revisado em 2026-11-11 (deltas propostos, não aplicados); 25 skills.**
 
 **Evidência local:** [Quinn](../../agents/quinn.md), [Bob](../../agents/bob.md), [spec de engenharia](../../openspec/specs/engineering-delivery/spec.md).
 
@@ -440,7 +480,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G09 — Segurança, permissões e supply chain
 
-**Prioridade 1; revisão pendente; 12 skills.**
+**Prioridade 1; revisado em 2026-11-11 (deltas propostos, não aplicados); 12 skills.**
 
 **Evidência local:** [Gard](../../agents/gard.md), [hook](../../hooks/canonkit-hook.js), [política ambiental](../../openspec/specs/environment-security-policy/spec.md).
 
@@ -483,7 +523,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G10 — Prática de engenharia, revisão e Git
 
-**Prioridade 1; revisão pendente; 12 skills.**
+**Prioridade 1; revisado em 2026-11-11 (deltas propostos, não aplicados); 12 skills.**
 
 **Evidência local:** [Bob](../../agents/bob.md), [Quinn](../../agents/quinn.md), [Archie](../../agents/archie.md), [spec de engenharia](../../openspec/specs/engineering-delivery/spec.md).
 
@@ -528,7 +568,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G11 — Produto, escopo e planejamento
 
-**Prioridade 2; revisão pendente; 7 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 7 skills.**
 
 **Evidência local:** [Scott](../../agents/scott.md), [spec de produto](../../openspec/specs/product-discovery/spec.md), [orquestração](../../skills/orchestrate/SKILL.md).
 
@@ -548,13 +588,25 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [product-lens](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/product-lens/SKILL.md) | Diagnóstico de problema, valor, hipótese e decisão de produto | Parcial |
 | [story-lifecycle](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/story-lifecycle/SKILL.md) | Organização de épicos, histórias e sprints em arquivos | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 7 entrypoints lidos, nenhum falhou).** Fontes locais: [Scott](../../agents/scott.md), [spec de descoberta](../../openspec/specs/product-discovery/spec.md), Spencer (grep), orchestrate, spec de continuidade.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `intent-driven-development`: efeitos colaterais proibidos nos critérios | V | Scott pede caminhos negativos, sem citar o que não deve mudar | Uma frase em Scott, para MEDIUM/HIGH: nomear também o efeito colateral proibido; sem template nem AC-NNN | 2 |
+| `product-capability`: invariantes e expectativas de falha/recuperação como decisão | V | Scott separa fatos, suposições, decisões e perguntas, sem expor invariantes nem recuperação | Uma frase em Scott, para MEDIUM/HIGH: expor invariantes e expectativas de falha/recuperação como decisão aprovada ou em aberto; parte estrutural vai a Archie. Sem SRS | 2 |
+| `blueprint`, `product-lens` (diagnóstico), critérios observáveis, rótulo de três estados | C | Scott, spec de descoberta, Bob (plano incremental), orchestrate (mapa para OpenSpec) | Nada; `PRODUCT-BRIEF.md` duplicaria PRD/OpenSpec | — |
+| `module-governance` | S | `AGENTS.md` e spec de continuidade: referenciar, não copiar; não alegar carga automática | Princípio já presente; cruza com G12, não decidido aqui | — |
+| `blueprint` (mutação de plano), `story-lifecycle` (`.stories/`) | D | OpenSpec já guarda changes, specs e tasks; um segundo registro é vedado | Rejeitar; `story-lifecycle` só para projeto sem OpenSpec nem tracker, por demanda | 3 |
+| `product-lens`: nota PMF 0–10, ICE, auditoria de jornada instalando o produto | D | Sem fórmula de priorização local; auditoria de jornada é de Pixie/G01 | Rejeitar escalas fixas como política universal | — |
+| `plan-canvas` | D | Revisão de plano acontece no chat e nos artefatos OpenSpec; a ferramenta exige `ecc-universal`, servidor local e hook Stop próprio | Rejeitar a distribuição; opcional para quem a instalar por conta própria | 3 |
+
+**Decisão:** dois acréscimos em Scott, ambos para MEDIUM/HIGH e sem template. OpenSpec segue como único registro de escopo e tarefas. Não adotar blueprint, `PRODUCT-BRIEF`, ICE/PMF, AC-NNN/SRS fixos, canvas nem `.stories/`.
 
 <a id="g12"></a>
 
 ### G12 — Documentação e navegação de código
 
-**Prioridade 1; revisão pendente; 7 skills.**
+**Prioridade 1; revisado em 2026-11-11 (deltas propostos, não aplicados); 7 skills.**
 
 **Evidência local:** [Spencer](../../agents/spencer.md), [Graphify](../tools.md), [continuidade](../../openspec/specs/context-continuity/spec.md).
 
@@ -591,7 +643,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G13 — Orquestração de equipes e execução paralela
 
-**Prioridade 2; revisão pendente; 16 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 16 skills.**
 
 **Evidência local:** [Orchestrate](../../skills/orchestrate/SKILL.md), [roster e risco](../../reference/agents-block.md), [continuidade](../../openspec/specs/context-continuity/spec.md).
 
@@ -620,7 +672,20 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [team-agent-orchestration](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/team-agent-orchestration/SKILL.md) | Donos, tarefas, isolamento e gates de integração | Parcial |
 | [team-builder](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/team-builder/SKILL.md) | Selecionar personas e consolidar contribuições da equipe | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 16 entrypoints lidos, nenhum falhou; o WebFetch devolveu resumos; auxiliares não lidos).** Fontes locais: [orchestrate](../../skills/orchestrate/SKILL.md) (integral); spec de continuidade e de seleção de modelo (grep); Bob e spec de engenharia (grep). `agent-tool-access` e Virgo não foram abertos.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `parallel-execution-optimizer`, `team-agent-orchestration`, `dmux-workflows`: superfície de escrita e dependência por raia antes do fan-out | V | "Parallel delegation" manda worktrees isoladas e sequência quando há dependência, sem pedir para nomear a superfície nem dizer o que fazer quando um blocker muda o plano | Uma frase em orchestrate: antes de dividir, nomear por raia a superfície de escrita e a dependência; superfície compartilhada ou etapa irreversível vira sequencial ou worktree separada; blocker que muda o plano pausa as raias dependentes | 1 |
+| `ralphinho`, `team-agent-orchestration`, `devfleet`: integrar saídas de worktrees uma a uma, reexecutando os checks afetados | L | "Verification by reach" e "Integration Review" não cobrem a ordem de integração de escritores paralelos | Uma frase em orchestrate: o orquestrador integra uma saída por vez e reexecuta os checks afetados; unidade com dependência falha não entra. Sem fila nem runtime | 2 |
+| `orch-refine-code`: rede de testes antes de refatorar sem mudar comportamento | V | Bob refatora "when there is a clear gain"; sem cláusula de rede de testes (confiança média) | Uma cláusula em Bob, só MEDIUM+: se a rede for fina, caracterização antes. Parente do RED de G08 | 2 |
+| `council` (vozes frescas, dissidência exposta, sem média); `orch-fix-defect`, `orch-pipeline`, `plan-orchestrate` (plano não confiável) | C | Integration Review (contradição vira escalação), "Relayed claims", "Evidence-based completion" | Nada; subagentes-persona não contam como revisão independente | — |
+| `devfleet`, `dmux`, Kanban, DAG executor, merge queue, scorecards, comandos `/orch-*` | D / P | Spec de continuidade: sem sistema paralelo de planejamento; nenhum runtime autônomo é alegado | Rejeitar; ferramentas de painéis só com demanda de projeto | 3 |
+| `dev-team`, `team-builder`: personas simuladas, máximo de agentes, nomes fixos | D | Roster com donos e vetos; dispatch só por risco nomeado | Rejeitar: persona não é revisão independente | — |
+| `council-multi-model`: crítica por modelo externo (Codex CLI) | D | Consulta Laya é opcional e registra chamadas e falhas; seleção de modelo não nomeia fornecedor como padrão | Rejeitar a receita de provedor e a transferência de dados | — |
+| `orch-add-feature`, `orch-build-mvp`: fases 0–6, tiers por nº de arquivos, 80% de cobertura, commits por fase, loop de 15 iterações | D | G08 já rejeitou cobertura e fases/commits fixos | Rejeitar como política universal | — |
+
+**Decisão:** duas frases em orchestrate (superfície de escrita e dependência por raia; integração uma a uma) e uma cláusula condicional em Bob. Não adotar runtimes, DAG, Kanban, personas simuladas, contagens fixas de agentes nem crítica por provedor externo.
 
 <a id="g14"></a>
 
@@ -656,7 +721,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G15 — Contexto, memória e aprendizado
 
-**Prioridade 2; revisão pendente; 11 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 11 skills.**
 
 **Evidência local:** [Learning loop](../../skills/learning-loop/SKILL.md), [continuidade](../../openspec/specs/context-continuity/spec.md), [context-tune](../../skills/context-tune/SKILL.md).
 
@@ -682,13 +747,23 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Decisões existentes a preservar:** Learning Loop proíbe ingestão automática de transcripts, promoção automática e memória operacional. Continuidade reutiliza OpenSpec ou handoffs versionados. `ck`, `continuous-learning-v2` e `unified-memory` divergem nesses mecanismos; isso não rejeita toda ideia de contexto mínimo contida neles. `continuous-learning` está depreciada no ECC. A limitação descrita no [handoff histórico](ecc-lessons-handoff.md) não deve ser promovida a alegação atual sobre capacidades de plataformas sem verificação.
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 11 entrypoints lidos, nenhum falhou).** Fontes locais: [spec de continuidade](../../openspec/specs/context-continuity/spec.md), [context-tune](../../skills/context-tune/SKILL.md), [learning-loop](../../skills/learning-loop/SKILL.md), telemetria (grep), orchestrate, [ADR 0005](../adr/0005-manual-context-handoff.md), hook (lembrete de tamanho de contexto). `learning-loop-design.md` **não existe** (ver achados de documentação).
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `context-and-decisions`: glossário estável e termo com dois sentidos sinalizado ao dono | L | Grep por glossário/linguagem de domínio em `agents/`, `skills/` e `openspec/specs/` não achou nada | Uma frase em Scott/Spencer: reutilizar glossário ou doc existente, apontar termo ambíguo e perguntar ao dono. Sem `CONTEXT.md` sem aprovação; só quando o projeto tiver vocabulário ambíguo | 2 |
+| `iterative-retrieval`: refinar a busca nomeando a lacuna de contexto | V | A spec cobre o brief task-scoped, não o refino da busca | Sem mudança agora; se surgir demanda, uma linha no brief de dispatch. Rejeitar score 0–1, limiar 0,7 e teto de 3 ciclos | 3 |
+| decisão difícil de reverter vai para ADR e é linkada; `strategic-compact`; `ck`/`unified-memory` (retomada, recall como evidência não confiável, handoff sem segredos); `context-budget` | C | `docs/adr/` (6 ADRs), ADR 0005 (auto-compactação rejeitada), spec de continuidade, orchestrate, telemetria (tokens nunca estimados), context-tune | Nada | — |
+| `growth-log`, `rules-distill` | C / D | learning-loop: consolidar ou remover regra com o mesmo diff; sem memória operacional | Nada; não adotar diário de aprendizado nem gate de Stop por arquivo de aprendizado | — |
+| `continuous-learning`/`-v2`, `unified-memory` (vault MCP), `knowledge-ops` (Supabase, sync de conversas) | D | learning-loop é manual, sem ingestão de transcritos nem promoção automática; ADR 0005: injeção por SessionStart não funciona nas três plataformas; `continuous-learning` é depreciada no próprio ECC | Rejeitar observação por hooks, instincts com confiança, vault e stores externos | — |
+
+**Decisão:** um acréscimo condicional (prioridade 2) sobre glossário existente e termos sobrecarregados. `iterative-retrieval` fica para demanda. Não adotar memória persistente, observação automática, promoção por confiança, limiares fixos nem diário de aprendizado.
 
 <a id="g16"></a>
 
 ### G16 — Avaliação e diagnóstico de agentes
 
-**Prioridade 1; revisão pendente; 7 skills.**
+**Prioridade 1; revisado em 2026-11-11 (deltas propostos, não aplicados); 7 skills.**
 
 **Evidência local:** [Guia de evals](../evals.md), [rubrica](../../evals/instruction-rubric.json), [evidência de engenharia](../../openspec/specs/engineering-delivery/spec.md).
 
@@ -767,7 +842,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G18 — Operações, deploy e ambientes
 
-**Prioridade 2; revisão pendente; 13 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 13 skills.**
 
 **Evidência local:** [Pipe](../../agents/pipe.md), [Gard](../../agents/gard.md), [continuidade/finalização](../../openspec/specs/context-continuity/spec.md).
 
@@ -793,13 +868,24 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [terminal-ops](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/terminal-ops/SKILL.md) | Execução com evidência de comandos e resultados reais | Parcial |
 | [uncloud](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/uncloud/SKILL.md) | Deploy, ingress e administração de clusters Uncloud | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 13 entrypoints lidos, nenhum falhou).** Fontes locais: [Pipe](../../agents/pipe.md), [Gard](../../agents/gard.md), [política ambiental](../../openspec/specs/environment-security-policy/spec.md), spec de engenharia, [docs/hooks.md](../hooks.md) e hook (grep). A evidência de G18 neste handoff cita `context-continuity`, que não trata de operações; a útil é Pipe, Gard, política ambiental e engenharia.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `deployment-patterns`, `production-audit`: o rollback de código não desfaz estado persistente | V | Pipe pede rollback ou mitigação equivalente e "rollback simples antes de migração irreversível", sem exigir que o plano diga o que o rollback não desfaz | Uma frase em Pipe: o plano de rollback nomeia o que não reverte (dados, esquema, efeitos externos) e a mitigação. Liga-se ao delta de G07 | 2 |
+| `opensource-pipeline`: sanitizar antes de tornar público (histórico, segredos, caminhos internos) | L | Gard veta exposição de segredo, sem gatilho explícito para publicação ou histórico; `secret-block` só atua em conteúdo escrito e o gate de Git só pede confirmação de commit/push | Uma linha em Gard: ao publicar ou abrir um repositório, varrer histórico e artefatos, não só a árvore; publicar é ato do usuário. Sem pipeline de três agentes | 2 |
+| config validada na partida, falha explícita | V | Pipe cobre "fails closed" e dependência indisponível, não config inválida na partida | Opcional nos critérios de readiness de Pipe, só MEDIUM/HIGH operacional | 3 |
+| `canary-watch`, verificação pós-deploy, `production-audit` (evidência, ship/block), `github-ops`/`terminal-ops` (changed × verified × committed × pushed), `dashboard-builder`, `flox`, `docker-patterns` | C | Pipe (abordagem conservadora, rollback, observabilidade, veredito + lacunas), spec de engenharia, Gard (Docker/Compose) | Nada; conteúdo de issue/PR/CI como dado fica a conferir em G09/G10 | — |
+| Docker, Kubernetes, `uncloud`, Flox, instalador Python, `terminal-opener`, Actions/GHCR/Railway/Vercel | P | Pipe e Gard guardam a propriedade, não a stack; packs só de linguagem | Packs por demanda (container, K8s, provedor de CI, instalador Windows) | 3 |
+| LCP>4 s, >5 erros de console, probes 30 s/3/2, canary 95/5, HPA 70%/80%, nota 0–100, loop de watch por horas, hook PostToolUse em `git push`, `docker compose down -v`, deleção por padrão | D | Pipe calibra por risco; política ambiental rejeita autoaprovação ampla e hooks de decisão por padrão | Rejeitar como política; valores só como exemplo em pack | — |
+
+**Decisão:** duas frases (Pipe: o que o rollback não reverte; Gard: varrer histórico e artefatos ao publicar) e uma opcional futura de readiness. Não adotar limiares fixos, nota 0–100, pipeline de três agentes, loops de watch, hook em push nem receitas de Docker/K8s/Flox. **Achado incidental (alta):** o `canary-watch` sugere um hook PostToolUse em `git push`, o que colide com "native approval modes remain authoritative" da política ambiental; só como exemplo.
 
 <a id="g19"></a>
 
 ### G19 — Desempenho, custos e orçamento
 
-**Prioridade 2; revisão pendente; 10 skills.**
+**Prioridade 2; revisado em 2026-11-11 (deltas propostos, não aplicados); 10 skills.**
 
 **Evidência local:** [Perry](../../agents/perry.md), [telemetria e limites](../telemetry.md), [context-tune](../../skills/context-tune/SKILL.md).
 
@@ -822,7 +908,18 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [token-budget-advisor](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/token-budget-advisor/SKILL.md) | Escolha explícita de profundidade e orçamento de resposta | A comparar |
 | [token-card](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/token-card/SKILL.md) | Cartão de uso a partir de logs de vários harnesses | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 10 entrypoints lidos, nenhum falhou).** Fontes locais: [Perry](../../agents/perry.md), context-tune, [telemetria](../telemetry.md), [spec de seleção de modelo](../../openspec/specs/model-selection/spec.md), orchestrate (modelo/esforço), evals (grep), hook (`perf-budget`).
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `benchmark-optimization-loop`: a otimização mantém a verificação de correção verde e a busca para quando o ganho cai no ruído | V | Perry (passo 6) manda a menor mudança e re-medir, sem dizer que a correção precisa seguir verde nem quando parar | Uma frase no passo 6 de Perry; sem ledger de variantes nem promotion gate | 2 |
+| `benchmark`, `cost-tracking` (último registro por sessão; não fabricar uso), `cost-aware-llm-pipeline` (roteamento por necessidade), `prompt-caching-strategy` (contadores de cache, medir contra baseline) | C | Perry (distribuição, isolar variável); telemetria (último `agent_end` por `id`, tokens nulos "never estimated", cache read/write); spec de seleção de modelo; gate `perf-budget` | Nada | — |
+| `data-throughput-accelerator`, `latency-critical-systems`, `content-hash-cache-pattern` | C / P | Perry atribui antes de otimizar; topologia de cache é de Archie | Receitas de ingestão/cache só como pack ou especialista por demanda | 3 |
+| custo em USD derivado de tokens, cartão de uso para README, leaderboard (`@tokenchit/cli` via `npx`) | D | Telemetria: custo monetário "Not calculated", exige preços verificados; Σ total é volume processado, não custo | Rejeitar; manter a separação volume / tokens observados / dinheiro. A ferramenta é código remoto com acesso a logs | — |
+| tabela de preços, limiares (10k caracteres, 30 itens), orçamento padrão US$ 1, retry e orçamento em app com LLM | D / P | Seleção de modelo "SHALL NOT ship a mapping" por fornecedor | Rejeitar; app com LLM cai em dados/IA (G20) | — |
+| `token-budget-advisor`: menu 25/50/75/100%, multiplicadores | D | context-tune usa só "chars / 4" como estimativa grosseira | Rejeitar percentuais e multiplicadores fixos | — |
+
+**Decisão:** um único acréscimo de uma frase em Perry. Não adotar tabela de preços, custo em USD derivado de tokens, limiares, cartão ou leaderboard de uso, menu de profundidade, ledger de variantes nem coletor novo.
 
 <a id="g20"></a>
 
@@ -1101,6 +1198,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ## Achados de documentação a preservar
 
+- **Links quebrados confirmados em 2026-11-11:** `learning-loop-design.md` (linha da tabela "Aprendizado manual") e `ecc-lessons-handoff.md` (achados abaixo) não existem em `docs/plans/`; foram removidos em um commit anterior de limpeza. Corrigir ou remover os links é decisão pendente.
 - **Corrigido no planejamento em 2026-11-09 — baseline da change visual:** [proposal.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/proposal.md) e [design](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md) agora reconhecem as seis capacidades principais e distinguem a baseline histórica do working tree atual. As main specs são reutilizadas, não modificadas por essa correção.
 - O [handoff histórico ECC](ecc-lessons-handoff.md) e a [auditoria de 2026-10-29](../../evals/audits/2026-10-29-ecc.json) são evidências de outros recortes/revisões, incluindo agentes e hooks. Não estender seus vereditos a este catálogo inteiro.
 
