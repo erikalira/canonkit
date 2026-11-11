@@ -1,6 +1,7 @@
 # Tasks
 
-Implementation is in progress under the explicit apply request of 2026-11-09.
+Implementation was applied under the explicit apply request of 2026-11-09 and is
+committed on `main`; 3.4 and 3.5 remain open (see "Final review — 2026-11-11").
 Use [design.md](design.md) and the three capability specs for acceptance. Source
 implementation and offline validation do not authorize consumer installation,
 paid evaluation, release, spec sync or archive.
@@ -15,18 +16,27 @@ paid evaluation, release, spec sync or archive.
 
 - [x] 2.1 Create the three single-file sources `stack-packs/ui-design/SKILL.md`, `stack-packs/ui-review/SKILL.md` and `stack-packs/game-art-direction/SKILL.md`, with names `canonkit-<id>`, and register their IDs in the existing catalog. Verify descriptions distinguish design/review/game art, optional references do not invent agents, no extra files or dependencies are required, and shared catalog validation plus available skill-format validation passes.
 - [x] 2.2 Complete the skills' concrete procedures: M1 identity-preserving references/exemplars and concrete finish; M2 applicable states with trigger/feedback/next action, promised final result and recovery; M3 representative content/assets, supported theme/locale fit, accessible form/overlay/status operation and relevant console/network failures; M4 purposeful reduced-motion/interruptible interactions, stable loading geometry, gesture alternatives and continuous-work cleanup. Include composite controls, comparable-baseline and untested-vs-not-applicable evidence limits, representative-screen handoff and game-art criteria extracted from Nova. Add a quality case per new ID and calibrate positive/adversarial reports for these criteria using existing mechanisms; related scenarios can share cases. Retain missing browser/baseline, no implicit installation, ordinary game UI, absent-owner and LOW focused-check counterexamples. Verify `test/eval.test.js` and quality `--dry-run` load only the selected pack without changing authority/model; no G04 native procedure, universal matrix, new tooling or framework recipe is required.
-- [x] 2.3 Extend `test/stack-packs.test.js` with mixed React + three-design-pack coexistence and selective removal, preserving original bytes/hashes and schema-1 records. Reuse existing all-catalog tests for independent installation, two targets, idempotence, dry-run, local edits, collisions, links, interruption and global isolation; verify the focused lifecycle suite passes and unresolved ownership is preserved.
-- [x] 2.4 Update the README pack table, `docs/install.md`, affected maintenance/eval guidance and CLI presentation text only where the language/framework-only description is no longer accurate. Document opt-in use, explicit agent updates and removal with the expanded CLI before downgrade. Verify examples distinguish future available IDs from already installed state, name both fixed targets, preserve receipt/path terminology and promise no automatic specialist or pack installation.
+- [x] 2.3 Extend `test/stack-packs.test.js` (now `test/e2e/stack-packs.test.js`) with mixed React + three-design-pack coexistence and selective removal, preserving original bytes/hashes and schema-1 records. Reuse existing all-catalog tests for independent installation, two targets, idempotence, dry-run, local edits, collisions, links, interruption and global isolation; verify the focused lifecycle suite passes and unresolved ownership is preserved.
+- [x] 2.4 Update the README pack table, `docs/install.md`, affected maintenance/eval guidance and CLI presentation text only where the language/framework-only description is no longer accurate. Document opt-in use, explicit agent updates and removal with the expanded CLI before downgrade. Verify examples distinguish future available IDs from already installed state, name the fixed targets (their set is owned by the pack mechanism, see Final review 2026-11-11), preserve receipt/path terminology and promise no automatic specialist or pack installation.
 
 ## 3. Integration, independent review and delivery evidence
 
 - [x] 3.1 Run `npm test`, `npm run validate`, `npm pack --dry-run`, routing and quality eval `--dry-run`; inspect that the package includes all three skill sources and unchanged global/project separation. Record commands, outcomes, skipped checks and any failures in this change without invoking real-model evals or installing into the user's HOME/projects.
 - [x] 3.2 Remeasure Nova/Pixie body size and existing resident context profiles against the documented baseline/budget; inspect that interface requests no longer carry game-art procedures or resident M1–M4 tutorials and that format/lexical checks are not described as measured UI improvement. Record behavioural efficacy and native discovery as UNMEASURED unless separately supported.
 - [x] 3.3 After code changes, run `graphify update .`, strict validation of this OpenSpec change and whitespace/link checks; verify graph output freshness, current main-spec references and pinned ECC sources. Map all accepted G01–G03 V/L findings and spec scenarios to implemented guidance and appropriate cases/evidence, including supported locale checks and gesture/continuous-motion cases; keep G04 deferred and distinguish planning sufficiency from implementation or efficacy.
-- [ ] 3.4 Obtain independent review after the final relevant implementation edit: Archie for the public pack contract/preservation guarantees, Quinn for acceptance and quality, and Spencer for HIGH-risk documentary drift. Route any remaining named UX-boundary risk to Pixie; record verdicts, resolve blockers and repeat only affected checks/reviews.
-- [ ] 3.5 Perform Integration Review across ownership, procedural skills, installation and evidence. Verify no contradictory boundaries or unresolved required work remain; report implemented scope, current evidence, limitations and readiness separately from authorization to commit, install, publish or archive.
+- [x] 3.4 Obtain independent review after the final relevant implementation edit: Archie for the public pack contract/preservation guarantees, Quinn for acceptance and quality, and Spencer for HIGH-risk documentary drift. Route any remaining named UX-boundary risk to Pixie; record verdicts, resolve blockers and repeat only affected checks/reviews.
+- [x] 3.5 Perform Integration Review across ownership, procedural skills, installation and evidence. Verify no contradictory boundaries or unresolved required work remain; report implemented scope, current evidence, limitations and readiness separately from authorization to commit, install, publish or archive.
 
-## Implementation evidence — 2026-11-09 (current working tree)
+## Implementation evidence — 2026-11-09 (HISTORICAL working-tree record)
+
+> Historical: this section records the 2026-11-09 working tree at HEAD `1637bbd`,
+> before the 3.0.0 restructure. Test paths, counts, the `validate.sh` mirror
+> procedure and the 2,500-word budget below are superseded by "Final review —
+> 2026-11-11". Notably `test/stack-packs.test.js` is now
+> `test/e2e/stack-packs.test.js`, and `test/cli.test.js:2346` is now
+> `test/e2e/cli-doctor.test.js:402`. "Catalog-only" and "two targets" describe this
+> change's own edits at that time; the committed tree also carries a Copilot target
+> (see Final review).
 
 - Baseline: `main`, HEAD `1637bbd1f39a357bbf3a4a6d41498015ada06006`.
   Pre-existing staged work was read before edits and remains in the index.
@@ -80,6 +90,8 @@ paid evaluation, release, spec sync or archive.
 
 - Archie — **APPROVE**, HIGH public contract: catalog-only extension, fixed
   paths/schema, preservation tests and documented downgrade limits; no blockers.
+  **Superseded 2026-11-11:** this approval covered the 2026-11-09 two-target
+  tree and does not hold for HEAD (see Final review).
 - Pixie — **APPROVE**, MEDIUM UX boundaries and M1–M4: no blockers. Her sole copy
   note (escaped apostrophe) was fixed and she confirmed the final file approval.
 - Quinn — **APPROVE WITH CONDITIONS**, HIGH acceptance/quality: implementation
@@ -128,7 +140,10 @@ final delivery verification still awaits the full-suite result.
   the direct Windows checkout uses CRLF Markdown while the shell header check
   expects LF; the default Bash also resolves to WSL without Node. The current
   source passed in the LF/Git-Bash mirror. No validator/platform expansion is
-  included in this visual-workflow change.
+  included in this visual-workflow change. **Superseded 2026-11-11:** `npm run
+  validate` now runs `scripts/validate.mjs --portable` and passes natively with one
+  coverage warning (Bash syntax validation not run); `scripts/validate.sh:50` no
+  longer exists (see `docs/maintaining.md`).
 - **Confirmed — pre-existing staged EOF whitespace**,
   `docs/plans/ecc-skills-knowledge-groups-handoff.md`: the cached diff contains
   a final blank-line warning. The protected staged content was retained;
@@ -156,7 +171,11 @@ not installed runtime context.
 | Codex profile | 2,447 | 2,453 | +6 / 2,500 |
 | OpenCode profile | 2,493 | 2,499 | +6 / 2,500 |
 
-Existing source-profile test passed; no budget was loosened. Nova's interface
+Existing source-profile test passed; no budget was loosened. (Historical: the
+2,500 budget and these profile totals date from 2026-11-09. The repository's
+always-loaded ceiling was later raised to 3,000 in `7e76ef4`, enforced at
+`test/e2e/cli-install.test.js:525`; Nova 687 / Pixie 720 body words were
+re-measured on 2026-11-11, profile totals were not.) Nova's interface
 protocol has no resident game-art checklist; detailed M1–M4 procedures are in
 optional packs. Shorter bodies and lexical fixtures do not measure UI improvement.
 
@@ -192,7 +211,7 @@ Classifications in the handoff and G04's deferred L remain unchanged.
 ### Spec scenario coverage
 
 All 47 scenarios are mapped below. Case IDs are in the existing routing/quality
-corpora; lifecycle evidence is in `test/stack-packs.test.js`. A source-inspection
+corpora; lifecycle evidence is in `test/e2e/stack-packs.test.js` (formerly `test/stack-packs.test.js`). A source-inspection
 entry is deliberately narrower than a behavioural test; no application was run.
 
 | Spec / exact scenario | Implemented guidance | Offline evidence |
@@ -244,6 +263,120 @@ entry is deliberately narrower than a behavioural test; no application was run.
 | visual-design-ownership — Parts react as separate controls | Pixie invariant/review composite | visual-review-composite |
 | visual-design-ownership — Existing spacing is corrected locally | LOW boundaries/M1 scope | visual-ui-low-game-menu; source inspection |
 | visual-design-ownership — A LOW label change has no motion effect | LOW scope | visual-ui-low-game-menu |
+
+## Final review — 2026-11-11 (HEAD `2c603c3`, implementation committed on `main`)
+
+**Status: 3.4 and 3.5 checked (12/12).** The earlier HIGH public-contract block was
+cleared for this change by the corrections and Archie's scoped re-review below, and
+the carry-over is now tracked as the planned change
+[`copilot-project-skill-target`](../copilot-project-skill-target/proposal.md)
+(artifacts only, validated strict; not implemented, not reviewed). Nothing here authorizes commit, install, publish, spec sync or archive.
+
+### Current evidence (HEAD `2c603c3`; working tree clean apart from archive renames,
+two staged main-spec adds from other changes and a CRLF-only note on `bin/cli.js`)
+
+- `npm test`: 1003 tests, 999 pass, 0 fail, 4 skipped (152 s).
+- `npm run validate`: pass, 1 warning (Bash syntax validation not run; coverage PARTIAL).
+- `npm pack --dry-run --json`: 64 entries, includes all three skill sources.
+- `openspec validate ui-focused-visual-workflow --strict`: valid. `git diff --check`: clean.
+- Routing/quality `--dry-run`: 30 and 77 cases loaded, no model called.
+- Quinn's targeted runs: `node --test test/eval.test.js` 26/26; default source
+  instruction profile guard passes at the current 3,000-word ceiling.
+- Nova body 687 words (baseline 1,383), Pixie 720: re-measured. Profile totals not re-measured.
+- Behavioural efficacy, real-interface outcomes, native skill discovery: **UNMEASURED**.
+  No Laya call, paid eval or consumer install was made.
+
+### Independent reviews (after the last edit to implementation sources)
+
+Dispatch (from `canonkit models show`, all "user level"): Archie `opus`/medium;
+Quinn and Spencer `sonnet`/medium. Pixie was not dispatched: no new UX-boundary
+risk was named and the UX surfaces were unchanged since her earlier approval.
+
+- **Quinn — APPROVE WITH CONDITIONS, no blockers.** All 14 cited case IDs exist
+  and are exercised; M1–M4 fixtures assert the stated criteria; coexistence test
+  (`test/e2e/stack-packs.test.js:105-145`) is real; LOW counterexamples preserved;
+  efficacy kept UNMEASURED. Conditions (path corrections, historical budget) applied
+  in this file; `docs/evals.md` budget text corrected.
+- **Spencer — APPROVE WITH CONDITIONS, no blockers.** The three capability specs
+  are declared deltas awaiting authorized sync, not drift. Conditions: stale test
+  paths/"in progress" wording (applied here), `docs/release-notes/3.0.0.md`
+  statements (corrected, see below).
+- **Archie — scoped re-review 2026-11-11: APPROVE WITH CONDITIONS; block cleared
+  for this change.** Downgrade text verified true against `1637bbd` and HEAD with a
+  read-only script (old CLI rejects the copilot key; HEAD `list` reports legacy
+  installs `partial`; removing every pack the expanded CLI added/re-added unblocks
+  the old CLI). Two residual `design.md` wording conditions (lines 102, 124) and an
+  `install.md` refinement were applied and confirmed by grep. The Copilot target
+  itself remains unreviewed here (separate change). Original verdict follows.
+- **Archie — BLOCK (narrow), original.** The skill extension itself is sound. Blocker: commit
+  `2861645` also added `copilot: ".github"` to `TARGETS` in `bin/stack-packs.js`
+  (baseline had `agents`, `claude` only), so each pack now owns a third copy at
+  `.github/skills/canonkit-<id>/SKILL.md` and receipt key `<id>:copilot:SKILL.md`.
+  This change's artifacts (`design.md`, tasks above) and its earlier Archie approval
+  describe a two-target, catalog-only contract. Archie also showed with a read-only
+  script that a receipt written by the expanded CLI for any added pack makes the
+  1637bbd CLI fail ("Invalid stack-pack receipt entry"), so `docs/install.md`
+  ("remove the three design IDs before downgrading") is insufficient, and that no
+  test uses a genuine legacy two-target receipt.
+
+### Decision (user, 2026-11-11)
+
+The Copilot project target belongs to a **separate OpenSpec change**, not this one.
+Consequences recorded here:
+
+- This change's scope stays: UI-first Nova/Pixie split, three optional skills,
+  catalog IDs. It does not own, specify or approve the `.github/skills` target, the
+  `list()` "partial" semantics for legacy installs or the downgrade procedure for it.
+- The separate change must: add a spec delta for the target set; correct
+  `design.md`-style "two targets" claims where they remain; fix
+  `docs/install.md:823-827` and README downgrade notes (remove every pack the
+  expanded CLI added or re-added before downgrading; legacy two-target installs
+  show "partial" until re-added); add a fixture with a real two-target schema-1
+  receipt asserting it reads without migration, `list` reports "partial" and
+  agents/claude bytes and hashes are preserved when the third copy is added; and
+  obtain its own Archie review. No schema 2, receipt deletion or relaxed
+  unknown-entry validation.
+- **Corrected in this change (user-authorized, 2026-11-11):** `docs/install.md`
+  downgrade paragraph and README note now say to remove every pack the expanded CLI
+  added or re-added, and that older installs show `partial` until re-added;
+  `design.md` (Context, decision 5, verification table, migration step 4) no longer
+  claims catalog-only/two targets and records that a genuine legacy two-target
+  receipt has no repository fixture; task 2.4 no longer says "both" targets.
+- **Still open (carry-over to the separate Copilot-target change):** the
+  legacy-receipt fixture, the target spec delta and Archie's review of the Copilot
+  target itself; also Archie's observation that a legacy install with a
+  pre-existing untracked `.github/skills/canonkit-<id>/` reports
+  `untracked/collision` (not `partial`) and re-add throws a collision error. Archie's block
+  on 3.4 clears only through a scoped re-review of the corrected claims above.
+
+### Integration Review (3.5) — closed 2026-11-11
+
+Ownership (Nova/Pixie/Maya), procedural skills, spec deltas and evidence are
+mutually consistent (Quinn, Spencer, Archie's checks Q4/Q5). The contradiction is
+between installation and the documented contract: the delivered receipt/target
+behaviour is wider than this change records, and its downgrade guidance is wrong.
+Escalated to the user, who assigned it to a separate change. Resolution: the
+doc and design claims here were corrected and re-reviewed by Archie, and the
+remaining required work (target spec delta, legacy-receipt fixture, Archie review
+of the target itself) is tracked in `copilot-project-skill-target`. No required
+work of this change remains unresolved; the follow-up is not a prerequisite of
+this change's deliverables.
+
+### Implemented scope vs. authorization
+
+Implemented and committed: Nova/Pixie restructure, three skills, catalog IDs,
+eval cases, docs. Pending: scoped Archie re-review, follow-up change for the
+Copilot target, release-note destination decision (no version chosen), main-spec
+sync. Not authorized by this record: commit, install, publish, sync, archive.
+
+### Incidental findings preserved
+
+- Commit `2861645` bundles Copilot support, security, hooks, CLI and this change
+  (high confidence); it hid the contract edit from a change-scoped review.
+- Two staged main-spec adds (`model-selection`, `test-suite-execution`) belong to
+  other changes; keep them out of any commit for this one.
+- `docs/release-notes/3.0.0.md` verification counts (880/890) predate the test-suite
+  restructure; refresh at publish time (medium confidence).
 
 ## Workflow follow-up
 

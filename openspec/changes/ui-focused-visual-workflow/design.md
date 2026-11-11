@@ -12,7 +12,7 @@ The user approved incorporation of every V/L finding from G01–G03 in the [ECC 
 - `agents/pixie.md` owns UX and accessibility, but its broad visual-consistency veto can overlap Nova. Its composite-control section mixes an enduring interaction invariant with a detailed computed-style procedure.
 - Nova and `docs/team.md` currently attribute state existence/meaning to Maya without qualifying gameplay. Pixie's core body also names optional specialists; touched visual boundaries should instead refer to the installed owner generically.
 - `skills/*` installs globally. `stack-packs/*` is the existing project-local, opt-in skill source, currently used for languages/frameworks.
-- `bin/stack-packs.js` treats IDs as opaque catalog keys and controls one `SKILL.md` per pack at `.agents/skills/canonkit-<id>/` and `.claude/skills/canonkit-<id>/`. It has a schema-1 receipt, fixed destinations, local-edit protection and interrupted-operation recovery.
+- `bin/stack-packs.js` treats IDs as opaque catalog keys and controls one `SKILL.md` per pack at `.agents/skills/canonkit-<id>/` and `.claude/skills/canonkit-<id>/` as of the planning baseline `1637bbd`. The committed tree (`2c603c3`) also owns a third copy at `.github/skills/canonkit-<id>/` (receipt key `<id>:copilot:SKILL.md`), added by commit `2861645` outside this change; that target and its contract belong to a separate OpenSpec change and are not specified or approved here. It has a schema-1 receipt, fixed destinations, local-edit protection and interrupted-operation recovery.
 - Quality evaluation composes one explicitly selected pack into an existing agent definition. Lifecycle and packaging checks are offline; model evaluations are separate and require authorization when they incur cost.
 
 ## Goals / Non-Goals
@@ -95,18 +95,18 @@ Skills can collect evidence while Nova/Pixie or another installed project owner 
 
 ### 5. Extend the catalog without changing pack storage
 
-Add the three opaque IDs to the catalog in `bin/stack-packs.js`. Preserve source root, module/receipt names, schema version, file IDs, target directories, validation, locking and recovery semantics. Explain in README/install documentation that the existing pack mechanism also distributes practice-specific skills; do not rename infrastructure to match terminology.
+Add the three opaque IDs to the catalog in `bin/stack-packs.js`. This change's own code edit is the catalog ID list only; it preserves source root, module/receipt names, schema version, file IDs, validation, locking and recovery semantics as found. The set of target directories is whatever the pack mechanism owns (see Context); this change neither extends nor specifies it. Explain in README/install documentation that the existing pack mechanism also distributes practice-specific skills; do not rename infrastructure to match terminology.
 
 Pack-only `add` must continue to write no agent roster, specialist or HOME file. Mixed explicit requests such as a specialist plus packs keep the established behaviour. No pack implies Nova, Maya, another pack or a global install. Core/reference/global-uninstall isolation remains intact.
 
-An expanded CLI reads existing receipts without migration. An older CLI rejects unknown new pack IDs; this is **not** bidirectional downgrade compatibility. Document the removal-before-downgrade procedure below rather than deleting metadata or weakening unknown-entry validation.
+An expanded CLI reads existing receipts without migration. An older CLI rejects receipt entries it does not know (new IDs and `<id>:copilot:SKILL.md` keys); this is **not** bidirectional downgrade compatibility. Document the removal-before-downgrade procedure below rather than deleting metadata or weakening unknown-entry validation.
 
 ### 6. Verify contracts and prepare behavioural evaluation separately
 
 | Area | Existing mechanism and additions |
 | --- | --- |
 | Pack integrity | Shared catalog validation and a quality fixture for each new ID; validate all three skills with `skill-creator`'s `quick_validate.py` when available. |
-| Lifecycle | Reuse all-catalog tests for two targets, idempotence, dry-run, collision, links, local edits, interruption and global isolation. Add a mixed React + three-pack test preserving old bytes/hashes/schema and selective removal. |
+| Lifecycle | Reuse all-catalog tests for the pack mechanism's targets, idempotence, dry-run, collision, links, local edits, interruption and global isolation. Add a mixed React + three-pack test preserving old bytes/hashes/schema and selective removal. |
 | Eval loading | Extend existing selected-pack composition/isolation checks using the current loader; calibrate relevant positive/adversarial reports with existing offline judges. Do not add a visual scoring engine. |
 | Ownership and routing | Update existing case sets for UI-first Nova, UX-vs-visual concerns, absent specialist, LOW inline work, conditional game-art use and no implicit installation. Preserve game-art discovery after Nova's description changes. |
 | Behavioural acceptance | Prepare cases for a beautiful/confusing form, usable/visually inconsistent screen, long-content narrow layout, fragmented composite control, missing browser/baseline, game menu without Maya, character readability and skill-without-owner. Offline calibration does not execute those experiences. |
@@ -121,7 +121,7 @@ Real-model and real-interface results remain UNMEASURED unless separately run wi
 - [UX and visual authority overlap] -> Use the decision table, qualify Pixie's veto and keep requirements/visual expression distinct in handoffs.
 - [Moving procedures weakens projects without optional packs] -> Keep Pixie's interaction invariant and Nova's visual principles/authority in their agents; skills deepen the method rather than create the role.
 - [Practice-specific skills stretch the term stack pack] -> Explain the broadened catalog content while keeping stable paths and receipts.
-- [Older CLI cannot read receipts containing new IDs] -> Remove new packs with the expanded CLI before downgrade; preserve unresolved conflicts.
+- [Older CLI cannot read receipts containing entries it does not know] -> Remove every pack the expanded CLI added or re-added before downgrade; preserve unresolved conflicts.
 - [Skill instructions grow into generic tutorials or arbitrary style rules] -> Keep only decisions/procedures that affect the requested workflow; validate small-change and established-direction cases.
 - [Schema/fixture checks are mistaken for improved UI quality] -> Report measured facts separately and leave behavioural efficacy UNMEASURED without actual runs.
 
@@ -130,7 +130,7 @@ Real-model and real-interface results remain UNMEASURED unless separately run wi
 1. Implement source changes and validate them using isolated test HOME/project fixtures. Do not update this machine's installed agents or consuming projects as part of apply by default.
 2. After separately authorized distribution/use, existing Nova copies update through explicit project re-add; Pixie follows the normal core reinstall. Explain both without executing them automatically.
 3. Consumers explicitly add only desired packs using a CLI version that includes the new IDs. Old receipts need no migration; adding packs must preserve their existing files/hashes.
-4. To roll back before use/distribution, revert the reviewed source change normally. To downgrade a consumer after use, run removal of the new packs with the expanded CLI first. Preserve edited copies and unresolved receipt entries, resolve reported conflicts, and only then downgrade. Never delete the receipt to bypass validation.
+4. To roll back before use/distribution, revert the reviewed source change normally. To downgrade a consumer after use, run removal of every pack the expanded CLI added or re-added (not only the new ones, because each records a `<id>:copilot:SKILL.md` entry an older CLI rejects) with the expanded CLI first. A genuine legacy two-target receipt is not covered by a repository fixture; that coverage belongs to the separate target change. Preserve edited copies and unresolved receipt entries, resolve reported conflicts, and only then downgrade. Never delete the receipt to bypass validation.
 
 ## Planning Review
 

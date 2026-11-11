@@ -244,7 +244,9 @@ All packs are independently opt-in, including the three design-practice IDs abov
 when using a CLI that includes them; this table lists availability, not installed
 state. No pack installs Nova, Maya or another pack. Existing agents update only
 through explicit reinstall/re-add; see [installation](docs/install.md#stack-packs-per-project)
-for updates and removal before downgrade.
+for updates and removal before downgrade: remove every pack the expanded CLI added
+or re-added, not only the three design IDs; older installs show `partial` until
+added again.
 
 React and TypeScript are independent. Adding a pack installs its instructions;
 it does not install compilers, runtimes or project dependencies.

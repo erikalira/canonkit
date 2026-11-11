@@ -821,10 +821,17 @@ project to update that specialist; use the normal core reinstall to update Pixie
 Adding a pack does neither. This source change performs no consumer installation.
 
 The expanded CLI reads existing schema-1 receipts without migration. Older CLIs
-reject receipts containing unknown new IDs: compatibility is not bidirectional.
-Before downgrading, use the expanded CLI to `remove ui-design ui-review game-art-direction`
-for the packs installed. Resolve reported conflicts first; edited copies and
-unresolved ownership remain preserved. Never delete the receipt to force downgrade.
+reject receipts containing entries they do not know: compatibility is not
+bidirectional. This covers more than the three design IDs. A pack that the
+expanded CLI adds or re-adds, of any ID, also records the `.github/skills` copy
+under a `<id>:copilot:SKILL.md` receipt key, which an older CLI rejects as an
+invalid entry. Before downgrading, use the expanded CLI to `remove` every pack it
+added or re-added (for example `remove react ui-design ui-review game-art-direction`,
+naming every ID that `list` does not show as `absent` or as `partial` from an older
+install; `locally modified` and `partial (pending)` packs also block an older CLI). An install made only by an older CLI
+has no third copy, so the expanded CLI's `list` reports it as `partial` until you
+`add` it again. Resolve reported conflicts first; edited copies and unresolved
+ownership remain preserved. Never delete the receipt to force downgrade.
 
 Repeating `add` is idempotent when current and updates tracked, unchanged copies.
 A locally edited copy or an untracked destination causes an install/update
