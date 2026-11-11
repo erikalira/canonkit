@@ -1,7 +1,7 @@
 import { after, before, describe, test } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, readlink, lstat } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, readdir, rm, symlink, readlink, lstat, cp } from "node:fs/promises";
 import { realpathSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import os from "node:os";
@@ -344,5 +344,99 @@ describe("project stack packs", () => {
     release(); assert.equal(await first, 0);
     assert.equal(await s.store().change(["python"]), 0);
     assert.equal(Object.keys(JSON.parse(await readFile(receipt(s.project), "utf8")).files).length, 6);
+  });
+
+  // A genuine receipt written by the two-target CLI (commit 1637bbd): `react`
+  // and `go`, targets .agents and .claude only. See the fixture's PROVENANCE.md.
+  describe("receipts written by the two-target CLI", () => {
+    const legacy = path.join(REPO, "test", "fixtures", "stack-packs-legacy", "project");
+    const installLegacy = async (name) => {
+      const s = await setup(name);
+      await cp(legacy, s.project, { recursive: true });
+      return s;
+    };
+    const copies = async (project, pack) => Object.fromEntries(await Promise.all([".agents", ".claude"]
+      .map(async (root) => [root, hash(await readFile(target(project, pack, root)))])));
+
+    test("the fixture holds only the two original targets, and its hashes match its files", async () => {
+      const files = JSON.parse(await readFile(path.join(legacy, ".canonkit", "stack-packs.json"), "utf8")).files;
+      assert.deepEqual([...new Set(Object.keys(files).map((key) => key.split(":")[1]))].sort(), ["agents", "claude"]);
+      assert.equal(Object.keys(files).length, 4);
+      for (const [key, digest] of Object.entries(files)) {
+        const [pack, name] = key.split(":");
+        assert.equal(hash(await readFile(target(legacy, pack, name === "agents" ? ".agents" : ".claude"))), digest);
+      }
+    });
+
+    test("a legacy install lists as partial and list leaves every byte unchanged", async () => {
+      const s = await installLegacy("legacy-list");
+      const before = await snapshot(s.project);
+      const listed = s.run(["list"]);
+      assert.equal(listed.status, 0, listed.out);
+      for (const id of ["react", "go"]) assert.match(listed.out, new RegExp(`${id}\\s+partial`));
+      assert.doesNotMatch(listed.out, /^\s+\S+\s+(installed|untracked\/collision)\s*$/m);
+      assert.deepEqual(await snapshot(s.project), before);
+      assert.deepEqual(await readFile(receipt(s.project)), await readFile(path.join(legacy, ".canonkit", "stack-packs.json")));
+    });
+
+    test("re-adding a legacy pack adds the third copy and keeps the original copies and the unrelated pack", async () => {
+      const s = await installLegacy("legacy-readd");
+      const initial = JSON.parse(await readFile(receipt(s.project), "utf8"));
+      // Precondition: the unchanged-bytes claim holds only while the pack sources
+      // still equal what the baseline CLI copied. If this fails, regenerate the
+      // fixture (see PROVENANCE.md); a changed source is updated like any tracked copy.
+      for (const id of ["react", "go"]) for (const root of [".agents", ".claude"]) {
+        assert.equal(await readFile(target(s.project, id, root), "utf8"), readStackPack(id).text, `${id} source changed since the fixture was generated`);
+      }
+      const react = await copies(s.project, "react"), go = await copies(s.project, "go");
+      const added = s.run(["add", "react"]);
+      assert.equal(added.status, 0, added.out);
+      const state = JSON.parse(await readFile(receipt(s.project), "utf8"));
+      assert.equal(state.schemaVersion, 1);
+      assert.equal(state.pending, null);
+      assert.deepEqual(Object.keys(state.files).filter((key) => key.startsWith("react:")).sort(),
+        ["agents", "claude", "copilot"].map((name) => `react:${name}:SKILL.md`));
+      for (const [key, digest] of Object.entries(initial.files)) assert.equal(state.files[key], digest, `${key} hash is unchanged`);
+      assert.deepEqual(await copies(s.project, "react"), react);
+      assert.deepEqual(await copies(s.project, "go"), go);
+      assert.equal(await readFile(target(s.project, "react", ".github"), "utf8"), readStackPack("react").text);
+      assert.equal(existsSync(target(s.project, "go", ".github")), false, "the unrelated pack gains no copy");
+      assert.equal(Object.keys(state.files).filter((key) => key.startsWith("go:")).length, 2);
+      const listed = s.run(["list"]);
+      assert.match(listed.out, /react\s+installed/);
+      assert.match(listed.out, /go\s+partial/);
+    });
+
+    test("unknown receipt entries are still rejected, without changing the receipt", async () => {
+      const s = await installLegacy("legacy-unknown");
+      const data = JSON.parse(await readFile(receipt(s.project), "utf8"));
+      data.files["react:unknown:SKILL.md"] = "0".repeat(64);
+      await writeFile(receipt(s.project), JSON.stringify(data, null, 2) + "\n");
+      const before = await snapshot(s.project);
+      for (const args of [["list"], ["add", "react"]]) {
+        const r = s.run(args);
+        assert.notEqual(r.status, 0, r.out);
+        assert.match(r.out, /Invalid stack-pack receipt entry/);
+      }
+      assert.deepEqual(await snapshot(s.project), before);
+    });
+
+    test("an untracked third destination is a collision, listed and refused without touching its content", async () => {
+      const s = await installLegacy("legacy-collision");
+      const stranger = path.join(s.project, ".github", "skills", "canonkit-react");
+      await mkdir(stranger, { recursive: true });
+      await writeFile(path.join(stranger, "NOTES.md"), "not canonkit's\n");
+      const before = await snapshot(s.project);
+      const listed = s.run(["list"]);
+      assert.equal(listed.status, 0, listed.out);
+      assert.match(listed.out, /react\s+untracked\/collision/);
+      assert.doesNotMatch(listed.out, /react\s+partial/);
+      assert.match(listed.out, /go\s+partial/);
+      assert.deepEqual(await snapshot(s.project), before);
+      const added = s.run(["add", "react"]);
+      assert.notEqual(added.status, 0, added.out);
+      assert.match(added.out, /collision/i);
+      assert.deepEqual(await snapshot(s.project), before);
+    });
   });
 });

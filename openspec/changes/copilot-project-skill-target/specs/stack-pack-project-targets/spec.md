@@ -29,7 +29,7 @@ A schema-1 receipt that lists only the `.agents` and `.claude` entries of a pack
 - **AND** the receipt file is byte-identical afterwards
 
 ### Requirement: Re-adding a legacy pack completes it without altering existing copies
-Adding a pack that is `partial` because only its two original copies exist SHALL create the third copy and its receipt entry, and SHALL leave the bytes and receipt hashes of the existing copies and of every other pack unchanged.
+Adding a pack that is `partial` because only its two original copies exist SHALL create the third copy and its receipt entry, and SHALL leave every other pack unchanged. Where the existing copies match the current pack source, their bytes and receipt hashes SHALL also stay unchanged; otherwise they are updated like any tracked, unedited copy.
 
 #### Scenario: A legacy pack is re-added
 - **GIVEN** a two-target install of one pack alongside an unrelated pack

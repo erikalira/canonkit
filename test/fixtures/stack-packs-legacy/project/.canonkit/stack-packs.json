@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "files": {
+    "react:agents:SKILL.md": "4ee4d604e69ef55df53fe09fd338f338ce321b1dd245d0f0305beb70ddba54fd",
+    "react:claude:SKILL.md": "4ee4d604e69ef55df53fe09fd338f338ce321b1dd245d0f0305beb70ddba54fd",
+    "go:agents:SKILL.md": "7c0c68d368f7ab7dc0fc66fb3027e7a9f0ac88d376c469dec9bf5504bf464bdc",
+    "go:claude:SKILL.md": "7c0c68d368f7ab7dc0fc66fb3027e7a9f0ac88d376c469dec9bf5504bf464bdc"
+  },
+  "pending": null
+}
