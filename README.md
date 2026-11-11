@@ -319,6 +319,7 @@ Which gate does what in each runtime:
 | Command | What it does |
 | --- | --- |
 | `install` | global core distribution; supported native Claude security and user-scoped strict-network lock; unregisters attributable older Claude hooks in user/current-repository settings (`--claude` / `--codex` / `--opencode` / `--copilot` skip the menu) |
+| `install --verbose` | prints every step; the default is a short summary per runtime that says whether anything changed |
 | `install --wire-hooks` | distribution and native security; skips Claude hook cleanup and wires supported hooks (Claude Code, Codex, OpenCode) |
 | `doctor` | read-only installation and security diagnosis; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |

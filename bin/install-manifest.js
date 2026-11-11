@@ -122,7 +122,7 @@ async function atomic(file, bytes, { keepMode = false, privateParent = false, pu
  * Only global install/reference use this store; project tools own their setup.
  */
 export class InstallManifest {
-  constructor({ home, roots, catalog, targets, stateDir, dryRun = false, log = () => {}, checkpoint = async () => {} }) {
+  constructor({ home, roots, catalog, targets, stateDir, dryRun = false, log = () => {}, checkpoint = async () => {}, onChange = null }) {
     this.home = path.resolve(home);
     this.roots = roots;
     this.catalog = new Map(catalog.map((entry) => [entry.id, entry]));
@@ -130,6 +130,7 @@ export class InstallManifest {
     this.targets = targets;
     this.dryRun = dryRun;
     this.log = log;
+    this.onChange = onChange;
     this.checkpoint = checkpoint;
     const globalDir = path.join(this.home, ".canonkit");
     this.dir = stateDir === undefined ? globalDir : path.resolve(stateDir);
@@ -364,6 +365,7 @@ export class InstallManifest {
     const newBlock = spec.kind === "block" ? removeManagedBlock(after, spec.markers).block : after;
     if (spec.kind === "block" && !newBlock) throw new Error("Managed block missing from planned install");
     const changed = digest(before) !== digest(after);
+    if (changed) this.onChange?.(target);
     const entry = { id: spec.id, kind: spec.kind, root: spec.root, relative: spec.relative, owners,
       provenance: old?.provenance ?? (changed ? (before === null ? "created" : "modified") : "observed"), hash: digest(newBlock) };
     if (old?.provenance === "observed" && changed) entry.provenance = "modified";

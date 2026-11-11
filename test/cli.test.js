@@ -54,8 +54,10 @@ async function scratch(name) {
   return { root, home, project };
 }
 
-function run(args, { home, cwd, env = {} }) {
-  const result = spawnSync(process.execPath, [CLI, ...args], {
+function run(args, { home, cwd, env = {}, compact = false }) {
+  // The tests below read the detailed steps; install's default is a short summary (tested separately).
+  const argv = args[0] === "install" && !compact && !args.includes("--verbose") ? [...args, "--verbose"] : args;
+  const result = spawnSync(process.execPath, [CLI, ...argv], {
     cwd: cwd ?? home,
     encoding: "utf8",
     // os.homedir() reads USERPROFILE on Windows and HOME elsewhere. Setting

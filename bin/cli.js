@@ -28,6 +28,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
+import { renderInstallReport } from "./install-report.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
 import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
@@ -3012,7 +3013,7 @@ function unwireTrackedPermissions(beforeBytes, afterBytes, currentBytes) {
 }
 
 async function globalManifest(ctx, targets) {
-  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log });
+  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log, onChange: ctx.onChange });
 }
 
 async function trackedGlobal(ctx, targets, action) {
@@ -3087,6 +3088,7 @@ Usage:
            [--claude] [--codex]       for these runtimes only (asked in a terminal;
            [--opencode] [--copilot]   default Claude Code and Codex)
            [--wire-hooks]             also wire hooks for selected runtimes that support them
+           [--verbose]                print every step instead of the short summary
   canonkit doctor                     check the install; exits 1 on any FAIL
   canonkit uninstall [--claude] [--codex] [--opencode] [--copilot]
                                       remove tracked global entries (default: all recorded runtimes)
@@ -3215,7 +3217,7 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--claude", "--codex", "--opencode", "--copilot", "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", "-h", "--help", "-v", "--version"];
 
 async function main(argv) {
   const flags = argv.filter((a) => a.startsWith("-"));
@@ -3253,6 +3255,10 @@ async function main(argv) {
     console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
     return 1;
   }
+  if (flags.includes("--verbose") && command !== "install") {
+    console.error("--verbose is only valid for: canonkit install");
+    return 1;
+  }
   if (flags.includes("--wire-hooks") && command !== "install") {
     console.error("--wire-hooks is only valid for: canonkit install");
     return 1;
@@ -3272,7 +3278,25 @@ async function main(argv) {
         console.error("Cancelled: nothing was installed.");
         return 1;
       }
-      await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
+      // Default output is a short grouped summary; --verbose prints every step as it happens.
+      const verbose = flags.includes("--verbose");
+      const lines = [];
+      const changed = new Set();
+      if (!verbose) {
+        const tag = ctx.dryRun ? "[dry-run] " : "";
+        ctx.log = (m) => { lines.push(m ? tag + m : ""); };
+        ctx.onChange = (file) => changed.add(file);
+      }
+      let failed = true;
+      try {
+        await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
+        failed = false;
+      } finally {
+        if (!verbose) {
+          const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
+          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed }).join("\n"));
+        }
+      }
       return 0;
     }
     case "uninstall":
