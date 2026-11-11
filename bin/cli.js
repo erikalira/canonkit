@@ -29,6 +29,7 @@ import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { renderInstallReport } from "./install-report.js";
+import { renderDoctorReport } from "./doctor-report.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
 import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
@@ -2047,7 +2048,7 @@ async function securityDiagnosis() {
   return rows;
 }
 
-async function doctor() {
+async function doctor({ verbose = false } = {}) {
   const home = os.homedir();
   const claudeDir = claudeHome();
   const results = [];
@@ -2310,6 +2311,11 @@ async function doctor() {
   const optionalChecks = new Set(["hook file", "hook syntax", "log"]);
   const report = results.filter((row) => (claudeInstalled || !otherInstalled || !claudeChecks.has(row.check)) && (claudeHooksActive || !optionalChecks.has(row.check)));
   report.push(...await securityDiagnosis());
+  if (!verbose) {
+    const { lines, failed: bad } = renderDoctorReport(report);
+    console.log(lines.join("\n"));
+    return bad ? 1 : 0;
+  }
   for (const r of report) {
     console.log(`${r.status.padEnd(4)} ${r.check}: ${r.detail}`);
     for (const m of r.more) console.log(`       ${m}`);
@@ -3089,7 +3095,7 @@ Usage:
            [--opencode] [--copilot]   default Claude Code and Codex)
            [--wire-hooks]             also wire hooks for selected runtimes that support them
            [--verbose]                print every step instead of the short summary
-  canonkit doctor                     check the install; exits 1 on any FAIL
+  canonkit doctor [--verbose]         check the install; exits 1 on any FAIL (--verbose: every row in full)
   canonkit uninstall [--claude] [--codex] [--opencode] [--copilot]
                                       remove tracked global entries (default: all recorded runtimes)
   canonkit reference [--claude] [--codex] [--opencode] [--copilot]
@@ -3255,8 +3261,8 @@ async function main(argv) {
     console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
     return 1;
   }
-  if (flags.includes("--verbose") && command !== "install") {
-    console.error("--verbose is only valid for: canonkit install");
+  if (flags.includes("--verbose") && !["install", "doctor"].includes(command)) {
+    console.error("--verbose is only valid for: canonkit install, canonkit doctor");
     return 1;
   }
   if (flags.includes("--wire-hooks") && command !== "install") {
@@ -3304,7 +3310,7 @@ async function main(argv) {
       if (rest.length || flags.some((flag) => !["--dry-run", "--claude", "--codex", "--opencode", "--copilot"].includes(flag))) throw new Error("uninstall accepts only --dry-run and harness selection flags");
       return uninstallGlobal(ctx, flags);
     case "doctor":
-      return doctor();
+      return doctor({ verbose: flags.includes("--verbose") });
     case "reference":
       // No menu here: reference is the re-sync after editing a block, run
       // from scripts as often as by hand.

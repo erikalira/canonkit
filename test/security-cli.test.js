@@ -22,7 +22,8 @@ async function fixture(t, version = "2.1.314") {
   const env = { ...process.env, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), PATH: bin };
   for (const key of Object.keys(env)) if ((key.toUpperCase() === "PATH" && key !== "PATH") || ["CLAUDE_CONFIG_DIR", "CODEX_HOME", "NODE_OPTIONS", "NODE_PATH", "CANONKIT_CODEX_MODEL"].includes(key)) delete env[key];
   const run = (args, cwd = project, extra = {}) => {
-    const result = spawnSync(process.execPath, [CLI, ...args], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
+    const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
+    const result = spawnSync(process.execPath, [CLI, ...argv], { cwd, env: { ...env, ...extra }, encoding: "utf8" });
     assert.ifError(result.error);
     return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
   };

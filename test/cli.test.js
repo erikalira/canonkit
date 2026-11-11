@@ -56,7 +56,7 @@ async function scratch(name) {
 
 function run(args, { home, cwd, env = {}, compact = false }) {
   // The tests below read the detailed steps; install's default is a short summary (tested separately).
-  const argv = args[0] === "install" && !compact && !args.includes("--verbose") ? [...args, "--verbose"] : args;
+  const argv = (args[0] === "install" || args[0] === "doctor") && !compact && !args.includes("--verbose") ? [...args, "--verbose"] : args;
   const result = spawnSync(process.execPath, [CLI, ...argv], {
     cwd: cwd ?? home,
     encoding: "utf8",
@@ -1463,7 +1463,8 @@ describe("hooks", () => {
 function runIn(args, { home, cwd, env = {} }) {
   const e = isolatedEnv(home, env);
   if (!("CLAUDE_PROJECT_DIR" in env)) delete e.CLAUDE_PROJECT_DIR;
-  const result = spawnSync(process.execPath, [CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: e });
+  const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
+  const result = spawnSync(process.execPath, [CLI, ...argv], { cwd: cwd ?? home, encoding: "utf8", env: e });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
 
