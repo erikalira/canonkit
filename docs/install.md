@@ -466,7 +466,8 @@ For Claude Code it runs `claude --version` and `claude --help`, and reads the mo
 aliases and effort levels the help text lists. The help quotes only example aliases,
 so the list adds the family aliases Claude Code documents (`fable`, `opus`,
 `sonnet`, `haiku`; the ones its Agent tool accepts). When Claude Code's
-`availableModels` applies (managed settings, else your `~/.claude/settings.json`;
+`availableModels` applies (managed settings, else your Claude user settings at
+`CLAUDE_CONFIG_DIR/settings.json` when set or `~/.claude/settings.json`;
 only that key is read), the list keeps the aliases it permits and adds the
 versions it names. Claude Code has no command that lists every version your account
 can use, so other versions go through `other…`. That text is not a contract, so the

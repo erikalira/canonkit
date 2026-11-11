@@ -289,15 +289,40 @@ describe("claude availableModels", () => {
       const home = path.join(root, "home");
       const managed = path.join(root, "managed");
       const put = async (file, data) => { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, typeof data === "string" ? data : JSON.stringify(data)); };
-      assert.equal(claudeModelPolicy({ home, managed }), null);
+      assert.equal(claudeModelPolicy({ home, managed, configDir: null }), null);
       await put(path.join(home, ".claude", "settings.json"), { env: { SECRET: "x" }, availableModels: ["sonnet", "bad name!"] });
       // Only valid names are kept, and nothing else from the file.
-      assert.deepEqual(claudeModelPolicy({ home, managed }), { models: ["sonnet"], source: "user settings" });
+      assert.deepEqual(claudeModelPolicy({ home, managed, configDir: null }), { models: ["sonnet"], source: "user settings" });
       await put(path.join(managed, "managed-settings.json"), { availableModels: ["opus"] });
       await put(path.join(managed, "managed-settings.d", "20-team.json"), { availableModels: ["haiku"] });
       await put(path.join(managed, "managed-settings.d", "10-base.json"), { other: true });
       await put(path.join(managed, "managed-settings.d", "30-broken.json"), "{ not json");
-      assert.deepEqual(claudeModelPolicy({ home, managed }), { models: ["haiku"], source: "managed settings" });
+      assert.deepEqual(claudeModelPolicy({ home, managed, configDir: null }), { models: ["haiku"], source: "managed settings" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("user settings follow CLAUDE_CONFIG_DIR and reject relative overrides", async () => {
+    const root = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-policy-config-")));
+    try {
+      const home = path.join(root, "home");
+      const configDir = path.join(root, "claude-config");
+      const managed = path.join(root, "managed");
+      const put = async (file, data) => { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, JSON.stringify(data)); };
+      await put(path.join(home, ".claude", "settings.json"), { availableModels: ["opus"] });
+      await put(path.join(configDir, "settings.json"), { availableModels: ["sonnet"] });
+
+      const previousConfigDir = process.env.CLAUDE_CONFIG_DIR;
+      try {
+        process.env.CLAUDE_CONFIG_DIR = configDir;
+        assert.deepEqual(claudeModelPolicy({ home, managed }), { models: ["sonnet"], source: "user settings" });
+        process.env.CLAUDE_CONFIG_DIR = "relative-config";
+        assert.throws(() => claudeModelPolicy({ home, managed }), /CLAUDE_CONFIG_DIR must be an absolute directory/);
+      } finally {
+        if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+        else process.env.CLAUDE_CONFIG_DIR = previousConfigDir;
+      }
     } finally {
       await rm(root, { recursive: true, force: true });
     }

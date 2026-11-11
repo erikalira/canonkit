@@ -187,7 +187,8 @@ function managedDir(platform) {
  * policy. Source: https://code.claude.com/docs/en/settings,
  * https://code.claude.com/docs/en/managed-settings, checked 2026-11-10.
  */
-function claudeModelPolicy({ home = os.homedir(), platform = process.platform, managed = managedDir(platform) } = {}) {
+function claudeModelPolicy({ home = os.homedir(), configDir = process.env.CLAUDE_CONFIG_DIR, platform = process.platform, managed = managedDir(platform) } = {}) {
+  if (configDir && !path.isAbsolute(configDir)) throw new Error("CLAUDE_CONFIG_DIR must be an absolute directory");
   let list;
   const files = [path.join(managed, "managed-settings.json")];
   try {
@@ -201,7 +202,8 @@ function claudeModelPolicy({ home = os.homedir(), platform = process.platform, m
     if (found !== undefined) list = { models: found, source: "managed settings" };
   }
   if (list) return list;
-  const user = availableModelsIn(path.join(home, ".claude", "settings.json"));
+  const claudeHome = path.resolve(configDir || path.join(home, ".claude"));
+  const user = availableModelsIn(path.join(claudeHome, "settings.json"));
   return user !== undefined ? { models: user, source: "user settings" } : null;
 }
 
