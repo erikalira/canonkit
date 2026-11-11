@@ -408,6 +408,31 @@ a `true` value that already existed before installation is not adopted as kit
 ownership. Other settings remain intact. Migrated hook removals are not reversed;
 use the selective manual recovery above if a registration must be restored.
 
+## Tool access levels
+
+An agent source may declare `access: <level>` (one lowercase line in the agent's frontmatter):
+
+`access` reduces the tools exposed to an agent's context. It is **not a security
+boundary**, and `read` is not read-only: it keeps Bash, so an agent can still write files.
+
+| Level | Claude Code translation |
+|---|---|
+| `read` | allowlist: Read, Grep, Glob, Bash, WebSearch, WebFetch, Skill (no MCP tools) |
+| `inspect` | denylist: Edit, Write, NotebookEdit. Unlike `read`, it keeps every MCP tool (such as browser tools), whatever name it was installed under |
+| `write-docs` | the `read` allowlist plus Edit and Write |
+| `full` | no restriction |
+
+No `access` means no restriction, so project specialists behave as before.
+Sources may not carry `tools`, `disallowedTools`, `skills`, `mcpServers` or
+`omitClaudeMd`; validation rejects them. Only **Claude Code** translates
+`access`; Codex, OpenCode and Copilot install the agent unrestricted. For Codex this is a gap in the harness, not an omission: per its subagent documentation (read 2026-11-11), a custom agent file cannot set an allowlist, a sandbox, approvals or MCP scope (it inherits the parent turn's), and read-only can only be asked for in instructions. It can only switch off whole features (`features.shell_tool`, `features.apps` and similar) and skills, which would also remove the shell a reviewer uses to run tests, so no level maps to it.
+
+`canonkit models show` prints each agent's level and the restriction it resolves
+to (it reads the stored config only, starts no agent and prints no token count). To measure
+the start-up cost yourself, dispatch the same trivial task to an installed agent
+with and without `access` (reinstall after removing the line), in the foreground
+and in the background, and compare the token usage each run reports.
+
 ## Choosing models
 
 Each agent declares how demanding its normal work is, as a **need level** in its

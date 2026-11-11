@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { accessProblem } from "../bin/agent-access.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -209,6 +210,19 @@ function frontmatterField(lines, key, fullLine = false) {
   return "";
 }
 
+function frontmatterLines(lines) {
+  const out = [];
+  let active = false;
+  for (const line of lines) {
+    const l = line.trimEnd();
+    if (l === "---") {
+      if (active) break;
+      active = true;
+    } else if (active) out.push(l);
+  }
+  return out;
+}
+
 function validateFrontmatter(reporter, root = REPO_ROOT) {
   reporter.heading("Frontmatter");
   for (const file of filesIn(path.join(root, "agents"), ".md")) {
@@ -225,6 +239,7 @@ function validateFrontmatter(reporter, root = REPO_ROOT) {
     const model = frontmatterField(lines, "model");
     const need = frontmatterField(lines, "need");
     const tier = frontmatterField(lines, "tier");
+    let accessIssue;
     if (!name) reporter.fail(`${base}: no name in frontmatter`);
     else if (name !== base) reporter.fail(`${base}: frontmatter name is '${name}' — must match the filename`);
     else if (!description) reporter.fail(`${base}: no description in frontmatter`);
@@ -233,6 +248,7 @@ function validateFrontmatter(reporter, root = REPO_ROOT) {
     else if (model) reporter.fail(`${base}: 'model: ${model}' is no longer accepted — replace it with need: light | standard | deep`);
     else if (!["light", "standard", "deep"].includes(need)) reporter.fail(`${base}: need is '${need || "missing"}' — expected light, standard, or deep`);
     else if (!["core", "specialist"].includes(tier)) reporter.fail(`${base}: tier is '${tier || "missing"}' — the installers derive the split from it`);
+    else if ((accessIssue = accessProblem(frontmatterLines(lines)))) reporter.fail(`${base}: ${accessIssue}`);
     else {
       const length = Buffer.byteLength(description, "utf8");
       if (length < 60) reporter.warn(`${base}: description is very short (${length} chars) — say what the agent owns`);

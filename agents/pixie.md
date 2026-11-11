@@ -3,6 +3,7 @@ name: pixie
 description: "Use for UX: flows, UI states, accessibility, task/reading priority, interaction consistency, microcopy, design handoff. Veto on understandability/accessibility. Not for visual style alone."
 tier: core
 need: standard
+access: inspect
 ---
 
 ## Mission

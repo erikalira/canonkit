@@ -86,6 +86,15 @@ Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) â
 never concurrent file-editing agents in one tree, where each overwrites the
 other's edits and invalidates the other's test run.
 
+## Briefing by access level
+
+A reviewer or advisor whose `access` is `read` or `inspect` cannot edit files
+(`canonkit models show` prints each agent's level and effective restriction):
+ask it for findings with `file:line`, never for a patch. When a MEDIUM/HIGH
+review needs a fix, send the finding to Bob as a new brief. If a restricted
+agent reports a missing tool, treat it as a routing gap and raise it, rather
+than widening the level on the spot.
+
 ## Briefing scratch work
 
 A brief that asks for work outside the repository carries the block's rule

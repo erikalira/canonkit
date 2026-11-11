@@ -860,13 +860,16 @@ describe("model choices", () => {
     assert.equal(existsSync(path.join(outside, "agents", "archie.toml")), false);
   });
 
+  // The installer adds the tool restriction translated from `access`; the rest is the source.
+  const unrestricted = (t) => t.replace(/^(tools|disallowedTools): .*\n/m, "");
+
   test("no configuration: Claude agents are the source, byte for byte, with no model", async () => {
     const { root, home } = await scratch("models-none");
     const { env } = await recordingClaude(root);
     assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
     for (const name of CORE) {
       const text = await read(path.join(home, ".claude", "agents", `${name}.md`));
-      assert.equal(text, await source(name), name);
+      assert.equal(unrestricted(text), await source(name), name);
       assert.doesNotMatch(text, /^(model|effort):/m);
     }
   });
@@ -877,7 +880,7 @@ describe("model choices", () => {
     await writeJson(userModels(home), { version: 1, harnesses: { claude: { levels: { deep: { model: "opus", effort: "high" } }, agents: { quinn: { effort: "xhigh" } } } } });
     assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
     const archie = await read(path.join(home, ".claude", "agents", "archie.md"));
-    assert.match(archie, /^need: deep\nmodel: "opus"\neffort: "high"\n---$/m);
+    assert.match(archie, /^need: deep\naccess: read\ntools: [^\n]+\nmodel: "opus"\neffort: "high"\n---$/m);
     assert.equal(body(archie), body(await source("archie")));
     const quinn = await read(path.join(home, ".claude", "agents", "quinn.md"));
     assert.match(quinn, /^effort: "xhigh"$/m);
@@ -888,7 +891,7 @@ describe("model choices", () => {
 
     await writeJson(userModels(home), { version: 1, harnesses: {} });
     assert.equal(run(["install", "--claude", "--no-reference"], { home, env }).status, 0);
-    assert.equal(await read(path.join(home, ".claude", "agents", "archie.md")), await source("archie"));
+    assert.equal(unrestricted(await read(path.join(home, ".claude", "agents", "archie.md"))), await source("archie"));
   });
 
   test("install refreshes discovery; a dry run starts nothing and says so", async () => {

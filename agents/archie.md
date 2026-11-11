@@ -3,6 +3,7 @@ name: archie
 description: "Use for architecture: patterns, module/service boundaries, public contracts, data models, new services, overengineering risk. Veto on architecture. Not for routine implementation."
 tier: core
 need: deep
+access: read
 ---
 
 ## Mission
