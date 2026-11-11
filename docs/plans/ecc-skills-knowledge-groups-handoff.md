@@ -4,7 +4,7 @@ Data: 2026-11-09. Estado: **G01–G03 revisados, V/L incorporados ao planejament
 
 Atualização do apply em 2026-11-09: os V/L aceitos de G01–G03 foram implementados nas fontes locais
 da change visual; progresso, evidências offline, reviews e limites atuais ficam
-em [tasks.md](../../openspec/changes/ui-focused-visual-workflow/tasks.md).
+em [tasks.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md).
 O inventário e as classificações abaixo preservam o diagnóstico histórico.
 G04 continua adiado; implementação local não significa instalação nem eficácia
 comportamental medida.
@@ -52,7 +52,7 @@ A prioridade **1** indica revisão transversal ou change em andamento; **2**, ap
 
 Nas tabelas de revisão, prioridade **1** significa incorporar nesta revisão; **2**, verificação condicional à superfície; **3**, demanda futura; **—**, nenhuma adição. Os códigos V/L ficam como rastreio do diagnóstico: todos os de G01–G03 foram aceitos no planejamento, sem alegar implementação. G04 mantém o diagnóstico, mas foi adiado por decisão explícita do usuário, inclusive os acréscimos portáveis nativos.
 
-Destinos M1–M4 remetem às decisões consolidadas do [design visual](../../openspec/changes/ui-focused-visual-workflow/design.md) e aos requisitos/cenários de [interface workflow](../../openspec/changes/ui-focused-visual-workflow/specs/interface-design-workflow/spec.md). Este handoff preserva a comparação e as decisões; os artefatos da change são a fonte de verdade para implementação e aceitação.
+Destinos M1–M4 remetem às decisões consolidadas do [design visual](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md) e aos requisitos/cenários de [interface workflow](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/specs/interface-design-workflow/spec.md). Este handoff preserva a comparação e as decisões; os artefatos da change são a fonte de verdade para implementação e aceitação.
 
 ## O que já está presente, sem confundir com paridade ECC
 
@@ -66,7 +66,7 @@ Destinos M1–M4 remetem às decisões consolidadas do [design visual](../../ope
 | Aprendizado manual | [Learning loop](../../skills/learning-loop/SKILL.md), [seu desenho](learning-loop-design.md). | Propostas humanas e evidência são deliberadas; não há equivalência com observação automática e promoção de instincts. |
 | Contexto e medição | [Context tune](../../skills/context-tune/SKILL.md), [telemetria](../telemetry.md), [Perry](../../agents/perry.md). | Volume de resultados, tokens observados e orçamento de performance são coisas diferentes; telemetria atual não fornece custo monetário exato. |
 | Avaliação de instruções | [Evals](../evals.md), [rubrica](../../evals/instruction-rubric.json), [avaliação histórica do ECC](../../evals/audits/2026-10-29-ecc.json). | Infraestrutura e resultados antigos não comprovam adesão às 314 skills atuais; melhoria comportamental continua não medida sem ensaios correspondentes. |
-| UI visual | [Proposta](../../openspec/changes/ui-focused-visual-workflow/proposal.md), [design](../../openspec/changes/ui-focused-visual-workflow/design.md), [tasks](../../openspec/changes/ui-focused-visual-workflow/tasks.md). | **Planejamento, 0/12 tarefas implementadas** no estado inspecionado. `ui-design`, `ui-review` e `game-art-direction` ainda não estão no catálogo. |
+| UI visual | [Proposta](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/proposal.md), [design](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md), [tasks](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md). | **Planejamento, 0/12 tarefas implementadas** no estado inspecionado (histórico de 2026-11-09; a change foi implementada, 12/12, e arquivada em 2026-11-11). `ui-design`, `ui-review` e `game-art-direction` ainda não estão no catálogo. |
 
 ## Mapa dos grupos
 
@@ -126,7 +126,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Prioridade 1; revisado em 2026-11-09; 9 skills.**
 
-**Evidência local:** [Pixie](../../agents/pixie.md), [Nova](../../agents/nova.md) e [change visual](../../openspec/changes/ui-focused-visual-workflow/design.md).
+**Evidência local:** [Pixie](../../agents/pixie.md), [Nova](../../agents/nova.md) e [change visual](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md).
 
 **O que vale avaliar:** Completar a change existente com estados explícitos, acabamento concreto, auditoria de tokens quando necessária e evidência renderizada. Incluir as outras skills de UI na comparação; as três referências atuais não esgotam este grupo.
 
@@ -172,7 +172,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Prioridade 2; revisado em 2026-11-09; 3 skills.**
 
-**Evidência local:** [Divisão visual/UX planejada](../../openspec/changes/ui-focused-visual-workflow/specs/visual-design-ownership/spec.md), [Perry](../../agents/perry.md).
+**Evidência local:** [Divisão visual/UX planejada](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/specs/visual-design-ownership/spec.md), [Perry](../../agents/perry.md).
 
 **O que vale avaliar:** Comparar propósito do movimento, reduced motion, continuidade e estabilidade. Separar princípios portáveis das receitas motion/react e dos presets fixos.
 
@@ -864,7 +864,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Prioridade 3; revisão pendente; 12 skills.**
 
-**Evidência local:** [Nova](../../agents/nova.md), [Echo](../../agents/echo.md), [plano de game art](../../openspec/changes/ui-focused-visual-workflow/specs/game-art-direction/spec.md).
+**Evidência local:** [Nova](../../agents/nova.md), [Echo](../../agents/echo.md), [plano de game art](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/specs/game-art-direction/spec.md).
 
 **O que vale avaliar:** Extrair leitura na escala de uso, referências verificáveis e proveniência. Pipelines de vídeo, geração e edição não estão incorporados só por existir Nova/Echo.
 
@@ -1039,7 +1039,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ## Achados de documentação a preservar
 
-- **Corrigido no planejamento em 2026-11-09 — baseline da change visual:** [proposal.md](../../openspec/changes/ui-focused-visual-workflow/proposal.md) e [design](../../openspec/changes/ui-focused-visual-workflow/design.md) agora reconhecem as seis capacidades principais e distinguem a baseline histórica do working tree atual. As main specs são reutilizadas, não modificadas por essa correção.
+- **Corrigido no planejamento em 2026-11-09 — baseline da change visual:** [proposal.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/proposal.md) e [design](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md) agora reconhecem as seis capacidades principais e distinguem a baseline histórica do working tree atual. As main specs são reutilizadas, não modificadas por essa correção.
 - O [handoff histórico ECC](ecc-lessons-handoff.md) e a [auditoria de 2026-10-29](../../evals/audits/2026-10-29-ecc.json) são evidências de outros recortes/revisões, incluindo agentes e hooks. Não estender seus vereditos a este catálogo inteiro.
 
 ## Continuação em uma sessão por grupo
@@ -1079,6 +1079,6 @@ Trocar G08 pelo grupo desejado. Antes de continuar, verificar branch/HEAD/dirty 
 | G02 `motion-advanced`: gestos e trabalho contínuo | M4; Motion preserves purpose access and stability | Entrada pertinente/alternativa operável e pausa/limpeza |
 | G03 `react-performance`: conteúdo progressivo estável | M3/M4; Rendered review matches the changed experience | Troca fallback/conteúdo/assets/labels preserva leitura e alvos, com ou sem animação |
 
-Todas essas verificações alimentam as tarefas existentes 2.2 e 3.3; ownership e proporcionalidade ficam em 1.2/1.3. As classificações C/S/P/D e o L adiado de G04 permanecem nas tabelas dos grupos. “Suficiente no planejamento” não significa implementado, instalado ou eficácia medida. A validação documental da revisão e seu review ficam em [tasks.md](../../openspec/changes/ui-focused-visual-workflow/tasks.md), sem duplicar o registro de entrega.
+Todas essas verificações alimentam as tarefas existentes 2.2 e 3.3; ownership e proporcionalidade ficam em 1.2/1.3. As classificações C/S/P/D e o L adiado de G04 permanecem nas tabelas dos grupos. “Suficiente no planejamento” não significa implementado, instalado ou eficácia medida. A validação documental da revisão e seu review ficam em [tasks.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md), sem duplicar o registro de entrega.
 
 
