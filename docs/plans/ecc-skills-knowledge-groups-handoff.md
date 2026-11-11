@@ -1,19 +1,19 @@
 # Handoff — conhecimentos das skills do ECC para revisão no CanonKit
 
-Data: 2026-11-09. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 classificado e adiado; G05–G28 pendentes**.
+Data: 2026-11-11. Estado: **G01–G03 revisados, V/L incorporados ao planejamento visual; G04 reaberto em 2026-11-11 (adiamento levantado; deltas propostos); G08, G09, G10, G12 e G16 revisados (lote 1, sem implementação); demais pendentes**.
 
 Atualização do apply em 2026-11-09: os V/L aceitos de G01–G03 foram implementados nas fontes locais
 da change visual; progresso, evidências offline, reviews e limites atuais ficam
 em [tasks.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md).
 O inventário e as classificações abaixo preservam o diagnóstico histórico.
-G04 continua adiado; implementação local não significa instalação nem eficácia
+O adiamento de G04 foi levantado pelo usuário em 2026-11-11 (ver G04); implementação local não significa instalação nem eficácia
 comportamental medida.
 
 ## Objetivo e próximo passo
 
 Revisar o conhecimento do ECC por grupo, identificar o que já existe no CanonKit e decidir o menor complemento útil. Este documento organiza a comparação; não aprova instalação, importação em massa, criação de agentes, implementação ou publicação. O usuário autorizou a revisão dos artefatos de `ui-focused-visual-workflow` para todos os V/L de G01–G03 e o registro das classificações de G01–G04; isso não autoriza aplicar as instruções planejadas aos agentes/packs.
 
-**Próximo passo da área visual:** implementar a change `ui-focused-visual-workflow` somente após pedido de apply. G01–G03 já têm destino documental; G04 fica para uma futura change focada em stack packs, sem plataforma selecionada nem criação dessa change nesta etapa. Para continuar o inventário, a proposta é revisar G08/G09/G10/G12/G16, que afetam qualidade e confiabilidade em vários projetos; essa ordem não é decisão aprovada.
+**Próximo passo da área visual:** implementar a change `ui-focused-visual-workflow` somente após pedido de apply. G01–G03 já têm destino documental; G04, antes adiado, foi reaberto em 2026-11-11 e tem seus deltas propostos na seção do grupo; packs de plataforma continuam dependendo de plataforma/projeto selecionado. Para continuar o inventário, a proposta é revisar G08/G09/G10/G12/G16, que afetam qualidade e confiabilidade em vários projetos; essa ordem não é decisão aprovada.
 
 ## Fontes, recorte e verificação
 
@@ -50,7 +50,7 @@ A prioridade **1** indica revisão transversal ou change em andamento; **2**, ap
 | P | Conhecimento de framework/plataforma adequado a pack opcional por demanda |
 | D | Adiar ou rejeitar, conforme a justificativa da linha |
 
-Nas tabelas de revisão, prioridade **1** significa incorporar nesta revisão; **2**, verificação condicional à superfície; **3**, demanda futura; **—**, nenhuma adição. Os códigos V/L ficam como rastreio do diagnóstico: todos os de G01–G03 foram aceitos no planejamento, sem alegar implementação. G04 mantém o diagnóstico, mas foi adiado por decisão explícita do usuário, inclusive os acréscimos portáveis nativos.
+Nas tabelas de revisão, prioridade **1** significa incorporar nesta revisão; **2**, verificação condicional à superfície; **3**, demanda futura; **—**, nenhuma adição. Os códigos V/L ficam como rastreio do diagnóstico: todos os de G01–G03 foram aceitos no planejamento, sem alegar implementação. G04 foi adiado em 2026-11-09 e reaberto por decisão explícita do usuário em 2026-11-11; seus códigos passam a valer como os dos demais grupos, sem alegar implementação.
 
 Destinos M1–M4 remetem às decisões consolidadas do [design visual](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/design.md) e aos requisitos/cenários de [interface workflow](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/specs/interface-design-workflow/spec.md). Este handoff preserva a comparação e as decisões; os artefatos da change são a fonte de verdade para implementação e aceitação.
 
@@ -77,19 +77,19 @@ Cada skill aparece em um único grupo principal, mesmo quando toca vários assun
 | [G01](#g01) | UI, UX e acessibilidade | 9 | 1 | Planejado + parcial | Revisado; V/L no planejamento |
 | [G02](#g02) | Motion de interfaces | 3 | 2 | Princípios gerais | Revisado; V/L no planejamento |
 | [G03](#g03) | Frontend web e ferramentas | 10 | 2 | React parcial | Revisado; V/L no planejamento |
-| [G04](#g04) | Mobile e interfaces nativas | 9 | 3 | Linguagens parciais | Classificado; incorporação adiada |
+| [G04](#g04) | Mobile e interfaces nativas | 9 | 3 | Linguagens parciais | Revisado; adiamento levantado, deltas propostos, não aplicados |
 | [G05](#g05) | Linguagens, concorrência e runtime | 12 | 2 | Packs de linguagem existentes | Pendente |
 | [G06](#g06) | Arquitetura, APIs e frameworks backend | 14 | 2 | Arquitetura geral | Pendente |
 | [G07](#g07) | Bancos, ORM e migrações | 10 | 2 | Governança geral | Pendente |
-| [G08](#g08) | Testes, regressão e verificação | 25 | 1 | Protocolos parciais | Pendente |
-| [G09](#g09) | Segurança, permissões e supply chain | 12 | 1 | Segurança parcial | Pendente |
-| [G10](#g10) | Prática de engenharia, revisão e Git | 12 | 1 | Recortes presentes | Pendente |
+| [G08](#g08) | Testes, regressão e verificação | 25 | 1 | Protocolos parciais | Revisado; deltas propostos, não aplicados |
+| [G09](#g09) | Segurança, permissões e supply chain | 12 | 1 | Segurança parcial | Revisado; deltas propostos, não aplicados |
+| [G10](#g10) | Prática de engenharia, revisão e Git | 12 | 1 | Recortes presentes | Revisado; deltas propostos, não aplicados |
 | [G11](#g11) | Produto, escopo e planejamento | 7 | 2 | Descoberta parcial | Pendente |
-| [G12](#g12) | Documentação e navegação de código | 7 | 1 | Documentação parcial | Pendente |
+| [G12](#g12) | Documentação e navegação de código | 7 | 1 | Documentação parcial | Revisado; deltas propostos, não aplicados |
 | [G13](#g13) | Orquestração de equipes e execução paralela | 16 | 2 | Orquestração parcial | Pendente |
 | [G14](#g14) | Construção de agentes e loops autônomos | 11 | 3 | Sem runtime equivalente demonstrado | Pendente |
 | [G15](#g15) | Contexto, memória e aprendizado | 11 | 2 | Continuidade e aprendizado manual | Pendente |
-| [G16](#g16) | Avaliação e diagnóstico de agentes | 7 | 1 | Infraestrutura de eval existente | Pendente |
+| [G16](#g16) | Avaliação e diagnóstico de agentes | 7 | 1 | Infraestrutura de eval existente | Revisado; deltas propostos, não aplicados |
 | [G17](#g17) | Catálogo, instalação e ferramentas do ECC | 18 | 3 | Lifecycle próprio | Pendente |
 | [G18](#g18) | Operações, deploy e ambientes | 13 | 2 | Operações gerais | Pendente |
 | [G19](#g19) | Desempenho, custos e orçamento | 10 | 2 | Medição parcial | Pendente |
@@ -245,7 +245,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ### G04 — Mobile e interfaces nativas
 
-**Prioridade 3; classificado em 2026-11-09; incorporação adiada; 9 skills.**
+**Prioridade 3; classificado em 2026-11-09; adiamento levantado pelo usuário em 2026-11-11; 9 skills.**
 
 **Evidência local:** [Pack Kotlin](../../stack-packs/kotlin/SKILL.md), [Swift](../../stack-packs/swift/SKILL.md), [React](../../stack-packs/react/SKILL.md).
 
@@ -272,15 +272,15 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | `android-clean-architecture`: módulos, UseCases, repositories e DI | P | Kotlin preserva módulos/source sets, sem fornecer esse receituário | Avaliar em pack Android/KMP; não impor arquitetura em ajustes de UI | 3 |
 | `compose-multiplatform-patterns`: estado, navegação, tema e recomposição | P | Kotlin cobre Flow, lifetimes, keys e efeitos de Compose condicionais | Pack de plataforma por demanda; não impor StateFlow/Material 3 universalmente | 3 |
 | `dart-flutter-patterns`: widgets, async e bibliotecas | P | Não há pack Dart/Flutter | Selecionar plataforma/projeto antes de avaliar distribuição | 3 |
-| `flutter-dart-code-review`: texto ampliado, safe areas, orientação, retorno e offline | L | Workflow genérico não explicita essas condições nativas | Aprendizado portável preservado para futura change de stack packs; adiado inclusive esse L por decisão do usuário | 2 |
+| `flutter-dart-code-review`: texto ampliado, safe areas, orientação, retorno e offline | L | Workflow genérico não explicita essas condições nativas | Adotar em [ui-design](../../stack-packs/ui-design/SKILL.md) e [ui-review](../../stack-packs/ui-review/SKILL.md), só quando a superfície é nativa/mobile: texto ampliado, safe areas, orientação, navegação de retorno e estados offline/interrompido. Hoje esses packs citam apenas toque/alvos e entrada por dispositivo (confirmado por grep). Não importar lista fixa de dispositivos nem limites de tamanho | 1 |
 | `flutter-dart-code-review`: lint, state managers, goldens e cobertura | P | Quinn define cobertura por risco; não há suporte Flutter específico | Pack futuro sem limites de linhas, percentuais ou goldens universais | 3 |
-| `foundation-models-on-device`: LLM local e streaming | D | Integração de IA fora do escopo visual | Adiar; disponibilidade e parcialidade já cabem no contrato genérico de estados | 3 |
+| `foundation-models-on-device`: LLM local e streaming | D | Integração de IA fora do escopo de UI nativa | Rejeitar aqui e reavaliar em G20 (IA aplicada); disponibilidade e parcialidade já cabem no contrato genérico de estados | 3 |
 | `ios-icon-gen`: seleção e integração de ícones | P | Nova já considera escala/coerência/proveniência; Swift não inclui gerador | Pack futuro; preservar inspeção no tamanho real sem universalizar scripts/imagesets/fornecedores | 3 |
 | `liquid-glass-design`: materiais e morphing Apple | P | Nova/Pixie/Perry têm as autoridades relevantes | Não universalizar vidro/translucidez; avaliar aparências suportadas e conteúdo real no projeto selecionado | 3 |
 | `react-native-patterns`: Expo, navegação, listas e APIs nativas | P | React não equivale a React Native/Expo | Pack separado por demanda; não transpor DOM/ARIA diretamente ao nativo | 3 |
 | `swiftui-patterns`: estado, composição, navegação e previews | P | Swift cobre ownership/isolamento/tarefas, sem workflow SwiftUI completo | Pack futuro; previews de estados não comprovam dispositivo, navegação ou tecnologia assistiva | 3 |
 
-**Decisão do usuário:** deixar G04 para uma change futura focada em adicionar stack packs. Nenhum procedimento nativo, critério de simulador/dispositivo, safe area ou biblioteca mobile foi adicionado à change visual a partir deste grupo. Os diagnósticos ficam disponíveis para retomada; “parcial” nos packs de linguagem não significa cobertura completa de Android/Compose/SwiftUI. A futura change ainda precisa selecionar plataforma e demanda; não foi criada nesta revisão.
+**Decisão (2026-11-11):** o usuário levantou o adiamento de G04 (decidido em 2026-11-09). O único L, as condições nativas portáveis, entra no conjunto de deltas propostos (prioridade 1) para `ui-design`/`ui-review`, condicionado à superfície nativa/mobile. As receitas por plataforma (Android/KMP, Compose, Flutter, SwiftUI, React Native, ícones iOS, materiais Apple) continuam classe P: viram pack quando houver plataforma/projeto que fixe versões e ferramentas, e “parcial” nos packs de linguagem não significa cobertura de Android/Compose/SwiftUI. Nada foi aplicado; não confundir proposta com implementação nem exigir simulador/dispositivo, safe-area fixa ou biblioteca mobile como política universal.
 
 <a id="g05"></a>
 
@@ -421,7 +421,20 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Atenção ao delta:** os packs existentes incluem orientação de verificação, mas não implementam automaticamente os stacks de teste nomeados na tabela. Cobertura numérica universal, registro obrigatório para todo teste e gates em todo encerramento não são decisões aprovadas. `delivery-gate` tem apenas sobreposição parcial com o Stop gate próprio do CanonKit.
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 25 entrypoints lidos, nenhum falhou; auxiliares não lidos).** Fontes locais conferidas: Quinn, Bob, trechos de Archie/Pipe, [orchestrate](../../skills/orchestrate/SKILL.md), specs de engenharia e de execução de suítes, seções Verify dos packs, cabeçalho do Stop gate.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `tdd-workflow`: RED só vale se falha pelo motivo pretendido | V | Bob exige falha pré-correção "quando prático", sem exigir que o motivo seja o do defeito | Uma cláusula em Bob e no requisito de regressão seletiva; sem rigidez em LOW | 1 |
+| `module-regression`: consumidor afetado e não verificado | V | "Verification by reach" manda achar consumidores, sem dizer o que fazer se a lista é incompleta | Uma frase: aresta não verificada mantém PARTIALLY VERIFIED, nomeando-a | 1 |
+| `verification-loop`: aceitação no ambiente-alvo separada de checks locais | V | orchestrate qualifica a evidência da change; Pipe cobre prontidão de deploy | Uma frase em "Evidence-based completion": local verde não prova ambiente-alvo; relatar a parte não feita como pendente. Cobre também o artefato entregue de `quarkus-verification` | 2 |
+| contrato entre dois lados (`test-collaboration`/`ai-regression-testing`) | V | Archie (forma) e Quinn (consumidores) sem cenário de compatibilidade entre os lados | Uma linha Quinn/Archie: sem contrato verificável, compatibilidade fica inverificada | 2 |
+| `e2e-testing`: quarentena registrada de teste instável | V | Quinn veta skip/retry até passar; falta o caminho legítimo | Sem mudança agora; esclarecer só se surgir demanda | 3 |
+| ciclo RED/GREEN, regressão pontual, revisor independente, paridade mock/real, atribuição de falha, "não aplicável" com motivo, comando único, delivery-gate (Stop) | C | Bob, Quinn, orchestrate, `test-suite-execution`, hook | Nada | — |
+| cobertura 80/90/100, tempos fixos, fases/veredito READY, commits por fase, `REGRESSION.md`, TEST-ID, limiares do delivery-gate | D | Quinn não exige número desvinculado de risco; OpenSpec já guarda evidência; commit exige autorização | Rejeitar como política universal ou registro paralelo | — |
+| receitas de runner/framework: E2E, desktop (UIA), C++/C#/F#/Go/Kotlin/Rust/Python/Swift, Django/Laravel/Spring/Quarkus/Perl, property-based/fuzz | C / P | Packs existentes cobrem o "Verify" de cada linguagem; sem pack de framework | Packs opcionais por demanda; nenhum gate de cobertura | 3 |
+
+**Decisão:** incorporar apenas três acréscimos de uma frase (RED pelo motivo pretendido; consumidor não verificado → PARTIALLY VERIFIED; aceitação em ambiente-alvo e compatibilidade entre lados não provadas por checks locais). Não adotar ledger, registro de testes, cobertura percentual, fases fixas nem novos agentes. Implementação não autorizada nesta etapa.
 
 <a id="g09"></a>
 
@@ -452,7 +465,19 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [security-scan](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/security-scan/SKILL.md) | Auditoria de configuração do harness e risco de injeção | A comparar |
 | [springboot-security](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/springboot-security/SKILL.md) | Auth, CSRF, cabeçalhos e supply chain de Spring Security | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 12 entrypoints lidos, nenhum falhou).** Gates que o hook implementa hoje (`GATE_KINDS`, [docs/hooks.md](../hooks.md)): `git-bypass` (deny), `secret-block` (deny), `secret-ask`, commit/push (ask), `high-risk-surface` (ask), `perf-budget` (ask) e `definition-of-done` (block no Stop), todos opcionais com `--wire-hooks`. **Não há gate para comandos destrutivos genéricos** (`rm -rf`, `reset --hard`, force push, `drop table`); confirmado por grep em `hooks/canonkit-hook.js`, que só trata `rebase` como comando que aciona hooks.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `agent-security-hardening`: conteúdo de modelo/ferramenta/memória não confiável; validar na fronteira da ação | V | [out-of-scope-issues](../out-of-scope-issues.md) trata conteúdo como dado; Gard não nomeia a fronteira agentic/MCP | Uma linha em Gard: em fluxo agentic/MCP, mapear fonte não confiável → efeito → autorização; sem checklist | 2 |
+| `mcp-dependency-review`: leitura estática da config MCP; versão já revisada | V / L | Gard exige pin de versão, sem dizer de onde vem nem tratar config MCP | Em Gard, só quando o diff altera servidor MCP: ler como texto sem executar, separar pacote de flags, `latest`/tag mutável = risco de drift, pin só de versão revisada; sem scanner | 2 |
+| `gateguard`/`safety-guard`: destrutivo gateado com rollback | V | Hook cobre só Git; modo nativo e `deny` do usuário são autoritativos ([política ambiental](../../openspec/specs/environment-security-policy/spec.md)) | Decisão: destrutivo = confirmação do modo nativo + `deny` do usuário; sem modos novos. Novo kind no hook só com demanda real, em change própria (Gard + Pipe) | 3 |
+| paths/URLs/IDs (traversal, SSRF, argv), perms, temp atômico | P | Gard cobre segredos e superfície em nível geral | Lente sob demanda no Gard; sem limites fixos | 3 |
+| menor privilégio, irreversíveis com autorização, escrita limitada ao repositório, teste de negação, pre-report gate | C | Gard, política ambiental, Quinn | Nada | — |
+| `gateguard` (fatos antes de editar, +2,25 pts), `security-scan`/AgentShield (npx, nota, `--fix`), bounty/PoC | D | Contradiz "nenhum scanner executado" e o não reescrever settings; Gard já tem pre-report gate | Rejeitar mecanismo, métrica e pacote externo | — |
+| `django/laravel/springboot/quarkus/perl-security` | P | Sem pack de backend web; princípios portáveis já em Gard/Bob | Pack opcional por demanda; checar versão antes de adaptar | 3 |
+
+**Decisão:** dois acréscimos mínimos em Gard (fronteira de confiança agentic/MCP; revisão estática de config MCP). Destrutivo genérico segue **sem gate do hook**: é boa intenção apoiada em modo nativo/`deny`, e não se deve alegar o contrário. Não adotar `gateguard`, AgentShield, bounty, limites fixos nem receitas de framework no núcleo.
 
 <a id="g10"></a>
 
@@ -483,7 +508,21 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [plankton-code-quality](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/plankton-code-quality/SKILL.md) | Formatadores e correções automáticas disparados a cada escrita | A comparar |
 | [search-first](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/search-first/SKILL.md) | Pesquisar soluções existentes antes de criar ferramentas próprias | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 12 entrypoints lidos, nenhum falhou).** Fontes: Bob, Quinn, Archie, Gard, spec de engenharia, orchestrate, hook (cabeçalho e trechos).
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `agentic-engineering`: resposta ambígua de ferramenta em escrita com efeito externo | V | Bob cobre idempotência; orchestrate cobre relatos de agentes, não retorno de ferramenta | Uma frase em Bob: timeout/status ausente = estado desconhecido; reconciliar por leitura antes de repetir | 2 |
+| `search-first`: procurar antes de criar utilitário próprio | V | Bob: padrões locais e justificativa de dependência; sem o passo de busca | Uma frase em Bob; adicionar dependência continua exigindo justificativa e Gard | 2 |
+| `conventional-commit-review`: mensagem coerente com o diff; dividir diff misto | L | Hook e `~/AGENTS.md` cobrem permissão, não redação | Parágrafo em Bob, só quando o commit é autorizado: ler diff staged e histórico, seguir a convenção medida, propor divisão de diff misto | 2 |
+| `git-workflow`: reescrever histórico publicado | V | Hook exige confirmação de commit/push, mas **não tem gate de force push/reset** (verificado) | Regra de uma linha em Bob/Boundaries: reescrever histórico já publicado exige confirmação | 2 |
+| `change-impact`: HIGH com condições de rollback e janela de compatibilidade | V | Pipe já pede rollback plan e Archie cobre reversibilidade (conferido em `agents/pipe.md`) | Opcional: incluir "como reverter" no brief HIGH de migração/contrato; sem skill | 2 |
+| `brownfield-retrospective`; `issue-review` | V | Sem procedimento de reconstruir decisões nem de validar issue recebida | Sob demanda, sem skill: ler histórico/ADRs e marcar "inferida"; issue é pista até reproduzir ou citar `file:line` | 3 |
+| `error-handling`/`coding-standards`: receitas por stack; ratchet de lint | P | Packs typescript/python/go/react | Pack por demanda | 3 |
+| decomposição, sessões, foco da revisão, `change-impact` (evidência, diff vs. escopo), commit só com autorização, falha por tipo | C / S | Bob, Quinn, orchestrate, hook | Nada | — |
+| mapa fixo de modelos, custo por tarefa, CodeScene, Plankton, limiares (50/500 linhas, retry), Conventional Commits obrigatório, estratégia de branch, `coding-standards` universal | D | `canonkit models show`; Quinn sem métrica sem risco; política ambiental sem hooks com subprocesso de modelo | Rejeitar | — |
+
+**Decisão:** acréscimos de uma ou duas frases em Bob (resposta ambígua; busca antes de criar; mensagem de commit conforme convenção medida), regra de confirmação para reescrever histórico publicado e, opcionalmente, "como reverter" no brief HIGH. Não adotar skills novas, agente por skill nem os itens D acima.
 
 <a id="g11"></a>
 
@@ -535,7 +574,18 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 | [living-docs-governance](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/living-docs-governance/SKILL.md) | Manter documentos de regra, mapa, estado e histórico coerentes | Parcial |
 | [repo-scan](https://github.com/affaan-m/ECC/blob/d2ef2680594f9a17526a6e1a2e18b3d242c5d17b/skills/repo-scan/SKILL.md) | Bootstrap de scanner externo de assets e estrutura de código | A comparar |
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 7 entrypoints lidos, nenhum falhou).** Fontes: [Spencer](../../agents/spencer.md), orchestrate, [docs/tools.md](../tools.md), `docs/adr/0001–0006`, spec de continuidade.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `architecture-decision-records`: substituição ligada nos dois sentidos; data original em backfill | V | Spencer pede status e data, sem substituição com link recíproco | Uma frase nas estruturas mínimas de ADR de Spencer; sem arquivo novo | 2 |
+| `docs-governance`: um fato, um dono; reutilizar fontes existentes | V | Spencer prefere links verificáveis; orchestrate já proíbe spec/ADR paralelo ao design | Uma linha em Spencer: descobrir e ligar fontes existentes antes de criar documento | 2 |
+| `living-docs-governance`: gatilhos de atualização por tipo | V | Spencer cobre drift, sem gatilhos | Lista curta: estrutura mudou → mapa no mesmo change; decisão difícil de reverter → ADR; sem quatro arquivos obrigatórios | 2 |
+| `code-tour`: âncoras verificadas | P | Graphify cobre navegação estrutural | Princípio já cabe em Spencer; formato `.tour` opcional por demanda | 3 |
+| estrutura de ADR, detecção de decisão implícita, `codebase-onboarding`, leitura em sequência, conflito doc × código | C / S | Spencer, Graphify, ADR 0005, spec de continuidade | Nada | — |
+| `docs-governance` auditoria mecânica (`audit-docs.py`), geração de `CLAUDE.md`, `documentation-lookup` (Context7), `repo-scan` (instalador externo) | D | Projetos usam só `AGENTS.md`; princípio de checar docs atuais já existe; supply chain é de Gard | Rejeitar | — |
+
+**Decisão:** delta mínimo só em `agents/spencer.md` (ciclo de vida de ADR, fonte única, gatilhos curtos). Não adotar ADR automático, `CLAUDE.md` gerado, limites fixos, scripts externos nem os quatro arquivos obrigatórios.
 
 <a id="g13"></a>
 
@@ -660,7 +710,19 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 **Limite de evidência:** casos lexicais, autoavaliações e existência de revisores não demonstram adesão comportamental. A sobreposição indicada na tabela é infraestrutura/princípio; nenhuma comparação de modelo foi rodada para este inventário. Não importar duas revisões obrigatórias para toda tarefa a partir de `santa-method`.
 
-**Decisões deste grupo:** ainda não registradas. Retomar por este inventário e pelas fontes citadas antes de propor mudanças.
+**Revisão (2026-11-11, snapshot `d2ef268`; 7 entrypoints lidos, nenhum falhou).** Fontes: [Evals](../evals.md), [telemetria](../telemetry.md), rubrica, [learning-loop](../../skills/learning-loop/SKILL.md), orchestrate, Bob.
+
+| Skill / ideia | Classe na revisão | Evidência local | Destino / melhoria decidida | Prioridade |
+| --- | --- | --- | --- | --- |
+| `eval-harness`: rótulo alvo × controle (capacidade × regressão) | S / V | `docs/evals.md` já usa alvo e controle protegido, sem rotular casos assim | Uma frase em `docs/evals.md` se ainda não estiver explícito | 2 |
+| `skill-comply`: variantes neutra e competidora de prompt | L | Há `adversarial`, sem taxonomia de pressão | Guia de autoria de casos: um neutro e um competidor quando o custo justificar; sem mudar `kind` | 2 |
+| `agent-introspection-debugging`: falha determinística × transitória; ERROR × falha | V | Routing já separa ERROR; resumo de qualidade a confirmar | Verificação condicional; estender a frase se faltar | 2 |
+| `skill-comply`: adesão a procedimentos de vários passos | V | Evals medem roteamento e juiz lexical; eficácia sempre UNMEASURED | Registrar como limite conhecido em `docs/evals.md`; sem runner novo | 3 |
+| `agent-architecture-audit` (12 camadas) | P | O kit só investiga a si mesmo | Pack opcional por demanda de projeto | 3 |
+| `agent-eval`, `eval-harness` (juiz e baseline antes), `agent-self-evaluation` (escopo), `santa-method` (revisão independente), achado com `file:line` | C / S | `docs/evals.md`, telemetria, learning-loop, orchestrate, gate pré-relatório | Nada | — |
+| nota média de autoavaliação, pass@k e "SHIP IT", dupla revisão obrigatória, loop de 3 iterações, amostragem %, CLI/layout/comandos `/eval` externos, spec gerada por modelo | D | O modelo julgaria o próprio trabalho; regra local é `ceil(2n/3)`; `evals/` já existe | Rejeitar | — |
+
+**Decisão:** três deltas em `docs/evals.md` (rótulo alvo/controle, limite de adesão não medida, guia de variantes) e uma verificação condicional no resumo de qualidade. Nada afirma eficácia, só cobertura documentada. **Achado incidental (média):** em "Results: review-noise", casos baseados só em limite de linhas falham com veredito correto, sugerindo juiz sensível ao limite; confirmar antes de agir.
 
 <a id="g17"></a>
 
@@ -1044,7 +1106,7 @@ Modelo de decisão para preencher **ao revisar**, sem criar 314 registros vazios
 
 ## Continuação em uma sessão por grupo
 
-G01–G03 já foram revisados e seus V/L estão no planejamento visual; G04 foi classificado e adiado. Para os demais, começar pelo grupo escolhido, atualizar somente seu diagnóstico e decisões e deixar os outros pendentes. Uma decisão de aprofundar não aprova implementação, instalação ou publicação.
+G01–G03 já foram revisados e seus V/L estão no planejamento visual; G04 foi classificado em 2026-11-09 e reaberto em 2026-11-11. Para os demais, começar pelo grupo escolhido, atualizar somente seu diagnóstico e decisões e deixar os outros pendentes. Uma decisão de aprofundar não aprova implementação, instalação ou publicação.
 
 Prompt inicial sugerido:
 
@@ -1056,7 +1118,7 @@ Atualize o diagnóstico e as tabelas desse grupo no handoff. Não implemente nem
 Apresente o menor delta necessário para decisão, preservando os donos e a proporcionalidade do CanonKit.
 ```
 
-Trocar G08 pelo grupo desejado. Antes de continuar, verificar branch/HEAD/dirty state e se a evidência local mudou desde este inventário. Retomar G04 somente com demanda/plataforma para a futura change de stack packs; não incluir seus acréscimos automaticamente no apply visual.
+Trocar G08 pelo grupo desejado. Antes de continuar, verificar branch/HEAD/dirty state e se a evidência local mudou desde este inventário. G04 está reaberto; seus acréscimos só entram em fontes locais com pedido de apply, e packs de plataforma exigem plataforma/projeto definido.
 
 ## Verificação histórica do inventário inicial
 
@@ -1079,6 +1141,6 @@ Trocar G08 pelo grupo desejado. Antes de continuar, verificar branch/HEAD/dirty 
 | G02 `motion-advanced`: gestos e trabalho contínuo | M4; Motion preserves purpose access and stability | Entrada pertinente/alternativa operável e pausa/limpeza |
 | G03 `react-performance`: conteúdo progressivo estável | M3/M4; Rendered review matches the changed experience | Troca fallback/conteúdo/assets/labels preserva leitura e alvos, com ou sem animação |
 
-Todas essas verificações alimentam as tarefas existentes 2.2 e 3.3; ownership e proporcionalidade ficam em 1.2/1.3. As classificações C/S/P/D e o L adiado de G04 permanecem nas tabelas dos grupos. “Suficiente no planejamento” não significa implementado, instalado ou eficácia medida. A validação documental da revisão e seu review ficam em [tasks.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md), sem duplicar o registro de entrega.
+Todas essas verificações alimentam as tarefas existentes 2.2 e 3.3; ownership e proporcionalidade ficam em 1.2/1.3. As classificações C/S/P/D e o L de G04 (antes adiado, reaberto em 2026-11-11) permanecem nas tabelas dos grupos. “Suficiente no planejamento” não significa implementado, instalado ou eficácia medida. A validação documental da revisão e seu review ficam em [tasks.md](../../openspec/changes/archive/2026-11-11-ui-focused-visual-workflow/tasks.md), sem duplicar o registro de entrega.
 
 
