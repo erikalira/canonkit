@@ -44,7 +44,17 @@ child process gets the same filtered `PATH` and, on Windows,
 > to sandboxed Bash commands when the sandbox denies reading your home directory
 > (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
 > That is a user-side setting: re-allow the folder with `sandbox.filesystem.allowRead`
-> (for example `["~/.nvm"]`) in your user settings, `~/.claude/settings.json`. A project
+> in your user settings, `~/.claude/settings.json`. For the defaults used here (nvm for
+> Node, pipx for graphify), allow only what you use:
+>
+> ```json
+> "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/pipx"] } }
+> ```
+>
+> Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
+> `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,
+> unless the npm global prefix is inside your home (`npm config get prefix`, for example
+> `~/.npm-global`): then allow that folder, because `openspec` is installed there. A project
 > `.claude/settings.json` is not enough: a repository file cannot re-allow a path that a
 > higher level denies. canonkit never writes it: the path is yours and it is a
 > permission. The setting affects sandboxed Bash only and applies to the next command;
