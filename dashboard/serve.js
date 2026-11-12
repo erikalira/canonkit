@@ -15,9 +15,12 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { executionSnapshot } = require('./execution-model');
 
 const PORT = 4317;
-const HTML = path.join(__dirname, 'index.html');
+const HTML = path.join(__dirname, 'dist', 'index.html');
+const ACTIVITY_HTML = path.join(__dirname, 'activity.html');
+const STATIC_ROOT = path.join(__dirname, 'dist');
 const LOG = path.join(os.homedir(), '.claude', 'canonkit-activity', 'events.jsonl');
 // The pre-rename location. install moves it; until then (or if both exist) its
 // history is read first, as the older half.
@@ -215,27 +218,74 @@ function retainedTotals(sessions) {
 }
 
 function json(res, body) {
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
   res.end(JSON.stringify(body));
 }
 
+function localHost(host) {
+  if (typeof host !== 'string' || host.length > 255 || /[\\/@\s]/.test(host)) return false;
+  try {
+    const parsed = new URL(`http://${host}`);
+    return ['127.0.0.1', 'localhost', '[::1]'].includes(parsed.hostname) &&
+      (!parsed.port || (Number(parsed.port) > 0 && Number(parsed.port) <= 65535));
+  } catch (_) { return false; }
+}
+
+function allowedRequest(req) {
+  const host = req.headers.host;
+  if (!localHost(host)) return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  try {
+    const parsed = new URL(origin);
+    return parsed.protocol === 'http:' && localHost(parsed.host) && parsed.host === host;
+  } catch (_) { return false; }
+}
+
 const server = http.createServer((req, res) => {
+  if (!allowedRequest(req)) { res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' }); res.end('forbidden'); return; }
+  if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405, { Allow: 'GET, HEAD', 'X-Content-Type-Options': 'nosniff' }); res.end(); return; }
+  let pathname;
+  try { pathname = new URL(req.url, 'http://127.0.0.1').pathname; }
+  catch (_) { res.writeHead(400, { 'X-Content-Type-Options': 'nosniff' }); res.end(); return; }
   // Volume has its own aggregate view. It must not crowd gates/dispatches out
   // of the existing timeline or change its counters' 300-event window.
-  if (req.url.startsWith('/events.json')) return json(res, readLines().map(parse).filter((e) => e && e.event !== 'tool_result').slice(-300));
-  if (req.url.startsWith('/dispatches.json')) return json(res, dispatches());
-  if (req.url.startsWith('/context.json')) {
+  if (pathname === '/events.json') return json(res, readLines().map(parse).filter((e) => e && e.event !== 'tool_result').slice(-300));
+  if (pathname === '/dispatches.json') return json(res, dispatches());
+  if (pathname === '/execution.json') return json(res, executionSnapshot(readLines().map(parse).filter(Boolean)));
+  if (pathname === '/context.json') {
     const sessions = contextContributors();
     return json(res, { sessions, retained: retainedTotals(sessions) });
   }
-  fs.readFile(HTML, (err, buf) => {
-    if (err) { res.writeHead(500); res.end('index.html not found'); return; }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+  let file;
+  if (pathname === '/activity.html' || pathname === '/activity') file = ACTIVITY_HTML;
+  else {
+    let decoded;
+    try { decoded = decodeURIComponent(pathname); }
+    catch (_) { res.writeHead(400, { 'X-Content-Type-Options': 'nosniff' }); res.end(); return; }
+    file = path.resolve(STATIC_ROOT, `.${decoded === '/' ? '/index.html' : decoded}`);
+    if (!file.startsWith(STATIC_ROOT + path.sep) && file !== path.join(STATIC_ROOT, 'index.html')) {
+      res.writeHead(404, { 'X-Content-Type-Options': 'nosniff' }); res.end('not found'); return;
+    }
+  }
+  const ext = path.extname(file).toLowerCase();
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json; charset=utf-8', '.woff2': 'font/woff2' };
+  fs.readFile(file, (err, buf) => {
+    if (err) { res.writeHead(err.code === 'ENOENT' ? 404 : 500, { 'Content-Type': 'text/plain; charset=utf-8', 'X-Content-Type-Options': 'nosniff' }); res.end(err.code === 'ENOENT' ? 'not found' : 'unable to read dashboard asset'); return; }
+    const activity = file === ACTIVITY_HTML;
+    res.writeHead(200, {
+      'Content-Type': types[ext] || 'application/octet-stream',
+      'X-Content-Type-Options': 'nosniff',
+      'X-Frame-Options': 'DENY',
+      'Referrer-Policy': 'no-referrer',
+      'Content-Security-Policy': `default-src 'self'; script-src 'self'${activity ? " 'unsafe-inline'" : ''}; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'`,
+      'Cache-Control': 'no-cache',
+    });
     res.end(buf);
   });
 });
 
-module.exports = { contextContributors, retainedTotals, server };
+module.exports = { contextContributors, retainedTotals, allowedRequest, localHost, server };
 
 if (require.main === module) server.listen(PORT, '127.0.0.1', () => {
   console.log(`canonkit dashboard → http://localhost:${PORT}  (Ctrl+C to stop)`);

@@ -66,6 +66,11 @@ const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 
+async function dashboardDistributionFiles() {
+  return ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", ...
+    (await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) => path.join("dist", file))];
+}
+
 // Every event each hook must be registered under, with the matcher it needs
 // there (null: no matcher). Checked per event, not per file: a hook wired to
 // some of its events half-works, which hides better than not working — the gates
@@ -863,7 +868,7 @@ async function installHooks(ctx, dest, { wire = false } = {}) {
  */
 async function installDashboard(ctx, dest) {
   if (!existsSync(DASHBOARD_DIR)) return;
-  const files = (await readdir(DASHBOARD_DIR)).sort();
+  const files = await dashboardDistributionFiles();
   await copyKeepingLocal(ctx, DASHBOARD_DIR, dest, files);
   const serve = path.join(dest, "serve.js").split(path.sep).join("/");
   ctx.log(`Installed dashboard -> ${dest}  (run: node ${serve})`);
@@ -2959,7 +2964,12 @@ async function toolCommand(ctx, [sub, ...names], flags) {
 // Before retiring a distributed artifact, retain its descriptor here (including
 // owners/markers/undo). Old receipts must remain readable; never learn a path
 // from the manifest to compensate for a removed package file.
-const RETIRED_GLOBAL_ARTIFACTS = [];
+const RETIRED_GLOBAL_ARTIFACTS = [
+  // Pre-build dashboard versions installed dashboard/index.html. Keep its
+  // descriptor so existing manifests remain valid; the running server now
+  // serves the compiled dist/index.html, and this legacy copy is left intact.
+  { id: "claude:file:canonkit-dashboard/index.html", root: "claude", relative: "canonkit-dashboard/index.html", kind: "file", owners: ["claude"], public: true },
+];
 async function installCatalog(agents) {
   const roots = { home: path.resolve(os.homedir()), claude: claudeHome(),
     codex: codexHome(), opencode: path.resolve(opencodeDir()), copilot: copilotHome(),
@@ -2976,7 +2986,7 @@ async function installCatalog(agents) {
   }
   add("opencode", OPENCODE_PLUGIN.to, "file", ["opencode"], { plugin: true });
   add("claude", "hooks/meu-time-hook.js", "file", ["claude"]);
-  for (const file of await filesUnder(DASHBOARD_DIR)) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
+  for (const file of await dashboardDistributionFiles()) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
   for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)) {
     if (!existsSync(path.join(SKILLS_DIR, name, "SKILL.md"))) continue;
     for (const file of await filesUnder(path.join(SKILLS_DIR, name))) {

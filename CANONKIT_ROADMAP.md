@@ -977,6 +977,74 @@ Mesmas regras da Fase 1: nenhum prompt, resultado, código ou path completo.
 
 ---
 
+# P6 — Live Development Observatory
+
+**Status em 2026-11-12:** Execution Graph implementado nesta worktree para eventos locais de Claude Code, com build e testes automatizados aprovados. Entrega **parcial** em relação ao pedido completo: identidade confiável de projeto/worktree/branch, integração de artefatos OpenSpec/Graphify, validação visual/acessível em navegador e observação de uma sessão real continuam pendentes. Codex, OpenCode e Copilot ainda não têm adaptadores equivalentes. O Agent Office 2D/3D é roadmap, não implementação.
+
+## Princípios e contrato
+
+- Uma fonte normalizada de observações para grafo, timeline e futuras visualizações; React Flow e qualquer escritório são apenas apresentação.
+- CanonKit continua dono da governança e dos gates; OpenSpec dos changes/specs; Graphify da evidência estrutural; runtimes dos eventos de execução.
+- Só afirmar atividade, identidade, relação, classificação, aprovação ou conclusão quando existir evidência observável e correlacionável.
+- Não correlacionar homônimos por basename de cwd. Identificadores indisponíveis permanecem `unknown`/`null` até surgir fonte estável autorizada.
+- Sem chaves pagas, chamadas extras de modelo, sessões espelho, analytics externos ou automação de gates.
+- Manter o servidor local no loopback, polling proporcional, logs sem prompts/transcrições e empacotamento independente do CLI.
+
+## Estado atual — Execution Graph (implementado parcialmente)
+
+- Projeção versionada `/execution.json` dos eventos Claude Code suportados atualmente: `prompt`, `gate`, `agent_start`, `agent_launch`, `agent_end`, `agent_stop`, `agent_resume`.
+- Agregação por session + dispatch ID real; eventos sem ID estável continuam sem ID inventado. Medidas cumulativas mais recentes substituem anteriores, inclusive por ausência; paralelismo depende de intervalos observados sobrepostos.
+- Gates expõem observação e decisão separadamente. Dispatch encerrado não implica sucesso; início não prova escrita de código; review/approval e workflow permanecem desconhecidos sem evidência explícita.
+- UI React Flow com canvas, minimap, controles, layout explícito, inspector e timeline filtrável. A navegação temporal foca o nó correlacionável. Grafo observado e rotas de referência LOW/MEDIUM/HIGH ficam em visualizações distintas; rotas de referência não provam caminho executado.
+- `/activity.html` e endpoints legados preservados; stale snapshot informa desconexão e tenta reconectar. A instalação inclui frontend compilado, sem dependências frontend no runtime normal do CLI.
+- Segurança implementada no servidor local: Host/Origin loopback, sem CORS, arquivos estáticos confinados, CSP, `frame-ancestors`, `nosniff` e sem rotas de execução.
+- Evidência registrada no change OpenSpec `openspec/changes/live-development-observatory/`: typecheck/build, suíte completa (1042 total, 1021 passou, 21 ignorados, 0 falhou), package dry-run (71 arquivos), diff check e Graphify update passaram. `npm audit` não foi verificado por DNS `EAI_AGAIN`; navegador, acessibilidade e sessão real não foram verificados.
+
+## Fase P6.1 — Fechar lacunas do Execution Graph
+
+1. Verificar a UI compilada em navegador: legibilidade do canvas e nós, responsividade, teclado, foco, leitores de tela e movimentos/redução de movimento. Registrar ambientes e corrigir problemas observados sem depender de inspeção visual paga.
+2. Validar com uma sessão Claude Code já existente, sem iniciar agentes nem criar telemetria adicional; comparar o que aparece com eventos efetivamente retidos.
+3. Investigar uma fonte estável para project/worktree/branch/session. Especificar correlação para worktrees simultâneas e projetos homônimos; se o runtime não fornecer identidade, manter as dimensões desconhecidas.
+4. Acrescentar marcos de workflow, classificação e verificação apenas quando artifacts/events tiverem identificadores e evidência suficientes. Cobrir ausência, duplicatas, rotação, eventos fora de ordem e associação ambígua.
+5. Ligar OpenSpec/Graphify a sessões somente quando a correlação for comprovada; mostrar existência, origem e freshness separadamente. Não inicializar, validar, sincronizar, arquivar ou atualizar esses sistemas automaticamente pelo polling.
+6. Medir preservação de viewport/seleção em mudanças apenas de status e em mudanças estruturais; manter layout explícito e não oscilar em polling.
+
+**Gate de saída:** aceite demonstrado por sessão real e testes determinísticos de UI/modelo; incógnitas permanecem nomeadas e não inferidas. Revisar contratos e UX se novos identificadores ou relações se tornarem públicos.
+
+## Fase P6.2 — Observabilidade multi-runtime
+
+Investigar, em mudanças separadas, interfaces oficiais ou estáveis para Codex, OpenCode, GitHub Copilot e runtimes adicionais. Para cada adapter, documentar disponibilidade de session/dispatch/agent IDs, lifecycle, retenção, duplicatas, ordenação, privacidade, worktree identity e limitações no VS Code. Reutilizar o read model versionado, sem alegar cobertura além do sinal testado. Não iniciar CLI/session paralela para espelhar editor, não acessar estado privado de extensões e não exigir API paga.
+
+**Gate de saída:** adapter só é suportado quando houver fonte sustentável, fixtures reais anonimizadas/locais, testes de correlação e documentação de lacunas; “unknown” continua comportamento válido.
+
+## Fase P6.3 — Agent Office 2D (opcional)
+
+Desenhar primeiro uma visualização 2D de pixel art inspirada em escritórios de agentes, sem copiar código, personagens ou assets. Separar identidade estável do agente, processo/dispatch e execução atual: um nome de agente pode ter múltiplos dispatches e sessões. Mesas, salas e personagens devem mapear apenas presença observada; working/waiting/blocked/finished/unknown são categorias de apresentação, não atividades específicas como “escrevendo código”. Alertas de atenção dependem de evento explícito. Clique abre evidência da mesma sessão/dispatch no inspector.
+
+Construir protótipo leve e opcional, com assets originais ou licenças verificadas, navegação por teclado, alternativa textual equivalente, suporte a movimento reduzido e desempenho medido com múltiplas sessões/worktrees. O escritório não altera o Execution Graph nem cria segunda API/estado; ambos consomem o mesmo snapshot. Animações decorativas são claramente distintas de telemetria.
+
+**Gate de saída:** protótipo avaliado contra o grafo em clareza, acessibilidade, custo de manutenção e carga de CPU/memória; só então decidir se vale implementar.
+
+## Fase P6.4 — Estudo Agent Office 3D
+
+Somente após evidência de valor do modelo 2D, avaliar Three.js, React Three Fiber ou alternativas. Comparar custo de manutenção, tamanho de bundle, consumo GPU/CPU, acessibilidade, fallback sem WebGL, interação e escala de entidades. Prototipar sem compromisso com engine. Representar salas/projetos/agentes com as mesmas limitações de identidade e presença do modelo compartilhado; nunca fabricar atividade para preencher animação.
+
+**Gate de saída:** decisão registrada com medições comparativas; manter apenas 2D/grafo é resultado válido. Não adicionar dependência 3D ao CLI nem tornar a visualização padrão sem decisão explícita.
+
+## Fase P6.5 — Replay e análise histórica (condicional)
+
+Após política explícita de retenção, investigar replay baseado estritamente em eventos retidos: navegação temporal, reprodução das transições observadas e eventualmente comparação de execuções. Gaps de retenção/rotação devem aparecer como lacunas, nunca ser reconstruídos como fato. Métricas candidatas: duração por etapa, espera e retrabalho apenas quando eventos definirem esses intervalos; tokens por dispatch quando medidos. Não inferir qualidade a partir de consumo de tokens.
+
+**Gate de saída:** metodologia, privacidade e custo definidos; nenhuma métrica entra como indicador de qualidade sem validação própria. Custo financeiro só pode ser mostrado com preços atuais e entradas completas, identificando estimativa.
+
+## Fase P6.6 — Interações controladas (fora do MVP)
+
+Avaliar em change separado, após análise de abuso e autorização, ações de conveniência como abrir a sessão/runtime correspondente, navegar a um change ou diff e abrir um PR. Responder aprovações, executar comandos, deploy ou alterar permissões permanece fora do escopo até integração oficial, fronteira de segurança, confirmação explícita e revisão independente. Nunca contornar permissões do runtime ou do sistema operacional.
+
+**Gate de saída:** contrato de ação explícito, autorização por ação, validação de destino, proteção contra CSRF/DNS rebinding, auditoria sem conteúdo sensível, falha recuperável e revisão de segurança. Aprovação automática não é objetivo.
+
+---
+
 # Ordem recomendada de implementação
 
 ```text

@@ -8,6 +8,7 @@
  */
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { rm, mkdir, writeFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -360,19 +361,34 @@ describe("dashboard", () => {
   test("installs the dashboard beside the hook it reads from", async () => {
     const { home } = await scratch("dash-fresh");
     run(["install", "--no-reference"], { home });
-    for (const f of await readdir(path.join(REPO, "dashboard"))) {
+    const dist = path.join(REPO, "dashboard", "dist");
+    const files = ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", "dist/index.html",
+      ...(await readdir(path.join(dist, "assets"))).map((file) => path.join("dist", "assets", file))];
+    for (const f of files) {
       assert.equal(await read(path.join(dash(home), f)), await read(path.join(REPO, "dashboard", f)), f);
     }
+    assert.equal(existsSync(path.join(dash(home), "src")), false, "installed dashboard excludes frontend source");
+    assert.equal(existsSync(path.join(dash(home), "node_modules")), false, "installed dashboard excludes build dependencies");
+    const serve = path.join(dash(home), "serve.js");
+    const smoke = spawnSync(process.execPath, ["-e", `
+      const path = require('node:path'), fs = require('node:fs');
+      const dashboard = require(process.argv[1]);
+      const html = fs.readFileSync(path.join(path.dirname(process.argv[1]), 'dist/index.html'), 'utf8');
+      process.stdout.write(JSON.stringify({ server: typeof dashboard.server.listen, assets: /assets\\/index\\.js/.test(html) }));
+    `, serve], { encoding: "utf8" });
+    assert.equal(smoke.status, 0, smoke.stderr);
+    assert.deepEqual(JSON.parse(smoke.stdout), { server: "function", assets: true });
   });
 
   test("keeps a locally edited dashboard as .local.bak", async () => {
     const { home } = await scratch("dash-divergent");
     run(["install", "--no-reference"], { home });
-    const edited = (await read(path.join(dash(home), "index.html"))) + "<!-- local -->";
-    await writeFile(path.join(dash(home), "index.html"), edited);
+    const target = path.join(dash(home), "dist", "index.html");
+    const edited = (await read(target)) + "<!-- local -->";
+    await writeFile(target, edited);
 
     run(["install", "--no-reference"], { home });
-    assert.equal(await read(path.join(dash(home), "index.html.local.bak")), edited);
+    assert.equal(await read(path.join(dash(home), "dist", "index.html.local.bak")), edited);
   });
 });
 
