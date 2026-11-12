@@ -345,11 +345,15 @@ async function writeCatalog(fresh, file = catalogPath(), { keepWithin = 0, now =
 }
 
 /** Discover and store in one step: what `models refresh` and install run. */
-async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0, home, policy = home ? () => claudeModelPolicy({ home }) : undefined } = {}) {
+async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0, home, policy = home ? () => claudeModelPolicy({ home }) : undefined, persist = true } = {}) {
   // Only harnesses with a working adapter need a process; skip the repository
   // walk when none will start one.
   const runner = run ?? (harnesses.some((h) => h === "claude" || h === "codex") ? await trustedRunner(process.cwd(), { windowsRoots: readWindowsRoots() }) : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
-  return writeCatalog(discover(harnesses, { run: runner, now, policy }), file, { keepWithin, now });
+  const fresh = discover(harnesses, { run: runner, now, policy });
+  if (persist) return writeCatalog(fresh, file, { keepWithin, now });
+  let previous = null;
+  try { previous = await readCatalog(file); } catch { /* an unreadable cache is replaced only after confirmation */ }
+  return { version: CATALOG_VERSION, harnesses: { ...(previous?.harnesses ?? {}), ...fresh }, pending: fresh };
 }
 
 export { HARNESSES, ADAPTERS, CATALOG_VERSION, CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy, applyClaudePolicy, catalogPath, systemRunner, trustedRunner, parseClaudeHelp, parseCodexModels, discover, readCatalog, writeCatalog, refreshCatalog };

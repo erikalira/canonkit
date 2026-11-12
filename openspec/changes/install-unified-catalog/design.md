@@ -24,13 +24,16 @@ See proposal.md for motivation. Observed state (`bin/cli.js`):
 
 ## Decisions
 
-1. **Order: ask everything, then write.** Menus run first (harness, model step, tools, specialists, stacks); then global install; then project items. Alternative, asking project items after the global install finishes, was rejected because a cancel would leave a half-done run, contradicting the existing "Cancelled: nothing was installed".
+1. **Order: ask everything, then write.** Menus run first (harnesses, tools, specialists, stacks, selected tools' harnesses, then model setup); then global install; then project items. Model discovery is staged in memory and its catalog/config files are written only after the model step's final save confirmation. Alternative, asking project items after the global install finishes, was rejected because a cancel would leave a half-done run, contradicting the existing "Cancelled: nothing was installed".
 2. **A catalog reader shared with `list`.** Extract a function returning `{ tools, specialists, stacks }` with name, description and state; `list`, `toolList` and the menu consume it. Rejected: hard-coding menu choices (drifts, the exact bug `STACK_PACK_IDS` validation exists to avoid).
-3. **Project gate.** Offer project steps only when `projectRoot(cwd)` resolves and cwd is not `PACKAGE_ROOT`; otherwise one explanatory line. Same refusal rule `addSpecialists` already has, so the menu never offers what the command would refuse.
-4. **Apply through existing entry points**: `changeProject(ctx, names)` for specialists + stacks (it already validates the whole request before writing) and `toolAdd` per tool, in that order, after the global install. A failure in one item is reported and does not skip the others; exit code is non-zero if any failed.
-5. **Tools use their own confirmation.** The menu records the choice only; `toolAdd` prompts as it does today. `--yes` is not implied by the menu.
+3. **Project gate and target.** Use `repositoryRoot(cwd)` to require a real repository outside HOME and the canonkit package (including its subdirectories). The resolved current directory remains the displayed and written target because existing `add` and `tool add` commands act on cwd; do not silently redirect them to the Git root. When the gate fails, skip project steps with a one-line reason and the later commands.
+4. **Apply through existing entry points**: `changeProject(ctx, [name])` for each specialist or stack, then `toolAdd` per tool, after the global install. Per-item application isolates collisions and other failures so later selections still run; exit code is non-zero if any failed.
+5. **Tools keep both prompt boundaries.** The menu records each selected tool's harness choice before any write. `toolAdd` keeps its own setup confirmation after it prints the preflight; `--yes` is never implied by the menu, and `--with-git-hooks` is never enabled by the menu.
 6. **Non-interactive selection by flag.** `--specialist <name>`, `--stack <name>` and `--tool <name>` (repeatable), valid only with `install`, validated against the catalog before any write. Alternative, reusing a positional list (`install typescript maya`), was rejected: it collides with `install` taking no arguments and hides the category. Flags follow the existing `--claude/--codex` pattern and the flag-validation block in `main`.
 7. **Closing hint** is computed from the same catalog state: not-installed items per category, plus `canonkit list`.
+8. **Tool harness defaults.** The interactive menu asks for a selected tool's harness before writes. Explicit flags and non-interactive runs use that tool's declared `defaultharness`, matching `tool add`'s existing no-menu behavior.
+9. **Readable tool execution.** In `install`, print a compact tool-specific preflight (target, command and material warnings) before a named confirmation. Buffer routine subprocess output in the default flow and report a concise result; preserve warnings and replay full output on failure. `--verbose` shows the detailed preflight and streams the subprocess output. Direct `tool add` retains its detailed preflight and output. This keeps the existing confirmation boundary informed without adding an implicit `--yes` or enabling Git hooks.
+10. **Output status language.** Successful changes and already-current items use explicit success/status labels; caution markers are reserved for warnings. Unknown informational detail remains visible as information instead of being marked as a warning.
 
 ## Risks / Trade-offs
 
@@ -42,7 +45,3 @@ See proposal.md for motivation. Observed state (`bin/cli.js`):
 ## Migration Plan
 
 Additive. Non-interactive behavior and `add` / `tool add` are unchanged. Rollback is reverting the change; nothing is persisted beyond what `add` and `tool add` already write.
-
-## Open Questions
-
-- Should the menu offer `--harness` selection for a chosen tool, or always use the tool's `defaultharness`? (Default assumed; deferrable, `tool add` can change it later.)

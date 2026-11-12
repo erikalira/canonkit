@@ -31,12 +31,24 @@ function harnessOfDir(dir, home) {
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
+export function renderRemainingItems(remaining) {
+  if (!remaining) return [];
+  const lines = [
+    ["Tools", remaining.tools, "npx canonkit tool add <tool>"],
+    ["Specialists", remaining.specialists, "npx canonkit add <name>"],
+    ["Stack packs", remaining.stacks, "npx canonkit add <stack>"],
+  ].filter(([, names]) => names?.length);
+  return lines.length
+    ? ["Not installed:", ...lines.map(([label, names, command]) => `  ${label}: ${names.join(", ")} — ${command}`)]
+    : ["All catalog project items are active."];
+}
+
 /**
  * @param {string[]} lines     every ctx.log line of the run, in order
  * @param {{dryRun?: boolean, version?: string, changed?: Set<string>, home?: string, failed?: boolean}} opts
  * @returns {string[]} the lines to print
  */
-export function renderInstallReport(lines, { dryRun = false, version = "", changed = new Set(), home = os.homedir(), failed = false } = {}) {
+export function renderInstallReport(lines, { dryRun = false, version = "", changed = new Set(), home = os.homedir(), failed = false, remaining = null } = {}) {
   const rows = new Map(); // harness -> { items: [], touched: bool }
   const row = (h) => { if (!rows.has(h)) rows.set(h, { items: [], touched: false }); return rows.get(h); };
   const touchedUnder = (dir) => {
@@ -47,12 +59,14 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
   const blocks = { current: 0, changed: 0 };
   const security = { applied: [], notes: [] };
   const notes = [];
+  const toolResults = [];
   let hookHint = false;
   let hookCount = 0;
   let dashboard = false;
   let opencodeAgentsMd = false;
   let stale = null;
   const tracked = {};
+  const addNote = (text, kind = "info") => notes.push({ text, kind });
 
   for (const raw of lines) {
     const line = raw.replace(/^\[dry-run\] /, "");
@@ -83,7 +97,7 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
       // shown by `canonkit models show`
     } else if (/is not referenced by .*settings\.json|^These hooks are optional|^To opt in explicitly|npx canonkit install --wire-hooks$|^or add under "hooks"|^If an entry already exists|^"(PreToolUse|PostToolUse|SubagentStop|UserPromptSubmit|Stop|SessionStart|PreCompact)":|^\{ .*"hooks":/.test(line.trim())) {
       hookHint = true;
-    } else if (/^Core installed\.|^cd <project>|^Check the install|^Check native permissions/.test(line.trim())) {
+    } else if (/^Core installed\.|^Project items: run npx canonkit list|^cd <project>|^Check the install|^Check native permissions/.test(line.trim())) {
       // replaced by the closing "Next" lines
     } else if ((m = /^Security repository: (.+)$/.exec(line))) {
       security.repo = m[1];
@@ -91,9 +105,19 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
       security.applied.push(m[1]);
     } else if (/^WARN security claude: a Windows copy at /.test(line)) {
       // A security setting that was not written and why: shown as its own line, not folded into the note count.
-      notes.push(line.replace(/^WARN /, ""));
+      addNote(line.replace(/^WARN /, ""), "warning");
     } else if ((m = /^WARN security (\w+)(?: |:)/.exec(line))) {
       security.notes.push(line.replace(/^WARN /, ""));
+    } else if ((m = /^WARN tool ([\w-]+): (.+)$/.exec(line))) {
+      addNote(`${m[1]}: ${m[2]}`, "warning");
+    } else if ((m = /^TOOL_SETUP_RESULT: (.+)$/.exec(line))) {
+      toolResults.push(m[1]);
+    } else if ((m = /^TOOL_SETUP_WOULD: (.+)$/.exec(line))) {
+      toolResults.push(`would set up ${m[1]}`);
+    } else if (/^Installed (?!\d+ agents?\b|\d+ hooks?\b|\d+ skills?\b|dashboard\b|the OpenCode plugin\b|\d+ Codex hook files?\b|\d+ OpenCode hook files?\b)/.test(line)) {
+      addNote(line, "success");
+    } else if (/^Stack packs already current:/.test(line)) {
+      addNote(line, "success");
     } else if ((m = /^would track \S+ \((\w+)\)$/.exec(line.trim()))) {
       tracked[m[1]] = (tracked[m[1]] ?? 0) + 1;
     } else if (/^would run model discovery/.test(line.trim())) {
@@ -104,14 +128,16 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
       stale = { count: names.length, suffix: suffixes.size === 1 ? [...suffixes][0] : null };
     } else if (stale && (m = /^(Codex|OpenCode) (.+?) — remove them yourself once you have checked.?$/.exec(line.trim()))) {
       const what = stale.count === 1 ? "1 old copy" : `${stale.count} old copies`;
-      notes.push(`${m[1]}: ${what}${stale.suffix ? ` (*${stale.suffix})` : ""} of its agents in the agents folder; ${m[2].replace(/^does not load these$/, "Codex ignores them").replace(/^loads any .md here as an agent$/, "OpenCode loads .md files there as extra agents")}. Delete once checked (names: --verbose)`);
+      addNote(`${m[1]}: ${what}${stale.suffix ? ` (*${stale.suffix})` : ""} of its agents in the agents folder; ${m[2].replace(/^does not load these$/, "Codex ignores them").replace(/^loads any .md here as an agent$/, "OpenCode loads .md files there as extra agents")}. Delete once checked (names: --verbose)`);
       stale = null;
     } else if (/OpenCode now reads .* instead of ~\/\.claude\/CLAUDE\.md|copy any rule of your own from there/.test(line.trim())) {
       opencodeAgentsMd = true;
     } else if (/^Security version\/runtime checks not executed/.test(line)) {
-      notes.push(line);
+      addNote(line, "warning");
     } else {
-      notes.push(line.trim().replace(home, "~").replace(home.replace(/\\/g, "/"), "~"));
+      const text = line.trim().replace(home, "~").replace(home.replace(/\\/g, "/"), "~");
+      const kind = /^(?:WARN(?:ING)?\b|ERROR\b|Failed\b|Refusing\b|Partial installation\b)/i.test(text) ? "warning" : "info";
+      addNote(text, kind);
     }
   }
 
@@ -122,7 +148,7 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
 
   const width = Math.max(...[...rows.keys()].map((k) => (HARNESS[k] ?? k).length), 12);
   const harnessKeys = ORDER.filter((k) => rows.has(k));
-  let anyChange = blocks.changed > 0 || security.applied.length > 0;
+  let anyChange = blocks.changed > 0 || security.applied.length > 0 || toolResults.length > 0 || notes.some((note) => note.kind === "success");
   for (const k of harnessKeys) {
     const r = rows.get(k);
     const status = dryRun ? "" : r.touched ? "updated" : "up to date";
@@ -151,7 +177,7 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
   if (modelBits.length) infoRows.push(["Models", `${modelBits.join(" · ")}   (npx canonkit models show)`]);
   const trackedBits = Object.entries(tracked).map(([state, n]) => `${plural(n, "file")} ${state}`);
   if (trackedBits.length) infoRows.push(["Would change", trackedBits.join(" · ")]);
-  if (hookHint) infoRows.push(["Hooks", "installed but not active (optional) — to turn on: npx canonkit install --wire-hooks"]);
+  if (hookHint) infoRows.push(["CanonKit hooks", "inactive (optional) — to turn on: npx canonkit install --wire-hooks"]);
   if (security.repo || security.applied.length || security.notes.length) {
     const bits = [];
     if (security.applied.length) bits.push(`${plural(security.applied.length, "control")} ${dryRun ? "to apply" : "applied"}`);
@@ -168,7 +194,15 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
 
   if (notes.length) {
     out.push("");
-    for (const n of notes) out.push(`  ! ${n}`);
+    for (const note of notes) {
+      const mark = note.kind === "warning" ? "⚠" : note.kind === "success" ? "✓" : "·";
+      out.push(`  ${mark} ${note.text}`);
+    }
+  }
+  if (toolResults.length) {
+    out.push("");
+    out.push("Project tools:");
+    for (const result of toolResults) out.push(`  ✓ ${result}`);
   }
 
   out.push("");
@@ -176,6 +210,9 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
   else if (dryRun) out.push("Nothing was written. Run without --dry-run to apply.");
   else if (!anyChange) out.push("Nothing to update: everything was already current.");
   else out.push("Done.");
-  out.push("Next: npx canonkit doctor (verify) · cd <project> && npx canonkit add <name> (specialists) · --verbose shows every step");
+  if (remaining) {
+    out.push(...renderRemainingItems(remaining));
+  } else out.push("Project items: run npx canonkit list to see optional tools, specialists and stack packs.");
+  out.push("Next: npx canonkit doctor (verify) · --verbose shows every step");
   return out;
 }

@@ -78,3 +78,22 @@ After a successful install the output SHALL list, by category, the items that we
 #### Scenario: Some stacks are installed
 - **WHEN** install finishes with two stacks selected
 - **THEN** the closing lines list the remaining stacks, specialists and tools not yet active, and point to `canonkit list`
+
+### Requirement: Install output makes tool actions and outcomes clear
+When `install` runs selected tool setup, it SHALL show the tool, project target, command and material warnings before asking for confirmation. The confirmation SHALL name the tool and target. In the default install output, successful tool output SHALL be summarized, while warnings and failures remain visible; `--verbose` SHALL show the detailed preflight and tool output. Success, already-current status and warnings SHALL use distinct textual labels.
+
+#### Scenario: A selected tool is about to run
+- **WHEN** install is about to run a selected tool's setup
+- **THEN** the output names the tool, project, command and any material warning before the confirmation
+- **AND** the confirmation names the tool and project
+- **AND** the existing tool confirmation is still required unless the user explicitly passed `--yes`
+
+#### Scenario: A tool succeeds in the default install flow
+- **WHEN** a selected tool setup succeeds without `--verbose`
+- **THEN** canonkit prints a concise outcome summary instead of the tool's routine progress output
+- **AND** any material warning from the tool remains visible
+
+#### Scenario: A tool fails or install is verbose
+- **WHEN** a selected tool setup fails, or install runs with `--verbose`
+- **THEN** the full tool output is visible for diagnosis
+- **AND** `--verbose` shows detailed per-step information as the setup runs

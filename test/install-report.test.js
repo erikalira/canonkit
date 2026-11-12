@@ -35,7 +35,7 @@ test("a second install says nothing changed and keeps every warning", () => {
   assert.match(out, /Claude Code +10 agents · 1 hook · 3 skills +up to date/);
   assert.match(out, /Nothing to update/);
   assert.match(out, /Codex: session model/);
-  assert.match(out, /! WARN something new and unexpected/);
+  assert.match(out, /⚠ WARN something new and unexpected/);
   assert.doesNotMatch(out, /PreToolUse|"Stop"|Core installed/);
   assert.ok(out.split("\n").length < 20, "the summary stays short");
 });
@@ -48,9 +48,46 @@ test("a first install reports what was updated", () => {
   assert.match(out, /Done\./);
 });
 
+test("successful project changes and warnings have distinct markers", () => {
+  const out = renderInstallReport([
+    "Installed nova -> .claude/agents/nova.md and .codex/agents/nova.toml",
+    "Stack packs already current: typescript",
+    "WARN tool graphify: 23 code files yielded no symbols",
+  ], { home }).join("\n");
+  assert.match(out, /✓ Installed nova ->/);
+  assert.match(out, /✓ Stack packs already current: typescript/);
+  assert.match(out, /⚠ graphify: 23 code files yielded no symbols/);
+  assert.doesNotMatch(out, /! Installed nova|! Stack packs/);
+});
+
+test("tool setup result is grouped and CanonKit hook state is named explicitly", () => {
+  const out = renderInstallReport([
+    "OpenCode: fable, opus; available",
+    "These hooks are optional; native approvals remain authoritative. To opt in explicitly:",
+    "WARN tool graphify: Existing Graphify Git automation remains enabled (post-checkout, post-commit); it can run repository code.",
+    "TOOL_SETUP_RESULT: OpenSpec configured Claude Code, Codex; 5 skills and 5 commands",
+  ], { home }).join("\n");
+  assert.match(out, /CanonKit hooks +inactive \(optional\)/);
+  assert.match(out, /⚠ graphify: Existing Graphify Git automation remains enabled/);
+  assert.match(out, /Project tools:\n  ✓ OpenSpec configured Claude Code, Codex; 5 skills and 5 commands/);
+});
+
 test("a dry run and a failure say so", () => {
   assert.match(renderInstallReport(run, { home, dryRun: true }).join("\n"), /Nothing was written/);
   assert.match(renderInstallReport(run, { home, failed: true }).join("\n"), /did not finish/);
+});
+
+test("the closing hint lists only remaining items by category", () => {
+  const out = renderInstallReport(run, {
+    home,
+    remaining: { tools: ["graphify"], specialists: ["echo"], stacks: ["rust"] },
+  }).join("\n");
+  assert.match(out, /Tools: graphify — npx canonkit tool add <tool>/);
+  assert.match(out, /Specialists: echo — npx canonkit add <name>/);
+  assert.match(out, /Stack packs: rust — npx canonkit add <stack>/);
+  assert.doesNotMatch(out, /openspec|maya|typescript/);
+  assert.match(out, /Next: npx canonkit doctor \(verify\) · --verbose shows every step/);
+  assert.doesNotMatch(out, /cd <project> && npx canonkit add/);
 });
 
 test("old backup copies collapse to one note per runtime", () => {
@@ -65,15 +102,15 @@ test("old backup copies collapse to one note per runtime", () => {
   assert.match(out, /Security .*1 note/);
 });
 
-test("an ignored Windows claude is its own `!` line and does not inflate the security notes count", () => {
+test("an ignored Windows claude has a warning marker and does not inflate the security notes count", () => {
   const warn = "WARN security claude: a Windows copy at /mnt/c/Users/me/npm/claude was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run";
   const base = [`Installed 10 agents -> ${j(".claude", "agents")}`, "WARN security coverage: native-windows-shell-unsandboxed"];
   const withWarn = renderInstallReport([...base, warn], { home }).join("\n");
-  assert.match(withWarn, /^  ! security claude: a Windows copy at \/mnt\/c\/Users\/me\/npm\/claude was ignored .*install Claude Code inside WSL and re-run$/m);
+  assert.match(withWarn, /^  ⚠ security claude: a Windows copy at \/mnt\/c\/Users\/me\/npm\/claude was ignored .*install Claude Code inside WSL and re-run$/m);
   assert.match(withWarn, /Security .*1 note\b/);
   // Alone: still shown, and no "0 notes" or phantom note row.
   const alone = renderInstallReport([`Installed 10 agents -> ${j(".claude", "agents")}`, warn], { home }).join("\n");
-  assert.match(alone, /^  ! security claude: a Windows copy at /m);
+  assert.match(alone, /^  ⚠ security claude: a Windows copy at /m);
   assert.doesNotMatch(alone, /\d+ notes?\b/);
   // Without the line the summary is what it was.
   const without = renderInstallReport(base, { home }).join("\n");

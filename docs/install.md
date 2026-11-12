@@ -31,6 +31,42 @@ decided by flag or with no terminal runs on plain Node. An installer that runs
 **before** you trust the repository should not ask you to trust a dependency tree
 larger than that.
 
+### Project items in the install flow
+
+On a plain interactive install, with no runtime or project-item flags, the
+runtime menu is followed by optional tools, domain specialists and stack packs,
+in that order. The model-choice step follows these project selections. All
+choices are collected before installation begins. Each list comes from the same
+catalog as `list` and `tool list`, shows the item's current state, and starts
+with nothing selected. The choices are project-scoped: run from the directory
+that should receive them, inside a Git repository other than the canonkit source repository
+or your home directory. If this interactive run has no valid project target, it
+skips the project steps and continues with the global core installation.
+Explicit project-item flags without a valid target fail before any writes.
+
+The menu collects its selections before installation begins. Cancelling any
+selection menu leaves the global and project files unchanged and reports that
+nothing was installed. Before a selected tool runs, install shows its project,
+command, write locations and any material warning, then asks a confirmation
+that names the tool and project. The menu does not imply `--yes` and never
+enables Git hooks. By default, successful tool output is summarized; warnings,
+failures and actionable tool notes remain visible. `--verbose` shows the
+detailed plan and full tool output. `--dry-run` previews the global and selected
+project steps without writing files or running tool setup.
+
+For scripts or CI, select project items explicitly; these flags can be repeated:
+
+```bash
+npx canonkit install --specialist maya --stack typescript --tool openspec
+```
+
+They are validated against the catalog before installation writes anything and
+are only valid with `install`. Without a TTY and without these flags, `install`
+keeps its previous behavior: it installs the selected global runtimes and does
+not write project items. A tool's confirmation remains separate; pass `--yes`
+explicitly only when you intend to skip it. The closing report lists items that
+remain available in each category and points to `canonkit list`.
+
 | Choice | Writes |
 | --- | --- |
 | Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings |
@@ -236,10 +272,10 @@ because it reads Windows settings, not the WSL ones. With only that copy, the
 Claude version is unknown, so settings gated by version (file-read and file-write
 blocks, sandbox, network lock) are written less than with a Linux-side Claude.
 `install` says so with a `WARN security claude: a Windows copy at <path> was
-ignored ...` line (a `!` line in the short summary; not printed in `--dry-run`,
-which does not probe versions), and `canonkit doctor` shows it in `security claude
-version` ("unknown; a Windows copy at <path> was ignored ..."). Install Claude Code
-inside WSL to restore them.
+ignored ...` line (a warning-marked line in the short summary; not printed in
+`--dry-run`, which does not probe versions), and `canonkit doctor` shows it in
+`security claude version` ("unknown; a Windows copy at <path> was ignored ...").
+Install Claude Code inside WSL to restore them.
 
 | Environment | Configuration and limits |
 | --- | --- |
@@ -852,7 +888,7 @@ npx canonkit add maya nova
 ```
 
 Choosing which specialists a project has remains your explicit decision — the
-installer only takes care of what is easy to forget. Four native profiles and
+install menu or `add` command only installs what you choose. Four native profiles and
 the project's `AGENTS.md` need to know about the agent, and forgetting one is
 the failure this command prevents:
 

@@ -2,16 +2,27 @@
 
 Two third-party tools complement the team: **graphify** (a graph of the code,
 updated on demand by default) and **openspec** (specs and acceptance criteria in
-`openspec/`). Run **from inside the project**:
+`openspec/`). Run **from inside the project**. You can integrate either tool
+through the guided `npx canonkit install` flow, or select one explicitly with
+`--tool`:
 
 ```bash
+npx canonkit install --tool openspec  # still asks before running the setup
 npx canonkit tool add openspec      # or graphify
 npx canonkit tool add openspec --harness claude,opencode  # which harnesses; see below
 npx canonkit tool add graphify --with-git-hooks  # opt-in: trust every branch
 npx canonkit tool add graphify --dry-run
+npx canonkit install --tool graphify --dry-run
 npx canonkit tool remove graphify
 npx canonkit tool list
 ```
+
+The install menu also offers project specialists and stack packs after the tool
+list. Its repeatable `--specialist`, `--stack` and `--tool` flags select those
+items without a menu. Tool selections keep the confirmation described below;
+choosing a tool does not imply `--yes` and never enables Git hooks. From CI or
+another non-terminal run, use `--yes` only if skipping the tool confirmation is
+intentional. See [project items in the install flow](install.md#project-items-in-the-install-flow).
 
 ## canonkit integrates, it never installs
 

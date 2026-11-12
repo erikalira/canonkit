@@ -28,7 +28,7 @@ import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { resolveBin, projectOnlyHit, windowsOnlyHits, danglingHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
-import { renderInstallReport } from "./install-report.js";
+import { renderInstallReport, renderRemainingItems, shortPath } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
@@ -434,13 +434,14 @@ const DEFAULT_TARGETS = ["claude", "codex"];
  * install did before the choice existed. Returns null when the menu is
  * cancelled: nothing is written.
  */
-async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && process.stdout.isTTY) } = {}) {
+async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt } = {}) {
   const picked = TARGETS.filter((t) => flags.includes(`--${t}`));
   if (picked.length) return picked;
   if (!interactive) return [...DEFAULT_TARGETS];
 
   const { default: prompts } = await import("prompts");
-  const { targets } = await prompts({
+  const ask = prompt ?? prompts;
+  const { targets } = await ask({
     type: "multiselect",
     name: "targets",
     message: "Install the team for",
@@ -459,6 +460,59 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
     instructions: false,
   });
   return targets?.length ? targets : null;
+}
+
+async function resolveInstallProjectTarget(cwd = process.cwd(), home = os.homedir()) {
+  const target = realpathSync.native(cwd);
+  const root = await repositoryRoot(target);
+  const packageRoot = realpathSync.native(PACKAGE_ROOT);
+  const homeRoot = realpathSync.native(home);
+  const same = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  if (!root || same(realpathSync.native(root), packageRoot) || same(target, homeRoot)) return null;
+  return target;
+}
+
+async function chooseProjectItems(catalog, project, {
+  interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt,
+  explicit = { tools: [], specialists: [], stacks: [] },
+} = {}) {
+  const selected = {
+    tools: [...new Set(explicit.tools)],
+    specialists: [...new Set(explicit.specialists)],
+    stacks: [...new Set(explicit.stacks)],
+    toolHarnesses: {},
+  };
+  if (interactive && !selected.tools.length && !selected.specialists.length && !selected.stacks.length) {
+    const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
+    for (const [category, label, rows] of [
+      ["tools", "Optional tools", catalog.tools],
+      ["specialists", "Domain specialists", catalog.specialists],
+      ["stacks", "Stack packs", catalog.stacks],
+    ]) {
+      const answer = await ask({
+        type: "multiselect",
+        name: category,
+        message: `${label} for ${project}`,
+        choices: rows.map((item) => ({
+          title: item.name,
+          value: item.name,
+          description: [item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "),
+        })),
+        hint: "space toggles, enter confirms; none selected skips this category",
+        instructions: false,
+      });
+      if (!Array.isArray(answer?.[category])) return null;
+      selected[category] = answer[category];
+    }
+  }
+  for (const name of [...new Set(selected.tools)]) {
+    const tool = catalog.tools.find((item) => item.name === name)?.tool;
+    if (!tool?.harness) continue;
+    const choice = await chooseHarness(tool, null, { interactive, prompt });
+    if (!choice) return null;
+    selected.toolHarnesses[name] = choice.keys;
+  }
+  return selected;
 }
 
 const securityDigest = (value) => value === null ? null : createHash("sha256").update(value).digest("hex");
@@ -684,8 +738,8 @@ async function installDistribution(ctx, options = {}) {
   }
 
   ctx.log("");
-  ctx.log("Core installed. Domain specialists are per project:");
-  ctx.log("  cd <project> && npx canonkit add <name>");
+  ctx.log("Core installed.");
+  if (options.showProjectHint) ctx.log("Project items: run npx canonkit list to see optional tools, specialists and stack packs.");
   // doctor checks the Claude Code half (the agents, the blocks and the hook),
   // plus the Codex hook where one is installed. Without Claude Code its rows
   // would all FAIL, so a Codex-only install is not pointed at it.
@@ -1912,7 +1966,7 @@ async function addSpecialists(ctx, names, options = {}) {
 // Packs contribute instructions to the existing team, not new specialist agents.
 // Validate the whole request before either writer runs; pack preflight also
 // precedes the legacy specialist writer in a mixed request.
-async function changeProject(ctx, names, options) {
+async function changeProject(ctx, names, options = {}) {
   const agents = await readAgents();
   const known = new Set(specialists(agents).map((agent) => agent.name));
   for (const name of names) {
@@ -2011,8 +2065,37 @@ function readProjectBlock(raw, markers) {
   return m ? m[1] : null;
 }
 
-async function list(ctx) {
+async function readInstallCatalog({ project = realpathSync.native(process.cwd()), checkToolVersions = false, dryRun = false } = {}) {
   const agents = await readAgents();
+  const tools = await readTools();
+  const agentsDir = path.join(project, ".claude", "agents");
+  const target = path.join(project, "AGENTS.md");
+  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  const active = activeTools(raw, tools);
+  const toolExecOptions = toolExec();
+  const toolRows = [...tools.values()].map((tool) => {
+    const abs = resolveBin(tool.bin, { cwd: project, ...toolExecOptions });
+    const state = !abs ? "not on PATH"
+      : checkToolVersions && !dryRun ? `installed ${binVersion(abs, { project, env: toolEnv(tool), ...toolExecOptions }) ?? "?"}`
+        : dryRun && checkToolVersions ? "not checked" : "installed (version not checked)";
+    return { name: tool.name, description: tool.rules[0] ?? "", state, active: active.has(tool.name), tool };
+  });
+  const specialistRows = specialists(agents).map((agent) => {
+    const present = [
+      path.join(agentsDir, `${agent.name}.md`),
+      path.join(project, ".codex", "agents", `${agent.name}.toml`),
+      path.join(project, ".opencode", "agents", `${agent.name}.md`),
+      path.join(project, ".github", "agents", `${agent.name}.agent.md`),
+    ].filter(existsSync).length;
+    return { ...agent, installed: existsSync(path.join(agentsDir, `${agent.name}.md`)), state: present === 4 ? "installed" : present ? "partial" : "absent" };
+  });
+  const stacks = await new StackPackStore({ project }).catalogItems();
+  return { agents, tools: toolRows, specialists: specialistRows, stacks };
+}
+
+async function list(ctx) {
+  const catalog = await readInstallCatalog();
+  const agents = catalog.agents;
   const userDest = path.join(claudeHome(), "agents");
   const copilotDest = copilotAgentsDir();
   const projectDest = path.join(process.cwd(), ".claude", "agents");
@@ -2031,15 +2114,15 @@ async function list(ctx) {
 
   ctx.log("");
   ctx.log(`Domain specialists (this project: ${projectDest})`);
-  for (const a of specialists(agents)) {
-    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${mark(projectDest, a.name)}`);
+  for (const a of catalog.specialists) {
+    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${a.installed ? "installed" : "-"}`);
   }
 
   ctx.log("");
   ctx.log("Optional tools (graphify, openspec): canonkit tool list");
   ctx.log("");
   ctx.log("Stack packs (this project; skills, installed explicitly with canonkit add <stack>)");
-  for (const { pack, state } of await new StackPackStore().list()) ctx.log(`  ${pack.padEnd(12)} ${state}`);
+  for (const { name, state } of catalog.stacks) ctx.log(`  ${name.padEnd(12)} ${state}`);
 }
 
 /* ------------------------------------------------------------------ doctor */
@@ -2830,14 +2913,15 @@ function warnNewClaudeMd(project, existedBefore) {
   ]);
 }
 
-async function confirm(yes) {
+async function confirm(yes, question = "Proceed? [y/N] ", confirmAction) {
   if (yes) return true;
+  if (confirmAction) return Boolean(await confirmAction(question));
   if (!process.stdin.isTTY) {
-    console.error("Not running: there is no terminal to confirm on. Read the above, then re-run with --yes.");
+    console.error("Not running: there is no terminal to confirm on. Read the preflight above, then re-run with --yes.");
     return false;
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  const answer = await new Promise((resolve) => rl.question("Proceed? [y/N] ", resolve));
+  const answer = await new Promise((resolve) => rl.question(question, resolve));
   rl.close();
   return /^y(es)?$/i.test(answer.trim());
 }
@@ -2975,7 +3059,7 @@ function printMissing(tool, project, exec) {
  * setup fails — an entry for a tool whose setup did not finish teaches agents a
  * workflow the project does not have.
  */
-async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: given, prompt, interactive = !!(process.stdin.isTTY && process.stdout.isTTY), dumb = process.env.TERM === "dumb" } = {}) {
+async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: given, prompt, confirmAction, interactive = !!(process.stdin.isTTY && process.stdout.isTTY), dumb = process.env.TERM === "dumb", compactInstall = false } = {}) {
   const { tools, tool } = await getTool(name);
   // Before anything runs, --version included: the flag is checked against the
   // registry's list, and only a registry key ever reaches an argument.
@@ -3026,33 +3110,43 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
     }
   }
 
-  ctx.log(`${tool.name}: setup in ${plain(project)}`);
-  ctx.log(`  binary:  ${plain(abs)}`);
+  const log = compactInstall ? () => {} : ctx.log;
+  log(`${tool.name}: setup in ${plain(project)}`);
+  log(`  binary:  ${plain(abs)}`);
+  const warnings = [];
   const shadows = windowsOnlyHits(tool.bin, { cwd: project, before: abs, ...exec });
   if (shadows.length) {
-    ctx.log(`  note:    a Windows copy comes first in PATH (${plain(shadows[0])}); ignored here, but agents and shells running bare \`${tool.bin}\` get that one.`);
-    ctx.log("           To stop that, set appendWindowsPath=false under [interop] in /etc/wsl.conf (canonkit does not edit it).");
+    const warning = `a Windows copy comes first in PATH (${plain(shadows[0])}); canonkit ignores it, but agents and shells running bare \`${tool.bin}\` may use it. To stop that, set appendWindowsPath=false under [interop] in /etc/wsl.conf.`;
+    warnings.push(warning);
+    log(`  note:    ${warning}`);
   }
-  if (ctx.dryRun) ctx.log("  version: not checked (a dry run executes nothing, --version included)");
-  else if (!version) ctx.log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
+  if (ctx.dryRun) log("  version: not checked (a dry run executes nothing, --version included)");
+  else if (!version) {
+    warnings.push(`Version could not be checked; canonkit pins ${tool.pin}.`);
+    log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
+  }
   else if (version !== tool.pin) {
-    ctx.log(`  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`);
-    for (const l of tool.install) ctx.log(`             ${l}`);
-  } else ctx.log(`  version: ${version} (the pinned one)`);
+    warnings.push(`Installed version ${version}; canonkit pins ${tool.pin}. Setup will not update the tool binary.`);
+    log(`  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`);
+    for (const l of tool.install) log(`             ${l}`);
+  } else log(`  version: ${version} (the pinned one)`);
   if (choice) {
     const how = { flag: "from --harness", default: "default; choose with --harness", chosen: "chosen above", "no-menu": "default; this terminal cannot show a menu; choose with --harness" }[choice.source];
-    ctx.log(`  harness: ${choice.keys.map(harnessName).join(", ")} (${how})`);
+    log(`  harness: ${choice.keys.map(harnessName).join(", ")} (${how})`);
   }
   if (tool.preflight === "git-hooks") {
-    if (ctx.dryRun) ctx.log("  checks:  repository and Git automation (not run in a dry run)");
+    if (ctx.dryRun) log("  checks:  repository and Git automation (not run in a dry run)");
     if (withGitHooks) {
-      ctx.log("  WARNING: --with-git-hooks enables hooks and a merge driver that can execute repository code");
-      ctx.log("           on commit, checkout and merge before review. Trust every branch you check out.");
-      ctx.log("  touches: .git/hooks/post-commit, .git/hooks/post-checkout, .git/config and .gitattributes");
+      warnings.push("--with-git-hooks enables repository code on commit, checkout and merge; trust every branch.");
+      log("  WARNING: --with-git-hooks enables hooks and a merge driver that can execute repository code");
+      log("           on commit, checkout and merge before review. Trust every branch you check out.");
+      log("  touches: .git/hooks/post-commit, .git/hooks/post-checkout, .git/config and .gitattributes");
     } else {
-      ctx.log("  Git automation: no hooks or merge driver installed or removed (--yes does not enable them).");
+      log("  Git automation: no hooks or merge driver installed or removed (--yes does not enable them).");
       if (hooks?.automatic.length) {
-        loud([
+        const warning = `Existing Graphify Git automation remains enabled (${hooks.automatic.join(", ")}); it can execute repository code on commit, checkout and merge. Trust every branch. To disable it, review and run graphify hook uninstall.`;
+        warnings.push(warning);
+        if (!compactInstall) loud([
           `Existing graphify Git automation remains enabled: ${hooks.automatic.join(", ")}.`,
           "It can execute repository code on commit, checkout and merge before review. Trust every branch.",
           "No migration performed. To disable it, review and run `graphify hook uninstall`, then inspect git config and .gitattributes.",
@@ -3060,31 +3154,52 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
       }
     }
   }
-  setup.forEach((args, i) => ctx.log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
+  setup.forEach((args, i) => log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
   const touches = choice ? [...tool.touches, ...choice.keys.map((k) => tool.harness.touches[k]), ...harnessStaticTouches(tool)] : tool.touches;
-  touches.forEach((t, i) => ctx.log(`  ${i ? "        " : "touches:"} ${t}`));
-  if (tool.gitignore.length) ctx.log(`  then:    .gitignore — canonkit's ${tool.name} block (${tool.gitignore.join(" ")}), unless it already has rules for them`);
-  ctx.log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
-  for (const [k, v] of Object.entries(tool.env)) ctx.log(`  env:     ${k}=${v}`);
-  for (const n of tool.notes) ctx.log(`  note:    ${n}`);
+  const writeTargets = [...tool.touches, ...(choice ? choice.keys.map((k) => tool.harness.touches[k]) : [])]
+    .map((item) => /^(\.\/[A-Za-z0-9_./*-]+|\.?[A-Za-z0-9_-]+\/)/.exec(item)?.[1])
+    .filter((item, index, all) => item && all.indexOf(item) === index);
+  if (tool.gitignore.length) writeTargets.push(".gitignore");
+  writeTargets.push("AGENTS.md");
+  touches.forEach((t, i) => log(`  ${i ? "        " : "touches:"} ${t}`));
+  if (tool.gitignore.length) log(`  then:    .gitignore — canonkit's ${tool.name} block (${tool.gitignore.join(" ")}), unless it already has rules for them`);
+  log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
+  for (const [k, v] of Object.entries(tool.env)) log(`  env:     ${k}=${v}`);
+  for (const n of tool.notes) log(`  note:    ${n}`);
+
+  const title = name === "openspec" ? "OpenSpec" : name[0].toUpperCase() + name.slice(1);
+  const commandLines = setup.map((args) => display(abs, args));
+  if (compactInstall && !ctx.dryRun) {
+    console.log(`\n${title} setup`);
+    console.log(`  Project: ${shortPath(project)}`);
+    console.log(`  Command: ${commandLines.join("; ")}`);
+    console.log(`  Writes:  ${writeTargets.join(", ")}`);
+    if (version !== tool.pin) console.log(`  Version: ${version ?? "unknown"} (pinned ${tool.pin})`);
+    for (const warning of warnings) console.log(`  Warning: ${warning}`);
+  } else if (compactInstall) {
+    ctx.log(`TOOL_SETUP_WOULD: ${title} in ${shortPath(project)}: ${commandLines.join("; ")}`);
+  }
 
   if (ctx.dryRun) {
     const raw = existsSync(path.join(project, "AGENTS.md")) ? await readFile(path.join(project, "AGENTS.md"), "utf8") : "";
     const active = activeTools(raw, tools);
     const ignore = gitignorePlan(project, tool);
-    if (ignore?.own) ctx.log(".gitignore already has its own rules for them; would leave it as is");
-    else if (ignore) ctx.log(ignore.text === ignore.raw ? ".gitignore block already current" : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`);
-    ctx.log(active.has(name) ? "tools block in AGENTS.md already lists it" : "would add it to the tools block in AGENTS.md");
+    if (ignore?.own) log(".gitignore already has its own rules for them; would leave it as is");
+    else if (ignore) log(ignore.text === ignore.raw ? ".gitignore block already current" : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`);
+    log(active.has(name) ? "tools block in AGENTS.md already lists it" : "would add it to the tools block in AGENTS.md");
     return 0;
   }
 
-  if (!(await confirm(yes))) return 1;
+  if (!(await confirm(yes, `Run ${title} setup in ${shortPath(project)}? [y/N] `, confirmAction))) return 1;
 
   const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
+  let compactOutput = "";
   for (const [i, args] of setup.entries()) {
-    ctx.log(`> ${display(abs, args)}`);
-    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool), ...exec });
+    log(`> ${display(abs, args)}`);
+    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool), ...exec, capture: compactInstall });
     if (r.error || r.status !== 0) {
+      if (compactInstall && r.stdout) console.log(r.stdout.trimEnd());
+      if (compactInstall && r.stderr) console.error(r.stderr.trimEnd());
       console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
       if (i > 0) {
         console.error(`Already done: ${setup.slice(0, i).map((a) => `${tool.bin} ${a.join(" ")}`).join(", ")}.`);
@@ -3092,6 +3207,15 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
       }
       warnNewClaudeMd(project, claudeBefore);
       return 1;
+    }
+    if (compactInstall) {
+      const childOutput = [r.stdout, r.stderr].filter(Boolean).join("\n");
+      compactOutput += `${compactOutput ? "\n" : ""}${childOutput}`;
+      const warningsFromTool = childOutput.split(/\r?\n/).filter((line) => /\b(?:warning|warn|error|failed|refusing)\b/i.test(line));
+      for (const warning of warningsFromTool) {
+        const noSymbols = /warning:\s*(\d+) code file\(s\) yielded no symbols/i.exec(warning);
+        ctx.log(`WARN tool ${name}: ${noSymbols ? `${noSymbols[1]} code files yielded no symbols (see --verbose for details)` : plain(warning.trim())}`);
+      }
     }
   }
 
@@ -3108,6 +3232,24 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
   const active = activeTools(raw, tools);
   active.add(name);
   await writeToolsBlock(ctx, project, tools, active);
+  if (compactInstall) {
+    const graph = /\[graphify watch\] Rebuilt: ([^\r\n]+)/.exec(compactOutput);
+    const openspecCounts = /(\d+ skills and \d+ commands in [^\r\n]+)/.exec(compactOutput);
+    const result = name === "graphify" && graph
+      ? `updated code graph: ${graph[1]}`
+      : name === "openspec" && /OpenSpec Setup Complete/.test(compactOutput)
+        ? `configured ${choice?.keys.map(harnessName).join(", ") ?? "the selected harnesses"}${openspecCounts ? `; ${openspecCounts[1]}` : ""}`
+        : "setup completed";
+    ctx.log(`TOOL_SETUP_RESULT: ${title} ${result}`);
+    if (name === "openspec") {
+      if (/Skipped GitHub Copilot cloud files \(opt-in\)/.test(compactOutput)) {
+        ctx.log("OpenSpec guidance: GitHub Copilot cloud files are opt-in; enable with `openspec init --copilot-cloud`.");
+      }
+      if (/Restart your IDE to refresh commands\./.test(compactOutput)) {
+        ctx.log("OpenSpec guidance: restart your IDE to refresh commands.");
+      }
+    }
+  }
   return 0;
 }
 
@@ -3144,23 +3286,22 @@ async function toolRemove(ctx, name) {
 }
 
 async function toolList(ctx) {
-  const tools = await readTools();
   const project = realpathSync.native(process.cwd());
+  const catalog = await readInstallCatalog({ project, checkToolVersions: true, dryRun: ctx.dryRun });
   const target = path.join(project, "AGENTS.md");
-  const active = activeTools(existsSync(target) ? await readFile(target, "utf8") : "", tools);
+  const active = new Set(catalog.tools.filter((tool) => tool.active).map((tool) => tool.name));
 
   ctx.log(`Optional tools (this project: ${project})`);
   const exec = toolExec();
   const ignored = [];
   const unreadable = [];
-  for (const t of tools.values()) {
-    const abs = resolveBin(t.bin, { cwd: project, ...exec });
+  for (const t of catalog.tools) {
+    const abs = resolveBin(t.tool.bin, { cwd: project, ...exec });
     if (!abs) {
-      ignored.push(...windowsOnlyHits(t.bin, { cwd: project, ...exec }));
-      unreadable.push(...danglingHits(t.bin, { cwd: project, ...exec }));
+      ignored.push(...windowsOnlyHits(t.tool.bin, { cwd: project, ...exec }));
+      unreadable.push(...danglingHits(t.tool.bin, { cwd: project, ...exec }));
     }
-    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t), ...exec }) ?? "?"}`;
-    ctx.log(`  ${t.name.padEnd(10)} pin ${t.pin.padEnd(9)} ${installed.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
+    ctx.log(`  ${t.name.padEnd(10)} pin ${t.tool.pin.padEnd(9)} ${t.state.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
   }
   if (ignored.length) ctx.log(`  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`);
   for (const { link, target } of unreadable) ctx.log(`  (unreadable: ${plain(link)} -> ${plain(target)})`);
@@ -3168,13 +3309,13 @@ async function toolList(ctx) {
   ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
 }
 
-async function toolCommand(ctx, [sub, ...names], flags, { harness } = {}) {
+async function toolCommand(ctx, [sub, ...names], flags, { harness, confirmAction } = {}) {
   if (sub === "list" && !names.length) {
     await toolList(ctx);
     return 0;
   }
   if ((sub === "add" || sub === "remove") && names.length === 1) {
-    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes"), withGitHooks: flags.includes("--with-git-hooks"), harness }) : toolRemove(ctx, names[0]);
+    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes"), withGitHooks: flags.includes("--with-git-hooks"), harness, confirmAction }) : toolRemove(ctx, names[0]);
   }
   console.error("Usage: canonkit tool add|remove <name> | canonkit tool list\n");
   console.error(usage());
@@ -3618,6 +3759,9 @@ Usage:
   canonkit install [--no-reference]   install the core team at user level
            [--claude] [--codex]       for these runtimes only (asked in a terminal;
            [--opencode] [--copilot]   default Claude Code and Codex)
+           [--specialist name]...    project items: optional specialists, stacks and tools
+           [--stack name]...         can be repeated; tool setup still asks before running
+           [--tool name]...
            [--wire-hooks]             also wire hooks for selected runtimes that support them
            [--verbose]                print every step instead of the short summary
   canonkit doctor [--verbose]         check the install; exits 1 on any FAIL (--verbose: every row in full)
@@ -3656,7 +3800,7 @@ Options:
                   Codex: a group in $CODEX_HOME/hooks.json; run /hooks in Codex to
                   trust it. OpenCode 2+: plugins/canonkit.js and two asks in
                   opencode.json permissions
-  --yes           tool add: skip the confirmation prompt
+  --yes           explicitly skip a selected tool's setup confirmation
   --harness a,b   tool add openspec: harnesses to set up, comma-separated, exact names (claude, codex,
                   opencode, github-copilot; --harness=a,b also works). Without it: --yes, a script or
                   --dry-run use claude,codex; a terminal shows a menu
@@ -3755,7 +3899,8 @@ process.stdout.on("error", (err) => {
   throw err;
 });
 
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", "-h", "--help", "-v", "--version"];
+const PROJECT_SELECTION_FLAGS = ["--specialist", "--stack", "--tool"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", ...PROJECT_SELECTION_FLAGS, "-h", "--help", "-v", "--version"];
 
 // `--harness` is the one option with a value, so it is lifted out before the
 // split on a leading dash: otherwise `--harness a,b` leaves `a,b` as a
@@ -3773,8 +3918,53 @@ function liftHarness(argv) {
   return { kept, harness: given.length ? given : undefined };
 }
 
-async function main(rawArgv) {
-  const { kept: argv, harness } = liftHarness(rawArgv);
+function liftProjectSelections(argv) {
+  const kept = [];
+  const selected = { tools: [], specialists: [], stacks: [] };
+  const present = new Set();
+  const category = { "--tool": "tools", "--specialist": "specialists", "--stack": "stacks" };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    const equal = PROJECT_SELECTION_FLAGS.find((flag) => arg.startsWith(`${flag}=`));
+    if (equal) {
+      present.add(equal);
+      selected[category[equal]].push(arg.slice(equal.length + 1));
+      continue;
+    }
+    if (Object.hasOwn(category, arg)) {
+      present.add(arg);
+      selected[category[arg]].push(i + 1 < argv.length && !argv[i + 1].startsWith("-") ? argv[++i] : null);
+      continue;
+    }
+    kept.push(arg);
+  }
+  return { kept, selected, present };
+}
+
+function validateProjectSelections(selected, catalog) {
+  const categories = [
+    ["tools", catalog.tools.map(({ name }) => name), "Tools"],
+    ["specialists", catalog.specialists.map(({ name }) => name), "Specialists"],
+    ["stacks", catalog.stacks.map(({ name }) => name), "Stack packs"],
+  ];
+  for (const [key, names, label] of categories) {
+    for (const name of selected[key]) {
+      if (name == null || name === "") return `${key === "tools" ? "--tool" : key === "stacks" ? "--stack" : "--specialist"} needs a value.`;
+      if (!names.includes(name)) return `Unknown ${key === "tools" ? "tool" : key === "stacks" ? "stack pack" : "specialist"}: ${name}\n${label}: ${names.join(" ")}`;
+    }
+  }
+  return null;
+}
+
+async function main(rawArgv, {
+  interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
+  prompt,
+  confirmAction,
+  resolveProjectTarget = resolveInstallProjectTarget,
+  catalogReader = readInstallCatalog,
+} = {}) {
+  const { kept: afterHarness, harness } = liftHarness(rawArgv);
+  const { kept: argv, selected, present: projectSelectionFlags } = liftProjectSelections(afterHarness);
   const flags = argv.filter((a) => a.startsWith("-"));
   const args = argv.filter((a) => !a.startsWith("-"));
   const [command, ...rest] = args;
@@ -3797,6 +3987,10 @@ async function main(rawArgv) {
   }
 
   const ctx = context(flags.includes("--dry-run"));
+  if (projectSelectionFlags.size && command !== "install") {
+    console.error("--specialist, --stack and --tool are only valid for: canonkit install");
+    return 1;
+  }
   const modelsSetup = command === "models" && rest[0] === "setup";
   if (flags.includes("--project") && !modelsSetup && (command !== "uninstall" || rest.length || flags.some((flag) => !["--project", "--dry-run"].includes(flag)))) {
     console.error("--project is only valid for: canonkit uninstall --project [--dry-run], canonkit models setup --project");
@@ -3829,11 +4023,41 @@ async function main(rawArgv) {
 
   switch (command) {
     case "install": {
-      // The menu (no harness flag, a terminal) also offers the model step, so
-      // the agents are written with the choices made a moment ago.
-      const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && !!(process.stdin.isTTY && process.stdout.isTTY);
-      const targets = await chooseTargets(flags);
-      if (!targets || (menu && !ctx.dryRun && targets.some((h) => h === "claude" || h === "codex") && !(await offerModelSetup(ctx, await readAgents(), { harnesses: targets.filter((h) => h === "claude" || h === "codex") })))) {
+      const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && interactive;
+      const checkProjectTarget = menu || projectSelectionFlags.size > 0;
+      const projectTarget = checkProjectTarget ? await resolveProjectTarget() : null;
+      if (!projectTarget && projectSelectionFlags.size) {
+        console.error("Project selections require a Git project outside canonkit and HOME. Run install from the project that should receive them.");
+        return 1;
+      }
+      const catalog = projectTarget
+        ? await catalogReader({ project: projectTarget })
+        : { tools: [], specialists: [], stacks: [] };
+      const invalid = validateProjectSelections(selected, catalog);
+      if (invalid) {
+        console.error(invalid);
+        return 1;
+      }
+      const targets = await chooseTargets(flags, { interactive, prompt });
+      if (!targets) {
+        console.error("Cancelled: nothing was installed.");
+        return 1;
+      }
+      let projectItems = { tools: [], specialists: [], stacks: [], toolHarnesses: {} };
+      if (projectTarget) {
+        projectItems = await chooseProjectItems(catalog, projectTarget, {
+          interactive: menu && projectSelectionFlags.size === 0,
+          explicit: selected,
+          prompt,
+        });
+        if (!projectItems) {
+          console.error("Cancelled: nothing was installed.");
+          return 1;
+        }
+      } else if (menu) {
+        console.log("Project items skipped: from a Git project outside canonkit, run npx canonkit add <specialist-or-stack> or npx canonkit tool add <tool>; see npx canonkit list.");
+      }
+      if (menu && !ctx.dryRun && targets.some((h) => h === "claude" || h === "codex") && !(await offerModelSetup(ctx, await readAgents(), { harnesses: targets.filter((h) => h === "claude" || h === "codex"), ask: prompt, isTTY: interactive }))) {
         console.error("Cancelled: nothing was installed.");
         return 1;
       }
@@ -3847,16 +4071,55 @@ async function main(rawArgv) {
         ctx.onChange = (file) => changed.add(file);
       }
       let failed = true;
+      let remaining = null;
       try {
-        await trackedGlobal(ctx, targets, (tracked) => install(tracked, { reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"), targets }));
+        await trackedGlobal(ctx, targets, (tracked) => install(tracked, {
+          reference: !flags.includes("--no-reference"),
+          wireHooks: flags.includes("--wire-hooks"),
+          targets,
+          showProjectHint: !menu && projectSelectionFlags.size === 0,
+        }));
         failed = false;
+        for (const name of [...projectItems.specialists, ...projectItems.stacks]) {
+          try {
+            const result = await changeProject(ctx, [name]);
+            if (result) failed = true;
+          } catch (err) {
+            failed = true;
+            ctx.log(`Failed ${name}: ${err.message}`);
+          }
+        }
+        for (const name of projectItems.tools) {
+          try {
+            const result = await toolAdd(ctx, name, {
+              yes: flags.includes("--yes"),
+              harness: projectItems.toolHarnesses[name] ? [projectItems.toolHarnesses[name].join(",")] : undefined,
+              interactive: false,
+              confirmAction,
+              compactInstall: !verbose,
+            });
+            if (result) failed = true;
+          } catch (err) {
+            failed = true;
+            ctx.log(`Failed ${name}: ${err.message}`);
+          }
+        }
+        if (projectTarget) {
+          const after = await catalogReader({ project: projectTarget });
+          remaining = {
+            tools: after.tools.filter((item) => !item.active).map((item) => item.name),
+            specialists: after.specialists.filter((item) => item.state !== "installed").map((item) => item.name),
+            stacks: after.stacks.filter((item) => item.state !== "installed").map((item) => item.name),
+          };
+          if (verbose) for (const line of renderRemainingItems(remaining)) ctx.log(line);
+        }
       } finally {
         if (!verbose) {
           const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
-          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed }).join("\n"));
+          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed, remaining }).join("\n"));
         }
       }
-      return 0;
+      return failed ? 1 : 0;
     }
     case "uninstall":
       if (flags.includes("--project")) return uninstallProject(ctx);
@@ -3884,7 +4147,7 @@ async function main(rawArgv) {
       await list(ctx);
       return 0;
     case "tool":
-      return toolCommand(ctx, rest, flags, { harness });
+      return toolCommand(ctx, rest, flags, { harness, confirmAction });
     case "git-ignore-sandbox-files":
       if (rest.length || flags.some((flag) => !["--dry-run", "--remove"].includes(flag))) {
         console.error("Usage: canonkit git-ignore-sandbox-files [--remove] [--dry-run]\n");
@@ -3934,6 +4197,7 @@ if (invokedDirectly) {
 }
 
 export {
+  main,
   applyBlock,
   chooseTargets,
   readAgents,
@@ -3950,6 +4214,9 @@ export {
   replaceProjectBlock,
   readProjectBlock,
   readTools,
+  readInstallCatalog,
+  resolveInstallProjectTarget,
+  chooseProjectItems,
   parseTool,
   chooseHarness,
   toolAdd,

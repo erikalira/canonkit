@@ -50,12 +50,12 @@ describe("Windows binaries in the other resolvers", { skip: process.platform !==
     assert.doesNotMatch(control.out, /a Windows copy at/);
   });
 
-  test("install in the default short summary shows the ignored Windows claude as a `!` line", async () => {
+  test("install in the default short summary marks the ignored Windows claude as a warning", async () => {
     const { npm, marker, go } = await wsl("wsl-res-install-short", "claude");
     const r = go(["install", "--claude", "--no-reference"]);
     assert.equal(r.status, 0, r.out);
     assert.equal(existsSync(marker), false, "the Windows claude ran");
-    assert.ok(r.out.includes(`  ! security claude: a Windows copy at ${path.join(npm, "claude")} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`), r.out);
+    assert.ok(r.out.includes(`  ⚠ security claude: a Windows copy at ${path.join(npm, "claude")} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`), r.out);
     assert.doesNotMatch(r.out, /WARN security claude/);
   });
 

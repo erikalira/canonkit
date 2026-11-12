@@ -193,11 +193,10 @@ co-authors or a `Co-authored-by` trailer unless the user explicitly requests it.
 
 ## Dedicated tools, not the shell
 
-Read, search, write and edit files with the harness's file tools, in the repository
-too. The shell only runs programs (git, tests, CLIs): no heredocs, redirects, `tee`,
-`sed -i`, `cp` or `mv` to change files, no `cat`, `grep` or `find` to read or search.
-If a file tool is missing or denied, that is the user's boundary: adjust or ask,
-never redo the work through the shell.
+Write and edit files with the harness's file tools, in the repository too, never
+through the shell (heredocs, redirects, `tee`, `sed -i`, `cp`, `mv`). Prefer the read
+and search tools; without one, a read-only shell command (`cat`, `grep`, `find`) is
+fine. If a file tool is denied, adjust or ask, never redo the work through the shell.
 
 ## Temporary work outside the repository
 
