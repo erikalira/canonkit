@@ -22,6 +22,11 @@ async function fixture(t, version = "2.1.314", { sandbox = false } = {}) {
     await writeCommand(bin, "socat", script);
   }
   const env = { PATH: bin };
+  if (process.platform === "win32") {
+    const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? process.env.WINDIR ?? "C:\\Windows";
+    env.SystemRoot = systemRoot;
+    env.ComSpec = process.env.ComSpec ?? process.env.COMSPEC ?? path.join(systemRoot, "System32", "cmd.exe");
+  }
   const run = (args, cwd = project, extra = {}) => {
     const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
     const result = runCli(argv, { home, cwd, env: { ...env, ...extra } });

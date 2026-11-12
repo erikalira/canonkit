@@ -354,7 +354,7 @@ describe("install project item flags", () => {
     });
     assert.equal(result.status, 1, result.out);
     assert.ok(result.out.indexOf("OpenSpec setup") < result.out.indexOf("Run OpenSpec setup in"), result.out);
-    assert.equal(question, `Run OpenSpec setup in ${project}? [y/N] `);
+    assert.equal(question, `Run OpenSpec setup in ${project.replace(/\\/g, "/")}? [y/N] `);
     assert.equal((await snapshot(project))["openspec-ran.txt"], undefined);
 
     const accepted = await runInstall(["install", "--claude", "--no-reference", "--yes", "--tool", "openspec"], {

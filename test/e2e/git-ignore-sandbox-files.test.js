@@ -31,7 +31,15 @@ const homeFor = (cwd) => [...HOMES].find((h) => cwd.startsWith(path.dirname(h) +
 const git = (cwd, ...args) => {
   const env = isolatedEnv(homeFor(cwd), { PATH });
   for (const k of Object.keys(env)) if (k.toUpperCase().startsWith("GIT_")) delete env[k];
-  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "protocol.file.allow=always", ...args], { cwd, encoding: "utf8", env });
+  const gitArgs = [...args];
+  if (gitArgs[0] === "submodule") {
+    const execPath = spawnSync("git", ["--exec-path"], { cwd, encoding: "utf8", env });
+    assert.equal(execPath.status, 0, `git --exec-path: ${execPath.stderr}`);
+    // Git for Windows may rely on GIT_EXEC_PATH to find git-submodule. Derive
+    // the trusted path from this git binary instead of inheriting GIT_* values.
+    gitArgs.unshift(`--exec-path=${execPath.stdout.trim()}`);
+  }
+  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "protocol.file.allow=always", ...gitArgs], { cwd, encoding: "utf8", env });
   assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout;
 };
@@ -642,7 +650,8 @@ describe("git-ignore-sandbox-files: what it never touches", () => {
 
   for (const names of [{ GIT_DIR: "GIT_DIR", GIT_WORK_TREE: "GIT_WORK_TREE" }, { GIT_DIR: "Git_Dir", GIT_WORK_TREE: "Git_Work_Tree" }]) {
     test(`GIT_DIR / GIT_WORK_TREE (${names.GIT_DIR}) pointing at a decoy repository: only the cwd repository's exclude is written`, async () => {
-      const { root, home, project } = await repo(`si-decoy-${names.GIT_DIR}`);
+      const fixtureName = names.GIT_DIR === "GIT_DIR" ? "si-decoy-canonical-case" : "si-decoy-mixed-case";
+      const { root, home, project } = await repo(fixtureName);
       const decoy = path.join(root, "decoy");
       await mkdir(decoy);
       git(decoy, "init", "-q");
