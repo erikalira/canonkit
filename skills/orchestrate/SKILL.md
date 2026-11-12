@@ -307,8 +307,9 @@ Read-only owners (Scott, Archie, Quinn, Gard) and the other subagents cannot ask
 the user: they return "open questions" in their report. When consolidating
 reports, split those into what the lead can settle from evidence or a sensible
 default (settle it, say so) and what is the user's: scope, a veto to accept or
-overrule, a HIGH-risk choice with no default. In Claude Code, put the user's
-part in one `AskUserQuestion` call (up to 4 questions, recommended option
-first), not in a paragraph the user must answer by hand. Ask nothing at LOW or
-where a convention already decides; a question that only seeks reassurance is
-noise.
+overrule, a HIGH-risk choice with no default. Put the user's part in the
+harness's structured question tool, named in its block, in one call (up to 4
+questions, recommended option first), not in a paragraph the user must answer by
+hand. Where the tool is absent or rejected in the current mode, ask in text with
+numbered options and the recommendation first. Ask nothing at LOW or where a
+convention already decides; a question that only seeks reassurance is noise.
