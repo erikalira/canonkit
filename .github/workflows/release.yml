@@ -72,3 +72,16 @@ jobs:
       # Provenance is automatic under trusted publishing; the flag makes a
       # missing attestation fail the publish instead of passing silently.
       - run: npm publish --provenance --ignore-scripts
+
+      # Link on the run page. Runs after the publish and reads only
+      # package.json, which the tag check above already tied to this tag.
+      - name: Link to the published package
+        run: |
+          name=$(node -p 'require("./package.json").name')
+          v=$(node -p 'require("./package.json").version')
+          {
+            echo "### Published \`$name@$v\`"
+            echo
+            echo "- [npm: $name@$v](https://www.npmjs.com/package/$name/v/$v)"
+            echo "- [Release notes](https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME)"
+          } >> "$GITHUB_STEP_SUMMARY"
