@@ -58,12 +58,13 @@ test("install applies repository controls and only the approved global network k
   assert.equal(result.status, 0, result.out);
   assert.doesNotMatch(result.out, /NEVER_PRINT_CANARY|fixture-allow/);
   const afterUser = await json(f.global), afterProject = await json(f.local);
+  const environment = await collectEnvironment({ cwd: f.project, env: f.env });
   assert.equal(afterUser.sandbox.network.strictAllowlist, true);
   delete afterUser.sandbox;
   assert.deepEqual(afterUser, user);
   assert.equal(afterProject.permissions.blockReadsOutsideWorkingDirectories, true);
   assert.equal(afterProject.permissions.blockWritesOutsideWorkingDirectories, true);
-  assert.equal(afterProject.sandbox.autoAllowBashIfSandboxed, true);
+  assert.equal(afterProject.sandbox?.autoAllowBashIfSandboxed, environment.sandboxCapability === "available-unverified" ? true : undefined);
   assert.equal(afterProject.permissions.defaultMode, "plan");
   assert.deepEqual(afterProject.permissions.deny, ["fixture-deny"]);
   assert.equal(afterProject.hooks, undefined);
@@ -179,7 +180,7 @@ test("no-repository installation adds no project fallback and dry run writes not
 test("explicit false is recommended during install and doctor without doctor writes", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
   const evidence = await collectEnvironment({ cwd: f.project, env: f.env });
-  if (evidence.sandboxCapability !== "available-unverified") t.skip("host has no supported sandbox capability");
+  if (evidence.sandboxCapability !== "available-unverified") { t.skip("host has no supported sandbox capability"); return; }
   await put(f.local, { sandbox: { autoAllowBashIfSandboxed: false } });
   const installed = f.run(["install", "--claude", "--no-reference"]);
   assert.equal(installed.status, 0, installed.out);
@@ -205,6 +206,8 @@ test("explicit false is recommended during install and doctor without doctor wri
 
 test("project-local sandbox escape suppresses the shared auto-approval default in install and dry run", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
+  const evidence = await collectEnvironment({ cwd: f.project, env: f.env });
+  if (evidence.sandboxCapability !== "available-unverified") { t.skip("host has no supported sandbox capability"); return; }
   const localFile = path.join(f.project, ".claude", "settings.local.json");
   const localSettings = { sandbox: { allowUnsandboxedCommands: true }, custom: { keep: "unchanged" } };
   await put(localFile, localSettings);
@@ -248,6 +251,8 @@ test("project-local auto-approval overrides shared false and suppresses the stal
 
 test("unknown project-local sandbox settings suppress the default and dry-run preview without changing bytes", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
+  const evidence = await collectEnvironment({ cwd: f.project, env: f.env });
+  if (evidence.sandboxCapability !== "available-unverified") { t.skip("host has no supported sandbox capability"); return; }
   const localFile = path.join(f.project, ".claude", "settings.local.json");
   const hiddenLocalPolicy = Buffer.from('{"sandbox":{"allowUnsandboxedCommands":true');
   await put(localFile, hiddenLocalPolicy.toString("utf8"));

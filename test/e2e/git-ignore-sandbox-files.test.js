@@ -22,7 +22,10 @@ const END = "# canonkit:sandbox-placeholders:end";
 
 // The CLI under test gets a PATH of its own; it needs the developer's git on it.
 const gitDir = (process.env.PATH ?? "").split(path.delimiter).find((d) => d && existsSync(path.join(d, process.platform === "win32" ? "git.exe" : "git")));
-const PATH = [gitDir, DEFAULT_TEST_PATH].filter(Boolean).join(path.delimiter);
+// Git for Windows keeps the shell used by git-submodule under usr/bin, while
+// git.exe itself is normally under bin or cmd.
+const gitShellDir = process.platform === "win32" && gitDir ? path.resolve(gitDir, "..", "usr", "bin") : null;
+const PATH = [gitDir, gitShellDir && existsSync(path.join(gitShellDir, "sh.exe")) ? gitShellDir : null, DEFAULT_TEST_PATH].filter(Boolean).join(path.delimiter);
 
 // The test's own git runs with the same scratch HOME as the CLI under test (so no
 // developer config leaks in), no signing, no hooks and no inherited GIT_*.
@@ -206,7 +209,7 @@ describe("git-ignore-sandbox-files: the exclude file", () => {
     const r = sbx([], { home, cwd: project });
     assert.equal(r.status, 0, r.out);
     const after = await snapshot(path.join(project, ".git"));
-    assert.deepEqual(Object.keys(after).filter((k) => !(k in gitDirBefore)), [path.join("info", "exclude")]);
+    assert.deepEqual(Object.keys(after).filter((k) => !(k in gitDirBefore)), ["info/exclude"]);
     for (const k of Object.keys(gitDirBefore)) assert.equal(after[k], gitDirBefore[k], k);
     assert.equal(existsSync(path.join(project, ".gitignore")), false);
   });
