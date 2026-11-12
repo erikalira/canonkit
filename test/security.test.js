@@ -39,6 +39,38 @@ test("collection never probes in dry run and rejects project executables, includ
   assert.equal(calls, 1);
 });
 
+test("windowsRoots reach every resolve and the version probe; a Windows-only claude is reported, never probed", { skip: process.platform === "win32" && "POSIX stub" }, async (t) => {
+  const root = await fixture(t), project = path.join(root, "project"), win = path.join(root, "mnt", "c"), npm = path.join(win, "npm");
+  await mkdir(project); await mkdir(npm, { recursive: true });
+  const stub = path.join(npm, "claude");
+  await writeFile(stub, "#!/bin/sh\n", { mode: 0o755 });
+  const env = { PATH: npm };
+  const seen = [];
+  let probes = 0;
+  const base = { cwd: project, env, platform: "linux", read: async () => "", exists: () => false, version: () => { probes++; return "9.9.9"; } };
+  const fake = (name, options) => { seen.push([name, options.windowsRoots]); return null; };
+  const result = await collectEnvironment({ ...base, windowsRoots: [win], resolve: fake });
+  assert.deepEqual(seen, [["bwrap", [win]], ["socat", [win]], ["claude", [win]]]);
+  assert.equal(result.versionEvidence, "windows-binary-ignored");
+  assert.equal(result.ignoredWindowsBinary, stub);
+  assert.equal(result.claudeVersion, null);
+  assert.equal(probes, 0);
+  // The real resolver with the same roots finds nothing to run.
+  assert.equal((await collectEnvironment({ ...base, windowsRoots: [win] })).versionEvidence, "windows-binary-ignored");
+  // Dry run keeps its own value.
+  assert.equal((await collectEnvironment({ ...base, windowsRoots: [win], dryRun: true })).versionEvidence, "not-probed-dry-run");
+  // No roots (non-WSL, Windows, macOS): exactly what it was.
+  const plain = await collectEnvironment({ ...base, resolve: () => null });
+  assert.equal(plain.versionEvidence, "binary-unavailable");
+  assert.equal("ignoredWindowsBinary" in plain, false);
+  // A resolved binary is probed with the roots, so the child PATH is filtered.
+  const opts = [];
+  await writeFile(path.join(root, "claude"), "fixture");
+  const ok = await collectEnvironment({ ...base, windowsRoots: [win], resolve: (n) => (n === "claude" ? path.join(root, "claude") : null), version: (_f, o) => { opts.push(o.windowsRoots); return "2.1.314"; } });
+  assert.deepEqual(opts, [[win]]);
+  assert.equal(ok.versionEvidence, "trusted-binary-version");
+});
+
 test("native project controls preserve modes, personal grants, hooks and unsupported version boundaries", () => {
   const personal = { autoMode: { custom: "keep" }, permissions: { defaultMode: "auto", allow: ["fixture"], deny: ["fixture-deny"] }, hooks: { fixture: [] }, autoMemoryEnabled: false };
   const old = compileSecurity(personal, env("win32", "2.1.256"));

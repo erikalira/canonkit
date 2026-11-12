@@ -89,6 +89,9 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
       security.repo = m[1];
     } else if ((m = /^(?:would apply|Applying) (?:repository control|user Claude setting): (\S+)/.exec(line))) {
       security.applied.push(m[1]);
+    } else if (/^WARN security claude: a Windows copy at /.test(line)) {
+      // A security setting that was not written and why: shown as its own line, not folded into the note count.
+      notes.push(line.replace(/^WARN /, ""));
     } else if ((m = /^WARN security (\w+)(?: |:)/.exec(line))) {
       security.notes.push(line.replace(/^WARN /, ""));
     } else if ((m = /^would track \S+ \((\w+)\)$/.exec(line.trim()))) {

@@ -177,4 +177,42 @@ não quem mantém o repositório.
   descoberta de modelos ainda chamam `resolveBin` sem o filtro e podem resolver
   binários do Windows: incidental, fora do escopo desta emenda, deixado assim de
   propósito. Revisar se algum deles passar a rodar código do projeto ou a receber
-  dados sensíveis.
+  dados sensíveis. (Evidência de segurança e descoberta de modelos passaram a usar
+  o filtro na emenda seguinte; o `git` não.)
+
+## Emenda 2026-11-12 (2) — o mesmo filtro em mais três resolvedores
+
+- **Decisão.** No WSL, o filtro `windowsRoots` agora também vale para: (1) o portão de
+  versão do OpenCode em `install --wire-hooks`; (2) a descoberta de modelos
+  (`models refresh` e o refresh do catálogo no `install`); (3) a sonda de segurança
+  (`collectEnvironment`: `claude`, `bwrap`, `socat` e a execução de `claude --version`).
+  `readWindowsRoots()` é chamado uma vez por ponto de chamada (`install`, `doctor`,
+  `--wire-hooks`; o refresh do catálogo, em `models refresh` e no `install`, lê uma
+  vez por refresh quando nenhum `run` é injetado); o padrão das funções de biblioteca
+  continua `[]`, então fora do WSL nada muda. Uma cópia Windows é sempre reportada,
+  nunca executada e nunca silenciosa: o portão do OpenCode recusa nomeando a cópia
+  ignorada e mandando rodá-lo dentro do WSL com OpenCode 2 ou posterior instalado no
+  Linux; a descoberta registra o motivo "<nome> found only on the Windows side; not run
+  through WSL interop"; a evidência de segurança ganha o valor `windows-binary-ignored`
+  (com `ignoredWindowsBinary`), e o `doctor` mostra "unknown; a Windows copy at <path>
+  was ignored (it reads Windows settings, not these)".
+- **Por quê.** Mesmo motivo da emenda anterior, com um agravante: o `claude.exe` do
+  Windows lê as configurações do Windows, não as do WSL, então a versão que ele
+  imprime não descreve o Claude cujos arquivos o canonkit vai escrever. Archie
+  (contrato) e Gard (segurança) aprovaram a direção.
+- **Alternativas.** Um `--allow-windows` para aceitar a cópia Windows: rejeitado, pois
+  reintroduziria a execução por interop que a emenda anterior removeu, e a versão
+  obtida seria da instalação errada.
+- **Consequência aceita (muda o comportamento visível).** No WSL com só um `claude` do
+  Windows, o `install` passa a ter `claudeVersion = null`; as configurações de
+  segurança que dependem de versão (bloqueio de leitura/escrita de arquivos, sandbox,
+  rede) são escritas em menor número que antes. O `install` avisa na hora, com uma
+  linha `WARN security claude: a Windows copy at <caminho> was ignored ...` (no resumo
+  curto aparece como linha `!`, não como contagem de notas); o `canonkit doctor` (linha
+  "security claude version") e o `models refresh` também mostram. Em `--dry-run` a
+  sonda não roda, então o aviso não aparece. O remédio é instalar o Claude Code no lado Linux. Continua valendo: isto é higiene,
+  não defesa contra binário hostil.
+- **Ainda fora do filtro (não feito).** As chamadas de `git` (`safeGit`: `core.fsmonitor`
+  e `GIT_*`) e as leituras de arquivo sem guarda contra FIFO são mudanças separadas,
+  ainda abertas. Revisar este ADR quando elas entrarem ou se alguma sonda passar a
+  receber dados sensíveis.

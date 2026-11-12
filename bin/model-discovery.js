@@ -21,7 +21,7 @@ import { readFile, writeFile, mkdir, rename, rm } from "node:fs/promises";
 import { realpathSync, readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { resolveBin, runBin } from "./exec.js";
+import { resolveBin, runBin, windowsOnlyHits, readWindowsRoots } from "./exec.js";
 import { repositoryRoot, LOADER_ENV } from "./security.js";
 
 const CATALOG_VERSION = 1;
@@ -55,13 +55,17 @@ function inside(file, root) {
  * node_modules/.bin, is never the one run, from any subfolder. The child runs
  * from the binary's own directory, as binVersion does.
  */
-function systemRunner({ env = process.env, platform = process.platform, root = process.cwd() } = {}) {
+function systemRunner({ env = process.env, platform = process.platform, root = process.cwd(), windowsRoots = [] } = {}) {
   const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !LOADER_ENV.test(key)));
   return (name, args) => {
-    const abs = resolveBin(name, { env, platform, cwd: root });
-    if (!abs) return { status: null, stdout: "", stderr: "", error: `${name} not found on PATH` };
+    const abs = resolveBin(name, { env, platform, cwd: root, windowsRoots });
+    if (!abs) {
+      // A Windows copy is reported, never run through WSL interop.
+      const windows = windowsOnlyHits(name, { env, platform, cwd: root, windowsRoots });
+      return { status: null, stdout: "", stderr: "", error: windows.length ? `${name} found only on the Windows side; not run through WSL interop` : `${name} not found on PATH` };
+    }
     if (platform === process.platform && inside(abs, root)) return { status: null, stdout: "", stderr: "", error: `${name} resolves inside the project; not run` };
-    return runBin(abs, args, { cwd: path.dirname(abs), project: root, capture: true, timeout: RUN_TIMEOUT, maxBuffer: RUN_MAX_BUFFER, env: probeEnv, platform });
+    return runBin(abs, args, { cwd: path.dirname(abs), project: root, capture: true, timeout: RUN_TIMEOUT, maxBuffer: RUN_MAX_BUFFER, env: probeEnv, platform, windowsRoots });
   };
 }
 
@@ -71,14 +75,14 @@ function systemRunner({ env = process.env, platform = process.platform, root = p
  * trusted stops discovery (every run reports why) rather than falling back
  * to a narrower filter.
  */
-async function trustedRunner(cwd = process.cwd(), { env = process.env, platform = process.platform } = {}) {
+async function trustedRunner(cwd = process.cwd(), { env = process.env, platform = process.platform, windowsRoots = [] } = {}) {
   let root;
   try {
     root = (await repositoryRoot(cwd)) ?? realpathSync.native(cwd);
   } catch (err) {
     return () => ({ status: null, stdout: "", stderr: "", error: `not run: ${err.message}` });
   }
-  return systemRunner({ root, env, platform });
+  return systemRunner({ root, env, platform, windowsRoots });
 }
 
 const unknown = (reason) => ({ status: "unknown", reason });
@@ -344,7 +348,7 @@ async function writeCatalog(fresh, file = catalogPath(), { keepWithin = 0, now =
 async function refreshCatalog(harnesses, { run, now = new Date(), file, keepWithin = 0, home, policy = home ? () => claudeModelPolicy({ home }) : undefined } = {}) {
   // Only harnesses with a working adapter need a process; skip the repository
   // walk when none will start one.
-  const runner = run ?? (harnesses.some((h) => h === "claude" || h === "codex") ? await trustedRunner() : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
+  const runner = run ?? (harnesses.some((h) => h === "claude" || h === "codex") ? await trustedRunner(process.cwd(), { windowsRoots: readWindowsRoots() }) : () => ({ status: null, stdout: "", stderr: "", error: "not run" }));
   return writeCatalog(discover(harnesses, { run: runner, now, policy }), file, { keepWithin, now });
 }
 

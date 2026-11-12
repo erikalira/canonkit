@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
-import { resolveBin, binVersion } from "./exec.js";
+import { resolveBin, binVersion, windowsOnlyHits } from "./exec.js";
 
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -90,12 +90,13 @@ export function classifyEnvironment({ platform = process.platform, release = os.
 // Every probe of a harness binary (here and in model-discovery.js) drops them.
 export const LOADER_ENV = /^(?:NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|BASH_ENV|ENV|RUBYOPT|PERL5OPT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*)$/i;
 
-export async function collectEnvironment({ cwd = process.cwd(), env = process.env, platform = process.platform, release = os.release(), dryRun = false, read = readFile, exists = existsSync, resolve = resolveBin, version = binVersion } = {}) {
+export async function collectEnvironment({ cwd = process.cwd(), env = process.env, platform = process.platform, release = os.release(), dryRun = false, read = readFile, exists = existsSync, resolve = resolveBin, version = binVersion, windowsRoots = [] } = {}) {
   let procVersion = "";
   if (platform === "linux") {
     try { procVersion = await read("/proc/version", "utf8"); } catch (err) { if (!absent(err) && err.code !== "EACCES") throw err; }
   }
-  const options = { cwd, env, platform };
+  // On WSL a Windows binary on PATH is not resolved (it would run through interop and read Windows settings).
+  const options = { cwd, env, platform, windowsRoots };
   const bwrap = platform === "linux" ? resolve("bwrap", options) : null;
   const socat = platform === "linux" ? resolve("socat", options) : null;
   const evidence = classifyEnvironment({ platform, release, procVersion, env, dockerMarker: platform === "linux" && exists("/.dockerenv"), bwrap, socat });
@@ -108,7 +109,13 @@ export async function collectEnvironment({ cwd = process.cwd(), env = process.en
     } catch (err) { if (!["ENOENT", "EACCES", "EPERM"].includes(err.code)) throw err; claude = null; }
   }
   const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !LOADER_ENV.test(key)));
-  return { ...evidence, claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform }) : null, versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : "binary-unavailable" };
+  const ignored = !dryRun && !claude ? windowsOnlyHits("claude", options)[0] : undefined;
+  return {
+    ...evidence,
+    claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform, windowsRoots }) : null,
+    versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : ignored ? "windows-binary-ignored" : "binary-unavailable",
+    ...(ignored ? { ignoredWindowsBinary: ignored } : {}),
+  };
 }
 
 // No process execution is needed to find a working tree, including a linked

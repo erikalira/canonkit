@@ -191,6 +191,14 @@ Preserve the user's Git-configured author identity when creating commits; do not
 override it with an agent identity or another person's identity. Do not add
 co-authors or a `Co-authored-by` trailer unless the user explicitly requests it.
 
+## Dedicated tools, not the shell
+
+Read, search, write and edit files with the harness's file tools, in the repository
+too. The shell only runs programs (git, tests, CLIs): no heredocs, redirects, `tee`,
+`sed -i`, `cp` or `mv` to change files, no `cat`, `grep` or `find` to read or search.
+If a file tool is missing or denied, that is the user's boundary: adjust or ask,
+never redo the work through the shell.
+
 ## Temporary work outside the repository
 
 Use the file-writing tool: one script, in the harness's scratch folder or else

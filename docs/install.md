@@ -230,6 +230,17 @@ and prerequisites separately. A container inside WSL is not a different,
 mutually exclusive operating system. A marker or a dependency on `PATH` is
 evidence to inspect, not proof of containment.
 
+On WSL, `bwrap`, `socat` and `claude` are looked up on the Linux side only. A
+Windows `claude` (for example `claude.exe` reached through interop) is never run,
+because it reads Windows settings, not the WSL ones. With only that copy, the
+Claude version is unknown, so settings gated by version (file-read and file-write
+blocks, sandbox, network lock) are written less than with a Linux-side Claude.
+`install` says so with a `WARN security claude: a Windows copy at <path> was
+ignored ...` line (a `!` line in the short summary; not printed in `--dry-run`,
+which does not probe versions), and `canonkit doctor` shows it in `security claude
+version` ("unknown; a Windows copy at <path> was ignored ..."). Install Claude Code
+inside WSL to restore them.
+
 | Environment | Configuration and limits |
 | --- | --- |
 | Claude on native Windows | Apply supported file-tool restrictions and retain native approvals. Shell filesystem/network containment is unavailable; report partial protection without requiring WSL. |
@@ -474,7 +485,8 @@ can use, so other versions go through `other…`. That text is not a contract, s
 record says `confidence: "help-text"`, and anything it does not recognize becomes
 `unknown` with the reason, never an error. The binary is looked up on PATH outside
 the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
-any subfolder), with no shell, closed stdin, a 30-second timeout and no
+any subfolder; on WSL a binary found only on the Windows side is reported as "found
+only on the Windows side; not run through WSL interop" and not run), with no shell, closed stdin, a 30-second timeout and no
 `NODE_OPTIONS`-style loader variables. Canonkit reads no credential; Claude's
 help-based probe does not use the network. Codex discovery runs the experimental
 `codex debug models` command. Codex may refresh its catalog over the network,
@@ -680,7 +692,9 @@ since OpenCode reads every `.md` in the folder).
 
 The plugin is an OpenCode 2 plugin, and OpenCode 1 does not run it. Install
 checks `opencode --version` first and refuses if `opencode` is not on PATH, prints
-no version, or is older than 2. With `--wire-hooks`, install writes (all under
+no version, or is older than 2. On WSL only a Linux-side `opencode` counts: a
+Windows copy is ignored (never run through interop), the refusal names it, and the fix is
+to install OpenCode 2 or later inside WSL. With `--wire-hooks`, install writes (all under
 `~/.config/opencode`, or `$XDG_CONFIG_HOME/opencode`):
 
 | What | Where |

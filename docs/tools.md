@@ -56,8 +56,11 @@ project). If a Windows copy comes earlier in your `PATH` than the Linux one, `to
 prints a non-blocking note: agents and shells that run bare `<bin>` get the Windows
 one. To stop that, set `appendWindowsPath=false` under `[interop]` in
 `/etc/wsl.conf`; canonkit only prints this and never edits `wsl.conf` or your `PATH`.
-This is hygiene, not a defense against hostile binaries (see the ADR). `git`, the
-security checks and model discovery still resolve binaries as before.
+This is hygiene, not a defense against hostile binaries (see the ADR). The same filter
+now also covers the OpenCode version check of `install --wire-hooks`, `models refresh`
+(and the catalog refresh in `install`) and the security probe that reads the `claude`
+version (see [install.md](install.md#choosing-models) and `canonkit doctor`). `git`
+calls still resolve as before.
 
 > **Claude Code sandbox.** A tool installed under `~/.nvm` or `~/.local` can be invisible
 > to sandboxed Bash commands when the sandbox denies reading your home directory

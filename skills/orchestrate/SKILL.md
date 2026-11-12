@@ -119,7 +119,8 @@ than widening the level on the spot.
 
 A brief that asks for work outside the repository carries the block's rule
 ("Temporary work outside the repository"): the subagent starts cold, and its shell
-writes there land on the user as prompts and false gates.
+writes there land on the user as prompts and false gates. A brief that has the
+subagent change files says: file tools to write, shell only to run programs.
 
 ## Briefing verification
 

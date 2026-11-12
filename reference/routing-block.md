@@ -23,6 +23,9 @@ controls remain in the user's settings. Instructions govern review and authoriza
 ask before git commit or git push, never bypass Git hooks or signing, protect secrets,
 and obtain independent review after the final edit of a HIGH-risk change.
 
+File work uses Read, Edit and Write, so the user's permission rules and diff review
+apply; Bash only runs commands.
+
 Without optional canonkit hooks, those rules hold by judgment: do not claim automatic
 hook prompts, secret blocks, dispatch logging or a Stop-hook review gate.
 

@@ -480,7 +480,7 @@ function scopedSecurityManifest(ctx, root, targets = ["claude", "codex"]) {
 async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
   if (!targets.includes("claude")) return null;
   const root = await repositoryRoot();
-  const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), dryRun: ctx.dryRun });
+  const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), dryRun: ctx.dryRun, windowsRoots: readWindowsRoots() });
   const globalFile = settingsPath();
   await safePath(globalFile);
   const globalBefore = await optionalBytes(globalFile);
@@ -561,6 +561,7 @@ async function install(ctx, options = {}) {
         for (const gap of project.gaps) ctx.log(`WARN security coverage: ${gap}`);
       }
       if (ctx.dryRun) ctx.log("Security version/runtime checks not executed in dry run; effective coverage unknown");
+      if (security.evidence.versionEvidence === "windows-binary-ignored") ctx.log(`WARN security claude: a Windows copy at ${plain(security.evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`);
       ctx.log("Check native permissions and security coverage: npx canonkit doctor");
     }
   } catch (err) {
@@ -1617,9 +1618,15 @@ function refuseOpencodeBelow2() {
   const cwd = process.cwd();
   const toHome = path.relative(cwd, os.homedir());
   const root = toHome === "" || (!toHome.startsWith("..") && !path.isAbsolute(toHome)) ? path.join(cwd, "node_modules") : cwd;
-  const abs = resolveBin("opencode", { cwd: root });
-  if (!abs) throw refuse("opencode is not on PATH, so its version cannot be checked", "install OpenCode 2 or put it on PATH");
-  const version = binVersion(abs, { project: root });
+  // On WSL a Windows opencode would run through interop: skipped, and named below.
+  const windowsRoots = readWindowsRoots();
+  const abs = resolveBin("opencode", { cwd: root, windowsRoots });
+  if (!abs) {
+    const windows = windowsOnlyHits("opencode", { cwd: root, windowsRoots });
+    if (windows.length) throw refuse(`opencode was found only on the Windows side (${plain(windows[0])}) and is not run through WSL interop, so its version cannot be checked`, "run it inside WSL with a Linux-side install of OpenCode 2 or later");
+    throw refuse("opencode is not on PATH, so its version cannot be checked", "install OpenCode 2 or put it on PATH");
+  }
+  const version = binVersion(abs, { project: root, windowsRoots });
   if (!version) throw refuse(`${display(abs, ["--version"])} printed no version`, "check that OpenCode runs");
   if (Number(version.split(".")[0]) < 2) throw refuse(`OpenCode is ${version}`, "upgrade OpenCode");
 }
@@ -2052,7 +2059,7 @@ async function securityDiagnosis() {
   let root = null;
   try { root = await repositoryRoot(); }
   catch { add("FAIL", "security repository", "unknown: unsafe or invalid current repository boundary"); }
-  const evidence = await collectEnvironment({ cwd: root ?? process.cwd() });
+  const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() });
   add("OK", "security environment", `detected ${evidence.platform}, WSL ${evidence.wsl}, container ${evidence.container}; sandbox capability ${evidence.sandboxCapability}; runtime unknown`);
   const sources = [];
   for (const [label, file] of [
@@ -2074,7 +2081,9 @@ async function securityDiagnosis() {
     }
     catch { sources.push({ label, error: true }); }
   }
-  add("WARN", "security claude version", `${evidence.claudeVersion ?? "unknown"}; ${evidence.versionEvidence}; no authenticated session or boundary test was started`);
+  add("WARN", "security claude version", evidence.versionEvidence === "windows-binary-ignored"
+    ? `unknown; a Windows copy at ${plain(evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these); no authenticated session or boundary test was started`
+    : `${evidence.claudeVersion ?? "unknown"}; ${evidence.versionEvidence}; no authenticated session or boundary test was started`);
   for (const detail of assessClaude(sources, evidence)) add(detail.status, `security claude ${detail.control}`, `${detail.coverage}: ${detail.detail}`);
   const profile = evidence.platform === "win32" ? "native-windows-partial" : evidence.sandboxCapability === "available-unverified" ? "sandbox-configured-runtime-unverified" : "available-file-controls-partial";
   add("WARN", "security claude desired-profile", `partial: ${profile}; configured keys do not establish effective session containment`);

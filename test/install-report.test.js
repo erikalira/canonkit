@@ -64,3 +64,19 @@ test("old backup copies collapse to one note per runtime", () => {
   assert.doesNotMatch(out, /archie|native-windows-shell/);
   assert.match(out, /Security .*1 note/);
 });
+
+test("an ignored Windows claude is its own `!` line and does not inflate the security notes count", () => {
+  const warn = "WARN security claude: a Windows copy at /mnt/c/Users/me/npm/claude was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run";
+  const base = [`Installed 10 agents -> ${j(".claude", "agents")}`, "WARN security coverage: native-windows-shell-unsandboxed"];
+  const withWarn = renderInstallReport([...base, warn], { home }).join("\n");
+  assert.match(withWarn, /^  ! security claude: a Windows copy at \/mnt\/c\/Users\/me\/npm\/claude was ignored .*install Claude Code inside WSL and re-run$/m);
+  assert.match(withWarn, /Security .*1 note\b/);
+  // Alone: still shown, and no "0 notes" or phantom note row.
+  const alone = renderInstallReport([`Installed 10 agents -> ${j(".claude", "agents")}`, warn], { home }).join("\n");
+  assert.match(alone, /^  ! security claude: a Windows copy at /m);
+  assert.doesNotMatch(alone, /\d+ notes?\b/);
+  // Without the line the summary is what it was.
+  const without = renderInstallReport(base, { home }).join("\n");
+  assert.doesNotMatch(without, /Windows copy/);
+  assert.match(without, /Security .*1 note\b/);
+});
