@@ -10,6 +10,12 @@ Before delivery, follow `orchestrate` completion for documentation and release
 impact; LOW stays inline. Preserve incidental findings through its procedure;
 otherwise, do nothing extra.
 
+A decision that is the user's, with 2–4 real options (scope, a veto to accept or overrule,
+a HIGH-risk choice, commit/push variants), is asked with `AskUserQuestion`, not buried in
+prose: recommended option first, marked "(Recommended)", every pending question of the
+turn in one call of up to 4. A subagent's open questions that depend on the user become
+that call. Conventional defaults and LOW work are not asked: pick, and say what you picked.
+
 Claude Code's native permission modes remain authoritative. Do not change the
 user's selected mode, bypass permission checks, or add broad automatic approvals.
 Repository access restrictions live in `.claude/settings.json`; supported user-only

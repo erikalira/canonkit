@@ -300,3 +300,15 @@ It is a reading step, not an agent and not an artifact. A LOW change skips it.
 
 A contradiction becomes a named escalation to the decision owner, not an average
 of the two recommendations.
+
+## Open decisions for the user
+
+Read-only owners (Scott, Archie, Quinn, Gard) and the other subagents cannot ask
+the user: they return "open questions" in their report. When consolidating
+reports, split those into what the lead can settle from evidence or a sensible
+default (settle it, say so) and what is the user's: scope, a veto to accept or
+overrule, a HIGH-risk choice with no default. In Claude Code, put the user's
+part in one `AskUserQuestion` call (up to 4 questions, recommended option
+first), not in a paragraph the user must answer by hand. Ask nothing at LOW or
+where a convention already decides; a question that only seeks reassurance is
+noise.

@@ -185,6 +185,12 @@ blamed the user's branching habit; branches the user creates never had this prob
 So after a git mishap, check the transcripts and the reflog for who caused it before
 giving advice.
 
+## Commit authorship
+
+Preserve the user's Git-configured author identity when creating commits; do not
+override it with an agent identity or another person's identity. Do not add
+co-authors or a `Co-authored-by` trailer unless the user explicitly requests it.
+
 ## Temporary work outside the repository
 
 Use the file-writing tool: one script, in the harness's scratch folder or else
