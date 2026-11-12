@@ -75,6 +75,14 @@ security checks and model discovery still resolve binaries as before.
 > `~/.local/pipx`): run `pipx environment --value PIPX_LOCAL_VENVS` and allow the
 > folder above `venvs`.
 >
+> When it can tell, canonkit says so. `tool add` names a link in your `PATH` whose
+> target the process cannot read, with that target ("the link is broken, or the folder
+> is hidden from this process"), and, when nothing more specific explains the missing
+> tool, adds one line pointing here (not on native Windows). `tool list` only lists the
+> unreadable links under the table. A folder the sandbox hides outright (`~/.nvm`)
+> leaves no trace, so only the generic line appears. canonkit only prints these hints:
+> it never reads or writes your settings and does not guess the folder to allow.
+>
 > Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
 > `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,
 > unless the npm global prefix is inside your home (`npm config get prefix`, for example

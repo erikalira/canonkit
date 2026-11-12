@@ -14,7 +14,7 @@
  *   - stdin is closed and every run has a timeout.
  */
 import { spawnSync } from "node:child_process";
-import { statSync, accessSync, realpathSync, readFileSync, constants } from "node:fs";
+import { statSync, lstatSync, readlinkSync, accessSync, realpathSync, readFileSync, constants } from "node:fs";
 import path from "node:path";
 
 // Arguments come from the tool registry, never from the project. This is the
@@ -193,6 +193,29 @@ function windowsOnlyHits(name, { env = process.env, platform = process.platform,
   return hits;
 }
 
+/**
+ * Symlinks named `name` in safePathDirs whose target cannot be read, in PATH
+ * order: a broken link, or one into a folder this process cannot see (the Claude
+ * Code sandbox hides ~/.local/share/pipx, say). Reports only; it never touches
+ * a setting. POSIX only. Never throws.
+ */
+function danglingHits(name, { env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [] } = {}) {
+  if (platform === "win32" || !/^[a-z0-9][a-z0-9_-]*$/i.test(name)) return [];
+  const hits = [];
+  for (const dir of safePathDirs({ env, platform, cwd, windowsRoots })) {
+    const link = path.join(dir, name);
+    try {
+      if (!lstatSync(link).isSymbolicLink()) continue;
+      try {
+        statSync(link);
+        continue;
+      } catch {}
+      hits.push({ link, target: readlinkSync(link) });
+    } catch {}
+  }
+  return hits;
+}
+
 /** Absolute path of `name` in safePathDirs, or null. */
 function resolveBin(name, { env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [] } = {}) {
   if (!/^[a-z0-9][a-z0-9_-]*$/i.test(name)) throw new Error(`resolveBin: not a bare command name: ${name}`);
@@ -323,4 +346,4 @@ function binVersion(abs, { project, env, platform, windowsRoots } = {}) {
   return m ? m[1] : null;
 }
 
-export { resolveBin, safePathDirs, projectOnlyHit, windowsOnlyHits, windowsMountRoots, childEnv, readWindowsRoots, commandFor, runBin, binVersion, display, SAFE_ARG };
+export { resolveBin, safePathDirs, projectOnlyHit, windowsOnlyHits, danglingHits, windowsMountRoots, childEnv, readWindowsRoots, commandFor, runBin, binVersion, display, SAFE_ARG };

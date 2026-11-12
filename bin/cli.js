@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { resolveBin, projectOnlyHit, windowsOnlyHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
+import { resolveBin, projectOnlyHit, windowsOnlyHits, danglingHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { renderInstallReport } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
@@ -2752,11 +2752,16 @@ const plain = (p) => p.replace(/[\x00-\x1f\x7f-\x9f]/g, "?");
 function printMissing(tool, project, exec) {
   const inside = projectOnlyHit(tool.bin, { cwd: project });
   const windows = windowsOnlyHits(tool.bin, { cwd: project, ...exec });
+  const dangling = danglingHits(tool.bin, { cwd: project, ...exec });
   console.error(
     [
       ...(inside ? [`${tool.bin} was found only inside the project (${plain(inside)}); canonkit runs binaries from outside it only.`] : []),
       ...(windows.length ? [`${tool.bin} was found only on the Windows side (${plain(windows[0])}); canonkit does not run Windows binaries through WSL interop.`] : []),
       ...(inside || windows.length ? [] : [`${tool.bin} is not on PATH.`]),
+      // Fixed wording, no snippet and no folder derived from the target: which folder to allow is the person's call.
+      ...dangling.slice(0, 1).map(({ link, target }) => `${tool.bin} is at ${plain(link)} but its target is not readable (${plain(target)}): the link is broken, or the folder is hidden from this process. Under the Claude Code sandbox, allow that folder in sandbox.filesystem.allowRead of your user settings (~/.claude/settings.json); see docs/tools.md (Claude Code sandbox).`),
+      // Not on native Windows: ~/.nvm, ~/.local and the bubblewrap/Seatbelt sandbox do not apply there.
+      ...(inside || windows.length || dangling.length || process.platform === "win32" ? [] : ["If it is installed under ~/.nvm or ~/.local and this runs inside the Claude Code sandbox, that folder may be hidden: see docs/tools.md (Claude Code sandbox)."]),
       "canonkit only integrates tools you installed; it installs nothing.",
       `Install the pinned version (${tool.requires}):`,
       ...tool.install.map((l) => `  ${l}`),
@@ -2918,13 +2923,18 @@ async function toolList(ctx) {
   ctx.log(`Optional tools (this project: ${project})`);
   const exec = toolExec();
   const ignored = [];
+  const unreadable = [];
   for (const t of tools.values()) {
     const abs = resolveBin(t.bin, { cwd: project, ...exec });
-    if (!abs) ignored.push(...windowsOnlyHits(t.bin, { cwd: project, ...exec }));
+    if (!abs) {
+      ignored.push(...windowsOnlyHits(t.bin, { cwd: project, ...exec }));
+      unreadable.push(...danglingHits(t.bin, { cwd: project, ...exec }));
+    }
     const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t), ...exec }) ?? "?"}`;
     ctx.log(`  ${t.name.padEnd(10)} pin ${t.pin.padEnd(9)} ${installed.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
   }
   if (ignored.length) ctx.log(`  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`);
+  for (const { link, target } of unreadable) ctx.log(`  (unreadable: ${plain(link)} -> ${plain(target)})`);
   ctx.log("");
   ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
 }

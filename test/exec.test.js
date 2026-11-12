@@ -10,7 +10,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion, windowsMountRoots, readWindowsRoots, windowsOnlyHits, childEnv } from "../bin/exec.js";
+import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion, windowsMountRoots, readWindowsRoots, windowsOnlyHits, danglingHits, childEnv } from "../bin/exec.js";
 
 const WIN = process.platform === "win32";
 const SEP = WIN ? ";" : ":";
@@ -319,6 +319,29 @@ describe("Windows roots on WSL", () => {
     // Only the hits ahead of the chosen binary.
     assert.deepEqual(windowsOnlyHits("tooly", { env, cwd: project, windowsRoots: [win], before: good }), [path.join(native1, "tooly")]);
     assert.deepEqual(windowsOnlyHits("tooly", { env: { PATH: [native2, native1].join(":") }, cwd: project, windowsRoots: [win], before: good }), []);
+  });
+
+  test("danglingHits reports a link whose target is unreadable, and nothing else", POSIX, async () => {
+    const { root, win, project } = await layout("dangling");
+    const bad = path.join(root, "bad");
+    const ok = path.join(root, "ok");
+    const reg = path.join(root, "reg");
+    const inProject = path.join(project, "node_modules", ".bin");
+    const onWin = path.join(win, "npm");
+    for (const d of [bad, ok, reg, inProject]) await mkdir(d, { recursive: true });
+    await symlink(path.join(root, "gone", "tooly"), path.join(bad, "tooly"));
+    const real = await stub(reg, "tooly", path.join(root, "r.json"));
+    await symlink(real, path.join(ok, "tooly"));
+    await symlink(path.join(root, "gone"), path.join(inProject, "tooly"));
+    await symlink(path.join(root, "gone"), path.join(onWin, "tooly"));
+    const env = (...dirs) => ({ PATH: dirs.join(":") });
+    assert.deepEqual(danglingHits("tooly", { env: env(bad), cwd: project }), [{ link: path.join(bad, "tooly"), target: path.join(root, "gone", "tooly") }]);
+    assert.deepEqual(danglingHits("tooly", { env: env(ok), cwd: project }), []);
+    assert.deepEqual(danglingHits("tooly", { env: env(reg), cwd: project }), []);
+    assert.deepEqual(danglingHits("other", { env: env(bad), cwd: project }), []);
+    assert.deepEqual(danglingHits("tooly", { env: env(inProject), cwd: project }), []);
+    assert.deepEqual(danglingHits("tooly", { env: env(onWin), cwd: project, windowsRoots: [win] }), []);
+    assert.deepEqual(danglingHits("tooly", { env: env(bad), cwd: project, platform: "win32" }), []);
   });
 
   test("a project under a Windows root is still excluded by the in-project rule", POSIX, async () => {

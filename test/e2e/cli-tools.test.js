@@ -544,6 +544,70 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.match(r.out, /graphifyy==/);
   });
 
+  describe("a link the process cannot follow", { skip: process.platform === "win32" && "POSIX symlinks" }, () => {
+    const HINT = /If it is installed under ~\/\.nvm or ~\/\.local and this runs inside the Claude Code sandbox, that folder may be hidden/;
+
+    async function dangling(name, target) {
+      const s = await setup(name);
+      const dir = path.join(s.root, "linkbin");
+      await mkdir(dir);
+      await symlink(target ?? path.join(s.root, "hidden", "openspec"), path.join(dir, "openspec"));
+      return { ...s, dir };
+    }
+
+    test("tool add names the link and its target, writes nothing, exits 1", async () => {
+      const { root, project, dir, tool, calls } = await dangling("dangling");
+      const r = tool(["add", "openspec", "--yes"], {}, dir);
+      assert.equal(r.status, 1, r.out);
+      const link = path.join(dir, "openspec");
+      const target = path.join(root, "hidden", "openspec");
+      assert.ok(r.stderr.includes(`openspec is at ${link} but its target is not readable (${target}): the link is broken, or the folder is hidden from this process. Under the Claude Code sandbox, allow that folder in sandbox.filesystem.allowRead of your user settings (~/.claude/settings.json); see docs/tools.md (Claude Code sandbox).`), r.stderr);
+      assert.doesNotMatch(r.stderr, HINT);
+      assert.equal(r.stdout, "");
+      assert.deepEqual(await readdir(project), []);
+      assert.deepEqual(await calls(), []);
+    });
+
+    test("a control character in the target is not echoed raw", async () => {
+      const { root, dir, tool } = await dangling("dangling-ctrl", "/nowhere/ev\x1b[31mil");
+      const r = tool(["add", "openspec", "--yes"], {}, dir);
+      assert.equal(r.status, 1, r.out);
+      assert.doesNotMatch(r.out, /\x1b/);
+      assert.match(r.stderr, /\(\/nowhere\/ev\?\[31mil\)/);
+      assert.ok(root);
+    });
+
+    test("missing with nothing else to say gets only the generic sandbox line", async () => {
+      const { root, project, tool } = await setup("generic");
+      const empty = path.join(root, "empty");
+      await mkdir(empty);
+      const r = tool(["add", "openspec", "--yes"], {}, empty);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.stderr, /openspec is not on PATH\./);
+      assert.match(r.stderr, HINT);
+      assert.doesNotMatch(r.stderr, /its target is not readable/);
+      assert.deepEqual(await readdir(project), []);
+    });
+
+    test("the in-project explanation does not add the generic line", async () => {
+      const { root, project, tool } = await setup("inside-no-generic");
+      const venv = path.join(project, ".venv", "bin");
+      await shim(venv, "graphify", path.join(root, "bin", "stub.cjs"));
+      const r = tool(["add", "graphify", "--yes"], {}, venv);
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /found only inside the project/);
+      assert.doesNotMatch(r.stderr, HINT);
+    });
+
+    test("tool list keeps the row and lists the unreadable link in the footnote", async () => {
+      const { root, dir, tool } = await dangling("dangling-list");
+      const r = tool(["list"], {}, dir);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, new RegExp(`openspec +pin ${re(PINS.openspec)} +not on PATH +-`));
+      assert.ok(r.out.includes(`unreadable: ${path.join(dir, "openspec")} -> ${path.join(root, "hidden", "openspec")}`), r.out);
+    });
+  });
+
   test("a change graphify makes to a hook that was already there is reported loudly", { skip: !gitDir }, async () => {
     const { project, tool } = await setup("graphify-touch", { git: true });
     await writeFile(path.join(project, ".git", "hooks", "pre-push"), "#!/bin/sh\n");
