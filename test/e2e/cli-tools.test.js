@@ -29,7 +29,7 @@ describe("tool registry", () => {
       assert.ok(t.install.some((l) => l.includes(t.pin)), `${t.name}: install does not carry the pin`);
       assert.ok(t.rules.length >= 1 && t.rules.length <= 3);
       // Never an unpinned or ephemeral runner.
-      for (const l of t.install) assert.doesNotMatch(l, /@latest|\buvx\b|\bpipx\b|\buv\b/);
+      for (const l of t.install) assert.doesNotMatch(l, /@latest|\buvx\b|\bpipx run\b|\buv\b/);
     }
     const g = tools.get("graphify");
     // graphifyy, two y's: `graphify` on PyPI is a different package.

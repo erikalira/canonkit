@@ -19,7 +19,13 @@ version and exits with 1, writing nothing. Install it yourself, at these version
 
 ```bash
 npm install --global --ignore-scripts @fission-ai/openspec@1.14.0
+# Windows, macOS
 python -I -m pip install --user --only-binary :all: graphifyy==0.9.76
+# Linux and WSL (Debian/Ubuntu): there is no `python`, and PEP 668 makes pip refuse
+# --user. The `cd ~` keeps a project folder off Python's import path (pipx has no -I);
+# the parentheses run it in a subshell, so your terminal stays in the project.
+sudo apt install pipx && pipx ensurepath
+(cd ~ && pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:")
 ```
 
 > **graphifyy has two y's.** `graphify` with one y on PyPI is a different package.
@@ -33,6 +39,16 @@ install is never used, and that is why the printed command is the global one. Th
 child process gets the same filtered `PATH` and, on Windows,
 `NoDefaultCurrentDirectoryInExePath=1`, so that a binary planted in the project
 (a `node.exe`, for example) is not executed by the tool's shim.
+
+> **Claude Code sandbox.** A tool installed under `~/.nvm` or `~/.local` can be invisible
+> to sandboxed Bash commands when the sandbox denies reading your home directory
+> (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
+> That is a user-side setting: re-allow the folder with `sandbox.filesystem.allowRead`
+> (for example `["~/.nvm"]`) in your user settings, `~/.claude/settings.json`. A project
+> `.claude/settings.json` is not enough: a repository file cannot re-allow a path that a
+> higher level denies. canonkit never writes it: the path is yours and it is a
+> permission. The setting affects sandboxed Bash only and applies to the next command;
+> see the Claude Code sandboxing docs.
 
 With the binary present, `tool add`:
 

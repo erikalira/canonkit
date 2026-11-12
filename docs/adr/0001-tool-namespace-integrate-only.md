@@ -64,6 +64,9 @@ de outra pessoa dentro do projeto de alguém**, e uma delas instala hooks git.
   - graphify: `python -I -m pip install --user --only-binary :all: graphifyy==<pin>`.
     O `-I` foi acrescentado na revisão do Gard: impede que arquivos de um projeto
     clonado sejam importados como o próprio pip. Verificado com `--user`.
+    No Linux/WSL o pipx (1.4.3) roda `python -m pip` sem `-I` e herda o cwd (lido no
+    código do pipx), então o comando impresso é `(cd ~ && pipx install …)` como guarda
+    equivalente (subshell: o terminal do usuário continua no projeto) (Gard, risco LOW: o usuário cola o comando, o canonkit não o roda).
 - Quem roda o binário: sem shell, argv em array, caminho absoluto resolvido por
   `PATH × PATHEXT` pulando o diretório atual (`bin/exec.js`), stdin fechado, timeout,
   confirmação y/N (sem TTY e sem `--yes`, não roda).
@@ -101,7 +104,9 @@ de outra pessoa dentro do projeto de alguém**, e uma delas instala hooks git.
   idempotente; o do openspec 1.14.0 duas vezes, com stdin fechado, não perguntou
   nada, foi idempotente e não criou `CLAUDE.md`. O `pip install` impresso para o
   graphify, com `--only-binary :all:`, funcionou para a 0.9.76 no Windows com
-  Python 3.12.
+  Python 3.12. No WSL (Ubuntu 24.04, Python 3.12.3, PEP 668 bloqueia `pip --user`),
+  o `pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:"` (pipx 1.4.3)
+  funcionou e o `tool add graphify` rodou o `graphify update .` em seguida.
 - A lista de ferramentas ativas é a do bloco no `AGENTS.md`, não a do disco:
   `openspec/` e `graphify-out/` sobrevivem ao `remove`.
 
