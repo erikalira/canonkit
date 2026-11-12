@@ -22,10 +22,7 @@ const END = "# canonkit:sandbox-placeholders:end";
 
 // The CLI under test gets a PATH of its own; it needs the developer's git on it.
 const gitDir = (process.env.PATH ?? "").split(path.delimiter).find((d) => d && existsSync(path.join(d, process.platform === "win32" ? "git.exe" : "git")));
-// Git for Windows keeps the shell used by git-submodule under usr/bin, while
-// git.exe itself is normally under bin or cmd.
-const gitShellDir = process.platform === "win32" && gitDir ? path.resolve(gitDir, "..", "usr", "bin") : null;
-const PATH = [gitDir, gitShellDir && existsSync(path.join(gitShellDir, "sh.exe")) ? gitShellDir : null, DEFAULT_TEST_PATH].filter(Boolean).join(path.delimiter);
+const PATH = [gitDir, DEFAULT_TEST_PATH].filter(Boolean).join(path.delimiter);
 
 // The test's own git runs with the same scratch HOME as the CLI under test (so no
 // developer config leaks in), no signing, no hooks and no inherited GIT_*.
@@ -34,15 +31,7 @@ const homeFor = (cwd) => [...HOMES].find((h) => cwd.startsWith(path.dirname(h) +
 const git = (cwd, ...args) => {
   const env = isolatedEnv(homeFor(cwd), { PATH });
   for (const k of Object.keys(env)) if (k.toUpperCase().startsWith("GIT_")) delete env[k];
-  const gitArgs = [...args];
-  if (gitArgs[0] === "submodule") {
-    const execPath = spawnSync("git", ["--exec-path"], { cwd, encoding: "utf8", env });
-    assert.equal(execPath.status, 0, `git --exec-path: ${execPath.stderr}`);
-    // Git for Windows may rely on GIT_EXEC_PATH to find git-submodule. Derive
-    // the trusted path from this git binary instead of inheriting GIT_* values.
-    gitArgs.unshift(`--exec-path=${execPath.stdout.trim()}`);
-  }
-  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "protocol.file.allow=always", ...gitArgs], { cwd, encoding: "utf8", env });
+  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "-c", "protocol.file.allow=always", ...args], { cwd, encoding: "utf8", env });
   assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
   return r.stdout;
 };
@@ -240,8 +229,14 @@ describe("git-ignore-sandbox-files: where it writes", () => {
     await writeFile(path.join(sub, "f"), "x");
     git(sub, "add", "f");
     git(sub, "commit", "-q", "-m", "init");
-    git(project, "submodule", "add", "-q", sub, "deps/sub");
+    // Build the same gitdir layout without git-submodule, whose shell helper
+    // is unavailable on Git for Windows under this test's isolated PATH.
+    await mkdir(path.join(project, ".git", "modules", "deps"), { recursive: true });
+    await mkdir(path.join(project, "deps"));
     const inner = path.join(project, "deps", "sub");
+    git(project, "clone", "-q", "--local", "--separate-git-dir", path.join(project, ".git", "modules", "deps", "sub"), sub, inner);
+    await writeFile(path.join(project, ".gitmodules"), `[submodule "deps/sub"]\n\tpath = deps/sub\n\turl = ${sub.split(path.sep).join("/")}\n`);
+    git(project, "add", ".gitmodules", "deps/sub");
     await empty(inner, ".zshrc");
     const r = sbx([], { home, cwd: inner });
     assert.equal(r.status, 0, r.out);
