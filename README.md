@@ -1,5 +1,9 @@
 # canonkit
 
+[![npm version](https://img.shields.io/npm/v/canonkit)](https://www.npmjs.com/package/canonkit)
+[![CI](https://github.com/erikalira/canonkit/actions/workflows/ci.yml/badge.svg)](https://github.com/erikalira/canonkit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/npm/l/canonkit)](LICENSE)
+
 A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and **GitHub Copilot**.
 Each agent owns one domain: product, architecture, security, quality, UX,
 performance, operations or docs. Before it recommends anything, it rates the risk

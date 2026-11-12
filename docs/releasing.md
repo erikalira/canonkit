@@ -24,8 +24,13 @@ because it would be published as `latest`.
    commit in a clean checkout. Then approve the deployment on the Actions run.
    The publish job also logs its package file list, but that job starts only
    after approval, so its log cannot serve as the pre-approval review.
-4. Create the GitHub release for the tag and link `docs/release-notes/X.Y.Z.md`
-   from it.
+4. The `github-release` job creates the GitHub release for the tag after the
+   publish succeeds, with `docs/release-notes/X.Y.Z.md` as its notes (generated
+   notes if that file is missing). It runs in its own job because it needs
+   `contents: write`, which the publish job must not hold. If it fails, the
+   package is already on npm: re-run that job, or create the release by hand
+   with `gh release create vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md`.
+   The run page also shows a summary with the npm link.
 5. Check the published release:
    - `npm view canonkit@X.Y.Z dist.attestations` shows a provenance entry, and
      the npmjs.com page shows the "Provenance" badge;
@@ -89,6 +94,11 @@ These steps happen outside the repository and can't be done from CI.
 5. **After the first publish with provenance:** Settings → Publishing access →
    "Require two-factor authentication and disallow tokens", then revoke any npm
    automation tokens that are left. From then on a leaked token cannot publish.
+
+These settings live in GitHub and npm, not in the repository, so a change to
+them is invisible in a diff. Re-check steps 2–4 now and then, and turn on
+**Private vulnerability reporting** (Settings → Code security), which
+[SECURITY.md](../SECURITY.md) tells reporters to use.
 
 Requirements this setup relies on: npm ≥ 11.5.1 and Node ≥ 22.14, and only
 GitHub-hosted runners can publish
