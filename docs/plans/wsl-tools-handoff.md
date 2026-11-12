@@ -14,7 +14,8 @@ on WSL (Ubuntu 24.04.2, Python 3.12.3, node v26.13.1 via nvm, Linux side, not Wi
 - `docs/tools.md`: sandbox note. A tool under `~/.nvm` or `~/.local` can be invisible to the
   Claude Code sandbox; `sandbox.filesystem.allowRead` must be in the **user** settings
   (`~/.claude/settings.json`), a project file cannot re-allow a path a higher level denies.
-  Lean list for nvm + pipx: `["~/.nvm", "~/.local/bin", "~/.local/pipx"]`; system-wide Node needs
+  Lean list for nvm + pipx: `["~/.nvm", "~/.local/bin", "~/.local/share/pipx"]` (pipx's home varies:
+  check `pipx environment --value PIPX_LOCAL_VENVS`; confirmed `~/.local/share/pipx` on 2026-11-12); system-wide Node needs
   nothing unless the npm global prefix is in the home. canonkit never writes it (permission,
   user-specific path).
 - `test/e2e/cli-tools.test.js`: forbids `pipx run` instead of every `pipx`. Note `npm run

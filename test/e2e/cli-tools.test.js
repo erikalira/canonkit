@@ -13,6 +13,7 @@ import { rm, mkdir, writeFile, readdir, chmod, symlink, lstat } from "node:fs/pr
 import { existsSync, realpathSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { REPO, runCli, writeCommand } from "../helpers/cli-harness.js";
+import { fileURLToPath } from "node:url";
 import { CORE, scratch, run, read } from "../helpers/cli-fixtures.js";
 import { readAgents, readTools, parseTool } from "../../bin/cli.js";
 import { modelDiagnosis } from "../../bin/models-command.js";
@@ -614,6 +615,115 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     const { tool } = await setup("graphify-extra", { git: true });
     const r = tool(["add", "graphify", "--with-git-hooks", "--yes"], { STUB_EXTRA_HOOK: "1" });
     assert.match(r.stderr, /unexpected new git hook: pre-push/);
+  });
+
+  describe("Windows binaries on WSL", { skip: process.platform !== "linux" && "reads /proc/self/mounts" }, () => {
+    const FAKE_MOUNTS = fileURLToPath(new URL("../support/fake-mounts.mjs", import.meta.url));
+    // Prints the PATH it was started with, for every run.
+    const PATH_STUB = `const fs = require("fs");
+fs.appendFileSync(process.env.STUB_LOG + ".path", JSON.stringify([process.argv[3] ?? null, process.env.PATH ?? null]) + "\\n");
+if (process.argv[3] === "--version") { console.log("openspec 0.0.1"); process.exit(0); }
+if (process.argv[2] === "openspec" && process.argv[3] === "init") fs.mkdirSync("openspec", { recursive: true });
+`;
+
+    async function wsl(name) {
+      const s = await setup(name);
+      const win = path.join(s.root, "mnt", "c");
+      const npm = path.join(win, "Users", "me", "npm");
+      await writeFile(path.join(s.root, "pathstub.cjs"), PATH_STUB);
+      const mounts = `C:\\134 ${win} drvfs rw,noatime 0 0\n`;
+      const wtool = (args, PATH, extra = {}) =>
+        runCli(["tool", ...args], { home: s.home, cwd: s.project, preload: [FAKE_MOUNTS], env: s.env({ CANONKIT_TEST_MOUNTS: mounts, ...extra }, PATH) });
+      const paths = async () => (existsSync(`${path.join(s.root, "argv.log")}.path`) ? (await read(`${path.join(s.root, "argv.log")}.path`)).trim().split("\n").map((l) => JSON.parse(l)) : []);
+      return { ...s, win, npm, wtool, paths };
+    }
+
+    test("a Windows-only binary is not installed on WSL: exit 1, named, nothing written", async () => {
+      const { root, project, npm, wtool, calls } = await wsl("win-only");
+      await shim(npm, "openspec", path.join(root, "stub.cjs"));
+      const r = wtool(["add", "openspec", "--yes"], npm);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.stderr, new RegExp(`openspec was found only on the Windows side \\(${re(path.join(npm, "openspec"))}\\); canonkit does not run Windows binaries through WSL interop`));
+      assert.match(r.stderr, /Install the pinned version/);
+      assert.deepEqual(await readdir(project), []);
+      assert.deepEqual(await calls(), []);
+    });
+
+    test("control characters in the Windows path are not echoed raw", async () => {
+      const { root, win, wtool } = await wsl("win-ctrl");
+      const evil = path.join(win, "ev\x1b[31mil");
+      await shim(evil, "openspec", path.join(root, "stub.cjs"));
+      const r = wtool(["add", "openspec", "--yes"], evil);
+      assert.equal(r.status, 1, r.out);
+      assert.doesNotMatch(r.out, /\x1b/);
+      assert.match(r.stderr, /Windows side/);
+    });
+
+    test("the --version probe and the setup run see no Windows directory in PATH", async () => {
+      const { root, bin, win, npm, wtool, paths, project } = await wsl("win-path");
+      await shim(npm, "openspec", path.join(root, "stub.cjs"));
+      await shim(bin, "openspec", path.join(root, "pathstub.cjs"));
+      const r = wtool(["add", "openspec", "--yes"], [bin, npm, gitDir].filter(Boolean).join(SEP));
+      assert.equal(r.status, 0, r.out);
+      const seen = await paths();
+      assert.deepEqual(seen.map(([a]) => a), ["--version", "init"]);
+      for (const [, p] of seen) {
+        assert.ok(p && p.includes(bin), p);
+        assert.ok(!p.includes(win), p);
+      }
+      assert.ok(existsSync(path.join(project, "openspec")));
+    });
+
+    test("the shadow note appears only when the Windows copy comes before the chosen one", async () => {
+      const { root, bin, npm, wtool } = await wsl("win-shadow");
+      await shim(npm, "openspec", path.join(root, "stub.cjs"));
+      const before = wtool(["add", "openspec", "--dry-run"], [npm, bin].join(SEP));
+      assert.equal(before.status, 0, before.out);
+      assert.match(before.out, /binary: +\S*\/bin\/openspec/);
+      assert.match(before.out, /a Windows copy comes first in PATH/);
+      assert.match(before.out, /appendWindowsPath=false/);
+      assert.match(before.out, /\[interop\]/);
+      const after = wtool(["add", "openspec", "--dry-run"], [bin, npm].join(SEP));
+      assert.equal(after.status, 0, after.out);
+      assert.doesNotMatch(after.out, /Windows copy|appendWindowsPath/);
+    });
+
+    test("list shows a Windows-only tool as not on PATH and names the ignored copy", async () => {
+      const { root, npm, wtool } = await wsl("win-list");
+      await shim(npm, "openspec", path.join(root, "stub.cjs"));
+      const r = wtool(["list"], npm);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, new RegExp(`openspec +pin ${re(PINS.openspec)} +not on PATH +-`));
+      assert.match(r.out, new RegExp(`ignored Windows copies.*${re(path.join(npm, "openspec"))}`));
+    });
+
+    test("a project-only hit with control characters in its directory is not echoed raw", async () => {
+      const { project, wtool } = await wsl("win-inside-ctrl");
+      const evil = path.join(project, "ev\x1b[31mil");
+      await shim(evil, "openspec", path.join(project, "unused.cjs"));
+      const r = wtool(["add", "openspec", "--yes"], evil);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.stderr, /found only inside the project \(.*ev\?\[31mil.*\)/);
+      assert.doesNotMatch(r.stderr, /\x1b/);
+    });
+
+    test("list (not a dry run) probes without the Windows PATH and notes the ignored copy", async () => {
+      const { root, bin, win, wtool, paths } = await wsl("win-list-real");
+      const evil = path.join(win, "Users", "ev\x1b[31mil", "npm");
+      // The footnote lists only tools with no native copy: graphify is Windows-only here.
+      await rm(path.join(bin, process.platform === "win32" ? "graphify.cmd" : "graphify"), { force: true });
+      await shim(evil, "graphify", path.join(root, "stub.cjs"));
+      await shim(bin, "openspec", path.join(root, "pathstub.cjs"));
+      const r = wtool(["list"], [bin, evil].join(SEP));
+      assert.equal(r.status, 0, r.out);
+      const seen = await paths();
+      assert.ok(seen.length >= 1);
+      for (const [, p] of seen) assert.ok(p && p.includes(bin) && !p.includes(win), p);
+      assert.match(r.out, new RegExp(`openspec +pin ${re(PINS.openspec)} +installed \\S+ +-`));
+      assert.match(r.out, /ignored Windows copies/);
+      assert.match(r.out, /ev\?\[31mil/);
+      assert.doesNotMatch(r.out, /\x1b/);
+    });
   });
 
   test("a binary planted in the project is not the one run", async () => {

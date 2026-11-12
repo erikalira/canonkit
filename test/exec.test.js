@@ -10,7 +10,7 @@ import { realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
-import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion } from "../bin/exec.js";
+import { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion, windowsMountRoots, readWindowsRoots, windowsOnlyHits, childEnv } from "../bin/exec.js";
 
 const WIN = process.platform === "win32";
 const SEP = WIN ? ";" : ":";
@@ -246,5 +246,108 @@ describe("binVersion", () => {
     assert.equal(binVersion(await printer(dir, "vee", "v2.1.4\n")), "2.1.4");
     assert.equal(binVersion(await printer(dir, "cli", "codex-cli 0.166.0\n")), "0.166.0");
     assert.equal(binVersion(await printer(dir, "word", "dev2.1.4\n")), null);
+  });
+});
+
+
+describe("Windows roots on WSL", () => {
+  const POSIX = { skip: WIN && "POSIX paths and symlinks" };
+
+  test("windowsMountRoots keeps drvfs and 9p+aname=drvfs, and nothing else", () => {
+    const text = [
+      "C:\\134 /mnt/c drvfs rw,noatime,uid=1000 0 0",
+      "D:\\134 /mnt/d 9p rw,noatime,aname=drvfs;path=D:\\;uid=1000,cache=5,access=client,msize=65536,trans=fd 0 0",
+      "drivers /usr/lib/wsl/drivers 9p ro,nosuid,aname=drivers;fmask=222 0 0",
+      "none /mnt/wsl tmpfs rw,relatime 0 0",
+      "/dev/sdc / ext4 rw,relatime 0 0",
+      "E:\\134 /mnt/my\\040drive drvfs rw 0 0",
+      "garbage",
+      "",
+      "a b",
+      "x relative drvfs rw 0 0",
+    ].join("\n");
+    assert.deepEqual(windowsMountRoots(text), ["/mnt/c", "/mnt/d", "/mnt/my drive"]);
+    assert.deepEqual(windowsMountRoots("W /mnt/w 9p rw,aname=drvfs,x 0 0"), ["/mnt/w"]);
+    assert.deepEqual(windowsMountRoots("W /mnt/x 9p rw,aname=drvfsx 0 0"), []);
+    assert.deepEqual(windowsMountRoots(undefined), []);
+  });
+
+  test("readWindowsRoots reads only on linux and returns [] on any failure", () => {
+    const read = () => "C: /mnt/c drvfs rw 0 0\n";
+    assert.deepEqual(readWindowsRoots({ platform: "linux", read }), ["/mnt/c"]);
+    assert.deepEqual(readWindowsRoots({ platform: "darwin", read }), []);
+    assert.deepEqual(readWindowsRoots({ platform: "win32", read }), []);
+    assert.deepEqual(readWindowsRoots({ platform: "linux", read: () => { throw new Error("ENOENT"); } }), []);
+  });
+
+  async function layout(name) {
+    const root = path.join(sandbox, name);
+    const win = path.join(root, "mnt", "c");
+    const project = path.join(root, "project");
+    await mkdir(path.join(win, "npm"), { recursive: true });
+    await mkdir(project, { recursive: true });
+    return { root, win, project };
+  }
+
+  test("a directory that is a link into a Windows root is dropped; the same dir is kept with no roots", POSIX, async () => {
+    const { root, win, project } = await layout("win-dirlink");
+    await stub(path.join(win, "npm"), "tooly", path.join(root, "w.json"));
+    const link = path.join(root, "link-to-win");
+    await symlink(path.join(win, "npm"), link);
+    const native = path.join(root, "native");
+    await stub(native, "tooly", path.join(root, "n.json"));
+    const env = { PATH: [link, path.join(win, "npm"), native].join(":") };
+    assert.deepEqual(safePathDirs({ env, cwd: project, windowsRoots: [win] }), [native]);
+    assert.deepEqual(safePathDirs({ env, cwd: project, windowsRoots: [] }), [link, path.join(win, "npm"), native]);
+    assert.deepEqual(safePathDirs({ env, cwd: project }), [link, path.join(win, "npm"), native]);
+    assert.equal(resolveBin("tooly", { env, cwd: project, windowsRoots: [win] }), path.join(native, "tooly"));
+  });
+
+  test("a native file that is a link into a Windows root is skipped", POSIX, async () => {
+    const { root, win, project } = await layout("win-filelink");
+    const target = await stub(path.join(win, "npm"), "tooly", path.join(root, "w.json"));
+    const native1 = path.join(root, "native1");
+    await mkdir(native1);
+    await symlink(target, path.join(native1, "tooly"));
+    const native2 = path.join(root, "native2");
+    const good = await stub(native2, "tooly", path.join(root, "n.json"));
+    const env = { PATH: [native1, native2].join(":") };
+    assert.equal(resolveBin("tooly", { env, cwd: project, windowsRoots: [win] }), good);
+    assert.equal(resolveBin("tooly", { env, cwd: project }), path.join(native1, "tooly"));
+    assert.deepEqual(windowsOnlyHits("tooly", { env, cwd: project, windowsRoots: [win] }), [path.join(native1, "tooly")]);
+    assert.deepEqual(windowsOnlyHits("tooly", { env, cwd: project, windowsRoots: [] }), []);
+    // Only the hits ahead of the chosen binary.
+    assert.deepEqual(windowsOnlyHits("tooly", { env, cwd: project, windowsRoots: [win], before: good }), [path.join(native1, "tooly")]);
+    assert.deepEqual(windowsOnlyHits("tooly", { env: { PATH: [native2, native1].join(":") }, cwd: project, windowsRoots: [win], before: good }), []);
+  });
+
+  test("a project under a Windows root is still excluded by the in-project rule", POSIX, async () => {
+    const { root, win } = await layout("win-project");
+    const project = path.join(win, "proj");
+    const planted = path.join(project, "node_modules", ".bin");
+    await stub(planted, "tooly", path.join(root, "p.json"));
+    const native = path.join(root, "native");
+    const good = await stub(native, "tooly", path.join(root, "n.json"));
+    const env = { PATH: [planted, native].join(":") };
+    assert.equal(resolveBin("tooly", { env, cwd: project, windowsRoots: [win] }), good);
+    assert.equal(resolveBin("tooly", { env, cwd: project }), good);
+  });
+
+  test("an empty filtered list never becomes PATH=, which the child would read as the project", POSIX, async () => {
+    const { root, win, project } = await layout("win-emptypath");
+    const env = { PATH: path.join(win, "npm"), KEEP: "1" };
+    const out = childEnv(env, process.platform, project, [win]);
+    assert.equal("PATH" in out, false);
+    assert.equal(out.KEEP, "1");
+    // The same for a PATH that was empty to begin with.
+    assert.equal("PATH" in childEnv({ PATH: "" }, process.platform, project), false);
+    // And the child really sees no PATH entry of the Windows side.
+    const js = path.join(root, "printpath.cjs");
+    await writeFile(js, `require("fs").writeFileSync(${JSON.stringify(path.join(root, "seen.json"))}, JSON.stringify(process.env.PATH ?? null));\n`);
+    await writeFile(path.join(root, "pp"), `#!/bin/sh\nexec "${process.execPath}" "${js}"\n`);
+    await chmod(path.join(root, "pp"), 0o755);
+    const r = runBin(path.join(root, "pp"), [], { cwd: project, env, windowsRoots: [win], capture: true });
+    assert.equal(r.status, 0, r.stderr);
+    assert.notEqual(JSON.parse(await readFile(path.join(root, "seen.json"), "utf8")), "");
   });
 });

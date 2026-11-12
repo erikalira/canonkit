@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
+import { resolveBin, projectOnlyHit, windowsOnlyHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { renderInstallReport } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
@@ -2741,13 +2741,22 @@ async function confirm(yes) {
   return /^y(es)?$/i.test(answer.trim());
 }
 
-function printMissing(tool, project) {
+// On WSL a Windows program on PATH would run through interop, as Windows code
+// with the project open: tool commands resolve from the Linux side only. One
+// value per command, spread into every resolve and run so they cannot disagree.
+const toolExec = () => ({ windowsRoots: readWindowsRoots() });
+
+// A PATH entry is attacker-influenced text going to a terminal.
+const plain = (p) => p.replace(/[\x00-\x1f\x7f-\x9f]/g, "?");
+
+function printMissing(tool, project, exec) {
   const inside = projectOnlyHit(tool.bin, { cwd: project });
+  const windows = windowsOnlyHits(tool.bin, { cwd: project, ...exec });
   console.error(
     [
-      inside
-        ? `${tool.bin} was found only inside the project (${inside}); canonkit runs binaries from outside it only.`
-        : `${tool.bin} is not on PATH.`,
+      ...(inside ? [`${tool.bin} was found only inside the project (${plain(inside)}); canonkit runs binaries from outside it only.`] : []),
+      ...(windows.length ? [`${tool.bin} was found only on the Windows side (${plain(windows[0])}); canonkit does not run Windows binaries through WSL interop.`] : []),
+      ...(inside || windows.length ? [] : [`${tool.bin} is not on PATH.`]),
       "canonkit only integrates tools you installed; it installs nothing.",
       `Install the pinned version (${tool.requires}):`,
       ...tool.install.map((l) => `  ${l}`),
@@ -2769,16 +2778,17 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   const project = toolProject();
   const setup = withGitHooks ? [["hook", "install"], ...tool.setup] : tool.setup;
 
-  const abs = resolveBin(tool.bin, { cwd: project });
+  const exec = toolExec();
+  const abs = resolveBin(tool.bin, { cwd: project, ...exec });
   if (!abs) {
-    printMissing(tool, project);
+    printMissing(tool, project, exec);
     return 1;
   }
 
   let version = null;
   let hooks = null;
   if (!ctx.dryRun) {
-    version = binVersion(abs, { project, env: toolEnv(tool) });
+    version = binVersion(abs, { project, env: toolEnv(tool), ...exec });
     if (tool.preflight === "git-hooks") {
       hooks = gitHooksPreflight(project, { withGitHooks });
       if (!hooks.ok) {
@@ -2788,8 +2798,13 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
     }
   }
 
-  ctx.log(`${tool.name}: setup in ${project}`);
-  ctx.log(`  binary:  ${abs}`);
+  ctx.log(`${tool.name}: setup in ${plain(project)}`);
+  ctx.log(`  binary:  ${plain(abs)}`);
+  const shadows = windowsOnlyHits(tool.bin, { cwd: project, before: abs, ...exec });
+  if (shadows.length) {
+    ctx.log(`  note:    a Windows copy comes first in PATH (${plain(shadows[0])}); ignored here, but agents and shells running bare \`${tool.bin}\` get that one.`);
+    ctx.log("           To stop that, set appendWindowsPath=false under [interop] in /etc/wsl.conf (canonkit does not edit it).");
+  }
   if (ctx.dryRun) ctx.log("  version: not checked (a dry run executes nothing, --version included)");
   else if (!version) ctx.log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
   else if (version !== tool.pin) {
@@ -2835,7 +2850,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
   for (const [i, args] of setup.entries()) {
     ctx.log(`> ${display(abs, args)}`);
-    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool) });
+    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool), ...exec });
     if (r.error || r.status !== 0) {
       console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
       if (i > 0) {
@@ -2901,11 +2916,15 @@ async function toolList(ctx) {
   const active = activeTools(existsSync(target) ? await readFile(target, "utf8") : "", tools);
 
   ctx.log(`Optional tools (this project: ${project})`);
+  const exec = toolExec();
+  const ignored = [];
   for (const t of tools.values()) {
-    const abs = resolveBin(t.bin, { cwd: project });
-    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t) }) ?? "?"}`;
+    const abs = resolveBin(t.bin, { cwd: project, ...exec });
+    if (!abs) ignored.push(...windowsOnlyHits(t.bin, { cwd: project, ...exec }));
+    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t), ...exec }) ?? "?"}`;
     ctx.log(`  ${t.name.padEnd(10)} pin ${t.pin.padEnd(9)} ${installed.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
   }
+  if (ignored.length) ctx.log(`  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`);
   ctx.log("");
   ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
 }

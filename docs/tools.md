@@ -40,6 +40,24 @@ child process gets the same filtered `PATH` and, on Windows,
 `NoDefaultCurrentDirectoryInExePath=1`, so that a binary planted in the project
 (a `node.exe`, for example) is not executed by the tool's shim.
 
+**On WSL, only the Linux side counts.** `tool add` and `tool list` ignore a binary
+that lives on a Windows drive, such as an npm shim in `%APPDATA%\npm` reached
+through interop: it is treated as not installed (`tool add` exits 1 and writes
+nothing; `tool list` shows "not on PATH"), and the message prints the pinned install
+command plus a line naming the ignored Windows copy. Drives are read from `/proc/self/mounts` (`drvfs`, or `9p` with
+`aname=drvfs`, under any automount root; `/mnt/wsl` and `/usr/lib/wsl/drivers` do
+not count). A symlink from a Linux folder into a Windows drive is ignored too.
+`tool list` keeps its columns and adds a footnote naming Windows-only copies it
+ignored. The same filter applies to the `PATH` of the tool's own steps, so Windows
+programs (`explorer.exe`, `clip.exe`, `code`) are not on it; if nothing is left,
+`PATH` is left unset, never empty (an empty `PATH` means the current directory, the
+project). If a Windows copy comes earlier in your `PATH` than the Linux one, `tool add`
+prints a non-blocking note: agents and shells that run bare `<bin>` get the Windows
+one. To stop that, set `appendWindowsPath=false` under `[interop]` in
+`/etc/wsl.conf`; canonkit only prints this and never edits `wsl.conf` or your `PATH`.
+This is hygiene, not a defense against hostile binaries (see the ADR). `git`, the
+security checks and model discovery still resolve binaries as before.
+
 > **Claude Code sandbox.** A tool installed under `~/.nvm` or `~/.local` can be invisible
 > to sandboxed Bash commands when the sandbox denies reading your home directory
 > (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
@@ -48,8 +66,14 @@ child process gets the same filtered `PATH` and, on Windows,
 > Node, pipx for graphify), allow only what you use:
 >
 > ```json
-> "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/pipx"] } }
+> "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] } }
 > ```
+>
+> `~/.local/bin/graphify` is a symlink into pipx's venvs, so the pipx folder must be
+> readable too, or the link looks broken inside the sandbox. Its location depends on
+> the pipx version and distribution (`~/.local/share/pipx` on Ubuntu 24.04, or
+> `~/.local/pipx`): run `pipx environment --value PIPX_LOCAL_VENVS` and allow the
+> folder above `venvs`.
 >
 > Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
 > `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,

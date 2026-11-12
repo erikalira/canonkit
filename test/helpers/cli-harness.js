@@ -52,8 +52,8 @@ const ACL_STUB = path.join(REPO, "test", "support", "stub-acl.mjs");
 export const nodeArgs = ({ realAcl = false } = {}) => (realAcl || process.platform !== "win32" ? [] : ["--import", pathToFileURL(ACL_STUB).href]);
 
 /** Run `canonkit <args>` synchronously; `out` is stdout followed by stderr. */
-export function runCli(args, { home, cwd, env = {}, realAcl = false }) {
-  const result = spawnSync(process.execPath, [...nodeArgs({ realAcl }), CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
+export function runCli(args, { home, cwd, env = {}, realAcl = false, preload = [] }) {
+  const result = spawnSync(process.execPath, [...nodeArgs({ realAcl }), ...preload.flatMap((f) => ["--import", pathToFileURL(f).href]), CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
 
