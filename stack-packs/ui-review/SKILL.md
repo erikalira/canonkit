@@ -65,6 +65,9 @@ risk/defect using existing debugging/regression methods.
   usability against the adopted standard/current platform guidance. Verify exact
   criteria before citing them; AA focus visibility/non-obscuration and AAA focus
   appearance differ, and targets have contextual exceptions.
+- Only when the surface is native or mobile: check enlarged text, safe areas,
+  orientation, back navigation and offline or interrupted states; no fixed
+  device list or size limits.
 - Observe loading/layout stability as fallback becomes content or assets,
   counters/labels change, with or without animation. Preserve reading and targets.
 - Relate relevant missing assets and console/network failures to the user outcome.

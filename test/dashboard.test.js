@@ -6,11 +6,117 @@ import { spawnSync } from "node:child_process";
 import { runInNewContext } from "node:vm";
 import os from "node:os";
 import path from "node:path";
+import http from "node:http";
 import { fileURLToPath } from "node:url";
 
 const SERVER = fileURLToPath(new URL("../dashboard/serve.js", import.meta.url));
-const { contextContributors, retainedTotals } = createRequire(import.meta.url)(SERVER);
+const { contextContributors, retainedTotals, allowedRequest, localHost, server } = createRequire(import.meta.url)(SERVER);
+const { normalizeEvent, executionSnapshot } = createRequire(import.meta.url)(fileURLToPath(new URL("../dashboard/execution-model.js", import.meta.url)));
 const HOOK = fileURLToPath(new URL("../hooks/canonkit-hook.js", import.meta.url));
+
+test("execution contract normalizes only observed, allowlisted facts", () => {
+  const events = [
+    { ts: 10, session: "s1", event: "agent_start", id: "d1", agent: "bob", task: "SECRET-PROMPT", project: "private-name" },
+    { ts: 11, session: "s1", event: "agent_launch", id: "d2", agent_id: "a2" },
+    { ts: 12, session: "s1", event: "gate", kind: "context-size", detail: "SECRET-COMMAND", file: "/private/path" },
+    { ts: 13, session: "s1", event: "gate", kind: "high-risk-surface", files: 1, rules: ["auth"] },
+    { ts: 14, session: "s1", event: "agent_end", id: "d1", agent_id: "a1", agent: "bob", duration_ms: 0, status: "ambiguous", tokens: { input: 4, output: 3, total: 7 }, transcript: "SECRET-TRANSCRIPT" },
+    { ts: 15, session: "../unsafe", event: "agent_start", id: "bad/id", agent: "x" },
+    { ts: "bad", session: "s1", event: "agent_start", id: "d3" },
+    { ts: 16, session: "s1", event: "new-event", id: "d3" },
+  ];
+  const snapshot = executionSnapshot(events);
+  assert.equal(snapshot.schemaVersion, 1);
+  assert.equal(snapshot.sessions.length, 1);
+  const [session] = snapshot.sessions;
+  assert.equal(session.projectId, null); assert.equal(session.worktreeId, null); assert.equal(session.branch, null);
+  assert.deepEqual(session.dispatches.map((d) => [d.executionId, d.executionState, d.approvalState]), [
+    ["d1", "completed", "unknown"], ["d2", "active", "unknown"],
+  ]);
+  const gates = snapshot.observations.filter((e) => e.type === "gate");
+  assert.deepEqual(gates.map((e) => e.data.decision), ["allowed", "confirmation-requested"]);
+  const serialized = JSON.stringify(snapshot);
+  for (const secret of ["SECRET-PROMPT", "SECRET-COMMAND", "SECRET-TRANSCRIPT", "/private/path", "private-name"])
+    assert.ok(!serialized.includes(secret), `${secret} is omitted from the public read model`);
+  assert.equal(snapshot.observations[0].eventId, null, "the adapter does not fabricate source event IDs");
+  assert.equal(normalizeEvent({ ts: 1, event: "tool_result", session: "s1" }), null);
+});
+
+test("execution status follows ordered dispatch signals and keeps parallel and resumed activity distinct", () => {
+  const snapshot = executionSnapshot([
+    { ts: 4, session: "session", event: "agent_start", id: "d1", agent: "bob" },
+    { ts: 5, session: "session", event: "agent_launch", id: "d2", agent_id: "a2" },
+    { ts: 6, session: "session", event: "agent_end", id: "d1", agent_id: "a1", duration_ms: 100 },
+    { ts: 7, session: "session", event: "agent_resume", to: "bob", has_message: true },
+    { ts: 8, session: "session", event: "agent_end", id: "d1", agent_id: "a1", duration_ms: 300 },
+    { ts: 10, session: "session", event: "agent_start", id: "d4", agent: "bob" },
+    { ts: 11, session: "session", event: "agent_end", id: "d4", duration_ms: 800, tokens: { total: 99 } },
+    { ts: 12, session: "session", event: "agent_end", id: "d4", duration_ms: null, tokens: null },
+    { ts: 9, session: "session", event: "agent_stop", agent_id: "a2" },
+    { ts: 3, session: "session", event: "agent_launch", id: "d3", agent_id: "a3" },
+  ]);
+  const [one, two, three] = snapshot.sessions[0].dispatches;
+  assert.equal(snapshot.sessions[0].observations.find((event) => event.type === "agent_stop").dispatchId, "d2");
+  assert.deepEqual([one.executionId, one.executionState, one.durationMs], ["d3", "active", null]);
+  assert.deepEqual([two.executionId, two.executionState, two.durationMs], ["d1", "completed", 300]);
+  assert.deepEqual([three.executionId, three.executionState, three.durationMs], ["d2", "completed", null]);
+  assert.deepEqual(snapshot.agents.map((agent) => [agent.executionId, agent.activity, agent.observedActivity]), [
+    ["d3", "working", "agent_launch"], ["d1", "finished", "agent_end"], ["d2", "finished", "agent_stop"],
+  ]);
+  assert.equal(snapshot.sessions[0].observations.find((e) => e.type === "agent_resume").dispatchId, null,
+    "resume stays observable without a direct dispatch ID");
+  const cumulative = snapshot.sessions[0].dispatches.find((dispatch) => dispatch.executionId === "d4");
+  assert.deepEqual([cumulative.durationMs, cumulative.tokens], [null, null], "the latest cumulative end can clear missing measurements");
+});
+
+test("parallel lanes require overlapping observed dispatch intervals", () => {
+  const snapshot = executionSnapshot([
+    { ts: 1, session: "s", event: "agent_start", id: "a" },
+    { ts: 2, session: "s", event: "agent_start", id: "b" },
+    { ts: 4, session: "s", event: "agent_end", id: "a" },
+    { ts: 5, session: "s", event: "agent_end", id: "b" },
+    { ts: 6, session: "s", event: "agent_start", id: "c" },
+    { ts: 7, session: "s", event: "agent_end", id: "c" },
+  ]);
+  assert.deepEqual(snapshot.sessions[0].dispatches.map((d) => [d.executionId, d.parallel]), [
+    ["a", true], ["b", true], ["c", false],
+  ]);
+});
+
+test("dashboard request validation rejects non-local hosts and cross-origin requests", () => {
+  assert.equal(localHost("127.0.0.1:4317"), true);
+  assert.equal(localHost("localhost:4317"), true);
+  assert.equal(localHost("attacker.example"), false);
+  assert.equal(localHost("127.0.0.1.attacker.example"), false);
+  assert.equal(allowedRequest({ headers: { host: "127.0.0.1:4317", origin: "http://attacker.example" } }), false);
+  assert.equal(allowedRequest({ headers: { host: "127.0.0.1:4317", origin: "http://127.0.0.1:4317" } }), true);
+  assert.equal(allowedRequest({ headers: { host: "attacker.example" } }), false);
+});
+
+test("HTTP dashboard keeps static serving inside its build and rejects Host/Origin rebinding", async () => {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = server.address().port;
+  const get = (url, headers = {}) => new Promise((resolve, reject) => {
+    http.get({ hostname: "127.0.0.1", port, path: url, headers }, (res) => {
+      const chunks = []; res.on("data", (chunk) => chunks.push(chunk));
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body: Buffer.concat(chunks).toString() }));
+    }).on("error", reject);
+  });
+  try {
+    const home = await get("/");
+    assert.equal(home.status, 200);
+    assert.match(home.headers["content-security-policy"], /frame-ancestors 'none'/);
+    assert.equal(home.headers["x-content-type-options"], "nosniff");
+    const assetPath = home.body.match(/src="([^"]+\.js)"/)?.[1];
+    assert.ok(assetPath, "build references a static JavaScript asset");
+    assert.equal((await get(assetPath)).status, 200);
+    const unsafe = await get("/%2e%2e/serve.js");
+    assert.notEqual(unsafe.status, 200);
+    assert.ok(!unsafe.body.includes("createServer"));
+    assert.equal((await get("/", { Host: "attacker.example" })).status, 403);
+    assert.equal((await get("/", { Origin: "http://attacker.example" })).status, 403);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+});
 const lines = (events) => events.map((e) => JSON.stringify(e));
 
 test("context contributors aggregate per session/tool, including zero output", () => {
@@ -63,10 +169,10 @@ test("context reads both retained log files, beyond the timeline's 300 lines", a
     await mkdir(dir, { recursive: true });
     await writeFile(path.join(dir, "events.jsonl.1"), lines([
       { session: "s", event: "tool_result", tool: "Read", chars: 100 },
-      { session: "s", event: "agent_end", id: "a", report_chars: 999 },
+      { ts: 1, session: "s", event: "agent_end", id: "a", report_chars: 999 },
     ]).join("\n") + "\n");
     await writeFile(path.join(dir, "events.jsonl"), lines([
-      { session: "s", event: "agent_end", id: "a", report_chars: 50 },
+      { ts: 2, session: "s", event: "agent_end", id: "a", report_chars: 50 },
       ...Array.from({ length: 310 }, () => ({ event: "prompt", session: "s" })),
       { session: "s", event: "tool_result", tool: "PowerShell", chars: 50, output: "SENSITIVE-SYNTHETIC-CONTENT" },
     ]).join("\n") + "\n{partial");
@@ -89,10 +195,13 @@ test("context reads both retained log files, beyond the timeline's 300 lines", a
           const context = await fetch(base + '/context.json');
           const events = await fetch(base + '/events.json');
           const dispatches = await fetch(base + '/dispatches.json');
+          const execution = await fetch(base + '/execution.json');
           const page = await fetch(base + '/');
+          const activity = await fetch(base + '/activity.html');
           process.stdout.write(JSON.stringify({
-            context: await context.json(), events: await events.json(), dispatches: await dispatches.json(),
-            cache: context.headers.get('cache-control'), html: (await page.text()).includes('Context contributors'),
+            context: await context.json(), events: await events.json(), dispatches: await dispatches.json(), execution: await execution.json(),
+            cache: context.headers.get('cache-control'), html: (await activity.text()).includes('Context contributors'), page: await page.text(),
+            pageHeaders: Object.fromEntries(page.headers.entries()),
           }));
         } catch (e) { console.error(e); process.exitCode = 1; }
         finally { server.closeAllConnections(); server.close(); }
@@ -106,6 +215,10 @@ test("context reads both retained log files, beyond the timeline's 300 lines", a
     assert.equal(served.dispatches.length, 1);
     assert.equal(served.dispatches[0].report_chars, 50);
     assert.equal(served.cache, "no-store"); assert.equal(served.html, true);
+    assert.equal(served.execution.schemaVersion, 1); assert.equal(served.execution.sessions.length, 1);
+    assert.match(served.page, /assets\/index\.js/);
+    assert.match(served.pageHeaders["content-security-policy"], /frame-ancestors 'none'/);
+    assert.match(served.pageHeaders["content-security-policy"], /script-src 'self';/);
   } finally { await rm(home, { recursive: true, force: true }); }
 });
 
@@ -128,7 +241,7 @@ test("history still in the pre-rename log directory is read too", async () => {
 });
 
 test("dashboard renders contributor totals, preserves session selection and clears empty data", async () => {
-  const html = await readFile(new URL("../dashboard/index.html", import.meta.url), "utf8");
+  const html = await readFile(new URL("../dashboard/activity.html", import.meta.url), "utf8");
   const elements = new Map();
   const element = () => ({
     value: "", textContent: "", innerHTML: "", style: {}, children: [],
@@ -377,7 +490,7 @@ function loadPage(html) {
 }
 
 test("dashboard compares main and subagents, flags insufficient data and offers the retained window", async () => {
-  const { ctx, el } = loadPage(await readFile(new URL("../dashboard/index.html", import.meta.url), "utf8"));
+  const { ctx, el } = loadPage(await readFile(new URL("../dashboard/activity.html", import.meta.url), "utf8"));
   const sessions = contextContributors(lines([
     { session: "old", event: "tool_result", tool: "Read", chars: 5 },
     { session: "old", event: "agent_end", id: "tu-1", agent_id: "a1", agent: "bob", tool_uses: 40 },
@@ -406,7 +519,7 @@ test("dashboard compares main and subagents, flags insufficient data and offers 
 });
 
 test("token tables separate input, output, cache and calls, and label the window", async () => {
-  const { ctx, el } = loadPage(await readFile(new URL("../dashboard/index.html", import.meta.url), "utf8"));
+  const { ctx, el } = loadPage(await readFile(new URL("../dashboard/activity.html", import.meta.url), "utf8"));
   ctx.ds = [
     { ts: 1, agent: "bob", model: "sonnet", effort: "high", report_chars: 400, duration_ms: 1000,
       tokens: { api_calls: 10, input: 1000, output: 500, cache_read: 8000, cache_creation: 1000, total: 10500 } },

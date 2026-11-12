@@ -11,14 +11,25 @@
     "agents",
     "reference",
     "hooks",
-    "dashboard",
+    "dashboard/serve.js",
+    "dashboard/package.json",
+    "dashboard/execution-model.js",
+    "dashboard/activity.html",
+    "dashboard/THIRD_PARTY_NOTICES.md",
+    "dashboard/dist",
     "skills",
     "stack-packs",
     "tools",
     "README.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "scripts": {
+    "dashboard:build": "vite build dashboard --config dashboard/vite.config.mts",
+    "dashboard:typecheck": "tsc --project dashboard/tsconfig.json --noEmit",
+    "pretest": "npm run dashboard:build",
+    "pretest:fast": "npm run dashboard:build",
+    "prepack": "npm run dashboard:build",
     "test": "node --test \"test/*.test.js\" \"test/e2e/*.test.js\"",
     "test:fast": "node --test \"test/*.test.js\"",
     "validate": "node scripts/validate.mjs --portable",
@@ -62,6 +73,14 @@
     "prompts": "2.4.2"
   },
   "devDependencies": {
-    "@types/prompts": "^2.4.9"
+    "@types/prompts": "^2.4.9",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "4.7.0",
+    "@xyflow/react": "12.12.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "typescript": "7.0.2",
+    "vite": "6.4.6"
   }
 }

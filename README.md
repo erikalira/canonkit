@@ -103,16 +103,21 @@ Codex uses `$CODEX_HOME/hooks.json` (review `/hooks` once to trust it), and
 OpenCode uses its plugin. Hook `ask` decisions can force prompts even in Auto;
 choose this only when you want those additional gates. [Hook behavior](docs/hooks.md#native-controls-and-optional-hooks).
 
-**Optional: the dashboard.** It runs locally and shows dispatches, tokens and
-gates recorded by the optional hooks. Without those registrations, it does not
-create new dispatch telemetry:
+**Optional: the dashboard.** It runs locally and shows an Execution Graph and
+Timeline from events recorded by the existing Claude Code hooks. The Activity
+overview retains dispatch and token summaries. Without hook registrations, the
+dashboard does not create new execution telemetry:
 
 ```bash
 node ~/.claude/canonkit-dashboard/serve.js          # Linux, macOS, Git Bash
 node $HOME\.claude\canonkit-dashboard\serve.js      # Windows PowerShell
 ```
 
-Then open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
+Then open `http://127.0.0.1:4317`. If running from a source checkout, compile the
+static frontend first with `npm run dashboard:build`; published packages include
+the compiled files. The graph keeps risk routes separate from observed events,
+so an unobserved classification or approval stays unknown. [What it records and
+its limits](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
 
 ## How it decides: LOW vs HIGH
 

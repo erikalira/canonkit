@@ -26,7 +26,7 @@ import path from "node:path";
 import os from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import { resolveBin, projectOnlyHit, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
+import { resolveBin, projectOnlyHit, windowsOnlyHits, danglingHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { renderInstallReport } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
@@ -65,6 +65,11 @@ const OPENCODE_PLUGIN = Object.freeze({ from: "opencode-plugin.mjs", to: "plugin
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
+
+async function dashboardDistributionFiles() {
+  return ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", ...
+    (await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) => path.join("dist", file))];
+}
 
 // Every event each hook must be registered under, with the matcher it needs
 // there (null: no matcher). Checked per event, not per file: a hook wired to
@@ -863,7 +868,7 @@ async function installHooks(ctx, dest, { wire = false } = {}) {
  */
 async function installDashboard(ctx, dest) {
   if (!existsSync(DASHBOARD_DIR)) return;
-  const files = (await readdir(DASHBOARD_DIR)).sort();
+  const files = await dashboardDistributionFiles();
   await copyKeepingLocal(ctx, DASHBOARD_DIR, dest, files);
   const serve = path.join(dest, "serve.js").split(path.sep).join("/");
   ctx.log(`Installed dashboard -> ${dest}  (run: node ${serve})`);
@@ -2741,13 +2746,27 @@ async function confirm(yes) {
   return /^y(es)?$/i.test(answer.trim());
 }
 
-function printMissing(tool, project) {
+// On WSL a Windows program on PATH would run through interop, as Windows code
+// with the project open: tool commands resolve from the Linux side only. One
+// value per command, spread into every resolve and run so they cannot disagree.
+const toolExec = () => ({ windowsRoots: readWindowsRoots() });
+
+// A PATH entry is attacker-influenced text going to a terminal.
+const plain = (p) => p.replace(/[\x00-\x1f\x7f-\x9f]/g, "?");
+
+function printMissing(tool, project, exec) {
   const inside = projectOnlyHit(tool.bin, { cwd: project });
+  const windows = windowsOnlyHits(tool.bin, { cwd: project, ...exec });
+  const dangling = danglingHits(tool.bin, { cwd: project, ...exec });
   console.error(
     [
-      inside
-        ? `${tool.bin} was found only inside the project (${inside}); canonkit runs binaries from outside it only.`
-        : `${tool.bin} is not on PATH.`,
+      ...(inside ? [`${tool.bin} was found only inside the project (${plain(inside)}); canonkit runs binaries from outside it only.`] : []),
+      ...(windows.length ? [`${tool.bin} was found only on the Windows side (${plain(windows[0])}); canonkit does not run Windows binaries through WSL interop.`] : []),
+      ...(inside || windows.length ? [] : [`${tool.bin} is not on PATH.`]),
+      // Fixed wording, no snippet and no folder derived from the target: which folder to allow is the person's call.
+      ...dangling.slice(0, 1).map(({ link, target }) => `${tool.bin} is at ${plain(link)} but its target is not readable (${plain(target)}): the link is broken, or the folder is hidden from this process. Under the Claude Code sandbox, allow that folder in sandbox.filesystem.allowRead of your user settings (~/.claude/settings.json); see docs/tools.md (Claude Code sandbox).`),
+      // Not on native Windows: ~/.nvm, ~/.local and the bubblewrap/Seatbelt sandbox do not apply there.
+      ...(inside || windows.length || dangling.length || process.platform === "win32" ? [] : ["If it is installed under ~/.nvm or ~/.local and this runs inside the Claude Code sandbox, that folder may be hidden: see docs/tools.md (Claude Code sandbox)."]),
       "canonkit only integrates tools you installed; it installs nothing.",
       `Install the pinned version (${tool.requires}):`,
       ...tool.install.map((l) => `  ${l}`),
@@ -2769,16 +2788,17 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   const project = toolProject();
   const setup = withGitHooks ? [["hook", "install"], ...tool.setup] : tool.setup;
 
-  const abs = resolveBin(tool.bin, { cwd: project });
+  const exec = toolExec();
+  const abs = resolveBin(tool.bin, { cwd: project, ...exec });
   if (!abs) {
-    printMissing(tool, project);
+    printMissing(tool, project, exec);
     return 1;
   }
 
   let version = null;
   let hooks = null;
   if (!ctx.dryRun) {
-    version = binVersion(abs, { project, env: toolEnv(tool) });
+    version = binVersion(abs, { project, env: toolEnv(tool), ...exec });
     if (tool.preflight === "git-hooks") {
       hooks = gitHooksPreflight(project, { withGitHooks });
       if (!hooks.ok) {
@@ -2788,8 +2808,13 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
     }
   }
 
-  ctx.log(`${tool.name}: setup in ${project}`);
-  ctx.log(`  binary:  ${abs}`);
+  ctx.log(`${tool.name}: setup in ${plain(project)}`);
+  ctx.log(`  binary:  ${plain(abs)}`);
+  const shadows = windowsOnlyHits(tool.bin, { cwd: project, before: abs, ...exec });
+  if (shadows.length) {
+    ctx.log(`  note:    a Windows copy comes first in PATH (${plain(shadows[0])}); ignored here, but agents and shells running bare \`${tool.bin}\` get that one.`);
+    ctx.log("           To stop that, set appendWindowsPath=false under [interop] in /etc/wsl.conf (canonkit does not edit it).");
+  }
   if (ctx.dryRun) ctx.log("  version: not checked (a dry run executes nothing, --version included)");
   else if (!version) ctx.log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
   else if (version !== tool.pin) {
@@ -2835,7 +2860,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false } = {}) {
   const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
   for (const [i, args] of setup.entries()) {
     ctx.log(`> ${display(abs, args)}`);
-    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool) });
+    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool), ...exec });
     if (r.error || r.status !== 0) {
       console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
       if (i > 0) {
@@ -2901,11 +2926,20 @@ async function toolList(ctx) {
   const active = activeTools(existsSync(target) ? await readFile(target, "utf8") : "", tools);
 
   ctx.log(`Optional tools (this project: ${project})`);
+  const exec = toolExec();
+  const ignored = [];
+  const unreadable = [];
   for (const t of tools.values()) {
-    const abs = resolveBin(t.bin, { cwd: project });
-    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t) }) ?? "?"}`;
+    const abs = resolveBin(t.bin, { cwd: project, ...exec });
+    if (!abs) {
+      ignored.push(...windowsOnlyHits(t.bin, { cwd: project, ...exec }));
+      unreadable.push(...danglingHits(t.bin, { cwd: project, ...exec }));
+    }
+    const installed = !abs ? "not on PATH" : ctx.dryRun ? "not checked" : `installed ${binVersion(abs, { project, env: toolEnv(t), ...exec }) ?? "?"}`;
     ctx.log(`  ${t.name.padEnd(10)} pin ${t.pin.padEnd(9)} ${installed.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
   }
+  if (ignored.length) ctx.log(`  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`);
+  for (const { link, target } of unreadable) ctx.log(`  (unreadable: ${plain(link)} -> ${plain(target)})`);
   ctx.log("");
   ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
 }
@@ -2930,7 +2964,12 @@ async function toolCommand(ctx, [sub, ...names], flags) {
 // Before retiring a distributed artifact, retain its descriptor here (including
 // owners/markers/undo). Old receipts must remain readable; never learn a path
 // from the manifest to compensate for a removed package file.
-const RETIRED_GLOBAL_ARTIFACTS = [];
+const RETIRED_GLOBAL_ARTIFACTS = [
+  // Pre-build dashboard versions installed dashboard/index.html. Keep its
+  // descriptor so existing manifests remain valid; the running server now
+  // serves the compiled dist/index.html, and this legacy copy is left intact.
+  { id: "claude:file:canonkit-dashboard/index.html", root: "claude", relative: "canonkit-dashboard/index.html", kind: "file", owners: ["claude"], public: true },
+];
 async function installCatalog(agents) {
   const roots = { home: path.resolve(os.homedir()), claude: claudeHome(),
     codex: codexHome(), opencode: path.resolve(opencodeDir()), copilot: copilotHome(),
@@ -2947,7 +2986,7 @@ async function installCatalog(agents) {
   }
   add("opencode", OPENCODE_PLUGIN.to, "file", ["opencode"], { plugin: true });
   add("claude", "hooks/meu-time-hook.js", "file", ["claude"]);
-  for (const file of await filesUnder(DASHBOARD_DIR)) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
+  for (const file of await dashboardDistributionFiles()) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
   for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)) {
     if (!existsSync(path.join(SKILLS_DIR, name, "SKILL.md"))) continue;
     for (const file of await filesUnder(path.join(SKILLS_DIR, name))) {

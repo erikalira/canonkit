@@ -24,6 +24,9 @@ os cinco cenários passaram em 15/15 execuções reais do Bob atual, após calib
 vereditos equivalentes e corrigir o intervalo do fixture monetário. Nenhuma nova
 instrução ou variante foi necessária; o corpus agora tem 37 casos.
 Próxima fase: **Fase 8 — Gate quantitativo para Caveman / Shunt**.
+O bloco P5 (Fases 11–15: signal-to-fix, feedback ↔ hipótese, evidência de
+conclusão, cobertura por harness, latência e custo por tarefa) está planejado,
+sem implementação.
 Os casos de roteamento com modelo real continuam sendo uma medição manual paga;
 o mesmo vale para os novos casos de qualidade. Os testes herméticos validam o
 contrato dos evals, sem demonstrar comportamento dos modelos.
@@ -754,6 +757,294 @@ Ao final, abrir uma revisão do CanonKit baseada em dados.
 
 ---
 
+# P5 — evidência de resultado: do sinal à correção
+
+As fases P0–P4 medem o custo e a qualidade do **trabalho dos agentes**. Este bloco
+mede se esse trabalho **fecha o ciclo** nos projetos onde o CanonKit é usado: um
+sinal real (alerta, erro, feedback) vira correção, a correção é comprovada e o
+custo por entrega fica visível.
+
+Regras do bloco:
+
+- não criar agentes, skills ou documentos obrigatórios novos; usar Pipe, Dana,
+  Scott, `orchestrate`, OpenSpec, `doctor` e a telemetria existente;
+- toda instrução nova em agente segue o princípio 4: entra só com eval que
+  mostre a falha atual;
+- métricas de projeto vivem nas ferramentas do projeto (tracker, CI, deploy);
+  o CanonKit define o contrato e a pergunta, não coleta dados de produção;
+- Fases 11–13 alteram instruções; respeitar o freeze da Fase 10 se ele estiver
+  em vigor.
+
+| Ordem | Fase | Onde encaixar | Prioridade |
+|---|---|---|---|
+| 1 | 11 — Signal-to-fix | Pipe + Dana, por projeto | Alta |
+| 2 | 12 — Feedback vinculado à hipótese | Scott + Dana + Issues | Alta |
+| 3 | 13 — Evidência de conclusão consolidada | `orchestrate` + OpenSpec | Alta |
+| 4 | 14 — Cobertura técnica por harness | `doctor` + documentação | Média |
+| 5 | 15 — Latência e custo por tarefa concluída | Telemetria existente | Média |
+
+---
+
+## Fase 11 — Definir e medir signal-to-fix
+
+### Problema
+
+Pipe já define alertas, metas de confiabilidade e error budget, e Dana já protege
+a definição de métricas. Mas nenhum dos dois responde:
+
+> **quanto tempo passa entre um sinal real de problema e a correção em produção?**
+
+Sem isso, alertas podem disparar sem dono, e "corrigido" pode significar
+"mergeado" em vez de "o sinal parou".
+
+### Definição proposta
+
+`signal-to-fix` = tempo entre o **primeiro sinal acionável** (alerta, erro
+agrupado, issue de usuário) e o **deploy da correção confirmado pelo
+desaparecimento ou redução do sinal**.
+
+Pipe é dono de:
+
+- quais fontes contam como sinal e onde está o timestamp de cada uma;
+- o que conta como "correção entregue" (deploy, não merge);
+- como confirmar que o sinal parou.
+
+Dana é dona de:
+
+- denominador e janela (por exemplo, sinais de severidade X nos últimos 30 dias);
+- estatística (mediana e p90, não média);
+- exclusões explícitas (sinais descartados, duplicados, falsos positivos);
+- o que **não** pode ser concluído com a instrumentação existente.
+
+### Implementação provável
+
+- critério curto em `agents/pipe.md`: um alerta sem caminho até uma correção
+  medível não está pronto;
+- critério curto em `agents/dana.md`: signal-to-fix precisa de definição de
+  início, fim, janela e exclusões antes de ser comparado;
+- quality evals: Pipe recusando "alerta configurado" como prontidão quando
+  ninguém consegue medir o fechamento; Dana rejeitando uma média sem janela;
+  caso LOW sem burocracia (projeto sem produção não ganha métrica).
+
+### Critério de aceite
+
+- definição escrita uma vez, sem duplicar entre Pipe e Dana;
+- evals novos falham sem a instrução e passam com ela;
+- nenhum projeto sem usuários ou produção recebe a exigência.
+
+---
+
+## Fase 12 — Capturar feedback real e vinculá-lo à hipótese de produto
+
+### Problema
+
+Scott já distingue evidência de hipótese e define o sinal para revisitar uma
+decisão; Dana já exige que todo evento sirva a uma hipótese. Falta o elo
+operacional: o feedback real chega como issue solta e não volta para a hipótese
+que deveria confirmar ou derrubar.
+
+### Fluxo desejado
+
+```text
+Scott registra a hipótese (no change OpenSpec ou na decisão existente)
+→ Dana define o sinal quantitativo que a testa, quando houver volume
+→ feedback qualitativo chega como issue com referência à hipótese
+→ Scott revisita: confirmada, refutada ou ainda sem evidência
+```
+
+### Implementação provável
+
+- convenção mínima de referência (label ou campo) ligando issue → hipótese,
+  reutilizando o tracker do projeto; sem template novo obrigatório;
+- Scott: ao revisitar uma decisão, citar o feedback vinculado e declarar o
+  estado da hipótese;
+- Dana: separar sinal quantitativo de relato qualitativo e não somar os dois;
+- quality evals: Scott tratando um pedido de feature sem evidência externa como
+  hipótese; Scott revisitando uma hipótese com feedback contraditório.
+
+### Privacidade
+
+Feedback pode conter PII. O vínculo guarda referência e resumo, não o texto
+bruto do usuário; Gard revisa quando houver dado pessoal.
+
+### Critério de aceite
+
+- uma hipótese consegue listar o feedback que a afeta sem busca manual ampla;
+- nenhum artefato novo obrigatório foi criado;
+- evals de Scott cobrem os dois cenários acima.
+
+---
+
+## Fase 13 — Consolidar evidências de conclusão, sem novo documento obrigatório
+
+### Problema
+
+`orchestrate` já classifica a conclusão (VERIFIED / PARTIALLY VERIFIED /
+UNVERIFIED) e a Fase 4 já usa o change OpenSpec como estado durável. Mesmo
+assim, a evidência fica espalhada entre relatório final, `tasks.md`, saídas de
+teste e revisões, e pode divergir.
+
+### Regra principal
+
+**A evidência de conclusão mora em um único lugar já existente:**
+
+- com change OpenSpec: o próprio change (`tasks.md`), com estado de
+  verificação, comandos executados, resultados, critérios sem evidência e
+  revisão/estado de Git em que a evidência foi produzida;
+- sem change OpenSpec (LOW): o relatório final, como hoje.
+
+O relatório final referencia essa evidência em vez de reescrevê-la.
+
+### Implementação provável
+
+- ajuste pequeno em `skills/orchestrate/SKILL.md` (seções de evidence-based
+  completion e OpenSpec lifecycle), sem template novo;
+- archive só depois de VERIFIED ou de pendências explicitamente aceitas;
+- routing/quality cases: change marcado como concluído com evidência apenas no
+  relatório; evidência obsoleta após nova edição; caso LOW sem OpenSpec.
+
+### Critério de aceite
+
+- nenhum documento novo obrigatório;
+- relatório e change não podem divergir sobre o estado de conclusão;
+- evidência obsoleta é detectada ou rebaixada para PARTIALLY VERIFIED.
+
+---
+
+## Fase 14 — Explicitar a cobertura técnica por harness
+
+### Problema
+
+O CanonKit instala para Claude Code, Codex, OpenCode e Copilot, mas a cobertura
+não é igual: em alguns harnesses gates viram texto, e Stop gate, lembrete de
+contexto ou telemetria podem não existir. Hoje isso está em comentários dos hooks
+e espalhado no README; o `doctor` não mostra.
+
+### Implementação provável
+
+- matriz única em `docs/` (por exemplo `docs/harness-coverage.md`):
+  capacidade × harness, com valores `enforced`, `advisory`, `ausente`;
+  capacidades mínimas: gates de segurança, Stop gate / Definition of Done,
+  lembrete de contexto, telemetria de dispatch, telemetria de tool results,
+  access levels, seleção de modelo/effort, skills;
+- `doctor` exibe, para os harnesses instalados, as capacidades `advisory` e
+  `ausente`, com link para a matriz;
+- teste hermético garantindo que a matriz e o `doctor` usam a mesma fonte (sem
+  duas listas que divergem).
+
+### Critério de aceite
+
+- um usuário de Codex/OpenCode/Copilot sabe pelo `doctor` o que **não** está
+  protegido;
+- adicionar uma capacidade nova exige atualizar uma única fonte.
+
+---
+
+## Fase 15 — Medir latência da interação e custo por tarefa concluída
+
+### Problema
+
+A telemetria mede duração e tokens por dispatch, mas não:
+
+- quanto tempo o usuário espera por turno;
+- quanto custa uma tarefa **concluída**, que é a unidade que importa.
+
+`docs/telemetry.md` já declara que custo financeiro não é calculado sem preços
+verificados; esta fase mantém essa regra.
+
+### Implementação provável
+
+- latência da interação: tempo entre `UserPromptSubmit` e `Stop` no mesmo turno,
+  reaproveitando eventos já tratados pelo hook; apenas números;
+- custo por tarefa concluída: somar tokens (e dispatches, duração) da sessão
+  até um fechamento VERIFIED da Fase 13; custo em dinheiro só com tabela de
+  preços versionada e verificada; caso contrário, reportar tokens;
+- dashboard: distribuição (mediana / p90), sem ranking de agente, alinhado à
+  Fase 9;
+- tarefas não concluídas aparecem como contagem separada, nunca descartadas
+  silenciosamente.
+
+### Segurança / privacidade
+
+Mesmas regras da Fase 1: nenhum prompt, resultado, código ou path completo.
+
+### Critério de aceite
+
+- testes herméticos com payloads de `UserPromptSubmit`/`Stop` incompletos,
+  fora de ordem e fail-open;
+- compatibilidade com eventos antigos do dashboard;
+- "custo" nunca aparece em moeda sem fonte de preço verificada.
+
+---
+
+# P6 — Live Development Observatory
+
+**Status em 2026-11-12:** Execution Graph implementado nesta worktree para eventos locais de Claude Code, com build e testes automatizados aprovados. Entrega **parcial** em relação ao pedido completo: identidade confiável de projeto/worktree/branch, integração de artefatos OpenSpec/Graphify, validação visual/acessível em navegador e observação de uma sessão real continuam pendentes. Codex, OpenCode e Copilot ainda não têm adaptadores equivalentes. O Agent Office 2D/3D é roadmap, não implementação.
+
+## Princípios e contrato
+
+- Uma fonte normalizada de observações para grafo, timeline e futuras visualizações; React Flow e qualquer escritório são apenas apresentação.
+- CanonKit continua dono da governança e dos gates; OpenSpec dos changes/specs; Graphify da evidência estrutural; runtimes dos eventos de execução.
+- Só afirmar atividade, identidade, relação, classificação, aprovação ou conclusão quando existir evidência observável e correlacionável.
+- Não correlacionar homônimos por basename de cwd. Identificadores indisponíveis permanecem `unknown`/`null` até surgir fonte estável autorizada.
+- Sem chaves pagas, chamadas extras de modelo, sessões espelho, analytics externos ou automação de gates.
+- Manter o servidor local no loopback, polling proporcional, logs sem prompts/transcrições e empacotamento independente do CLI.
+
+## Estado atual — Execution Graph (implementado parcialmente)
+
+- Projeção versionada `/execution.json` dos eventos Claude Code suportados atualmente: `prompt`, `gate`, `agent_start`, `agent_launch`, `agent_end`, `agent_stop`, `agent_resume`.
+- Agregação por session + dispatch ID real; eventos sem ID estável continuam sem ID inventado. Medidas cumulativas mais recentes substituem anteriores, inclusive por ausência; paralelismo depende de intervalos observados sobrepostos.
+- Gates expõem observação e decisão separadamente. Dispatch encerrado não implica sucesso; início não prova escrita de código; review/approval e workflow permanecem desconhecidos sem evidência explícita.
+- UI React Flow com canvas, minimap, controles, layout explícito, inspector e timeline filtrável. A navegação temporal foca o nó correlacionável. Grafo observado e rotas de referência LOW/MEDIUM/HIGH ficam em visualizações distintas; rotas de referência não provam caminho executado.
+- `/activity.html` e endpoints legados preservados; stale snapshot informa desconexão e tenta reconectar. A instalação inclui frontend compilado, sem dependências frontend no runtime normal do CLI.
+- Segurança implementada no servidor local: Host/Origin loopback, sem CORS, arquivos estáticos confinados, CSP, `frame-ancestors`, `nosniff` e sem rotas de execução.
+- Evidência registrada no change OpenSpec `openspec/changes/live-development-observatory/`: typecheck/build, suíte completa (1042 total, 1021 passou, 21 ignorados, 0 falhou), package dry-run (71 arquivos), diff check e Graphify update passaram. `npm audit` não foi verificado por DNS `EAI_AGAIN`; navegador, acessibilidade e sessão real não foram verificados.
+
+## Fase P6.1 — Fechar lacunas do Execution Graph
+
+1. Verificar a UI compilada em navegador: legibilidade do canvas e nós, responsividade, teclado, foco, leitores de tela e movimentos/redução de movimento. Registrar ambientes e corrigir problemas observados sem depender de inspeção visual paga.
+2. Validar com uma sessão Claude Code já existente, sem iniciar agentes nem criar telemetria adicional; comparar o que aparece com eventos efetivamente retidos.
+3. Investigar uma fonte estável para project/worktree/branch/session. Especificar correlação para worktrees simultâneas e projetos homônimos; se o runtime não fornecer identidade, manter as dimensões desconhecidas.
+4. Acrescentar marcos de workflow, classificação e verificação apenas quando artifacts/events tiverem identificadores e evidência suficientes. Cobrir ausência, duplicatas, rotação, eventos fora de ordem e associação ambígua.
+5. Ligar OpenSpec/Graphify a sessões somente quando a correlação for comprovada; mostrar existência, origem e freshness separadamente. Não inicializar, validar, sincronizar, arquivar ou atualizar esses sistemas automaticamente pelo polling.
+6. Medir preservação de viewport/seleção em mudanças apenas de status e em mudanças estruturais; manter layout explícito e não oscilar em polling.
+
+**Gate de saída:** aceite demonstrado por sessão real e testes determinísticos de UI/modelo; incógnitas permanecem nomeadas e não inferidas. Revisar contratos e UX se novos identificadores ou relações se tornarem públicos.
+
+## Fase P6.2 — Observabilidade multi-runtime
+
+Investigar, em mudanças separadas, interfaces oficiais ou estáveis para Codex, OpenCode, GitHub Copilot e runtimes adicionais. Para cada adapter, documentar disponibilidade de session/dispatch/agent IDs, lifecycle, retenção, duplicatas, ordenação, privacidade, worktree identity e limitações no VS Code. Reutilizar o read model versionado, sem alegar cobertura além do sinal testado. Não iniciar CLI/session paralela para espelhar editor, não acessar estado privado de extensões e não exigir API paga.
+
+**Gate de saída:** adapter só é suportado quando houver fonte sustentável, fixtures reais anonimizadas/locais, testes de correlação e documentação de lacunas; “unknown” continua comportamento válido.
+
+## Fase P6.3 — Agent Office 2D (opcional)
+
+Desenhar primeiro uma visualização 2D de pixel art inspirada em escritórios de agentes, sem copiar código, personagens ou assets. Separar identidade estável do agente, processo/dispatch e execução atual: um nome de agente pode ter múltiplos dispatches e sessões. Mesas, salas e personagens devem mapear apenas presença observada; working/waiting/blocked/finished/unknown são categorias de apresentação, não atividades específicas como “escrevendo código”. Alertas de atenção dependem de evento explícito. Clique abre evidência da mesma sessão/dispatch no inspector.
+
+Construir protótipo leve e opcional, com assets originais ou licenças verificadas, navegação por teclado, alternativa textual equivalente, suporte a movimento reduzido e desempenho medido com múltiplas sessões/worktrees. O escritório não altera o Execution Graph nem cria segunda API/estado; ambos consomem o mesmo snapshot. Animações decorativas são claramente distintas de telemetria.
+
+**Gate de saída:** protótipo avaliado contra o grafo em clareza, acessibilidade, custo de manutenção e carga de CPU/memória; só então decidir se vale implementar.
+
+## Fase P6.4 — Estudo Agent Office 3D
+
+Somente após evidência de valor do modelo 2D, avaliar Three.js, React Three Fiber ou alternativas. Comparar custo de manutenção, tamanho de bundle, consumo GPU/CPU, acessibilidade, fallback sem WebGL, interação e escala de entidades. Prototipar sem compromisso com engine. Representar salas/projetos/agentes com as mesmas limitações de identidade e presença do modelo compartilhado; nunca fabricar atividade para preencher animação.
+
+**Gate de saída:** decisão registrada com medições comparativas; manter apenas 2D/grafo é resultado válido. Não adicionar dependência 3D ao CLI nem tornar a visualização padrão sem decisão explícita.
+
+## Fase P6.5 — Replay e análise histórica (condicional)
+
+Após política explícita de retenção, investigar replay baseado estritamente em eventos retidos: navegação temporal, reprodução das transições observadas e eventualmente comparação de execuções. Gaps de retenção/rotação devem aparecer como lacunas, nunca ser reconstruídos como fato. Métricas candidatas: duração por etapa, espera e retrabalho apenas quando eventos definirem esses intervalos; tokens por dispatch quando medidos. Não inferir qualidade a partir de consumo de tokens.
+
+**Gate de saída:** metodologia, privacidade e custo definidos; nenhuma métrica entra como indicador de qualidade sem validação própria. Custo financeiro só pode ser mostrado com preços atuais e entradas completas, identificando estimativa.
+
+## Fase P6.6 — Interações controladas (fora do MVP)
+
+Avaliar em change separado, após análise de abuso e autorização, ações de conveniência como abrir a sessão/runtime correspondente, navegar a um change ou diff e abrir um PR. Responder aprovações, executar comandos, deploy ou alterar permissões permanece fora do escopo até integração oficial, fronteira de segurança, confirmação explícita e revisão independente. Nunca contornar permissões do runtime ou do sistema operacional.
+
+**Gate de saída:** contrato de ação explícito, autorização por ação, validação de destino, proteção contra CSRF/DNS rebinding, auditoria sem conteúdo sensível, falha recuperável e revisão de segurança. Aprovação automática não é objetivo.
+
+---
+
 # Ordem recomendada de implementação
 
 ```text
@@ -774,6 +1065,11 @@ Ao final, abrir uma revisão do CanonKit baseada em dados.
 15. Coletar dados reais
 16. Decidir Caveman / Shunt com A/B
 17. Freeze e revisão
+18. Signal-to-fix (Pipe + Dana)
+19. Feedback vinculado à hipótese (Scott + Dana + Issues)
+20. Evidência de conclusão consolidada (orchestrate + OpenSpec)
+21. Cobertura por harness (doctor + docs)
+22. Latência e custo por tarefa concluída
 ```
 
 ---
@@ -790,7 +1086,12 @@ O roadmap pode ser considerado concluído quando:
 - o trust boundary dos hooks Git está deliberadamente decidido/documentado;
 - qualquer nova instrução permanente foi justificada por eval;
 - Caveman/Shunt foram rejeitados ou adotados com A/B real;
-- houve um período de uso sem adicionar novas camadas.
+- houve um período de uso sem adicionar novas camadas;
+- signal-to-fix tem definição única e evals em Pipe e Dana;
+- feedback real consegue ser rastreado até a hipótese de produto que afeta;
+- a evidência de conclusão mora em um único lugar existente;
+- o `doctor` mostra o que cada harness instalado não protege;
+- latência por turno e custo por tarefa concluída são medidos sem conteúdo sensível.
 
 ---
 

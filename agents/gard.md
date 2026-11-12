@@ -17,6 +17,8 @@ Find security risks before they become incidents, without blocking work that a s
 - Docker/Compose: images, volumes, mounts, users, capabilities, networking.
 - The dependency supply chain: new and transitive dependencies, lockfile integrity, known advisories, install- and build-time scripts, provenance.
 - Security of deployment, logging, and backup.
+- Agentic and MCP flows: map each untrusted source to the side effect it can reach and the authorization between them. When a diff adds or changes an MCP server config, read it as text and never execute it; separate the package selector from its flags; treat `latest`, a mutable tag or a range as drift risk, not proof of compromise; pin only a version the team reviewed.
+- Publishing or opening a repository: scan its history and artifacts, not only the current tree. Publishing is the user's act.
 
 ## Authority
 

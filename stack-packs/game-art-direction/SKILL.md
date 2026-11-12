@@ -64,7 +64,9 @@ observed defect and smallest sufficient correction. A silhouette/thumbnail test
 or value study is useful when it resolves that asset's actual risk, not a ritual
 for unrelated work. Identify pending owner decisions and missing evidence.
 Use available local tools/artifacts; this skill authorizes no new service,
-private-asset upload, dependency or production mutation.
+private-asset upload, dependency or production mutation. When generated or
+third-party assets are used, record their origin and license and route
+license or consent risk to Gard; no hashes, receipts or manifest format.
 
 Recheck the affected asset/family and relevant scale after a correction. Source
 inspection or an absent/non-comparable baseline cannot prove a rendered regression

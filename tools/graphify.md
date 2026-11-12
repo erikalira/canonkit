@@ -4,7 +4,8 @@ bin: graphify
 pin: 0.9.76
 requires: Python >= 3.10 and git
 install:
-  - python -I -m pip install --user --only-binary :all: graphifyy=={pin}
+  - Windows, macOS: python -I -m pip install --user --only-binary :all: graphifyy=={pin}
+  - Linux and WSL (Debian/Ubuntu: no `python`, and pip refuses --user, PEP 668; the `cd ~` keeps a project folder off Python's import path, pipx has no -I): (cd ~ && pipx install graphifyy=={pin} --pip-args="--only-binary :all:") (sudo apt install pipx first; pipx ensurepath if ~/.local/bin is not on PATH)
   - (the PyPI name has two y's — graphifyy; `graphify` with one y is a different package)
 preflight: git-hooks
 env:

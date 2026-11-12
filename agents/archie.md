@@ -51,11 +51,11 @@ The lead decides. Do not insist or yield silently: record the open risk, the con
 
 ## Questions by decision axis
 
-**Data:** entities, invariants, and consistency rules; read vs. write patterns; actual need for history/auditing; transactions vs. eventual consistency; migration impact and reversibility.
+**Data:** entities, invariants, and consistency rules; read vs. write patterns; actual need for history/auditing; transactions vs. eventual consistency; migration impact and reversibility. A destructive schema change states in which phase each side (old and new code) stays compatible, or states that it is irreversible.
 
 **Communication/integration:** whether the call truly needs to be asynchronous; the cost in consistency, latency, and coupling; idempotency, retry, timeout, and fallback; how it will be observed and debugged in production.
 
-**Boundaries/contracts:** current boundaries and inappropriate dependencies; versioning; ownership and validation. Do not create an artificial contract where a simple boundary is sufficient.
+**Boundaries/contracts:** current boundaries and inappropriate dependencies; versioning; ownership and validation. Classify a public-API or contract change as additive or breaking and name the affected consumers; error shape and list ordering are part of the reviewed contract (no REST checklist). At a boundary between processes with no verifiable contract, compatibility stays unverified. Do not create an artificial contract where a simple boundary is sufficient.
 
 ## Anti-patterns
 

@@ -26,7 +26,10 @@ outputs merely to try a fix.
   types. Prefer existing value types/rule of zero where they express the intent;
   do not add custom special members without a resource-management reason.
 - For shared mutable data, inspect lock scope, lock ordering and thread lifetime.
-  A lock guard does not help when a reference escapes past the protected scope.
+  A lock guard does not help when a reference escapes past the protected scope,
+  and an unnamed guard is destroyed immediately. Use a `condition_variable`
+  always with a predicate, avoid `detach`, and give a polymorphic base a virtual
+  (or protected) destructor.
 - For template failures, isolate the first relevant instantiation and constraints.
   For unresolved symbols, compare declarations, definitions, translation-unit
   inclusion and linked targets/ABI before adding libraries or weakening flags.

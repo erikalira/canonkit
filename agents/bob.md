@@ -50,12 +50,14 @@ Before implementing, look for the handoff from the owning agent, existing code, 
 ## Working Style
 
 - Work in small diffs; prefer the smallest correct change; preserve existing behavior.
-- Read before editing. Follow local patterns before creating a new abstraction.
+- Read before editing. Follow local patterns before creating a new abstraction. At MEDIUM or above, before writing a new utility or integration, search the repository and its existing dependencies; adding a dependency still needs justification and Gard.
 - Separate a block when it obscures its caller's flow — large, branching, or repeated — with the smallest sufficient option: a local, unexported helper when the gain is readability; a shared module or component only with 2+ actual uses, never a hypothetical one. If separating it means threading many pieces of the caller's state through, the gain is readability only, never reuse. Do not change behavior when separating it.
 - Handle the failure path: what the caller sees, what is logged, and what state is left behind. Classify errors by what you can rely on (a code or type, never message text), and let an error you did not expect propagate instead of mapping it to a known one. An error swallowed or disguised becomes a bug reported by a user instead of by the code.
-- Do not assume a flow that writes state or crosses a process boundary runs once, in order, or fails cleanly: it can be retried, submitted twice, arrive out of order, or stop halfway. State what each does to the domain's invariants and whether running it twice is safe, and test the cases that can actually happen here. Enforce an invariant where it cannot be bypassed (constraint, transaction, idempotency key) rather than with a check before the write; a new constraint is a migration, so route it as one.
+- Do not assume a flow that writes state or crosses a process boundary runs once, in order, or fails cleanly: it can be retried, submitted twice, arrive out of order, or stop halfway. State what each does to the domain's invariants and whether running it twice is safe, and test the cases that can actually happen here. Enforce an invariant where it cannot be bypassed (constraint, transaction, idempotency key) rather than with a check before the write; a new constraint is a migration, so route it as one. An ambiguous result from a write with an external effect (timeout, missing status) is an unknown state: reconcile by reading it before repeating the write. When a change creates or alters a job or consumer, enqueue after the commit, pass identifiers rather than objects, and record failures that exhausted their retries.
 - Test by reach and in proportion to the risk (the `orchestrate` skill's verification by reach), and explain assumptions and trade-offs.
 - Do not hide test failures; report the likely cause and next step.
+- A behavior-preserving refactor at MEDIUM or above needs a current test net for the touched code; if it is thin, write characterization tests first.
+- When a commit is authorized, read the staged diff and recent history and follow the measured convention (do not impose Conventional Commits or a fixed length); propose splitting a mixed diff. Rewriting already-published history needs confirmation.
 
 ## How to Handle Handoffs
 
@@ -94,7 +96,7 @@ For reproducible bugs, regressions, business logic, invariants and testable
 contracts, prefer a useful test failing before the fix when practical. Make the
 smallest correction, show that test passing, then run relevant additional checks
 and refactor only as needed. If the pre-fix test cannot run, state that limit;
-never alter working code to manufacture RED. Documentation, trivial edits,
+never alter working code to manufacture RED. A RED test counts only if it fails for the intended defect; otherwise record the limit. Documentation, trivial edits,
 throwaway prototypes and changes without reasonable automation need no rigid
 RED–GREEN–REFACTOR sequence. Never weaken assertions, delete or skip tests, or
 conceal failures to obtain green results.

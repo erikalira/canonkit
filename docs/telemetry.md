@@ -20,9 +20,63 @@ node $HOME\.claude\canonkit-dashboard\serve.js          # Windows (PowerShell)
 PowerShell does not expand `~` in arguments to external programs: with `~/`, Node
 looks for the file inside the current folder and fails with `MODULE_NOT_FOUND`.
 
-Then open `http://localhost:4317`: besides the timeline, it groups dispatches by
-(model, effort) and by agent, with the number of dispatches, average tokens,
-average report size and average duration.
+Then open `http://127.0.0.1:4317`. The Activity overview groups dispatches by
+(model, effort) and by agent, with dispatch counts, average tokens, report size
+and duration.
+
+The main page is the **Execution Graph**. It shows observed Claude Code
+dispatches and gate events for a selected session, a detail inspector, and a
+filterable timeline. The separate Activity overview keeps the existing metrics
+and context-contributor views. From a source checkout, run
+`npm run dashboard:build` before starting the server; published packages contain
+the compiled assets. The frontend toolchain is a development dependency and the
+installed dashboard runs with Node alone.
+
+### Execution read model, schema version 1
+
+`/execution.json` projects retained hook records into a versioned, allowlisted
+read model. Its top level contains `schemaVersion`, `generatedAt`, `sessions`,
+`agents` and `observations`. Each observation carries a timestamp, runtime, source,
+confidence, optional session/dispatch/agent identifiers, event type and a small
+type-specific `data` object. `eventId` is `null` because the source log has no
+stable event ID; dispatch lifecycle records correlate by their observed session
+plus source dispatch ID. A stop event joins only when its runtime agent ID maps
+to exactly one dispatch in that session. Invalid identifiers, malformed timestamps, arbitrary event
+fields, prompt/task text, tool results, paths, project names and transcript
+content are omitted.
+
+The model only includes events the hook already emits: `prompt`, `gate`,
+`agent_start`, `agent_launch`, `agent_end`, `agent_stop` and `agent_resume`.
+Dispatch starts and ends use the session plus dispatch ID. A stop can close a
+dispatch only when its runtime agent ID identifies exactly one dispatch in that
+session. Resume targets do not carry an ID and therefore remain uncorrelated.
+Cumulative `agent_end` lines for one dispatch are read in timestamp order; the
+latest cumulative record wins, including when a measurement is missing. A
+stop/end means the execution ended, not that its work succeeded or passed
+review. Agent presence is projected only where a real
+runtime agent ID links to a dispatch; it describes an active or ended invocation,
+not code-writing activity, task quality or review.
+
+Execution state, workflow state and approval state are separate. Gate records
+are classified by their observed rule: some indicate an allow, some a block, and
+some a request for confirmation. The log does not record the user's response,
+so approval remains unknown. LOW, MEDIUM and HIGH routes are shown in a separate
+reference view as conditional CanonKit guidance; no route is selected from
+runtime data. Nodes in those reference routes stay unknown.
+
+The current hooks do not provide a stable project ID, worktree, branch, OpenSpec
+change link, Graphify freshness signal, or full Codex/OpenCode/Copilot execution
+stream. Those fields remain unavailable. In particular, a project basename is
+not used to merge sessions. This release does not add hooks, start sessions,
+scan OpenSpec/Graphify, or collect new telemetry. Runtime adapters, richer
+evidence links, and the future Agent Office remain roadmap work; the Agent Office
+is not implemented here.
+
+The dashboard binds to `127.0.0.1`, validates loopback `Host` and same-origin
+`Origin` headers, serves only compiled files under its static directory, and
+does not enable CORS. New JSON uses a `nosniff` response; the compiled page has a
+restrictive content policy. The older Activity page retains its inline script
+under a path-specific policy for compatibility.
 
 ## Engineering baseline coverage
 

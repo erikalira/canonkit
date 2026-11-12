@@ -19,7 +19,13 @@ version and exits with 1, writing nothing. Install it yourself, at these version
 
 ```bash
 npm install --global --ignore-scripts @fission-ai/openspec@1.14.0
+# Windows, macOS
 python -I -m pip install --user --only-binary :all: graphifyy==0.9.76
+# Linux and WSL (Debian/Ubuntu): there is no `python`, and PEP 668 makes pip refuse
+# --user. The `cd ~` keeps a project folder off Python's import path (pipx has no -I);
+# the parentheses run it in a subshell, so your terminal stays in the project.
+sudo apt install pipx && pipx ensurepath
+(cd ~ && pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:")
 ```
 
 > **graphifyy has two y's.** `graphify` with one y on PyPI is a different package.
@@ -33,6 +39,58 @@ install is never used, and that is why the printed command is the global one. Th
 child process gets the same filtered `PATH` and, on Windows,
 `NoDefaultCurrentDirectoryInExePath=1`, so that a binary planted in the project
 (a `node.exe`, for example) is not executed by the tool's shim.
+
+**On WSL, only the Linux side counts.** `tool add` and `tool list` ignore a binary
+that lives on a Windows drive, such as an npm shim in `%APPDATA%\npm` reached
+through interop: it is treated as not installed (`tool add` exits 1 and writes
+nothing; `tool list` shows "not on PATH"), and the message prints the pinned install
+command plus a line naming the ignored Windows copy. Drives are read from `/proc/self/mounts` (`drvfs`, or `9p` with
+`aname=drvfs`, under any automount root; `/mnt/wsl` and `/usr/lib/wsl/drivers` do
+not count). A symlink from a Linux folder into a Windows drive is ignored too.
+`tool list` keeps its columns and adds a footnote naming Windows-only copies it
+ignored. The same filter applies to the `PATH` of the tool's own steps, so Windows
+programs (`explorer.exe`, `clip.exe`, `code`) are not on it; if nothing is left,
+`PATH` is left unset, never empty (an empty `PATH` means the current directory, the
+project). If a Windows copy comes earlier in your `PATH` than the Linux one, `tool add`
+prints a non-blocking note: agents and shells that run bare `<bin>` get the Windows
+one. To stop that, set `appendWindowsPath=false` under `[interop]` in
+`/etc/wsl.conf`; canonkit only prints this and never edits `wsl.conf` or your `PATH`.
+This is hygiene, not a defense against hostile binaries (see the ADR). `git`, the
+security checks and model discovery still resolve binaries as before.
+
+> **Claude Code sandbox.** A tool installed under `~/.nvm` or `~/.local` can be invisible
+> to sandboxed Bash commands when the sandbox denies reading your home directory
+> (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
+> That is a user-side setting: re-allow the folder with `sandbox.filesystem.allowRead`
+> in your user settings, `~/.claude/settings.json`. For the defaults used here (nvm for
+> Node, pipx for graphify), allow only what you use:
+>
+> ```json
+> "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] } }
+> ```
+>
+> `~/.local/bin/graphify` is a symlink into pipx's venvs, so the pipx folder must be
+> readable too, or the link looks broken inside the sandbox. Its location depends on
+> the pipx version and distribution (`~/.local/share/pipx` on Ubuntu 24.04, or
+> `~/.local/pipx`): run `pipx environment --value PIPX_LOCAL_VENVS` and allow the
+> folder above `venvs`.
+>
+> When it can tell, canonkit says so. `tool add` names a link in your `PATH` whose
+> target the process cannot read, with that target ("the link is broken, or the folder
+> is hidden from this process"), and, when nothing more specific explains the missing
+> tool, adds one line pointing here (not on native Windows). `tool list` only lists the
+> unreadable links under the table. A folder the sandbox hides outright (`~/.nvm`)
+> leaves no trace, so only the generic line appears. canonkit only prints these hints:
+> it never reads or writes your settings and does not guess the folder to allow.
+>
+> Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
+> `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,
+> unless the npm global prefix is inside your home (`npm config get prefix`, for example
+> `~/.npm-global`): then allow that folder, because `openspec` is installed there. A project
+> `.claude/settings.json` is not enough: a repository file cannot re-allow a path that a
+> higher level denies. canonkit never writes it: the path is yours and it is a
+> permission. The setting affects sandboxed Bash only and applies to the next command;
+> see the Claude Code sandboxing docs.
 
 With the binary present, `tool add`:
 

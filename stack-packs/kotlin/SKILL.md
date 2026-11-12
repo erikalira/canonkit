@@ -28,7 +28,7 @@ configuration names before assuming every module has `runtimeClasspath` or `test
   `CancellationException` or narrow the catch to the recoverable exception.
   Cancellation is cooperative; CPU loops need appropriate checks and blocking
   APIs may need their established cancellation bridge. Cleanup still belongs in
-  `finally`/resource scopes. Do not turn cancellation into a successful fallback
+  `finally`/resource scopes; suspending cleanup there needs `NonCancellable`. Do not turn cancellation into a successful fallback
   merely to satisfy a return type.
 - A `suspend` modifier does not move blocking work off the caller's dispatcher.
   Follow the API's threading contract; use an appropriate dispatcher for blocking
@@ -36,7 +36,7 @@ configuration names before assuming every module has `runtimeClasspath` or `test
   main-safe suspend APIs. Avoid `runBlocking` on a UI or request executor.
 - Inspect Flow producer/collector lifetimes, buffering, cancellation and sharing
   policy. A hot `StateFlow` does not finish normally; tie collection to its owner.
-  Equality conflation means mutating the same collection in place can suppress
+  `flowOn` changes the upstream context, not where collection runs. Equality conflation means mutating the same collection in place can suppress
   updates. Publish fresh immutable snapshots and use atomic `update` for concurrent
   read-modify-write; its lambda may run more than once, so keep side effects out.
   `asStateFlow` hides mutation methods, not mutable objects stored inside the value.
@@ -60,7 +60,7 @@ security risks to Gard; the skill creates no separate security authority.
 
 Run the affected wrapper tasks and configured lint/tests for the relevant source
 sets and targets. Cover cancellation vs ordinary failure, null/platform inputs,
-or Flow emission/lifecycle behavior when changed. Report unavailable SDKs/native
+or Flow emission/lifecycle behavior when changed; prefer `runTest` with virtual time for coroutine tests. Report unavailable SDKs/native
 targets; do not install toolchains or add dependencies as an incidental fix.
 
 ## Team boundary

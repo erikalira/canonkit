@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-12
+goal: Record the implemented local execution graph, honest telemetry limits, and
+  staged roadmap for future observability views.

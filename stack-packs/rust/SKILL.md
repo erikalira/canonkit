@@ -21,13 +21,16 @@ that must still build at the declared baseline.
 - Prefer the existing error model and propagate recoverable failures with
   useful context. Adding `unwrap`/`expect` to satisfy a type error changes a
   recoverable failure into a panic; distinguish proven invariants from inputs.
+  Match a critical enum exhaustively without a wildcard, and do not discard a
+  `Result` or `#[must_use]` value.
 - Inspect unsafe blocks through their actual safety invariants: validity,
   alignment, aliasing, initialization and lifetime. A SAFETY comment must explain
   why the operation is valid, not merely label the block.
 - Check lock scope and blocking work across await points. An async function can
   still block its executor; follow the configured runtime's existing boundary
   for blocking work. Check cancellation and dropped futures for cleanup or
-  partially applied state; do not assume every spawned task finishes.
+  partially applied state; do not assume every spawned task finishes. An
+  unbounded channel hides backpressure next to that cancellation risk.
 - For Cargo failures, inspect feature unification, target-specific dependencies,
   workspace membership and actual compiler diagnostics before editing versions
   or suppressing lints. Borrowed slices/str can express access without ownership,

@@ -86,6 +86,26 @@ Code: `isolation: "worktree"` on the dispatch; elsewhere, a separate checkout) â
 never concurrent file-editing agents in one tree, where each overwrites the
 other's edits and invalidates the other's test run.
 
+Before splitting, name per lane its write surface and its dependency. A shared
+surface or an irreversible step becomes sequential or gets a separate worktree.
+A blocker that changes the plan pauses the dependent lanes. The orchestrator
+integrates the outputs of isolated writers one at a time, re-running the
+affected checks after each; a unit whose dependency failed does not enter.
+
+## Repeated or looped runs
+
+When the user asks for recurring or looped execution, the brief carries an end
+condition a command can decide, what must not be done to satisfy it, an attempt
+cap with escalation to the human, and, above LOW, verification by someone who
+did not write the change. Resolve ambiguity before starting; fix no numbers here.
+
+## Irreversible external actions
+
+An irreversible external action (a message, an email, an upload, a signature)
+sends only the text the user approved, and only after their explicit
+authorization. Say "sent" only with confirmation from the destination; otherwise
+report an "uncertain result" and do not retry automatically.
+
 ## Briefing by access level
 
 A reviewer or advisor whose `access` is `read` or `inspect` cannot edit files
@@ -156,6 +176,8 @@ artifact or state engine:
 Report implemented scope, what was validated, relevant commands actually run and
 their results, skipped checks and remaining limitations. Lint is evidence about
 lint, not a passing build; a partial or skipped suite does not verify unrun cases.
+Local or merge checks do not establish acceptance in the target environment:
+report the undone part as pending and keep the conclusion PARTIALLY VERIFIED.
 For LOW work, a brief inspection or focused check can suffice; do not require an
 irrelevant build or E2E. Format/schema checks of instructions do not establish
 model obedience: behavioral efficacy stays **UNMEASURED** without measurements.
@@ -170,7 +192,8 @@ Match checks to what the change can break, not to the number of edits:
   budget, idempotent-install and security tests). The edited file's own tests
   alone miss downstream breakage.
 - **Crossing modules or changing shared behavior:** the affected tests above plus
-  a smoke of the main interfaces.
+  a smoke of the main interfaces. A consumer that is affected but unverified
+  keeps the conclusion **PARTIALLY VERIFIED**, naming that edge.
 - **Full suite and project validations:** once, after the last edit, before
   delivery or the final review; not per iteration. If review leads to edits, run
   it again only after those. A baseline before editing is optional (worth it for
