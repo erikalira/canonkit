@@ -8,7 +8,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, writeFile, readFile, symlink, rm, chmod } from "node:fs/promises";
+import { mkdir, writeFile, readFile, symlink, rm, chmod, rename } from "node:fs/promises";
 import { existsSync, readdirSync, statSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -222,27 +222,27 @@ describe("git-ignore-sandbox-files: where it writes", () => {
   });
 
   test("a submodule writes into its own git directory", async () => {
-    const { root, home, project } = await repo("si-submodule");
-    const sub = path.join(root, "subsrc");
-    await mkdir(sub);
-    git(sub, "init", "-q");
-    await writeFile(path.join(sub, "f"), "x");
-    git(sub, "add", "f");
-    git(sub, "commit", "-q", "-m", "init");
-    // Build the same gitdir layout without git-submodule, whose shell helper
-    // is unavailable on Git for Windows under this test's isolated PATH.
-    await mkdir(path.join(project, ".git", "modules", "deps"), { recursive: true });
-    await mkdir(path.join(project, "deps"));
+    const { home, project } = await repo("si-submodule");
     const inner = path.join(project, "deps", "sub");
-    git(project, "clone", "-q", "--local", "--separate-git-dir", path.join(project, ".git", "modules", "deps", "sub"), sub, inner);
-    await writeFile(path.join(project, ".gitmodules"), `[submodule "deps/sub"]\n\tpath = deps/sub\n\turl = ${sub.split(path.sep).join("/")}\n`);
+    await mkdir(inner, { recursive: true });
+    git(inner, "init", "-q");
+    await writeFile(path.join(inner, "f"), "x");
+    git(inner, "add", "f");
+    git(inner, "commit", "-q", "-m", "init");
+    // Give the nested repository a submodule's gitdir layout using file
+    // operations. Git for Windows crashes when this fixture uses clone.
+    await mkdir(path.join(project, ".git", "modules", "deps"), { recursive: true });
+    const modules = path.join(project, ".git", "modules", "deps", "sub");
+    await rename(path.join(inner, ".git"), modules);
+    await writeFile(path.join(inner, ".git"), `gitdir: ${modules.split(path.sep).join("/")}\n`);
+    git(inner, "config", "core.worktree", inner);
+    await writeFile(path.join(project, ".gitmodules"), `[submodule "deps/sub"]\n\tpath = deps/sub\n\turl = ${inner.split(path.sep).join("/")}\n`);
     git(project, "add", ".gitmodules", "deps/sub");
     await empty(inner, ".zshrc");
     const r = sbx([], { home, cwd: inner });
     assert.equal(r.status, 0, r.out);
     assert.match(r.out, /\(this submodule's own exclude file\)/);
-    const modules = path.join(project, ".git", "modules", "deps", "sub", "info", "exclude");
-    assert.deepEqual(patterns(await readFile(modules, "utf8")), ["/.zshrc"]);
+    assert.deepEqual(patterns(await readFile(path.join(modules, "info", "exclude"), "utf8")), ["/.zshrc"]);
     assert.equal(block(await readFile(excludeOf(project), "utf8")), null);
   });
 
