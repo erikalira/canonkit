@@ -15,7 +15,7 @@ import path from "node:path";
 import { REPO, runCli, writeCommand } from "../helpers/cli-harness.js";
 import { fileURLToPath } from "node:url";
 import { CORE, scratch, run, read } from "../helpers/cli-fixtures.js";
-import { readAgents, readTools, parseTool } from "../../bin/cli.js";
+import { readAgents, readTools, parseTool, chooseHarness, toolAdd } from "../../bin/cli.js";
 import { modelDiagnosis } from "../../bin/models-command.js";
 
 
@@ -72,12 +72,46 @@ describe("tool registry", () => {
     }
   });
 
+  test("openspec's harness list is exactly the four, defaulting to claude and codex", async () => {
+    const o = (await readTools()).get("openspec");
+    assert.deepEqual(o.harness.allowed, ["claude", "codex", "opencode", "github-copilot"]);
+    assert.deepEqual(o.harness.default, ["claude", "codex"]);
+    assert.deepEqual(Object.keys(o.harness.touches), o.harness.allowed);
+    assert.deepEqual(o.setup, [["init", "--tools", "claude,codex"]], "the default composes the step the tool always ran");
+    assert.equal(parseTool("g.md", `---\nname: g\nbin: g\npin: 1.2.3\ninstall:\n  - get g@{pin}\nsetup:\n  - update .\n---\nr\n`).harness, null);
+  });
+
+  test("{harness} is accepted only as one whole argument, once, with a list and a subset default", () => {
+    const file = ({ setup = "  - init --tools {harness}", list = "  - a: x/\n  - b-c: y/", def = "defaultharness: a" } = {}) =>
+      `---\nname: t\nbin: t\npin: 1.2.3\ninstall:\n  - get t@{pin}\nsetup:\n${setup}\nharness:\n${list}\n${def}\n---\nr\n`;
+    const t = parseTool("t.md", file());
+    assert.deepEqual(t.harness, { allowed: ["a", "b-c"], touches: { a: "x/", "b-c": "y/" }, default: ["a"] });
+    assert.deepEqual(t.setup, [["init", "--tools", "a"]]);
+    const noList = `---\nname: t\nbin: t\npin: 1.2.3\ninstall:\n  - get t@{pin}\nsetup:\n  - init --tools {harness}\n---\nr\n`;
+    assert.throws(() => parseTool("t.md", noList), /needs a harness list/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - init --tools x{harness}" })), /plain literal/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - init --tools {harness}\n  - more {harness}" })), /once/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - init --tools {harness} {harness}" })), /once/);
+    assert.throws(() => parseTool("t.md", file({ setup: "  - init" })), /needs \{harness\}/);
+    for (const key of ["a b", "a$b", "A", "-a", "a_b"]) {
+      assert.throws(() => parseTool("t.md", file({ list: `  - ${key}: x/` })), /not a plain name/, key);
+    }
+    assert.throws(() => parseTool("t.md", file({ list: "  - a: x/\n  - a: y/" })), /twice/);
+    assert.throws(() => parseTool("t.md", file({ list: "  - a:" })), /plain name|no paths/);
+    for (const def of ["defaultharness: z", "defaultharness: a,z", "defaultharness: a,", "defaultharness:", ""]) {
+      assert.throws(() => parseTool("t.md", file({ def })), /subset/, def);
+    }
+    assert.throws(() => parseTool("t.md", file({ setup: "  - install {harness}" })), /not allowed/);
+  });
+
   test("the published package ships the registry", async () => {
     const pkg = JSON.parse(await read(path.join(REPO, "package.json")));
     assert.ok(pkg.files.includes("tools"));
   });
 });
 
+
+const WSL_NPM_LINE = /Run it inside WSL with a Linux-side npm: `which -a npm` must list a path outside \/mnt\/ first\./;
 
 describe("tool add/remove", () => {
   const WIN = process.platform === "win32";
@@ -101,9 +135,11 @@ const argv = process.argv.slice(3);
 fs.appendFileSync(process.env.STUB_LOG, JSON.stringify([bin, ...argv]) + "\\n");
 fs.appendFileSync(process.env.STUB_LOG + ".env", JSON.stringify([bin, process.env.GRAPHIFY_NO_AUTO_REFRESH ?? null]) + "\\n");
 fs.appendFileSync(process.env.STUB_LOG + ".cwd", JSON.stringify([bin, argv[0] ?? null, process.cwd()]) + "\\n");
+fs.appendFileSync(process.env.STUB_LOG + ".telemetry", JSON.stringify([bin, argv[0] ?? null, process.env.OPENSPEC_TELEMETRY ?? null, process.env.DO_NOT_TRACK ?? null]) + "\\n");
 if (argv[0] === "--version") { console.log(bin + " " + (process.env.STUB_VERSION || "0.0.1")); process.exit(0); }
 if (process.env.STUB_FAIL === argv.join(" ")) process.exit(3);
 if (process.env.STUB_CLAUDE) fs.writeFileSync("CLAUDE.md", "# made by the tool\\n");
+if (process.env.STUB_CLAUDE_LOCAL) fs.writeFileSync("CLAUDE.local.md", "# made by the tool\\n");
 if (process.env.STUB_REWRITE && fs.existsSync("AGENTS.md")) fs.appendFileSync("AGENTS.md", "tool line\\n");
 if (bin === "graphify" && argv.join(" ") === "hook install") {
   const hooks = path.join(".git", "hooks");
@@ -169,6 +205,301 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.match(r.out, /binary: +\S*openspec/);
     assert.match(r.out, /runs: +.*openspec\S* init --tools claude,codex/);
     assert.match(r.out, /touches:/);
+  });
+
+  const PATHS = {
+    claude: ".claude/skills/openspec-*, .claude/commands/opsx/",
+    codex: ".agents/skills/openspec-*, .agents/skills/.openspec-target",
+    opencode: ".opencode/skills/openspec-*, .opencode/commands/opsx-*.md",
+    "github-copilot": ".github/skills/openspec-*, .github/prompts/opsx-*.prompt.md",
+  };
+  const SHARED = "openspec/ (config.yaml, specs/, changes/archive/)";
+  const USER_CONFIG = /openspec's own user config \(\$XDG_CONFIG_HOME\/openspec\/config\.json; %APPDATA% on Windows\): not written by a first init; a re-run in an already initialized project writes it/;
+  const ADDITIVE = "adds to the harnesses configured earlier; removes none";
+
+  describe("--harness", () => {
+    test("--harness=opencode records that choice and lists only its files", async () => {
+      const { tool, calls } = await setup("h-eq");
+      const r = tool(["add", "openspec", "--harness=opencode", "--yes"], { STUB_VERSION: PINS.openspec });
+      assert.equal(r.status, 0, r.out);
+      assert.deepEqual(await calls(), [["openspec", "--version"], ["openspec", "init", "--tools", "opencode"]]);
+      assert.match(r.out, /harness: OpenCode \(from --harness\)/);
+      assert.match(r.out, /runs: +.*openspec\S* init --tools opencode\n/);
+      assert.ok(r.out.includes(SHARED));
+      assert.ok(r.out.includes(PATHS.opencode));
+      for (const other of ["claude", "codex", "github-copilot"]) assert.ok(!r.out.includes(PATHS[other].split(",")[0]), other);
+      assert.match(r.out, USER_CONFIG);
+      assert.ok(r.out.includes(ADDITIVE));
+    });
+
+    for (const [key, name] of [["claude", "Claude Code"], ["codex", "Codex"], ["opencode", "OpenCode"], ["github-copilot", "GitHub Copilot"]]) {
+      test(`--harness ${key} (space form) touches ${key} only`, async () => {
+        const { tool, calls } = await setup(`h-${key}`);
+        const r = tool(["add", "openspec", "--harness", key, "--yes"]);
+        assert.equal(r.status, 0, r.out);
+        assert.deepEqual((await calls()).at(-1), ["openspec", "init", "--tools", key]);
+        assert.match(r.out, new RegExp(`harness: ${name} \\(from --harness\\)`));
+        assert.ok(r.out.includes(PATHS[key]), r.out);
+        for (const other of Object.keys(PATHS).filter((k) => k !== key)) assert.ok(!r.out.includes(PATHS[other].split(",")[0]), `${other} listed for ${key}`);
+        assert.ok(r.out.includes(SHARED));
+        assert.equal(r.out.includes("(usually committed; shared with the team)"), key === "github-copilot");
+        assert.equal(r.out.includes("review before committing"), false, "the caution lives in the registry only");
+      });
+    }
+
+    test("duplicates and order normalize to the registry's order", async () => {
+      const { tool, calls } = await setup("h-norm");
+      const r = tool(["add", "openspec", "--harness=github-copilot,codex,claude,codex", "--yes"]);
+      assert.equal(r.status, 0, r.out);
+      assert.deepEqual((await calls()).at(-1), ["openspec", "init", "--tools", "claude,codex,github-copilot"]);
+      assert.match(r.out, /harness: Claude Code, Codex, GitHub Copilot \(from --harness\)/);
+    });
+
+    const BAD = [
+      ["--harness=bogus", /Unknown harness "bogus"\. Use one or more of: claude, codex, opencode, github-copilot \(comma-separated\)\./],
+      ["--harness=Claude", /Unknown harness "Claude"/],
+      ["--harness= claude", /Unknown harness " claude"/],
+      ["--harness=claude ", /Unknown harness "claude "/],
+      ["--harness=CLAUDE,codex", /Unknown harness "CLAUDE"/],
+      ["--harness=", /--harness needs a value: claude, codex, opencode, github-copilot \(comma-separated\)\./],
+      ["--harness=claude,", /--harness needs a value/],
+      ["--harness=,claude", /--harness needs a value/],
+      ["--harness=claude,,codex", /--harness needs a value/],
+      ["--harness=all", /Unknown harness "all"/],
+      ["--harness=none", /Unknown harness "none"/],
+      ["--harness=-x", /Unknown harness "-x"/],
+      ["--harness=cláude", /Unknown harness/],
+      ["--harness=a\u0007b", /Unknown harness "a\?b"/],
+      ["--harness=copilot", /Unknown harness "copilot"\. Did you mean github-copilot\? Use one or more of: claude, codex, opencode, github-copilot\./],
+      ["--harness=claude;id", /Unknown harness/],
+    ];
+    for (const [n, [arg, message]] of BAD.entries()) {
+      test(`${JSON.stringify(arg)} is refused before anything runs`, async () => {
+        const { project, tool, calls } = await setup(`h-bad-${n}`);
+        const r = tool(["add", "openspec", arg, "--yes"]);
+        assert.equal(r.status, 1, r.out);
+        assert.match(r.stderr, message);
+        assert.deepEqual(await calls(), [], "not even --version");
+        assert.deepEqual(await readdir(project), []);
+      });
+    }
+
+    test("a flag-like value, a repeated flag and a missing value are refused before anything runs", async () => {
+      for (const [n, args] of [
+        ["--harness", "--help"],
+        ["--harness", "--yes"],
+        ["--harness=claude", "--harness=codex"],
+        ["--harness", "claude", "--harness", "codex"],
+        ["--harness"],
+      ].entries()) {
+        const { project, tool, calls } = await setup(`h-bad2-${n}`);
+        const r = tool(["add", "openspec", ...args]);
+        assert.equal(r.status, 1, `${args}: ${r.out}`);
+        assert.deepEqual(await calls(), [], `${args}`);
+        assert.deepEqual(await readdir(project), []);
+        assert.match(r.stderr, /--harness|Unknown harness/);
+      }
+      const { tool } = await setup("h-bad3");
+      assert.match(tool(["add", "openspec", "--harness"]).stderr, /--harness needs a value: claude, codex, opencode, github-copilot \(comma-separated\)\./);
+      assert.match(tool(["add", "openspec", "--harness=a", "--harness=b"]).stderr, /only once/);
+    });
+
+    test("a tool without a harness choice refuses it before anything runs", { skip: !gitDir }, async () => {
+      const { project, tool, calls } = await setup("h-graphify", { git: true });
+      const r = tool(["add", "graphify", "--harness=claude", "--yes"]);
+      assert.equal(r.status, 1, r.out);
+      assert.match(r.stderr, /--harness applies to openspec only; graphify has no harness choice\./);
+      assert.deepEqual(await calls(), []);
+      assert.equal(existsSync(path.join(project, "AGENTS.md")), false);
+    });
+
+    test("it is a usage error on remove, list and other commands", async () => {
+      const { home, project, tool, calls, env } = await setup("h-elsewhere");
+      for (const args of [["remove", "openspec", "--harness=claude"], ["list", "--harness=claude"], ["remove", "openspec", "--harness", "claude"]]) {
+        const r = tool(args);
+        assert.equal(r.status, 1, r.out);
+        assert.match(r.stderr, /--harness is only valid for: canonkit tool add <tool>/);
+      }
+      const i = runCli(["install", "--harness=claude"], { home, cwd: project, env: env() });
+      assert.equal(i.status, 1);
+      assert.match(i.stderr, /--harness is only valid for/);
+      assert.deepEqual(await calls(), []);
+      assert.deepEqual(await readdir(project), []);
+    });
+
+    test("--dry-run without the flag previews the default, with it previews the choice, and runs nothing", async () => {
+      const { project, tool, calls } = await setup("h-dry");
+      const d = tool(["add", "openspec", "--dry-run"]);
+      assert.equal(d.status, 0, d.out);
+      assert.match(d.out, /harness: Claude Code, Codex \(default; choose with --harness\)/);
+      assert.match(d.out, /init --tools claude,codex/);
+      const o = tool(["add", "openspec", "--dry-run", "--harness=opencode"]);
+      assert.equal(o.status, 0, o.out);
+      assert.match(o.out, /harness: OpenCode \(from --harness\)/);
+      assert.match(o.out, /init --tools opencode/);
+      assert.ok(!o.out.includes(".claude/"));
+      assert.deepEqual(await calls(), []);
+      assert.deepEqual(await readdir(project), []);
+      assert.equal(tool(["add", "openspec", "--dry-run", "--harness=nope"]).status, 1);
+    });
+
+    test("--yes without the flag and no terminal without --yes keep the default", async () => {
+      const { tool, calls } = await setup("h-default");
+      const y = tool(["add", "openspec", "--yes"], { STUB_VERSION: PINS.openspec });
+      assert.equal(y.status, 0, y.out);
+      assert.match(y.out, /harness: Claude Code, Codex \(default; choose with --harness\)/);
+      assert.deepEqual((await calls()).at(-1), ["openspec", "init", "--tools", "claude,codex"]);
+      const n = tool(["add", "openspec"]);
+      assert.equal(n.status, 1);
+      assert.match(n.out, /--yes/);
+      assert.match(n.out, /harness: Claude Code, Codex \(default/);
+    });
+
+    test("without --yes the flag still needs the confirmation", async () => {
+      const { tool, calls } = await setup("h-confirm");
+      const r = tool(["add", "openspec", "--harness=opencode"]);
+      assert.equal(r.status, 1);
+      assert.deepEqual(await calls(), [["openspec", "--version"]]);
+    });
+
+    test("a symlinked or non-directory write root is refused with nothing run", { skip: WIN }, async () => {
+      for (const [harness, dir] of [["github-copilot", ".github"], ["claude", ".claude"], ["codex", ".agents"], ["opencode", ".opencode"], ["claude", "openspec"]]) {
+        const { root, project, tool, calls } = await setup(`h-link-${dir.slice(1)}`);
+        await mkdir(path.join(root, "elsewhere"));
+        await symlink(path.join(root, "elsewhere"), path.join(project, dir));
+        const r = tool(["add", "openspec", `--harness=${harness}`, "--yes"]);
+        assert.equal(r.status, 1, `${dir}: ${r.out}`);
+        assert.match(r.stderr, new RegExp(`Refusing: ${dir.replace(".", "\\.")} .*symlink or not a directory`));
+        assert.deepEqual(await calls(), [], dir);
+        assert.deepEqual(await readdir(path.join(root, "elsewhere")), []);
+      }
+      const { project, tool, calls } = await setup("h-file");
+      await writeFile(path.join(project, ".claude"), "not a dir");
+      const f = tool(["add", "openspec", "--yes"]);
+      assert.equal(f.status, 1);
+      assert.deepEqual(await calls(), []);
+      // A root the choice does not write to is not looked at.
+      const other = await setup("h-other");
+      await mkdir(path.join(other.root, "x"));
+      await symlink(path.join(other.root, "x"), path.join(other.project, ".github"));
+      assert.equal(other.tool(["add", "openspec", "--harness=claude", "--yes"]).status, 0);
+    });
+
+    test("every spawn, --version and setup, carries the fixed telemetry environment", async () => {
+      const { root, tool } = await setup("h-env");
+      assert.equal(tool(["add", "openspec", "--harness=codex", "--yes"]).status, 0);
+      assert.equal(tool(["add", "openspec", "--yes"]).status, 0);
+      const runs = (await read(path.join(root, "argv.log.telemetry"))).trim().split("\n").map((l) => JSON.parse(l));
+      assert.equal(runs.length, 4);
+      for (const [bin, , telemetry, dnt] of runs) {
+        assert.equal(bin, "openspec");
+        assert.equal(telemetry, "0");
+        assert.equal(dnt, "1");
+      }
+    });
+
+    test("a CLAUDE.local.md that appears during setup gets the loud warning", async () => {
+      const { tool } = await setup("h-local");
+      const r = tool(["add", "openspec", "--harness=claude", "--yes"], { STUB_CLAUDE_LOCAL: "1" });
+      assert.match(r.stderr, /!!.*CLAUDE\.local\.md appeared during setup/);
+    });
+
+    test("a failed setup with a chosen harness stops before the block and says what failed", async () => {
+      const { project, tool } = await setup("h-fail");
+      await writeFile(path.join(project, "AGENTS.md"), "# p\n");
+      const r = tool(["add", "openspec", "--harness=opencode", "--yes"], { STUB_FAIL: "init --tools opencode" });
+      assert.equal(r.status, 1);
+      assert.match(r.stderr, /openspec init --tools opencode failed/);
+      assert.equal(await read(path.join(project, "AGENTS.md")), "# p\n");
+    });
+
+    test("--harness=claude,opencode lists both harnesses' paths and not the others'", async () => {
+      const { tool } = await setup("h-two");
+      const r = tool(["add", "openspec", "--harness=claude,opencode", "--yes"]);
+      assert.equal(r.status, 0, r.out);
+      assert.ok(r.out.includes(PATHS.claude), r.out);
+      assert.ok(r.out.includes(PATHS.opencode), r.out);
+      assert.ok(!r.out.includes(PATHS.codex.split(",")[0]), "codex listed");
+      assert.ok(!r.out.includes(PATHS["github-copilot"].split(",")[0]), "github-copilot listed");
+    });
+
+    test("a cancelled menu in toolAdd changes nothing, runs nothing and says so", async () => {
+      const { project, calls, env } = await setup("h-cancel");
+      const before = { cwd: process.cwd(), PATH: process.env.PATH, STUB_LOG: process.env.STUB_LOG };
+      const errors = [];
+      const realError = console.error;
+      let status;
+      process.chdir(project);
+      process.env.PATH = env().PATH;
+      process.env.STUB_LOG = env().STUB_LOG;
+      console.error = (...a) => errors.push(a.join(" "));
+      try {
+        status = await toolAdd({ dryRun: false, log: () => {} }, "openspec", { interactive: true, dumb: false, prompt: async () => ({}) });
+      } finally {
+        console.error = realError;
+        process.chdir(before.cwd);
+        process.env.PATH = before.PATH;
+        if (before.STUB_LOG === undefined) delete process.env.STUB_LOG;
+        else process.env.STUB_LOG = before.STUB_LOG;
+      }
+      assert.equal(status, 1);
+      assert.deepEqual(errors, ["Cancelled. Nothing was changed."]);
+      assert.deepEqual(await calls(), [], "not even --version");
+      assert.deepEqual(await readdir(project), []);
+    });
+
+    test("remove lists every harness's files, whatever was chosen, and the new undo line", async () => {
+      const { tool } = await setup("h-remove");
+      assert.equal(tool(["add", "openspec", "--harness=codex", "--yes"]).status, 0);
+      const r = tool(["remove", "openspec"]);
+      assert.equal(r.status, 0, r.out);
+      assert.match(r.out, /Files openspec may have written \(depending on the harnesses chosen\) are left as they are:/);
+      assert.ok(r.out.includes(SHARED));
+      assert.match(r.out, USER_CONFIG);
+      for (const p of Object.values(PATHS)) assert.ok(r.out.includes(p), p);
+      assert.match(r.out, /canonkit cannot remove the integrations openspec wrote, and openspec init --tools none removes nothing: delete the openspec-\* skills and opsx commands under \.claude\/, \.agents\/, \.opencode\/, \.github\/ yourself/);
+    });
+  });
+
+  describe("chooseHarness", () => {
+    const get = async () => (await readTools()).get("openspec");
+    const never = () => assert.fail("the menu must not open");
+
+    test("a flag, --yes, a dry run, no terminal and TERM=dumb never open the menu", async () => {
+      const o = await get();
+      assert.deepEqual(await chooseHarness(o, ["opencode"], { interactive: true, prompt: never }), { keys: ["opencode"], source: "flag" });
+      assert.deepEqual(await chooseHarness(o, ["opencode"], { yes: true, interactive: true, prompt: never }), { keys: ["opencode"], source: "flag" });
+      for (const extra of [{ yes: true }, { dryRun: true }, { interactive: false }]) {
+        assert.deepEqual(await chooseHarness(o, null, { interactive: true, prompt: never, ...extra }), { keys: ["claude", "codex"], source: "default" });
+      }
+      assert.deepEqual(await chooseHarness(o, null, { interactive: true, dumb: true, prompt: never }), { keys: ["claude", "codex"], source: "no-menu" });
+    });
+
+    test("the menu is the install multiselect, claude and codex preselected, answers canonicalized", async () => {
+      const o = await get();
+      let config;
+      const got = await chooseHarness(o, null, {
+        interactive: true,
+        prompt: async (c) => ((config = c), { harness: ["github-copilot", "claude", "claude"] }),
+      });
+      assert.deepEqual(got, { keys: ["claude", "github-copilot"], source: "chosen" });
+      assert.equal(config.type, "multiselect");
+      assert.equal(config.message, "Set up OpenSpec for");
+      assert.equal(config.min, 1);
+      assert.equal(config.instructions, false);
+      assert.equal(config.hint, "space toggles, enter confirms");
+      assert.deepEqual(config.choices.map((c) => [c.title, c.value, c.selected]), [
+        ["Claude Code", "claude", true], ["Codex", "codex", true], ["OpenCode", "opencode", false], ["GitHub Copilot", "github-copilot", false],
+      ]);
+      assert.equal(config.choices[3].description, ".github/skills, .github/prompts (usually committed, shared with the team)");
+    });
+
+    test("cancel, an empty answer and a value outside the list all come back null", async () => {
+      const o = await get();
+      for (const answer of [{}, undefined, { harness: [] }, { harness: ["claude", "evil"] }, { harness: "claude" }]) {
+        assert.equal(await chooseHarness(o, null, { interactive: true, prompt: async () => answer }), null, JSON.stringify(answer));
+      }
+    });
   });
 
   test("--version runs from the binary's own directory, the setup from the project", async () => {
@@ -584,6 +915,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
       const r = tool(["add", "openspec", "--yes"], {}, empty);
       assert.equal(r.status, 1, r.out);
       assert.match(r.stderr, /openspec is not on PATH\./);
+      assert.doesNotMatch(r.stderr, WSL_NPM_LINE);
       assert.match(r.stderr, HINT);
       assert.doesNotMatch(r.stderr, /its target is not readable/);
       assert.deepEqual(await readdir(project), []);
@@ -597,6 +929,7 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
       assert.equal(r.status, 1);
       assert.match(r.stderr, /found only inside the project/);
       assert.doesNotMatch(r.stderr, HINT);
+      assert.doesNotMatch(r.stderr, WSL_NPM_LINE);
     });
 
     test("tool list keeps the row and lists the unreadable link in the footnote", async () => {
@@ -709,6 +1042,7 @@ if (process.argv[2] === "openspec" && process.argv[3] === "init") fs.mkdirSync("
       assert.equal(r.status, 1, r.out);
       assert.match(r.stderr, new RegExp(`openspec was found only on the Windows side \\(${re(path.join(npm, "openspec"))}\\); canonkit does not run Windows binaries through WSL interop`));
       assert.match(r.stderr, /Install the pinned version/);
+      assert.match(r.stderr, WSL_NPM_LINE);
       assert.deepEqual(await readdir(project), []);
       assert.deepEqual(await calls(), []);
     });

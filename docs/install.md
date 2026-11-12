@@ -6,7 +6,7 @@ stack packs, global reference blocks and skills, and upgrading from an older nam
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
-Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-09.
+Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-12.
 
 ## Core, at user level
 
@@ -753,9 +753,80 @@ hook files or settings.
 | `tool add <graphify\|openspec>` | runs the tool's setup in this project and records it in `AGENTS.md` (see [tools.md](tools.md)) |
 | `tool remove <name>` | removes the tool from `AGENTS.md` |
 | `tool list` | pin, installed version and whether it is active in this project |
+| `git-ignore-sandbox-files [--remove] [--dry-run]` | opt in: make git ignore the Claude Code sandbox's 0-byte placeholder files, in this clone's `.git/info/exclude` (see [below](#sandbox-placeholders-per-clone)) |
 
 `--dry-run` works on all of them: it reports what would change without writing
-anything. `--yes` exists only on `tool add`.
+anything. `--yes` and `--harness` exist only on `tool add` (see [tools.md](tools.md)).
+
+## Sandbox placeholders, per clone
+
+On Linux/WSL (bubblewrap), Claude Code's sandbox leaves real 0-byte files in the
+project root (`.mcp.json`, `.bashrc`, `.claude/settings.local.json`,
+`.claude/agents`, ...) as mount points for paths it write-protects. macOS
+(Seatbelt) behaviour was not verified. Outside the sandbox they show as untracked,
+can be committed by accident, and make `canonkit add` stop. `doctor` warns when it
+sees them and prints the command, `canonkit git-ignore-sandbox-files`.
+
+That command makes git ignore the empty files the Claude Code sandbox leaves in
+the project root; it does not touch the sandbox or any permission.
+
+`canonkit add <specialist>` when such a file sits where a directory is needed
+(exit 1, nothing written): outside the sandbox the message says the path "is an
+empty file, but a directory is needed there" and to delete it and run the command
+again; inside the sandbox the path is write-protected, so run it from your own
+terminal.
+
+From the repository root, in a terminal **outside** the sandbox. Run inside it,
+once the usual refusals (see exit codes) have passed, add/reconcile changes
+nothing, leaves an existing block as it is and exits 0, with a notice on stderr
+(the placeholders look like devices there): "Inside the Claude Code sandbox,
+git-ignore-sandbox-files changed nothing and left any existing block as it is. Run
+it from your own terminal; --remove still works here." `--remove` still works there:
+
+```bash
+npx canonkit git-ignore-sandbox-files --dry-run   # prints the names and "Would write"; not the block lines
+npx canonkit git-ignore-sandbox-files             # writes it to .git/info/exclude
+npx canonkit git-ignore-sandbox-files --remove    # removes only the managed block
+```
+
+Exit codes: 0 when it skips (no git, bare repo, not the repo root) or finishes,
+and also inside the sandbox, but only after the refusals below have passed; 1 for
+refusals (symlinked or non-regular `info` or `exclude`, altered or duplicated
+markers), which apply inside the sandbox too, and for usage errors.
+
+Only known names that are 0-byte, regular and untracked are listed; a name that
+can be a directory also gets `!/name/`, so a real directory stays visible. Names
+your own exclude lines already cover are skipped. The rule is local to this clone
+(shared by its worktrees), never the committed `.gitignore`, and `install` does not
+run it. It hides by path, not by content: if you later put a real `.mcp.json`
+there, it stays hidden until you re-run the command or `--remove` (`doctor` warns).
+`--remove` deletes only the managed block and never changes your own lines. It is
+not byte-exact: adding the block collapses trailing blank lines and whitespace at
+the end of the file, and turns a mixed-EOL file into all-CRLF when it was CRLF;
+`--remove` also drops the one blank line that adding the block appended.
+
+Honest limits:
+
+- Names are matched literally (`x`, `/x`, `!/x`, `/x/`). A glob line of your own
+  outside the block (for example `.claude/*`) is not recognised as covering a name,
+  so for names that can be directories the block's `!/x/` line can make a real
+  directory you had hidden by glob visible again. The caveat concerns globs in the
+  exclude file itself; a `.gitignore` rule still wins over `info/exclude`.
+- If `.git` is a file whose `gitdir:` points to another valid git directory, the
+  command writes that repository's `info/exclude` (static placeholder names only).
+  A linked worktree uses the main repository's shared exclude, and the command says
+  so; a submodule writes its own `modules/<name>/info/exclude` (not shared); from
+  the main checkout there is no extra notice.
+- Every git call the command makes, and the `doctor` rows, run with
+  `core.fsmonitor=false`, `core.hooksPath=/dev/null` and without any `GIT_*`
+  environment variable, so a repo-local config cannot run code. `doctor` is
+  read-only and runs no repo code.
+- `doctor` also warns when a name in the block stopped being an empty regular file
+  (it gained content or became a symlink), or became a directory where only a file
+  fits (e.g. `.mcp.json`); a real directory under a directory-capable name is quiet.
+
+It reduces noise in `git status`; it protects nothing. Reasoning:
+[ADR 0007](adr/0007-sandbox-placeholder-exclude.md).
 
 ## Specialists, per project
 

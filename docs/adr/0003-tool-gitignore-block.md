@@ -5,6 +5,7 @@
 - Amplia a decisão 2 da [ADR 0001](0001-tool-namespace-integrate-only.md): além do
   bloco "Project tools" no `AGENTS.md`, o canonkit escreve um segundo bloco
   gerenciado, no `.gitignore` do projeto.
+- Ampliada pela [ADR 0007](0007-sandbox-placeholder-exclude.md) (exclude local do clone, para os placeholders do sandbox).
 
 ## Contexto
 

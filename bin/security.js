@@ -31,6 +31,44 @@ export async function readSecurityBytes(file) {
   finally { await handle?.close(); }
 }
 
+/**
+ * Doctor, read-only: inside the Claude Code sandbox a 0-byte placeholder is
+ * /dev/null (character device 1:3) bind-mounted over the real file. Exactly
+ * that device, on Linux, from lstat (never a symlink to it). Not for writers:
+ * safePath and readSecurityBytes still require a regular file.
+ */
+export function isNullDeviceStat(info, platform = process.platform) {
+  return platform === "linux" && info.isCharacterDevice() && info.rdev === 259; // makedev(1, 3)
+}
+
+export async function isSandboxNullPlaceholder(file, { lstat: stat = lstat, platform = process.platform } = {}) {
+  if (platform !== "linux") return false;
+  await safePath(path.dirname(file));
+  try { return isNullDeviceStat(await stat(file), platform); } catch (err) { if (absent(err)) return false; throw err; }
+}
+
+/**
+ * True when any of the files is, by lstat, the sandbox's /dev/null placeholder
+ * (1:3). Absent paths and paths under a non-directory are simply not one.
+ */
+export async function anyNullPlaceholder(files, { lstat: stat = lstat, platform = process.platform } = {}) {
+  if (platform !== "linux") return false;
+  for (const file of files) {
+    try { if (isNullDeviceStat(await stat(file), platform)) return true; } catch (err) { if (err.code !== "ENOENT" && err.code !== "ENOTDIR") throw err; }
+  }
+  return false;
+}
+
+/**
+ * What blocks a directory that is not one: "device" (a character device, the
+ * sandbox's write-protection), "empty" (a 0-byte regular file), else null.
+ */
+export function directoryBlocker(info) {
+  if (info.isCharacterDevice()) return "device";
+  if (info.isFile() && info.size === 0) return "empty";
+  return null;
+}
+
 export function atLeast(version, minimum) {
   if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) return false;
   const a = version.split(".").map(Number), b = minimum.split(".").map(Number);

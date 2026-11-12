@@ -6,6 +6,7 @@ updated on demand by default) and **openspec** (specs and acceptance criteria in
 
 ```bash
 npx canonkit tool add openspec      # or graphify
+npx canonkit tool add openspec --harness claude,opencode  # which harnesses; see below
 npx canonkit tool add graphify --with-git-hooks  # opt-in: trust every branch
 npx canonkit tool add graphify --dry-run
 npx canonkit tool remove graphify
@@ -97,9 +98,9 @@ With the binary present, `tool add`:
 1. shows the absolute path, the version (with a warning if it differs from the pin
    — it never upgrades), the exact commands and the files that will be touched;
 2. asks `y/N` (`--yes` skips; with no terminal and no `--yes`, it does not run);
-3. runs the tool's own setup (`openspec init --tools claude,codex`;
-   `graphify update .`; with `--with-git-hooks`, it first runs
-   `graphify hook install`);
+3. runs the tool's own setup (`openspec init --tools <harnesses>`, see
+   [`--harness`](#openspec-harnesses---harness); `graphify update .`; with
+   `--with-git-hooks`, it first runs `graphify hook install`);
 4. only if the setup succeeded, writes the tool's `.gitignore` block, when its
    registry entry has a `gitignore:` list (graphify does; see below);
 5. last, writes the "Project tools" block into the project's `AGENTS.md`
@@ -114,7 +115,9 @@ refused. The reasoning is in
 
 `tool remove` takes the entry out of the block (the last one removes the block)
 and prints how to undo the setup. It does not touch `openspec/`,
-`graphify-out/` or the `.gitignore` block. Running `add` or `remove` twice leaves
+`graphify-out/` or the `.gitignore` block, and it cannot remove openspec's skills
+and commands: it lists the files of every possible harness and you delete them
+yourself. Running `add` or `remove` twice leaves
 `AGENTS.md` and `.gitignore` the same.
 
 Raising a pin is a MEDIUM change, reviewed by Gard. Whoever published the
@@ -123,13 +126,44 @@ repository; what remained open is in the ADR.
 
 ## openspec
 
-The 1.14.0 `init` writes `openspec/`, `.claude/skills/openspec-*`,
-`.claude/commands/opsx/`, `.agents/skills/openspec-*` and openspec's own
-user-level configuration (`openspec/config.json` in `%APPDATA%` or
-`$XDG_CONFIG_HOME`). It sends anonymous telemetry by default: canonkit sets
+The 1.14.0 `init` writes `openspec/` and, for each harness chosen (below), its
+skills and commands. A first `init` writes no user-level configuration; a re-run in
+an already initialized project writes openspec's own
+`$XDG_CONFIG_HOME/openspec/config.json` (`%APPDATA%` on Windows). Both observed in
+scratch runs on 1.14.0, not an openspec guarantee. It sends anonymous telemetry by default: canonkit sets
 `OPENSPEC_TELEMETRY=0` and `DO_NOT_TRACK=1` only on the runs it makes itself; yours
 keep sending unless you set one of those variables. The version matters: an old
 openspec (1.4.1) with `--tools codex` wrote prompts to `~/.codex/prompts`.
+
+### openspec harnesses (`--harness`)
+
+```bash
+npx canonkit tool add openspec --harness claude,codex,opencode
+npx canonkit tool add openspec --harness=github-copilot
+```
+
+- **Values:** exactly `claude`, `codex`, `opencode`, `github-copilot`, comma-separated.
+  They are openspec's own ids, so this is `github-copilot` here while
+  `canonkit install` uses `--copilot`; `copilot` is refused with that hint.
+- **Default:** `claude,codex`. It applies with `--yes`, with no terminal,
+  `TERM=dumb` or `--dry-run`. In a terminal without the flag, a menu asks, with
+  those two checked. A valid flag always wins.
+- **Errors:** exact match only (no trimming, no case folding); an empty element,
+  `all`, `none`, an unknown name or a repeated `--harness` exits 1 before anything
+  runs, `--version` included. Duplicates are dropped.
+- **Files per harness:** `claude` writes `.claude/skills/openspec-*` and
+  `.claude/commands/opsx/`; `codex`, `.agents/skills/openspec-*` and
+  `.agents/skills/.openspec-target`; `opencode`,
+  `.opencode/skills/` and `.opencode/commands/`; `github-copilot`, `.github/skills/`
+  and `.github/prompts/` (observed on 1.14.0; these folders are usually committed
+  and shared with the team, so review before committing). The preview lists only
+  the chosen ones. A symlink at a top-level folder it would write into is refused.
+- **It only adds.** `init` keeps the harnesses configured earlier, and
+  `--tools none` removes nothing, so a second `tool add openspec --harness X` adds
+  X. canonkit does not record the choice in `AGENTS.md` or `tool list`;
+  openspec keeps it on disk. Re-running with no flag adds `claude` and `codex`.
+
+Reasoning: [ADR 0008](adr/0008-openspec-harness-choice.md).
 
 In this repository, the generated skill/command copies and local runtime
 settings are ignored. Keep `openspec/config.yaml` and the canonical change

@@ -1,6 +1,6 @@
 # ADR 0001 — `canonkit tool`: um namespace próprio, que só integra
 
-- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md); decisão 2 ampliada pela [ADR 0003](0003-tool-gitignore-block.md) (bloco no `.gitignore`); emendada em 2026-11-12 (WSL, ver o fim)
+- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md); decisão 2 ampliada pela [ADR 0003](0003-tool-gitignore-block.md) (bloco no `.gitignore`); decisão 4 ampliada pela [ADR 0008](0008-openspec-harness-choice.md) (`--harness` do openspec); emendada em 2026-11-12 (WSL, ver o fim)
 - Data: 2026-10-19
 - Dono: Spencer (registro); decisão da usuária, desenho revisado por Archie e Gard
 - Plano de origem: [`docs/plans/complements.md`](../plans/complements.md)
