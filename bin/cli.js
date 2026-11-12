@@ -37,7 +37,7 @@ import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-dis
 import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
-import { collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, compileSecurity, compileNetworkSecurity, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
+import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -520,6 +520,19 @@ async function optionalBytes(file) {
   return readSecurityBytes(file);
 }
 
+async function readProjectLocalSandbox(file) {
+  try {
+    const placeholder = await isSandboxNullPlaceholder(file);
+    if (!placeholder) await safePath(file);
+    const bytes = placeholder ? null : await optionalBytes(file);
+    return parseProjectLocalSandboxSettings(bytes, { placeholder });
+  } catch {
+    // An unreadable or unsafe higher-precedence file makes the effective strict
+    // profile unknown; it must not authorize a new auto-approval default.
+    return { settings: {}, known: false };
+  }
+}
+
 const PROJECT_CORE_NAMES = ["archie", "bob", "gard", "perry", "pipe", "pixie", "quinn", "scott", "spencer", "virgo"];
 function scopedSecurityManifest(ctx, root, targets = ["claude", "codex"]) {
   const codexEntries = PROJECT_CORE_NAMES.map((name) => ({
@@ -545,12 +558,15 @@ async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
   let project = null;
   if (root) {
     const file = path.join(root, ".claude", "settings.json");
+    const localFile = path.join(root, ".claude", "settings.local.json");
     await safePath(file);
     await safePath(projectStateDir(os.homedir(), root));
     const before = await optionalBytes(file);
     const settings = parseSecuritySettings(before, "repository Claude settings");
     const migration = wireHooks ? null : migrateClaudeHooks(settings, claudeHome());
-    project = { root, file, before, migration, ...compileSecurity(migration?.data ?? settings, evidence, { userSettings }) };
+    const local = await readProjectLocalSandbox(localFile);
+    project = { root, file, before, migration, localFile, localSettings: local.settings, localSettingsKnown: local.known,
+      ...compileSecurity(migration?.data ?? settings, evidence, { userSettings, projectLocalSettings: local.settings, projectLocalSettingsKnown: local.known }) };
     if (migration?.removed.length) project.changes.push("hooks.legacyCanonkit");
   }
   return { evidence, global: globalPlan, project };
@@ -608,6 +624,17 @@ async function install(ctx, options = {}) {
       else {
         ctx.log(`Security repository: ${project.root}`);
         for (const key of project.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} repository control: ${key}`);
+        const hasAutoApprovalChoice = project.data.sandbox?.autoAllowBashIfSandboxed !== undefined
+          || project.localSettings.sandbox?.autoAllowBashIfSandboxed !== undefined
+          || security.global.data.sandbox?.autoAllowBashIfSandboxed !== undefined;
+        if (ctx.dryRun && project.autoApprovalDefaultEligible && !hasAutoApprovalChoice) {
+          ctx.log(`would apply repository control: sandbox.autoAllowBashIfSandboxed: true (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}; version not probed in dry run)`);
+        }
+        if (project.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
+          const target = project.localSettings.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
+            : project.data.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.json" : "user Claude settings";
+          ctx.log(`RECOMMENDATION security approval: set sandbox.autoAllowBashIfSandboxed to true in ${target} for the strict sandbox profile; the explicit false was preserved.`);
+        }
         await safePath(project.file);
         if (securityDigest(await optionalBytes(project.file)) !== securityDigest(project.before)) throw new Error("Concurrent edit of repository settings; security configuration was preserved");
         if (project.changes.length) await projectManifest.write(project.file, serializeSecurity(project.data, project.before?.toString("utf8")));
@@ -2173,8 +2200,18 @@ async function securityDiagnosis() {
   const user = sources.find((source) => source.label === "user");
   const repository = sources.find((source) => source.label === "repository");
   if (root && !repository?.error && !user?.error) {
-    const desired = compileSecurity(repository?.data ?? {}, evidence, { userSettings: user?.data ?? {} });
+    const repositoryLocal = sources.find((source) => source.label === "repository-local");
+    const desired = compileSecurity(repository?.data ?? {}, evidence, {
+      userSettings: user?.data ?? {},
+      projectLocalSettings: repositoryLocal?.data ?? {},
+      projectLocalSettingsKnown: !repositoryLocal?.error,
+    });
     if (desired.changes.length) add("WARN", "security claude desired-controls", `partial: supported repository controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this repository`);
+    if (desired.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
+      const target = repositoryLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
+        : repository?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.json" : "user Claude settings";
+      add("WARN", "security claude approval-recommendation", `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired. Doctor did not edit settings`);
+    }
   }
   if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
   add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the repository; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");

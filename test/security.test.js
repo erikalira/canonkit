@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
+import { classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-")));
@@ -104,7 +104,7 @@ test("sandbox configuration uses regular native permissions, no compensating gra
   assert.equal(planned.data.sandbox.enabled, true);
   assert.equal(planned.data.sandbox.failIfUnavailable, true);
   assert.equal(planned.data.sandbox.allowUnsandboxedCommands, false);
-  assert.equal(planned.data.sandbox.autoAllowBashIfSandboxed, false);
+  assert.equal(planned.data.sandbox.autoAllowBashIfSandboxed, true);
   assert.equal(planned.data.sandbox.filesystem, undefined);
   assert.equal(planned.data.sandbox.network, undefined);
   assert.equal(planned.coverage, "partial");
@@ -112,10 +112,51 @@ test("sandbox configuration uses regular native permissions, no compensating gra
   assert.equal(preserved.data.sandbox.autoAllowBashIfSandboxed, true);
   assert.deepEqual(preserved.data.sandbox.excludedCommands, ["fixture"]);
   assert.ok(preserved.gaps.includes("existing-sandbox-autoapproval-preserved"));
+  const explicitTrue = compileSecurity({ sandbox: { autoAllowBashIfSandboxed: true } }, env("linux"));
+  assert.equal(explicitTrue.data.sandbox.autoAllowBashIfSandboxed, true);
+  assert.deepEqual(explicitTrue.changes.filter(key => key === "sandbox.autoAllowBashIfSandboxed"), []);
+  const explicitFalse = compileSecurity({ sandbox: { autoAllowBashIfSandboxed: false } }, env("linux"));
+  assert.equal(explicitFalse.data.sandbox.autoAllowBashIfSandboxed, false);
+  assert.ok(explicitFalse.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile"));
+  const localEscape = compileSecurity({}, env("linux"), { projectLocalSettings: { sandbox: { allowUnsandboxedCommands: true } } });
+  assert.equal(localEscape.data.sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.equal(localEscape.autoApprovalDefaultEligible, false);
+  assert.ok(localEscape.gaps.includes("sandbox-autoapproval-default-suppressed-by-project-local-override"));
+  const localApproval = compileSecurity({ sandbox: { autoAllowBashIfSandboxed: false } }, env("linux"), { projectLocalSettings: { sandbox: { autoAllowBashIfSandboxed: true } } });
+  assert.equal(localApproval.data.sandbox.autoAllowBashIfSandboxed, false);
+  assert.ok(!localApproval.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile"));
   for (const choice of [true, false]) {
     const inherited = compileSecurity({}, env("linux"), { userSettings: { sandbox: { autoAllowBashIfSandboxed: choice } } });
     assert.equal(inherited.data.sandbox.autoAllowBashIfSandboxed, undefined);
     assert.equal(inherited.gaps.includes("existing-sandbox-autoapproval-preserved"), choice);
+    assert.equal(inherited.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile"), !choice);
+  }
+  for (const unsupported of [env("linux", "2.1.301"), env("linux", null), env("win32")]) {
+    const result = compileSecurity({}, unsupported);
+    assert.equal(result.data.sandbox?.autoAllowBashIfSandboxed, undefined);
+  }
+});
+
+test("project-local sandbox placeholder is unknown and cannot authorize the default", async (t) => {
+  const root = await fixture(t), file = path.join(root, "settings.local.json");
+  const bytes = Buffer.from(JSON.stringify({ sandbox: { allowUnsandboxedCommands: true } }));
+  await writeFile(file, bytes);
+  const before = await readFile(file);
+  const local = parseProjectLocalSandboxSettings(before, { placeholder: true });
+  assert.deepEqual(local, { settings: {}, known: false });
+  const plan = compileSecurity({}, env("linux"), { projectLocalSettings: local.settings, projectLocalSettingsKnown: local.known });
+  assert.equal(plan.data.sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.equal(plan.autoApprovalDefaultEligible, false);
+  assert.deepEqual(await readFile(file), before);
+});
+
+test("automatic approval warns only when one strict sandbox requirement is missing", () => {
+  const strict = { sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true } };
+  const warnings = (data) => assessClaude([{ label: "repository", data }], env("linux"))
+    .filter(row => row.control === "approval-mode" && row.detail.includes("sandbox automatic approval"));
+  assert.deepEqual(warnings(strict), []);
+  for (const [key, value] of [["enabled", false], ["failIfUnavailable", false], ["allowUnsandboxedCommands", true]]) {
+    assert.equal(warnings({ sandbox: { ...strict.sandbox, [key]: value } }).length, 1, key);
   }
 });
 

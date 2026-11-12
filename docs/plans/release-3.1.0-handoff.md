@@ -13,6 +13,9 @@ this handoff only after the release is published.
   implementation, docs and install-output polish are recorded in its artifacts.
   It is ready to archive, but has not been archived.
 - Release notes are `docs/release-notes/3.1.0.md`; the 3.0.0 notes link to it.
+- The security default change for sandboxed Bash is now recorded in the 3.1.0
+  notes; it applies only with the strict fail-closed profile and preserves
+  explicit existing values.
 - safeGit, remaining FIFO reads and unsafeWriteRoot stay outside this release in
   [issue #36](https://github.com/erikalira/canonkit/issues/36).
 - Superseded WSL tools handoff removed; WSL resolver handoff retains issue #36
@@ -31,6 +34,10 @@ this handoff only after the release is published.
   output.
 - Routing and quality eval dry-runs listed 30 and 77 cases and called no models.
   Real-model evals were not run; behavioral effect remains **UNMEASURED**.
+- **Suspected intermittent test failure:** `test/canonkit-hook.test.js` once
+  failed in the full suite (`block` vs `allow`). It passed isolated on both the
+  current tree and `HEAD`, the complete `HEAD` suite passed, and the next full
+  current-tree suite passed. Cause unknown; watch if it recurs.
 
 ## Still required by the release workflow
 

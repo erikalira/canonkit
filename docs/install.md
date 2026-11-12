@@ -248,9 +248,31 @@ review remain instruction-based requirements.
 Canonkit does not set `permissions.defaultMode`, change your Auto policy,
 enable bypass, or add broad `allow` entries. Manual, Auto, Edit automatically
 and Plan retain the harness's ordinary approval behavior. When canonkit enables
-a supported shell sandbox, it uses regular permission review rather than
-enabling sandbox command autoapproval. Existing personal choices are preserved
-and their effects reported separately.
+the strict shell sandbox profile (`enabled: true`, `failIfUnavailable: true`,
+and `allowUnsandboxedCommands: false`) and neither project nor user settings
+choose a value, it also sets `sandbox.autoAllowBashIfSandboxed: true`. This
+removes per-command review for Bash commands that actually run inside the
+sandbox. The working directory remains writable, including project files and
+scripts; use this default only with repositories you trust. Canonkit reports
+runtime containment as unverified, so it does not promise that sandbox
+protections cover `.git` paths in every supported environment. To keep command
+review, set `sandbox.autoAllowBashIfSandboxed` to `false` in your project or
+user settings. Existing explicit project or user choices are preserved.
+
+If you want confirmation before publishing, add content-scoped `ask` rules for
+Git commit and push commands. Claude Code documents that these rules still
+apply to sandbox auto-approval:
+
+```json
+{
+  "permissions": {
+    "ask": ["Bash(git commit *)", "Bash(git push *)"]
+  }
+}
+```
+
+These settings provide the prompts; canonkit's commit/push instruction remains
+governance only and does not enforce them.
 
 Access restrictions and approval mode are separate. An `allow` rule is a
 preauthorization, not a filesystem or network boundary. Removing one does not
@@ -312,7 +334,7 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.enabled: true` | 2.1.302 (conservative) | [Shell sandbox](https://code.claude.com/docs/en/settings-reference#sandbox-enabled) |
 | `sandbox.failIfUnavailable: true` | 2.1.302 (conservative) | [Startup failure policy](https://code.claude.com/docs/en/settings-reference#sandbox-failifunavailable) |
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
-| `sandbox.autoAllowBashIfSandboxed: false` when neither project nor user sets a choice | 2.1.302 (conservative) | [Regular permissions](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
+| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
 
 The four shell switches additionally require an available, unverified sandbox

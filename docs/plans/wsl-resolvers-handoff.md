@@ -39,5 +39,5 @@ HIGH: Archie (contract) and Gard (security) review the design, Bob implements, Q
 tests by mutation-style reasoning, Spencer writes ADR and docs, then an independent review after
 the LAST edit. Briefs to subagents must say: use Read/Glob (and Grep when available), no
 compound shell commands (`cd x; ...`, pipes, `;`): each triggers a permission prompt for the
-user (project `.claude/settings.json` has `autoAllowBashIfSandboxed: false`). Run `npm test`
+user (the project previously had `autoAllowBashIfSandboxed: false`; the strict-profile default now enables it when neither project nor user has an explicit choice). Run `npm test`
 (full, not only test:fast). The user commits; ask before any commit.

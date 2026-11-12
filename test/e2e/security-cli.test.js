@@ -5,10 +5,10 @@ import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { projectStateDir } from "../../bin/security.js";
+import { projectStateDir, collectEnvironment } from "../../bin/security.js";
 import { CLI, runCli, startCli, writeCommand } from "../helpers/cli-harness.js";
 
-async function fixture(t, version = "2.1.314") {
+async function fixture(t, version = "2.1.314", { sandbox = false } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-cli-")));
   t.after(async () => { assert.equal(path.dirname(root), await realpath(os.tmpdir())); await rm(root, { recursive: true, force: true }); });
   const home = path.join(root, "home"), project = path.join(root, "project"), bin = path.join(root, "bin");
@@ -17,6 +17,10 @@ async function fixture(t, version = "2.1.314") {
   const script = path.join(bin, "version.cjs");
   await writeFile(script, `if (process.argv.slice(2).join(' ') !== '--version') process.exit(2); console.log(${JSON.stringify(version)});`);
   await writeCommand(bin, "claude", script);
+  if (sandbox) {
+    await writeCommand(bin, "bwrap", script);
+    await writeCommand(bin, "socat", script);
+  }
   const env = { PATH: bin };
   const run = (args, cwd = project, extra = {}) => {
     const argv = args[0] === "doctor" && !args.includes("--verbose") ? [...args, "--verbose"] : args;
@@ -26,7 +30,7 @@ async function fixture(t, version = "2.1.314") {
   };
   const global = path.join(home, ".claude", "settings.json"), local = path.join(project, ".claude", "settings.json");
   const start = (args, cli = CLI) => startCli(args, { home, cwd: project, env, cli });
-  return { root, home, project, bin, run, start, global, local };
+  return { root, home, project, bin, env, run, start, global, local };
 }
 async function put(file, value) { await mkdir(path.dirname(file), { recursive: true }); await writeFile(file, typeof value === "string" ? value : JSON.stringify(value)); }
 const json = async (file) => JSON.parse(await readFile(file, "utf8"));
@@ -41,7 +45,7 @@ async function bytes(root) {
 }
 
 test("install applies repository controls and only the approved global network key, preserving native modes", async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, "2.1.314", { sandbox: true });
   const user = { env: { PRIVATE_FIXTURE: "NEVER_PRINT_CANARY" }, permissions: { defaultMode: "auto", allow: ["fixture-allow"] }, hooks: { Notification: [{ hooks: [{ type: "command", command: "fixture-notification" }] }] } };
   const project = { autoMemoryEnabled: false, permissions: { defaultMode: "plan", deny: ["fixture-deny"] } };
   await put(f.global, user); await put(f.local, project);
@@ -54,6 +58,7 @@ test("install applies repository controls and only the approved global network k
   assert.deepEqual(afterUser, user);
   assert.equal(afterProject.permissions.blockReadsOutsideWorkingDirectories, true);
   assert.equal(afterProject.permissions.blockWritesOutsideWorkingDirectories, true);
+  assert.equal(afterProject.sandbox.autoAllowBashIfSandboxed, true);
   assert.equal(afterProject.permissions.defaultMode, "plan");
   assert.deepEqual(afterProject.permissions.deny, ["fixture-deny"]);
   assert.equal(afterProject.hooks, undefined);
@@ -80,14 +85,17 @@ test("global network restriction composes with optional hook wiring and conserva
 });
 
 test("project-only reversal preserves global settings, later user edits and other repositories", async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  await put(f.local, { sandbox: { excludedCommands: ["fixture"] }, custom: "before" });
   assert.equal(f.run(["install", "--claude", "--no-reference"]).status, 0);
   const userBefore = await readFile(f.global, "utf8");
   const current = await json(f.local); current.permissions.blockWritesOutsideWorkingDirectories = false; current.theme = "later";
   await put(f.local, current);
   const result = f.run(["uninstall", "--project"]);
   assert.equal(result.status, 0, result.out);
-  assert.deepEqual(await json(f.local), { permissions: { blockWritesOutsideWorkingDirectories: false }, theme: "later" });
+  const restored = await json(f.local);
+  assert.equal(restored.sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.deepEqual(restored, { sandbox: { excludedCommands: ["fixture"] }, custom: "before", permissions: { blockWritesOutsideWorkingDirectories: false }, theme: "later" });
   assert.equal(await readFile(f.global, "utf8"), userBefore);
   assert.ok(existsSync(path.join(f.home, ".claude", "agents", "bob.md")));
   assert.equal(f.run(["uninstall", "--project"]).status, 0);
@@ -144,17 +152,113 @@ test("security preflight rejects malformed project settings and symlinks before 
 });
 
 test("no-repository installation adds no project fallback and dry run writes nothing", async (t) => {
-  const f = await fixture(t);
+  const f = await fixture(t, "2.1.314", { sandbox: true });
   const before = await bytes(f.root);
-  const dry = f.run(["install", "--claude", "--dry-run"]);
+  const environment = await collectEnvironment({ cwd: f.project, env: f.env });
+  const dry = f.run(["install", "--claude", "--dry-run", "--verbose"]);
   assert.equal(dry.status, 0, dry.out);
   assert.deepEqual(await bytes(f.root), before);
   assert.match(dry.out, /checks not executed in dry run/);
+  if (environment.sandboxCapability === "available-unverified") {
+    assert.match(dry.out, /would apply repository control: sandbox\.autoAllowBashIfSandboxed: true/);
+    assert.match(dry.out, /conditional on Claude >= 2\.1\.302; version not probed in dry run/);
+  }
+  else assert.doesNotMatch(dry.out, /would apply repository control: sandbox\.autoAllowBashIfSandboxed/);
   const global = f.run(["install", "--claude", "--no-reference", "--verbose"], f.home);
   assert.equal(global.status, 0, global.out);
   assert.match(global.out, /no validated repository/);
   assert.equal(existsSync(f.local), false);
   assert.deepEqual(await json(f.global), { sandbox: { network: { strictAllowlist: true } } });
+});
+
+test("explicit false is recommended during install and doctor without doctor writes", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  const evidence = await collectEnvironment({ cwd: f.project, env: f.env });
+  if (evidence.sandboxCapability !== "available-unverified") t.skip("host has no supported sandbox capability");
+  await put(f.local, { sandbox: { autoAllowBashIfSandboxed: false } });
+  const installed = f.run(["install", "--claude", "--no-reference"]);
+  assert.equal(installed.status, 0, installed.out);
+  assert.match(installed.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this repository's \.claude\/settings\.json/);
+  assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, false);
+  const beforeDoctor = await readFile(f.local);
+  const diagnosis = f.run(["doctor"]);
+  assert.match(diagnosis.out, /security claude approval-recommendation.*this repository's \.claude\/settings\.json/);
+  assert.deepEqual(await readFile(f.local), beforeDoctor);
+
+  const personal = await fixture(t, "2.1.314", { sandbox: true });
+  await put(personal.global, { sandbox: { autoAllowBashIfSandboxed: false } });
+  const personalInstall = personal.run(["install", "--claude", "--no-reference"]);
+  assert.equal(personalInstall.status, 0, personalInstall.out);
+  assert.match(personalInstall.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in user Claude settings/);
+  assert.equal((await json(personal.local)).sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.equal((await json(personal.global)).sandbox.autoAllowBashIfSandboxed, false);
+  const personalBeforeDoctor = await readFile(personal.global);
+  const personalDiagnosis = personal.run(["doctor"]);
+  assert.match(personalDiagnosis.out, /security claude approval-recommendation.*user Claude settings/);
+  assert.deepEqual(await readFile(personal.global), personalBeforeDoctor);
+});
+
+test("project-local sandbox escape suppresses the shared auto-approval default in install and dry run", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  const localFile = path.join(f.project, ".claude", "settings.local.json");
+  const localSettings = { sandbox: { allowUnsandboxedCommands: true }, custom: { keep: "unchanged" } };
+  await put(localFile, localSettings);
+  const beforeLocal = await readFile(localFile);
+  const installed = f.run(["install", "--claude", "--no-reference"]);
+  assert.equal(installed.status, 0, installed.out);
+  const shared = await json(f.local);
+  assert.equal(shared.sandbox.enabled, true);
+  assert.equal(shared.sandbox.failIfUnavailable, true);
+  assert.equal(shared.sandbox.allowUnsandboxedCommands, false);
+  assert.equal(shared.sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.deepEqual(await readFile(localFile), beforeLocal);
+
+  const dry = await fixture(t, "2.1.314", { sandbox: true });
+  const dryLocal = path.join(dry.project, ".claude", "settings.local.json");
+  await put(dryLocal, localSettings);
+  const dryBefore = await bytes(dry.root);
+  const preview = dry.run(["install", "--claude", "--dry-run", "--verbose"]);
+  assert.equal(preview.status, 0, preview.out);
+  assert.doesNotMatch(preview.out, /would apply repository control: sandbox\.autoAllowBashIfSandboxed/);
+  assert.deepEqual(await bytes(dry.root), dryBefore);
+});
+
+test("project-local auto-approval overrides shared false and suppresses the stale recommendation", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  const localFile = path.join(f.project, ".claude", "settings.local.json");
+  await put(f.local, { sandbox: { autoAllowBashIfSandboxed: false } });
+  await put(localFile, { sandbox: { autoAllowBashIfSandboxed: true } });
+  const beforeLocal = await readFile(localFile);
+  const installed = f.run(["install", "--claude", "--no-reference"]);
+  assert.equal(installed.status, 0, installed.out);
+  assert.doesNotMatch(installed.out, /RECOMMENDATION security approval/);
+  assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, false);
+  assert.equal((await json(localFile)).sandbox.autoAllowBashIfSandboxed, true);
+  assert.deepEqual(await readFile(localFile), beforeLocal);
+  const beforeDoctor = await readFile(f.local);
+  const diagnosis = f.run(["doctor"]);
+  assert.doesNotMatch(diagnosis.out, /security claude approval-recommendation/);
+  assert.deepEqual(await readFile(f.local), beforeDoctor);
+});
+
+test("unknown project-local sandbox settings suppress the default and dry-run preview without changing bytes", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  const localFile = path.join(f.project, ".claude", "settings.local.json");
+  const hiddenLocalPolicy = Buffer.from('{"sandbox":{"allowUnsandboxedCommands":true');
+  await put(localFile, hiddenLocalPolicy.toString("utf8"));
+  const install = f.run(["install", "--claude", "--no-reference"]);
+  assert.equal(install.status, 0, install.out);
+  assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.deepEqual(await readFile(localFile), hiddenLocalPolicy);
+
+  const dry = await fixture(t, "2.1.314", { sandbox: true });
+  const dryLocal = path.join(dry.project, ".claude", "settings.local.json");
+  await put(dryLocal, hiddenLocalPolicy.toString("utf8"));
+  const before = await bytes(dry.root);
+  const preview = dry.run(["install", "--claude", "--dry-run", "--verbose"]);
+  assert.equal(preview.status, 0, preview.out);
+  assert.doesNotMatch(preview.out, /would apply repository control: sandbox\.autoAllowBashIfSandboxed/);
+  assert.deepEqual(await bytes(dry.root), before);
 });
 
 test("diagnosis is read-only, target-aware and does not treat native configuration as isolation", async (t) => {

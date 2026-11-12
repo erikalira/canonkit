@@ -186,7 +186,25 @@ export function parseSecuritySettings(bytes, label = "settings") {
   return data;
 }
 
-export function compileSecurity(data, environment, { userSettings = {} } = {}) {
+export function parseProjectLocalSandboxSettings(bytes, { placeholder = false } = {}) {
+  if (placeholder) return { settings: {}, known: false };
+  if (bytes === null || bytes.length === 0) return { settings: {}, known: true };
+  if (bytes.length > MAX_SECURITY_BYTES) return { settings: {}, known: false };
+  let value;
+  try { value = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, "")); } catch { return { settings: {}, known: false }; }
+  if (!object(value)) return { settings: {}, known: false };
+  if (value.sandbox === undefined) return { settings: {}, known: true };
+  if (!object(value.sandbox)) return { settings: {}, known: false };
+  const sandbox = {};
+  for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) {
+    if (value.sandbox[key] === undefined) continue;
+    if (typeof value.sandbox[key] !== "boolean") return { settings: {}, known: false };
+    sandbox[key] = value.sandbox[key];
+  }
+  return { settings: { sandbox }, known: true };
+}
+
+export function compileSecurity(data, environment, { userSettings = {}, projectLocalSettings = {}, projectLocalSettingsKnown = true } = {}) {
   const out = structuredClone(data), changes = [], gaps = [];
   const set = (keys, value) => {
     let at = out;
@@ -195,6 +213,9 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     if (!same(at[key], value)) { at[key] = value; changes.push(keys.join(".")); }
   };
   const v = environment.claudeVersion;
+  const localSandbox = projectLocalSettingsKnown ? projectLocalSettings.sandbox ?? {} : {};
+  const localWeakensStrictProfile = localSandbox.enabled === false || localSandbox.failIfUnavailable === false || localSandbox.allowUnsandboxedCommands === true;
+  const autoApprovalDefaultEligible = environment.sandboxCapability === "available-unverified" && projectLocalSettingsKnown && !localWeakensStrictProfile;
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileRead)) set(["permissions", "blockReadsOutsideWorkingDirectories"], true);
   else gaps.push("file-read-control-version-unverified");
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileWrite)) set(["permissions", "blockWritesOutsideWorkingDirectories"], true);
@@ -203,9 +224,12 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     set(["sandbox", "enabled"], true);
     set(["sandbox", "failIfUnavailable"], true);
     set(["sandbox", "allowUnsandboxedCommands"], false);
-    const autoApproval = data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
-    if (autoApproval === undefined) set(["sandbox", "autoAllowBashIfSandboxed"], false);
-    else if (autoApproval !== false) gaps.push("existing-sandbox-autoapproval-preserved");
+    const autoApproval = localSandbox.autoAllowBashIfSandboxed ?? data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
+    if (autoApproval === undefined && autoApprovalDefaultEligible) set(["sandbox", "autoAllowBashIfSandboxed"], true);
+    else if (autoApproval === undefined) gaps.push(projectLocalSettingsKnown ? "sandbox-autoapproval-default-suppressed-by-project-local-override" : "project-local-sandbox-settings-unavailable");
+    else if (autoApproval === false) {
+      if (autoApprovalDefaultEligible) gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
+    } else gaps.push("existing-sandbox-autoapproval-preserved");
     // The native working-directory read block also covers sandbox shell reads
     // of user-data roots; project allowRead entries are ignored by that block.
     // Do not synthesize broad compensating grants or guess runtime paths.
@@ -220,7 +244,7 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     if (value.sandbox) { for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) delete value.sandbox[key]; if (!Object.keys(value.sandbox).length) delete value.sandbox; }
   }
   if (!same(original, result)) throw new Error("Security compilation changed unrelated settings");
-  return { data: out, changes, gaps, coverage: "partial", environment };
+  return { data: out, changes, gaps, coverage: "partial", environment, autoApprovalDefaultEligible };
 }
 
 const OWNED = [
@@ -302,7 +326,7 @@ export function assessClaude(sources, environment) {
     readBlocked ||= data.permissions?.blockReadsOutsideWorkingDirectories === true;
     writeBlocked ||= data.permissions?.blockWritesOutsideWorkingDirectories === true;
     // Ordinary sandbox fields merge in observed low-to-high precedence order.
-    for (const key of ["enabled", "failIfUnavailable"]) {
+    for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) {
       const value = data.sandbox?.[key];
       if (typeof value !== "boolean") continue;
       if (observedSandbox[key] !== undefined && observedSandbox[key] !== value) add("WARN", "scope-conflict", "unknown", `${label}: sandbox.${key} overrides another observed scope; managed/CLI effectiveness remains unknown`);
@@ -315,7 +339,6 @@ export function assessClaude(sources, environment) {
     if (permissions.allow?.length) add("WARN", "saved-approvals", "partial", `${label}: ${permissions.allow.length} explicit allow rules; no values displayed`);
     if (permissions.additionalDirectories?.length) add("WARN", "working-directories", "partial", `${label}: additional working directories expand scope`);
     for (const key of ["excludedCommands", "ignoreViolations"]) if (sandbox[key]?.length) add("WARN", "sandbox-exemptions", "partial", `${label}: sandbox.${key} contains exemptions`);
-    if (sandbox.autoAllowBashIfSandboxed === true) add("WARN", "approval-mode", "partial", `${label}: sandbox automatic approval is enabled`);
     if (filesystem.disabled === true || sandbox.enableWeakerNestedSandbox === true || sandbox.enableWeakerNetworkIsolation === true) add("WARN", "sandbox", "partial", `${label}: a weaker or disabled isolation layer is configured`);
     if (filesystem.allowRead?.length || filesystem.allowWrite?.length) add("WARN", "filesystem-exceptions", "partial", `${label}: explicit outside filesystem exceptions require review`);
     if (network.allowedDomains?.length || network.httpProxyPort || network.socksProxyPort || network.allowAllUnixSockets || network.allowUnixSockets?.length || network.allowLocalBinding) add("WARN", "network-exceptions", "partial", `${label}: network/proxy/socket exceptions expand scope`);
@@ -326,6 +349,8 @@ export function assessClaude(sources, environment) {
       if (own.length) add("WARN", "optional-hooks", "partial", `${label}: ${own.length} canonkit registrations can affect approvals; activation and trust require harness evidence`);
     }
   }
+  const strictSandbox = observedSandbox.enabled === true && observedSandbox.failIfUnavailable === true && observedSandbox.allowUnsandboxedCommands === false;
+  if (observedSandbox.autoAllowBashIfSandboxed === true && !strictSandbox) add("WARN", "approval-mode", "partial", "sandbox automatic approval is enabled without the full strict sandbox profile");
   add(readBlocked && atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.fileRead) ? "OK" : "WARN", "file-reads", "partial", readBlocked ? "outside-working-directory read restriction configured; harness exceptions remain" : "outside-working-directory read restriction not observed");
   add(writeBlocked && atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.fileWrite) ? "OK" : "WARN", "file-writes", "partial", writeBlocked ? "outside-working-directory write restriction configured; version/runtime effectiveness unverified" : "write restriction unavailable or unconfigured; requires Claude >=2.1.314");
   const strictRequired = observedSandbox.enabled === true && observedSandbox.failIfUnavailable === true;
