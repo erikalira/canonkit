@@ -67,7 +67,7 @@ The native Windows profile MUST NOT introduce broad shell, interpreter or networ
 - **THEN** canonkit reports the conflict without silently deleting that personal rule or claiming that the shell is contained
 
 ### Requirement: Native approval modes remain authoritative
-Canonkit MUST preserve the selected Claude approval mode and MUST NOT set a default mode, bypass checks, add broad approvals or install decision hooks by default. When enabling sandboxing, it SHALL retain native mode permission review instead of enabling sandbox-based automatic command approval. Governance claims SHALL reflect actually active enforcement.
+Canonkit MUST preserve the selected Claude approval mode and MUST NOT set a default mode, bypass checks, add broad approvals or install decision hooks by default. When it enables the strict sandbox profile, it SHALL also enable sandbox automatic approval so that commands contained by that sandbox do not prompt; it MUST NOT enable it in any other case. Governance claims SHALL reflect actually active enforcement.
 
 #### Scenario: User switches native modes
 - **WHEN** the user selects Manual, Auto, Edit automatically or Plan
@@ -81,6 +81,32 @@ Canonkit MUST preserve the selected Claude approval mode and MUST NOT set a defa
 #### Scenario: Additional access is attempted
 - **WHEN** an action needs access outside the configured boundary
 - **THEN** the applicable native deny or explicit authorization mechanism applies without a kit-generated blanket allow or approval hook override
+
+#### Scenario: Strict profile installed on a new project
+- **GIVEN** a supported sandbox capability and no explicit auto-approval value in project or user settings
+- **WHEN** canonkit writes the strict sandbox profile
+- **THEN** it also writes automatic approval as enabled
+- **AND** no `permissions.allow` entry, default mode or hook is added
+
+#### Scenario: Strict profile is not written
+- **WHEN** the sandbox capability or Claude version does not support the strict profile, or the platform is native Windows
+- **THEN** canonkit does not enable sandbox automatic approval
+
+#### Scenario: Explicit value already present
+- **GIVEN** an explicit auto-approval value, true or false, in project or user settings, including one written by an earlier canonkit version
+- **WHEN** canonkit installs again
+- **THEN** that value is preserved and reported, not overwritten
+
+#### Scenario: Existing false next to the strict profile
+- **GIVEN** an explicit `false` and the full strict sandbox profile
+- **WHEN** canonkit installs or diagnoses
+- **THEN** it recommends setting automatic approval to `true` and shows the edit
+- **AND** it does not change the file
+
+#### Scenario: Publishing still needs confirmation
+- **WHEN** sandbox automatic approval is enabled
+- **THEN** generated instructions still require asking before `git commit` and `git push`
+- **AND** canonkit does not claim that automatic approval enforces that confirmation
 
 ### Requirement: Reinstallation migrates attributable legacy Claude hooks
 Ordinary Claude installation without `--wire-hooks` SHALL unregister attributable legacy canonkit/meu-time handlers in resolved user settings and current repository settings. It MUST preserve unrelated integrations, metadata, modes and permissions. Ownership SHALL require a simple command to a canonical kit path, never a basename alone.
@@ -110,11 +136,20 @@ Where supported, canonkit SHALL configure shell sandboxing to refuse unsandboxed
 #### Scenario: Sandbox-capable platform
 - **WHEN** a verified supported sandbox profile is installed
 - **THEN** commands are configured to remain sandboxed without unsandboxed retry or excluded-command escape paths introduced by canonkit
-- **AND** the user's native approval mode continues to decide permissions rather than a kit-added autoapproval shortcut
+- **AND** sandbox automatic approval applies only to commands that run inside that sandbox
 
 #### Scenario: Missing dependency or unknown effective override
 - **WHEN** a dependency is missing or the effective boundary cannot be established
 - **THEN** canonkit reports unavailable or unknown coverage and preserves existing fail-closed requirements rather than treating settings written to disk as runtime proof
+
+#### Scenario: Marker or dependency is insufficient
+- **WHEN** a container variable is present or a sandbox dependency exists without evidence that isolation works
+- **THEN** canonkit does not describe the environment as contained
+
+#### Scenario: Diagnostics for automatic approval
+- **WHEN** automatic approval is enabled together with the strict profile (sandbox enabled, unavailable sandbox fails, unsandboxed retries refused)
+- **THEN** diagnostics do not warn about it
+- **AND** they warn when it is enabled with any weaker or missing element of that profile
 
 ### Requirement: Repository data boundary and limited exceptions
 Canonkit SHALL apply supported file-tool and shell restrictions independently, using the active session's repository boundary rather than the install directory. Exceptions SHALL be minimal and documented for runtime/toolchain, private temporary storage and harness operation; unrelated outside data MUST NOT gain access through kit-generated rules.

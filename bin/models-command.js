@@ -16,7 +16,7 @@ import { readFile, stat } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
-import { HARNESSES, catalogPath, readCatalog, refreshCatalog } from "./model-discovery.js";
+import { HARNESSES, catalogPath, readCatalog, refreshCatalog, writeCatalog } from "./model-discovery.js";
 import { APPLIED, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, VALUE } from "./model-config.js";
 import { repositoryRoot, projectStateDir, safePath } from "./security.js";
 
@@ -328,7 +328,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
   }
   // Read before discovery: an unsupported file stops here, before anything runs.
   const doc = await readChoices(file, { project });
-  const catalog = await refreshCatalog(selectable, { run, now, file: catalogPath(home), home });
+  const catalog = await refreshCatalog(selectable, { run, now, file: catalogPath(home), home, persist: false });
   ask = strict(ask ?? await promptsAsker());
 
   try {
@@ -397,6 +397,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     if (err instanceof Aborted) throw new Error(`models setup: cancelled; nothing was written to ${file}`);
     throw err;
   }
+  await writeCatalog(catalog.pending, catalogPath(home), { now });
   await writeChoices(file, doc, { project });
   ctx.log(`Saved ${file}`);
   if (!fromInstall) ctx.log(`Run npx canonkit install ${selectable.map((h) => `--${h}`).join(" ")} to write the defaults into your agents; check with npx canonkit models show`);

@@ -14,7 +14,7 @@
  *   - stdin is closed and every run has a timeout.
  */
 import { spawnSync } from "node:child_process";
-import { statSync, accessSync, realpathSync, constants } from "node:fs";
+import { statSync, lstatSync, readlinkSync, accessSync, realpathSync, readFileSync, constants } from "node:fs";
 import path from "node:path";
 
 // Arguments come from the tool registry, never from the project. This is the
@@ -56,14 +56,64 @@ function within(dir, root, platform) {
 }
 
 /**
+ * The Windows drives a WSL distro sees, from the text of /proc/self/mounts: a
+ * mount point whose fstype is `drvfs`, or `9p` with aname=drvfs (newer WSL
+ * kernels; its value runs on as `aname=drvfs;path=C:\;uid=...`). Plain 9p is not enough: /usr/lib/wsl/drivers is 9p with
+ * aname=drivers and holds no Windows programs. Pure, so a test feeds it text.
+ * Mount points escape space, tab, newline and backslash as octal (\040).
+ */
+function windowsMountRoots(mountsText) {
+  const roots = [];
+  for (const line of String(mountsText ?? "").split("\n")) {
+    const f = line.trim().split(/\s+/);
+    if (f.length < 4) continue;
+    const [, rawPoint, fstype, opts] = f;
+    const windows = fstype === "drvfs" || (fstype === "9p" && opts.split(",").some((o) => /^aname=drvfs(;|$)/.test(o)));
+    if (!windows) continue;
+    const point = rawPoint.replace(/(?:\\[0-7]{3})+/g, (m) => Buffer.from(m.slice(1).split("\\").map((o) => parseInt(o, 8))).toString("utf8"));
+    if (!path.posix.isAbsolute(point) || point === "/" || point.includes("\0")) continue;
+    if (!roots.includes(point)) roots.push(point);
+  }
+  return roots;
+}
+
+/**
+ * The Windows roots of this machine: only on Linux, from /proc/self/mounts, and
+ * [] on any failure (no /proc, not WSL, unreadable). Node builtins only; it
+ * never shells out to mount or wslpath. `read` is injectable for tests.
+ */
+function readWindowsRoots({ platform = process.platform, read = () => readFileSync("/proc/self/mounts", "utf8") } = {}) {
+  if (platform !== "linux") return [];
+  try {
+    return windowsMountRoots(read());
+  } catch {
+    return [];
+  }
+}
+
+// Each root as given and as its real path (a root can itself be reached through
+// a link), so a comparison against a realpath holds either way.
+function rootSet(windowsRoots, platform) {
+  const out = [];
+  for (const w of windowsRoots ?? []) {
+    if (typeof w !== "string" || !pathFor(platform).isAbsolute(w)) continue;
+    for (const c of [w, real(w, platform)]) if (c && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+const onWindows = (r, roots, platform) => roots.some((w) => within(r, w, platform));
+
+/**
  * The PATH directories a binary may come from: absolute, existing, and outside
  * the project. Windows searches the current directory before PATH and treats an
  * empty entry the same way; a relative entry resolves against the project; and
  * `npx canonkit` puts <project>/node_modules/.bin first. Each of these is how a
  * binary committed to a cloned repo gets run in place of the real one.
  */
-function safePathDirs({ env = process.env, platform = process.platform, cwd = process.cwd() } = {}) {
+function safePathDirs({ env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [] } = {}) {
   const P = pathFor(platform);
+  const winRoots = rootSet(windowsRoots, platform);
   const root = real(cwd, platform) ?? P.resolve(cwd);
   const pathVar = platform === "win32" ? env.Path ?? env.PATH ?? "" : env.PATH ?? "";
   const out = [];
@@ -72,6 +122,8 @@ function safePathDirs({ env = process.env, platform = process.platform, cwd = pr
     if (!d || !P.isAbsolute(d)) continue;
     const r = real(d, platform);
     if (!r || within(r, root, platform)) continue;
+    // Independent of the rule above, on the real path: a link into /mnt/c is /mnt/c.
+    if (onWindows(r, winRoots, platform)) continue;
     if (!out.includes(d)) out.push(d);
   }
   return out;
@@ -114,12 +166,63 @@ function projectOnlyHit(name, { env = process.env, platform = process.platform, 
   return null;
 }
 
+/**
+ * Files named `name` in PATH directories (absolute, existing, outside the
+ * project) that live on a Windows root, by directory or by the file's own real
+ * path (~/.local/bin/x -> /mnt/c/...), in PATH order: what canonkit ignores, so
+ * a caller can say so. With `before`, only those ahead of that candidate.
+ */
+function windowsOnlyHits(name, { env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [], before = null } = {}) {
+  const winRoots = rootSet(windowsRoots, platform);
+  if (!winRoots.length) return [];
+  const P = pathFor(platform);
+  const root = real(cwd, platform) ?? P.resolve(cwd);
+  const pathVar = platform === "win32" ? env.Path ?? env.PATH ?? "" : env.PATH ?? "";
+  const hits = [];
+  for (const raw of pathVar.split(platform === "win32" ? ";" : ":")) {
+    const d = raw.trim().replace(/^"(.*)"$/, "$1");
+    if (!d || !P.isAbsolute(d)) continue;
+    const r = real(d, platform);
+    if (!r || within(r, root, platform)) continue;
+    const candidate = P.join(d, name);
+    if (before && candidate === before) break;
+    if (!isFile(candidate) || !isExecutable(candidate)) continue;
+    const f = real(candidate, platform);
+    if ((onWindows(r, winRoots, platform) || (f && onWindows(f, winRoots, platform))) && !hits.includes(candidate)) hits.push(candidate);
+  }
+  return hits;
+}
+
+/**
+ * Symlinks named `name` in safePathDirs whose target cannot be read, in PATH
+ * order: a broken link, or one into a folder this process cannot see (the Claude
+ * Code sandbox hides ~/.local/share/pipx, say). Reports only; it never touches
+ * a setting. POSIX only. Never throws.
+ */
+function danglingHits(name, { env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [] } = {}) {
+  if (platform === "win32" || !/^[a-z0-9][a-z0-9_-]*$/i.test(name)) return [];
+  const hits = [];
+  for (const dir of safePathDirs({ env, platform, cwd, windowsRoots })) {
+    const link = path.join(dir, name);
+    try {
+      if (!lstatSync(link).isSymbolicLink()) continue;
+      try {
+        statSync(link);
+        continue;
+      } catch {}
+      hits.push({ link, target: readlinkSync(link) });
+    } catch {}
+  }
+  return hits;
+}
+
 /** Absolute path of `name` in safePathDirs, or null. */
-function resolveBin(name, { env = process.env, platform = process.platform, cwd = process.cwd() } = {}) {
+function resolveBin(name, { env = process.env, platform = process.platform, cwd = process.cwd(), windowsRoots = [] } = {}) {
   if (!/^[a-z0-9][a-z0-9_-]*$/i.test(name)) throw new Error(`resolveBin: not a bare command name: ${name}`);
 
   const P = pathFor(platform);
-  const dirs = safePathDirs({ env, platform, cwd });
+  const dirs = safePathDirs({ env, platform, cwd, windowsRoots });
+  const winRoots = rootSet(windowsRoots, platform);
 
   const exts =
     platform === "win32"
@@ -134,6 +237,10 @@ function resolveBin(name, { env = process.env, platform = process.platform, cwd 
       const candidate = P.join(dir, name + ext);
       if (!isFile(candidate)) continue;
       if (platform !== "win32" && !isExecutable(candidate)) continue;
+      if (winRoots.length) {
+        const f = real(candidate, platform);
+        if (!f || onWindows(f, winRoots, platform)) continue;
+      }
       return candidate;
     }
   }
@@ -176,9 +283,12 @@ function commandFor(abs, args, { env = process.env, platform = process.platform 
  * and on Windows NoDefaultCurrentDirectoryInExePath, which turns that
  * current-directory lookup off for cmd.exe and CreateProcess callers.
  */
-function childEnv(env, platform, cwd) {
+function childEnv(env, platform, cwd, windowsRoots = []) {
   const out = Object.fromEntries(Object.entries(env).filter(([k]) => k.toUpperCase() !== "PATH"));
-  out.PATH = safePathDirs({ env, platform, cwd }).join(platform === "win32" ? ";" : ":");
+  const dirs = safePathDirs({ env, platform, cwd, windowsRoots });
+  // `PATH=` is not "nothing": env and execvp read an empty PATH as the current
+  // directory, which is the project. No safe directory means no PATH at all.
+  if (dirs.length) out.PATH = dirs.join(platform === "win32" ? ";" : ":");
   if (platform === "win32") out.NoDefaultCurrentDirectoryInExePath = "1";
   return out;
 }
@@ -195,12 +305,12 @@ const display = (abs, args) => [abs.includes(" ") ? `"${abs}"` : abs, ...args].j
  * `project` is what the child's PATH is filtered against; it defaults to cwd,
  * and differs only when a probe runs somewhere else (binVersion).
  */
-function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capture = false, maxBuffer, env = process.env, platform = process.platform } = {}) {
+function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capture = false, maxBuffer, env = process.env, platform = process.platform, windowsRoots = [] } = {}) {
   if (!cwd || !path.isAbsolute(cwd)) throw new Error("runBin: cwd must be an absolute, validated project root");
   const cmd = commandFor(abs, args, { env, platform });
   const result = spawnSync(cmd.file, cmd.args, {
     cwd,
-    env: childEnv(env, platform, project),
+    env: childEnv(env, platform, project, windowsRoots),
     shell: false,
     windowsVerbatimArguments: cmd.verbatim,
     windowsHide: true,
@@ -228,12 +338,12 @@ function runBin(abs, args, { cwd, project = cwd, timeout = DEFAULT_TIMEOUT, capt
  * the project: nothing reads project files before consent. (Not the temp dir,
  * which anyone can write to on POSIX.)
  */
-function binVersion(abs, { project, env, platform } = {}) {
+function binVersion(abs, { project, env, platform, windowsRoots } = {}) {
   const cwd = path.dirname(abs);
-  const r = runBin(abs, ["--version"], { cwd, project: project ?? cwd, env, platform, capture: true, timeout: 30 * 1000 });
+  const r = runBin(abs, ["--version"], { cwd, project: project ?? cwd, env, platform, windowsRoots, capture: true, timeout: 30 * 1000 });
   if (r.status !== 0) return null;
   const m = /(?:\bv|\b)(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)\b/.exec(r.stdout) ?? /(?:\bv|\b)(\d+\.\d+\.\d+)\b/.exec(r.stderr);
   return m ? m[1] : null;
 }
 
-export { resolveBin, safePathDirs, projectOnlyHit, commandFor, runBin, binVersion, display, SAFE_ARG };
+export { resolveBin, safePathDirs, projectOnlyHit, windowsOnlyHits, danglingHits, windowsMountRoots, childEnv, readWindowsRoots, commandFor, runBin, binVersion, display, SAFE_ARG };

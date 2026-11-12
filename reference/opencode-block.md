@@ -17,6 +17,10 @@ otherwise, do nothing extra.
   one runs on the model of the session that dispatches it. The rule "every
   planned dispatch names its model and effort" does not apply here: there is
   nothing to name, and a plan that names one promises what will not run.
+- **Structured questions use the `question` tool.** For a decision that is the
+  user's, with 2–4 real options, ask with it: recommended option first, pending
+  questions together. Where it is unavailable (`opencode run`, some ACP clients),
+  ask in text with numbered options.
 - `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
   a plugin denies `--no-verify`, `--no-gpg-sign` and `-c core.hooksPath=...` on
   git commands, a subagent's included. <!-- enforced-by: git-bypass -->

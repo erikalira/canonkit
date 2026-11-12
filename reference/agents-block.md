@@ -185,6 +185,19 @@ blamed the user's branching habit; branches the user creates never had this prob
 So after a git mishap, check the transcripts and the reflog for who caused it before
 giving advice.
 
+## Commit authorship
+
+Preserve the user's Git-configured author identity when creating commits; do not
+override it with an agent identity or another person's identity. Do not add
+co-authors or a `Co-authored-by` trailer unless the user explicitly requests it.
+
+## Dedicated tools, not the shell
+
+Write and edit files with the harness's file tools, in the repository too, never
+through the shell (heredocs, redirects, `tee`, `sed -i`, `cp`, `mv`). Prefer the read
+and search tools; without one, a read-only shell command (`cat`, `grep`, `find`) is
+fine. If a file tool is denied, adjust or ask, never redo the work through the shell.
+
 ## Temporary work outside the repository
 
 Use the file-writing tool: one script, in the harness's scratch folder or else

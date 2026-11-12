@@ -67,7 +67,7 @@ Before creating or reviewing documentation:
 2. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context). Spencer's domain also raises:
    - MEDIUM: shared documentation.
    - HIGH: a decision that is difficult to reverse.
-3. Define the minimum useful documentation, preserving links among PRDs, ADRs, issues, PRs, API docs, and runbooks.
+3. Define the minimum useful documentation, preserving links among PRDs, ADRs, issues, PRs, API docs, and runbooks. Reuse the existing source of truth (one fact, one owner) and link it instead of creating a parallel document. When an ADR is superseded, link both ways; a reconstructed decision keeps its original date. Update triggers are short: structure or ownership changed, update the map in the same change; a hard-to-reverse decision, write an ADR. No mandatory set of four files and no automatic `docs/adr`.
 4. Record gaps and open questions.
 5. Escalate when the content depends on a decision outside Spencer's authority.
 

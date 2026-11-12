@@ -1,5 +1,9 @@
 # canonkit
 
+[![npm version](https://img.shields.io/npm/v/canonkit)](https://www.npmjs.com/package/canonkit)
+[![CI](https://github.com/erikalira/canonkit/actions/workflows/ci.yml/badge.svg)](https://github.com/erikalira/canonkit/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/npm/l/canonkit)](LICENSE)
+
 A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and **GitHub Copilot**.
 Each agent owns one domain: product, architecture, security, quality, UX,
 performance, operations or docs. Before it recommends anything, it rates the risk
@@ -46,6 +50,16 @@ npx canonkit install
 In a terminal, a menu asks which runtimes to install for. Claude Code and Codex
 come pre-selected; OpenCode and GitHub Copilot are opt-in. To install only the
 Copilot profile without the menu, run `npx canonkit install --copilot`.
+With no runtime or project-item selection flags, an interactive install inside a
+Git project then offers optional tools, specialists and stack packs, with nothing
+selected in those project lists. Runtime flags suppress the interactive menus.
+Use repeatable `--tool`, `--specialist` and `--stack` flags to select project
+items in that case. A selected tool still asks before setup runs; the menu does
+not imply `--yes` or turn on Git hooks. Its prompt names the tool and project;
+the default report summarizes successful tool output and retains warnings and
+actionable tool notes, while `--verbose` shows the full output. Without a
+terminal and without project-item flags, install keeps its global-only behavior. See
+[the install flow details](docs/install.md#project-items-in-the-install-flow).
 When Claude Code is selected and the
 current repository can be validated, installation automatically merges supported
 security restrictions into `<repo>/.claude/settings.json`. It does not set
@@ -187,8 +201,9 @@ make the change HIGH.
 | **Spencer** | documentation: ADRs, specs, API docs, runbooks, release notes | veto |
 | **Virgo** | the team's own configuration: agents, skills, these managed blocks | none |
 
-**Specialists**: not installed by default. A project gets one only when you add
-it, so no agent gets called just to round out the list:
+**Specialists**: not installed by default. A project gets one only when you
+choose it in the install flow or add it explicitly, so no agent gets called
+just to round out the list:
 
 | Agent | Install when the project has... |
 | --- | --- |
@@ -320,8 +335,8 @@ Which gate does what in each runtime:
 
 | Command | What it does |
 | --- | --- |
-| `install` | global core distribution; supported native Claude security and user-scoped strict-network lock; unregisters attributable older Claude hooks in user/current-repository settings (`--claude` / `--codex` / `--opencode` / `--copilot` skip the menu) |
-| `install --verbose` | prints every step; the default is a short summary per runtime that says whether anything changed |
+| `install` | global core distribution; interactive project menus for tools, specialists and stack packs; repeatable `--tool`, `--specialist`, `--stack` selectors; supported native Claude security and user-scoped strict-network lock (`--claude` / `--codex` / `--opencode` / `--copilot` skip the runtime menu) |
+| `install --verbose` | prints every step and full selected-tool output; the default names tool actions before confirmation and summarizes successful output |
 | `install --wire-hooks` | distribution and native security; skips Claude hook cleanup and wires supported hooks (Claude Code, Codex, OpenCode) |
 | `doctor` | read-only installation and security diagnosis; exits 1 on `FAIL` |
 | `reference` | only the global blocks and skills |

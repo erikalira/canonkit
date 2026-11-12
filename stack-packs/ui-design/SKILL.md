@@ -75,7 +75,7 @@ announcements. Include applicable pointer/touch target usability and input
 requirements. Use the project's adopted accessibility standard and current
 platform guidance; verify exact criteria before citing them. AA focus visibility/
 non-obscuration is not AAA focus appearance; no one target-size number fits every
-platform. Accessibility requirements constrain visual expression.
+platform. Only when the surface is native or mobile, also cover enlarged text, safe areas, orientation, back navigation and offline or interrupted states; no fixed device list or size limits. Accessibility requirements constrain visual expression.
 
 Arrange for rendered checks of actual assets, layout stability during loading,
 and relevant console/network failures. Distinguish expected failed requests used

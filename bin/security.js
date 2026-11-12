@@ -3,7 +3,7 @@ import { existsSync, realpathSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
-import { resolveBin, binVersion } from "./exec.js";
+import { resolveBin, binVersion, windowsOnlyHits } from "./exec.js";
 
 const object = (x) => x !== null && typeof x === "object" && !Array.isArray(x);
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -31,6 +31,44 @@ export async function readSecurityBytes(file) {
   finally { await handle?.close(); }
 }
 
+/**
+ * Doctor, read-only: inside the Claude Code sandbox a 0-byte placeholder is
+ * /dev/null (character device 1:3) bind-mounted over the real file. Exactly
+ * that device, on Linux, from lstat (never a symlink to it). Not for writers:
+ * safePath and readSecurityBytes still require a regular file.
+ */
+export function isNullDeviceStat(info, platform = process.platform) {
+  return platform === "linux" && info.isCharacterDevice() && info.rdev === 259; // makedev(1, 3)
+}
+
+export async function isSandboxNullPlaceholder(file, { lstat: stat = lstat, platform = process.platform } = {}) {
+  if (platform !== "linux") return false;
+  await safePath(path.dirname(file));
+  try { return isNullDeviceStat(await stat(file), platform); } catch (err) { if (absent(err)) return false; throw err; }
+}
+
+/**
+ * True when any of the files is, by lstat, the sandbox's /dev/null placeholder
+ * (1:3). Absent paths and paths under a non-directory are simply not one.
+ */
+export async function anyNullPlaceholder(files, { lstat: stat = lstat, platform = process.platform } = {}) {
+  if (platform !== "linux") return false;
+  for (const file of files) {
+    try { if (isNullDeviceStat(await stat(file), platform)) return true; } catch (err) { if (err.code !== "ENOENT" && err.code !== "ENOTDIR") throw err; }
+  }
+  return false;
+}
+
+/**
+ * What blocks a directory that is not one: "device" (a character device, the
+ * sandbox's write-protection), "empty" (a 0-byte regular file), else null.
+ */
+export function directoryBlocker(info) {
+  if (info.isCharacterDevice()) return "device";
+  if (info.isFile() && info.size === 0) return "empty";
+  return null;
+}
+
 export function atLeast(version, minimum) {
   if (!/^\d+\.\d+\.\d+$/.test(version ?? "")) return false;
   const a = version.split(".").map(Number), b = minimum.split(".").map(Number);
@@ -52,12 +90,13 @@ export function classifyEnvironment({ platform = process.platform, release = os.
 // Every probe of a harness binary (here and in model-discovery.js) drops them.
 export const LOADER_ENV = /^(?:NODE_OPTIONS|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|BASH_ENV|ENV|RUBYOPT|PERL5OPT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_.*)$/i;
 
-export async function collectEnvironment({ cwd = process.cwd(), env = process.env, platform = process.platform, release = os.release(), dryRun = false, read = readFile, exists = existsSync, resolve = resolveBin, version = binVersion } = {}) {
+export async function collectEnvironment({ cwd = process.cwd(), env = process.env, platform = process.platform, release = os.release(), dryRun = false, read = readFile, exists = existsSync, resolve = resolveBin, version = binVersion, windowsRoots = [] } = {}) {
   let procVersion = "";
   if (platform === "linux") {
     try { procVersion = await read("/proc/version", "utf8"); } catch (err) { if (!absent(err) && err.code !== "EACCES") throw err; }
   }
-  const options = { cwd, env, platform };
+  // On WSL a Windows binary on PATH is not resolved (it would run through interop and read Windows settings).
+  const options = { cwd, env, platform, windowsRoots };
   const bwrap = platform === "linux" ? resolve("bwrap", options) : null;
   const socat = platform === "linux" ? resolve("socat", options) : null;
   const evidence = classifyEnvironment({ platform, release, procVersion, env, dockerMarker: platform === "linux" && exists("/.dockerenv"), bwrap, socat });
@@ -70,7 +109,13 @@ export async function collectEnvironment({ cwd = process.cwd(), env = process.en
     } catch (err) { if (!["ENOENT", "EACCES", "EPERM"].includes(err.code)) throw err; claude = null; }
   }
   const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !LOADER_ENV.test(key)));
-  return { ...evidence, claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform }) : null, versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : "binary-unavailable" };
+  const ignored = !dryRun && !claude ? windowsOnlyHits("claude", options)[0] : undefined;
+  return {
+    ...evidence,
+    claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform, windowsRoots }) : null,
+    versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : ignored ? "windows-binary-ignored" : "binary-unavailable",
+    ...(ignored ? { ignoredWindowsBinary: ignored } : {}),
+  };
 }
 
 // No process execution is needed to find a working tree, including a linked
@@ -141,7 +186,25 @@ export function parseSecuritySettings(bytes, label = "settings") {
   return data;
 }
 
-export function compileSecurity(data, environment, { userSettings = {} } = {}) {
+export function parseProjectLocalSandboxSettings(bytes, { placeholder = false } = {}) {
+  if (placeholder) return { settings: {}, known: false };
+  if (bytes === null || bytes.length === 0) return { settings: {}, known: true };
+  if (bytes.length > MAX_SECURITY_BYTES) return { settings: {}, known: false };
+  let value;
+  try { value = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, "")); } catch { return { settings: {}, known: false }; }
+  if (!object(value)) return { settings: {}, known: false };
+  if (value.sandbox === undefined) return { settings: {}, known: true };
+  if (!object(value.sandbox)) return { settings: {}, known: false };
+  const sandbox = {};
+  for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) {
+    if (value.sandbox[key] === undefined) continue;
+    if (typeof value.sandbox[key] !== "boolean") return { settings: {}, known: false };
+    sandbox[key] = value.sandbox[key];
+  }
+  return { settings: { sandbox }, known: true };
+}
+
+export function compileSecurity(data, environment, { userSettings = {}, projectLocalSettings = {}, projectLocalSettingsKnown = true } = {}) {
   const out = structuredClone(data), changes = [], gaps = [];
   const set = (keys, value) => {
     let at = out;
@@ -150,6 +213,9 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     if (!same(at[key], value)) { at[key] = value; changes.push(keys.join(".")); }
   };
   const v = environment.claudeVersion;
+  const localSandbox = projectLocalSettingsKnown ? projectLocalSettings.sandbox ?? {} : {};
+  const localWeakensStrictProfile = localSandbox.enabled === false || localSandbox.failIfUnavailable === false || localSandbox.allowUnsandboxedCommands === true;
+  const autoApprovalDefaultEligible = environment.sandboxCapability === "available-unverified" && projectLocalSettingsKnown && !localWeakensStrictProfile;
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileRead)) set(["permissions", "blockReadsOutsideWorkingDirectories"], true);
   else gaps.push("file-read-control-version-unverified");
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileWrite)) set(["permissions", "blockWritesOutsideWorkingDirectories"], true);
@@ -158,9 +224,12 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     set(["sandbox", "enabled"], true);
     set(["sandbox", "failIfUnavailable"], true);
     set(["sandbox", "allowUnsandboxedCommands"], false);
-    const autoApproval = data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
-    if (autoApproval === undefined) set(["sandbox", "autoAllowBashIfSandboxed"], false);
-    else if (autoApproval !== false) gaps.push("existing-sandbox-autoapproval-preserved");
+    const autoApproval = localSandbox.autoAllowBashIfSandboxed ?? data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
+    if (autoApproval === undefined && autoApprovalDefaultEligible) set(["sandbox", "autoAllowBashIfSandboxed"], true);
+    else if (autoApproval === undefined) gaps.push(projectLocalSettingsKnown ? "sandbox-autoapproval-default-suppressed-by-project-local-override" : "project-local-sandbox-settings-unavailable");
+    else if (autoApproval === false) {
+      if (autoApprovalDefaultEligible) gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
+    } else gaps.push("existing-sandbox-autoapproval-preserved");
     // The native working-directory read block also covers sandbox shell reads
     // of user-data roots; project allowRead entries are ignored by that block.
     // Do not synthesize broad compensating grants or guess runtime paths.
@@ -175,7 +244,7 @@ export function compileSecurity(data, environment, { userSettings = {} } = {}) {
     if (value.sandbox) { for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) delete value.sandbox[key]; if (!Object.keys(value.sandbox).length) delete value.sandbox; }
   }
   if (!same(original, result)) throw new Error("Security compilation changed unrelated settings");
-  return { data: out, changes, gaps, coverage: "partial", environment };
+  return { data: out, changes, gaps, coverage: "partial", environment, autoApprovalDefaultEligible };
 }
 
 const OWNED = [
@@ -257,7 +326,7 @@ export function assessClaude(sources, environment) {
     readBlocked ||= data.permissions?.blockReadsOutsideWorkingDirectories === true;
     writeBlocked ||= data.permissions?.blockWritesOutsideWorkingDirectories === true;
     // Ordinary sandbox fields merge in observed low-to-high precedence order.
-    for (const key of ["enabled", "failIfUnavailable"]) {
+    for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) {
       const value = data.sandbox?.[key];
       if (typeof value !== "boolean") continue;
       if (observedSandbox[key] !== undefined && observedSandbox[key] !== value) add("WARN", "scope-conflict", "unknown", `${label}: sandbox.${key} overrides another observed scope; managed/CLI effectiveness remains unknown`);
@@ -270,7 +339,6 @@ export function assessClaude(sources, environment) {
     if (permissions.allow?.length) add("WARN", "saved-approvals", "partial", `${label}: ${permissions.allow.length} explicit allow rules; no values displayed`);
     if (permissions.additionalDirectories?.length) add("WARN", "working-directories", "partial", `${label}: additional working directories expand scope`);
     for (const key of ["excludedCommands", "ignoreViolations"]) if (sandbox[key]?.length) add("WARN", "sandbox-exemptions", "partial", `${label}: sandbox.${key} contains exemptions`);
-    if (sandbox.autoAllowBashIfSandboxed === true) add("WARN", "approval-mode", "partial", `${label}: sandbox automatic approval is enabled`);
     if (filesystem.disabled === true || sandbox.enableWeakerNestedSandbox === true || sandbox.enableWeakerNetworkIsolation === true) add("WARN", "sandbox", "partial", `${label}: a weaker or disabled isolation layer is configured`);
     if (filesystem.allowRead?.length || filesystem.allowWrite?.length) add("WARN", "filesystem-exceptions", "partial", `${label}: explicit outside filesystem exceptions require review`);
     if (network.allowedDomains?.length || network.httpProxyPort || network.socksProxyPort || network.allowAllUnixSockets || network.allowUnixSockets?.length || network.allowLocalBinding) add("WARN", "network-exceptions", "partial", `${label}: network/proxy/socket exceptions expand scope`);
@@ -281,6 +349,8 @@ export function assessClaude(sources, environment) {
       if (own.length) add("WARN", "optional-hooks", "partial", `${label}: ${own.length} canonkit registrations can affect approvals; activation and trust require harness evidence`);
     }
   }
+  const strictSandbox = observedSandbox.enabled === true && observedSandbox.failIfUnavailable === true && observedSandbox.allowUnsandboxedCommands === false;
+  if (observedSandbox.autoAllowBashIfSandboxed === true && !strictSandbox) add("WARN", "approval-mode", "partial", "sandbox automatic approval is enabled without the full strict sandbox profile");
   add(readBlocked && atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.fileRead) ? "OK" : "WARN", "file-reads", "partial", readBlocked ? "outside-working-directory read restriction configured; harness exceptions remain" : "outside-working-directory read restriction not observed");
   add(writeBlocked && atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.fileWrite) ? "OK" : "WARN", "file-writes", "partial", writeBlocked ? "outside-working-directory write restriction configured; version/runtime effectiveness unverified" : "write restriction unavailable or unconfigured; requires Claude >=2.1.314");
   const strictRequired = observedSandbox.enabled === true && observedSandbox.failIfUnavailable === true;

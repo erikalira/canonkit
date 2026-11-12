@@ -6,7 +6,7 @@ stack packs, global reference blocks and skills, and upgrading from an older nam
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
-Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-09.
+Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-12.
 
 ## Core, at user level
 
@@ -30,6 +30,42 @@ none with an install script), and it is only loaded when it appears: an install
 decided by flag or with no terminal runs on plain Node. An installer that runs
 **before** you trust the repository should not ask you to trust a dependency tree
 larger than that.
+
+### Project items in the install flow
+
+On a plain interactive install, with no runtime or project-item flags, the
+runtime menu is followed by optional tools, domain specialists and stack packs,
+in that order. The model-choice step follows these project selections. All
+choices are collected before installation begins. Each list comes from the same
+catalog as `list` and `tool list`, shows the item's current state, and starts
+with nothing selected. The choices are project-scoped: run from the directory
+that should receive them, inside a Git repository other than the canonkit source repository
+or your home directory. If this interactive run has no valid project target, it
+skips the project steps and continues with the global core installation.
+Explicit project-item flags without a valid target fail before any writes.
+
+The menu collects its selections before installation begins. Cancelling any
+selection menu leaves the global and project files unchanged and reports that
+nothing was installed. Before a selected tool runs, install shows its project,
+command, write locations and any material warning, then asks a confirmation
+that names the tool and project. The menu does not imply `--yes` and never
+enables Git hooks. By default, successful tool output is summarized; warnings,
+failures and actionable tool notes remain visible. `--verbose` shows the
+detailed plan and full tool output. `--dry-run` previews the global and selected
+project steps without writing files or running tool setup.
+
+For scripts or CI, select project items explicitly; these flags can be repeated:
+
+```bash
+npx canonkit install --specialist maya --stack typescript --tool openspec
+```
+
+They are validated against the catalog before installation writes anything and
+are only valid with `install`. Without a TTY and without these flags, `install`
+keeps its previous behavior: it installs the selected global runtimes and does
+not write project items. A tool's confirmation remains separate; pass `--yes`
+explicitly only when you intend to skip it. The closing report lists items that
+remain available in each category and points to `canonkit list`.
 
 | Choice | Writes |
 | --- | --- |
@@ -212,9 +248,31 @@ review remain instruction-based requirements.
 Canonkit does not set `permissions.defaultMode`, change your Auto policy,
 enable bypass, or add broad `allow` entries. Manual, Auto, Edit automatically
 and Plan retain the harness's ordinary approval behavior. When canonkit enables
-a supported shell sandbox, it uses regular permission review rather than
-enabling sandbox command autoapproval. Existing personal choices are preserved
-and their effects reported separately.
+the strict shell sandbox profile (`enabled: true`, `failIfUnavailable: true`,
+and `allowUnsandboxedCommands: false`) and neither project nor user settings
+choose a value, it also sets `sandbox.autoAllowBashIfSandboxed: true`. This
+removes per-command review for Bash commands that actually run inside the
+sandbox. The working directory remains writable, including project files and
+scripts; use this default only with repositories you trust. Canonkit reports
+runtime containment as unverified, so it does not promise that sandbox
+protections cover `.git` paths in every supported environment. To keep command
+review, set `sandbox.autoAllowBashIfSandboxed` to `false` in your project or
+user settings. Existing explicit project or user choices are preserved.
+
+If you want confirmation before publishing, add content-scoped `ask` rules for
+Git commit and push commands. Claude Code documents that these rules still
+apply to sandbox auto-approval:
+
+```json
+{
+  "permissions": {
+    "ask": ["Bash(git commit *)", "Bash(git push *)"]
+  }
+}
+```
+
+These settings provide the prompts; canonkit's commit/push instruction remains
+governance only and does not enforce them.
 
 Access restrictions and approval mode are separate. An `allow` rule is a
 preauthorization, not a filesystem or network boundary. Removing one does not
@@ -229,6 +287,17 @@ The detector records OS, WSL generation, container indicators, harness version
 and prerequisites separately. A container inside WSL is not a different,
 mutually exclusive operating system. A marker or a dependency on `PATH` is
 evidence to inspect, not proof of containment.
+
+On WSL, `bwrap`, `socat` and `claude` are looked up on the Linux side only. A
+Windows `claude` (for example `claude.exe` reached through interop) is never run,
+because it reads Windows settings, not the WSL ones. With only that copy, the
+Claude version is unknown, so settings gated by version (file-read and file-write
+blocks, sandbox, network lock) are written less than with a Linux-side Claude.
+`install` says so with a `WARN security claude: a Windows copy at <path> was
+ignored ...` line (a warning-marked line in the short summary; not printed in
+`--dry-run`, which does not probe versions), and `canonkit doctor` shows it in
+`security claude version` ("unknown; a Windows copy at <path> was ignored ...").
+Install Claude Code inside WSL to restore them.
 
 | Environment | Configuration and limits |
 | --- | --- |
@@ -265,7 +334,7 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.enabled: true` | 2.1.302 (conservative) | [Shell sandbox](https://code.claude.com/docs/en/settings-reference#sandbox-enabled) |
 | `sandbox.failIfUnavailable: true` | 2.1.302 (conservative) | [Startup failure policy](https://code.claude.com/docs/en/settings-reference#sandbox-failifunavailable) |
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
-| `sandbox.autoAllowBashIfSandboxed: false` when neither project nor user sets a choice | 2.1.302 (conservative) | [Regular permissions](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
+| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
 
 The four shell switches additionally require an available, unverified sandbox
@@ -474,7 +543,8 @@ can use, so other versions go through `other…`. That text is not a contract, s
 record says `confidence: "help-text"`, and anything it does not recognize becomes
 `unknown` with the reason, never an error. The binary is looked up on PATH outside
 the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
-any subfolder), with no shell, closed stdin, a 30-second timeout and no
+any subfolder; on WSL a binary found only on the Windows side is reported as "found
+only on the Windows side; not run through WSL interop" and not run), with no shell, closed stdin, a 30-second timeout and no
 `NODE_OPTIONS`-style loader variables. Canonkit reads no credential; Claude's
 help-based probe does not use the network. Codex discovery runs the experimental
 `codex debug models` command. Codex may refresh its catalog over the network,
@@ -680,7 +750,9 @@ since OpenCode reads every `.md` in the folder).
 
 The plugin is an OpenCode 2 plugin, and OpenCode 1 does not run it. Install
 checks `opencode --version` first and refuses if `opencode` is not on PATH, prints
-no version, or is older than 2. With `--wire-hooks`, install writes (all under
+no version, or is older than 2. On WSL only a Linux-side `opencode` counts: a
+Windows copy is ignored (never run through interop), the refusal names it, and the fix is
+to install OpenCode 2 or later inside WSL. With `--wire-hooks`, install writes (all under
 `~/.config/opencode`, or `$XDG_CONFIG_HOME/opencode`):
 
 | What | Where |
@@ -753,9 +825,80 @@ hook files or settings.
 | `tool add <graphify\|openspec>` | runs the tool's setup in this project and records it in `AGENTS.md` (see [tools.md](tools.md)) |
 | `tool remove <name>` | removes the tool from `AGENTS.md` |
 | `tool list` | pin, installed version and whether it is active in this project |
+| `git-ignore-sandbox-files [--remove] [--dry-run]` | opt in: make git ignore the Claude Code sandbox's 0-byte placeholder files, in this clone's `.git/info/exclude` (see [below](#sandbox-placeholders-per-clone)) |
 
 `--dry-run` works on all of them: it reports what would change without writing
-anything. `--yes` exists only on `tool add`.
+anything. `--yes` and `--harness` exist only on `tool add` (see [tools.md](tools.md)).
+
+## Sandbox placeholders, per clone
+
+On Linux/WSL (bubblewrap), Claude Code's sandbox leaves real 0-byte files in the
+project root (`.mcp.json`, `.bashrc`, `.claude/settings.local.json`,
+`.claude/agents`, ...) as mount points for paths it write-protects. macOS
+(Seatbelt) behaviour was not verified. Outside the sandbox they show as untracked,
+can be committed by accident, and make `canonkit add` stop. `doctor` warns when it
+sees them and prints the command, `canonkit git-ignore-sandbox-files`.
+
+That command makes git ignore the empty files the Claude Code sandbox leaves in
+the project root; it does not touch the sandbox or any permission.
+
+`canonkit add <specialist>` when such a file sits where a directory is needed
+(exit 1, nothing written): outside the sandbox the message says the path "is an
+empty file, but a directory is needed there" and to delete it and run the command
+again; inside the sandbox the path is write-protected, so run it from your own
+terminal.
+
+From the repository root, in a terminal **outside** the sandbox. Run inside it,
+once the usual refusals (see exit codes) have passed, add/reconcile changes
+nothing, leaves an existing block as it is and exits 0, with a notice on stderr
+(the placeholders look like devices there): "Inside the Claude Code sandbox,
+git-ignore-sandbox-files changed nothing and left any existing block as it is. Run
+it from your own terminal; --remove still works here." `--remove` still works there:
+
+```bash
+npx canonkit git-ignore-sandbox-files --dry-run   # prints the names and "Would write"; not the block lines
+npx canonkit git-ignore-sandbox-files             # writes it to .git/info/exclude
+npx canonkit git-ignore-sandbox-files --remove    # removes only the managed block
+```
+
+Exit codes: 0 when it skips (no git, bare repo, not the repo root) or finishes,
+and also inside the sandbox, but only after the refusals below have passed; 1 for
+refusals (symlinked or non-regular `info` or `exclude`, altered or duplicated
+markers), which apply inside the sandbox too, and for usage errors.
+
+Only known names that are 0-byte, regular and untracked are listed; a name that
+can be a directory also gets `!/name/`, so a real directory stays visible. Names
+your own exclude lines already cover are skipped. The rule is local to this clone
+(shared by its worktrees), never the committed `.gitignore`, and `install` does not
+run it. It hides by path, not by content: if you later put a real `.mcp.json`
+there, it stays hidden until you re-run the command or `--remove` (`doctor` warns).
+`--remove` deletes only the managed block and never changes your own lines. It is
+not byte-exact: adding the block collapses trailing blank lines and whitespace at
+the end of the file, and turns a mixed-EOL file into all-CRLF when it was CRLF;
+`--remove` also drops the one blank line that adding the block appended.
+
+Honest limits:
+
+- Names are matched literally (`x`, `/x`, `!/x`, `/x/`). A glob line of your own
+  outside the block (for example `.claude/*`) is not recognised as covering a name,
+  so for names that can be directories the block's `!/x/` line can make a real
+  directory you had hidden by glob visible again. The caveat concerns globs in the
+  exclude file itself; a `.gitignore` rule still wins over `info/exclude`.
+- If `.git` is a file whose `gitdir:` points to another valid git directory, the
+  command writes that repository's `info/exclude` (static placeholder names only).
+  A linked worktree uses the main repository's shared exclude, and the command says
+  so; a submodule writes its own `modules/<name>/info/exclude` (not shared); from
+  the main checkout there is no extra notice.
+- Every git call the command makes, and the `doctor` rows, run with
+  `core.fsmonitor=false`, `core.hooksPath=/dev/null` and without any `GIT_*`
+  environment variable, so a repo-local config cannot run code. `doctor` is
+  read-only and runs no repo code.
+- `doctor` also warns when a name in the block stopped being an empty regular file
+  (it gained content or became a symlink), or became a directory where only a file
+  fits (e.g. `.mcp.json`); a real directory under a directory-capable name is quiet.
+
+It reduces noise in `git status`; it protects nothing. Reasoning:
+[ADR 0007](adr/0007-sandbox-placeholder-exclude.md).
 
 ## Specialists, per project
 
@@ -767,7 +910,7 @@ npx canonkit add maya nova
 ```
 
 Choosing which specialists a project has remains your explicit decision — the
-installer only takes care of what is easy to forget. Four native profiles and
+install menu or `add` command only installs what you choose. Four native profiles and
 the project's `AGENTS.md` need to know about the agent, and forgetting one is
 the failure this command prevents:
 

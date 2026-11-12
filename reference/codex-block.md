@@ -18,6 +18,10 @@ otherwise, do nothing extra.
   project core overrides require `npx canonkit install --codex` in that project.
   Its file wins over spawn parameters. Name "inherit" for unset fields and
   verify the effective runtime when it matters.
+- **Structured questions use `request_user_input`.** For a decision that is the
+  user's, with 2–4 real options, ask with it: recommended option first, pending
+  questions together. It may be rejected as unavailable in the current mode
+  (Plan only in some releases); then ask in text with numbered options.
 - `[ENFORCED]` **No git hook or signing bypass.** Once wired (`--wire-hooks`; doctor checks it),
   a hook denies `--no-verify`, `--no-gpg-sign` and `-c core.hooksPath=...` on
   git commands. <!-- enforced-by: git-bypass -->

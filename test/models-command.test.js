@@ -292,9 +292,11 @@ describe("models setup", () => {
       assert.match(c.text(), /deep +opus · inherit/);
       assert.match(c.text(), /Not saved; nothing changed\./);
       assert.equal(existsSync(userFile(s)), false);
+      assert.equal(existsSync(path.join(s.home, ".canonkit", "model-catalog.json")), false);
       const cancelled = base(s, { "deep-model": "opus" }, {}, { cancelAt: "standard-effort" });
       await assert.rejects(setup(capture().ctx, agents, cancelled.opts), /cancelled; nothing was written/);
       assert.equal(existsSync(userFile(s)), false);
+      assert.equal(existsSync(path.join(s.home, ".canonkit", "model-catalog.json")), false);
     } finally {
       await s.cleanup();
     }
@@ -449,6 +451,7 @@ describe("models step of the interactive install", () => {
       assert.equal(await offerModelSetup(capture().ctx, agents, { ask: fake({}, "models").ask, run, home: s.home, cwd: s.project }), false);
       assert.equal(await offerModelSetup(capture().ctx, agents, { ask: fake({}, "deep-effort").ask, run, now: NOW, home: s.home, cwd: s.project }), false);
       assert.equal(existsSync(userFile(s)), false);
+      assert.equal(existsSync(path.join(s.home, ".canonkit", "model-catalog.json")), false);
     } finally {
       await s.cleanup();
     }

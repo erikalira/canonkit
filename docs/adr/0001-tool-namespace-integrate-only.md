@@ -1,6 +1,6 @@
 # ADR 0001 — `canonkit tool`: um namespace próprio, que só integra
 
-- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md); decisão 2 ampliada pela [ADR 0003](0003-tool-gitignore-block.md) (bloco no `.gitignore`)
+- Status: aceita; decisão de hooks automáticos substituída pela [ADR 0002](0002-graphify-git-hooks-opt-in.md); decisão 2 ampliada pela [ADR 0003](0003-tool-gitignore-block.md) (bloco no `.gitignore`); decisão 4 ampliada pela [ADR 0008](0008-openspec-harness-choice.md) (`--harness` do openspec); emendada em 2026-11-12 (WSL, ver o fim)
 - Data: 2026-10-19
 - Dono: Spencer (registro); decisão da usuária, desenho revisado por Archie e Gard
 - Plano de origem: [`docs/plans/complements.md`](../plans/complements.md)
@@ -64,6 +64,9 @@ de outra pessoa dentro do projeto de alguém**, e uma delas instala hooks git.
   - graphify: `python -I -m pip install --user --only-binary :all: graphifyy==<pin>`.
     O `-I` foi acrescentado na revisão do Gard: impede que arquivos de um projeto
     clonado sejam importados como o próprio pip. Verificado com `--user`.
+    No Linux/WSL o pipx (1.4.3) roda `python -m pip` sem `-I` e herda o cwd (lido no
+    código do pipx), então o comando impresso é `(cd ~ && pipx install …)` como guarda
+    equivalente (subshell: o terminal do usuário continua no projeto) (Gard, risco LOW: o usuário cola o comando, o canonkit não o roda).
 - Quem roda o binário: sem shell, argv em array, caminho absoluto resolvido por
   `PATH × PATHEXT` pulando o diretório atual (`bin/exec.js`), stdin fechado, timeout,
   confirmação y/N (sem TTY e sem `--yes`, não roda).
@@ -101,7 +104,9 @@ de outra pessoa dentro do projeto de alguém**, e uma delas instala hooks git.
   idempotente; o do openspec 1.14.0 duas vezes, com stdin fechado, não perguntou
   nada, foi idempotente e não criou `CLAUDE.md`. O `pip install` impresso para o
   graphify, com `--only-binary :all:`, funcionou para a 0.9.76 no Windows com
-  Python 3.12.
+  Python 3.12. No WSL (Ubuntu 24.04, Python 3.12.3, PEP 668 bloqueia `pip --user`),
+  o `pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:"` (pipx 1.4.3)
+  funcionou e o `tool add graphify` rodou o `graphify update .` em seguida.
 - A lista de ferramentas ativas é a do bloco no `AGENTS.md`, não a do disco:
   `openspec/` e `graphify-out/` sobrevivem ao `remove`.
 
@@ -142,3 +147,72 @@ não quem mantém o repositório.
   literais (o registro recusa o que exigiria escape no `cmd.exe`).
 - Alguém pedir que o canonkit instale a ferramenta: é a decisão 2 desta ADR.
 - O openspec ou o graphify passarem a escrever `CLAUDE.md` por padrão.
+
+## Emenda 2026-11-12 — WSL: o resolvedor ignora binários do lado Windows
+
+- **Decisão.** No WSL, `tool add|list` resolvem a ferramenta só no lado Linux. Os
+  drives do Windows vêm de `/proc/self/mounts` (fstype `drvfs`, ou `9p` com
+  `aname=drvfs`; vale qualquer raiz de automount; `/mnt/wsl` e `/usr/lib/wsl/drivers`
+  não contam). Um binário achado só no lado Windows (ex.: shim do npm em
+  `%APPDATA%\npm`, alcançado por interop) é ignorado e tratado como não instalado:
+  no `tool add` sai com 1, só em stderr, sem escrever nada (o `tool list` mostra "not
+  on PATH"), com o comando de instalação fixado e uma linha nomeando a cópia ignorada. Symlink de pasta ou arquivo Linux para um drive
+  Windows também é ignorado. O `PATH` do filho nas execuções da ferramenta recebe o
+  mesmo filtro (sem `explorer.exe`, `clip.exe`, `code`); um `PATH` que
+  ficaria vazio fica indefinido, nunca vazio. Se uma cópia Windows vem antes da
+  escolhida no `PATH`, o `tool add` imprime uma nota sem bloquear (agentes e shells que
+  rodam o `<bin>` puro pegam a do Windows) e o remédio do lado do usuário:
+  `appendWindowsPath=false` em `[interop]` no `/etc/wsl.conf`; o canonkit só imprime,
+  nunca edita o arquivo nem reescreve o `PATH`. O `tool list` mantém as colunas e
+  ganha uma nota de rodapé com as cópias só-Windows ignoradas.
+- **Por quê.** Um programa do Windows no `PATH` roda por interop como código Windows,
+  com o projeto aberto, fora do que o usuário confirmou ao ler o caminho absoluto.
+  Archie e Gard aprovaram com condições.
+- **Isto é higiene, não proteção contra binário hostil.** A garantia contra binário
+  plantado continua nas regras de projeto e de cwd acima (entradas relativas,
+  inexistentes ou dentro do projeto, por `realpath`). Quem controla o lado Windows ou
+  o `/etc/wsl.conf` não é barrado por este filtro.
+- **Consequências e limites conhecidos.** Quem só tem a ferramenta no Windows passa a
+  vê-la como ausente e precisa instalar no Linux. `git`, evidência de segurança e
+  descoberta de modelos ainda chamam `resolveBin` sem o filtro e podem resolver
+  binários do Windows: incidental, fora do escopo desta emenda, deixado assim de
+  propósito. Revisar se algum deles passar a rodar código do projeto ou a receber
+  dados sensíveis. (Evidência de segurança e descoberta de modelos passaram a usar
+  o filtro na emenda seguinte; o `git` não.)
+
+## Emenda 2026-11-12 (2) — o mesmo filtro em mais três resolvedores
+
+- **Decisão.** No WSL, o filtro `windowsRoots` agora também vale para: (1) o portão de
+  versão do OpenCode em `install --wire-hooks`; (2) a descoberta de modelos
+  (`models refresh` e o refresh do catálogo no `install`); (3) a sonda de segurança
+  (`collectEnvironment`: `claude`, `bwrap`, `socat` e a execução de `claude --version`).
+  `readWindowsRoots()` é chamado uma vez por ponto de chamada (`install`, `doctor`,
+  `--wire-hooks`; o refresh do catálogo, em `models refresh` e no `install`, lê uma
+  vez por refresh quando nenhum `run` é injetado); o padrão das funções de biblioteca
+  continua `[]`, então fora do WSL nada muda. Uma cópia Windows é sempre reportada,
+  nunca executada e nunca silenciosa: o portão do OpenCode recusa nomeando a cópia
+  ignorada e mandando rodá-lo dentro do WSL com OpenCode 2 ou posterior instalado no
+  Linux; a descoberta registra o motivo "<nome> found only on the Windows side; not run
+  through WSL interop"; a evidência de segurança ganha o valor `windows-binary-ignored`
+  (com `ignoredWindowsBinary`), e o `doctor` mostra "unknown; a Windows copy at <path>
+  was ignored (it reads Windows settings, not these)".
+- **Por quê.** Mesmo motivo da emenda anterior, com um agravante: o `claude.exe` do
+  Windows lê as configurações do Windows, não as do WSL, então a versão que ele
+  imprime não descreve o Claude cujos arquivos o canonkit vai escrever. Archie
+  (contrato) e Gard (segurança) aprovaram a direção.
+- **Alternativas.** Um `--allow-windows` para aceitar a cópia Windows: rejeitado, pois
+  reintroduziria a execução por interop que a emenda anterior removeu, e a versão
+  obtida seria da instalação errada.
+- **Consequência aceita (muda o comportamento visível).** No WSL com só um `claude` do
+  Windows, o `install` passa a ter `claudeVersion = null`; as configurações de
+  segurança que dependem de versão (bloqueio de leitura/escrita de arquivos, sandbox,
+  rede) são escritas em menor número que antes. O `install` avisa na hora, com uma
+  linha `WARN security claude: a Windows copy at <caminho> was ignored ...` (no resumo
+  curto aparece como linha `!`, não como contagem de notas); o `canonkit doctor` (linha
+  "security claude version") e o `models refresh` também mostram. Em `--dry-run` a
+  sonda não roda, então o aviso não aparece. O remédio é instalar o Claude Code no lado Linux. Continua valendo: isto é higiene,
+  não defesa contra binário hostil.
+- **Ainda fora do filtro (não feito).** As chamadas de `git` (`safeGit`: `core.fsmonitor`
+  e `GIT_*`) e as leituras de arquivo sem guarda contra FIFO são mudanças separadas,
+  ainda abertas. Revisar este ADR quando elas entrarem ou se alguma sonda passar a
+  receber dados sensíveis.

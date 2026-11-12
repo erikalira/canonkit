@@ -34,14 +34,16 @@ export const DEFAULT_TEST_PATH = [EMPTY_BIN, ...SYSTEM_DIRS].join(path.delimiter
 /**
  * The environment for a CLI under test: HOME, USERPROFILE and XDG_CONFIG_HOME
  * pinned to `home` (os.homedir() reads USERPROFILE on Windows and HOME elsewhere;
- * OpenCode's folder follows XDG_CONFIG_HOME), the variables above dropped unless
- * the test sets them, and `env` on top. The inherited PATH is always dropped
+ * OpenCode's folder follows XDG_CONFIG_HOME), the variables above and every GIT_*
+ * variable dropped unless the test sets them, and `env` on top. The inherited PATH is always dropped
  * (Windows spells it Path): a test gets DEFAULT_TEST_PATH, or its own in `env`.
  */
 export function isolatedEnv(home, env = {}) {
   const base = { ...process.env };
   for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
   for (const k of DROPPED) if (!(k in env)) delete base[k];
+  // A developer's GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE... (a git hook runs with them) must not reach the CLI.
+  for (const k of Object.keys(base)) if (k.toUpperCase().startsWith("GIT_")) delete base[k];
   return { ...base, PATH: DEFAULT_TEST_PATH, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
 }
 
@@ -52,8 +54,8 @@ const ACL_STUB = path.join(REPO, "test", "support", "stub-acl.mjs");
 export const nodeArgs = ({ realAcl = false } = {}) => (realAcl || process.platform !== "win32" ? [] : ["--import", pathToFileURL(ACL_STUB).href]);
 
 /** Run `canonkit <args>` synchronously; `out` is stdout followed by stderr. */
-export function runCli(args, { home, cwd, env = {}, realAcl = false }) {
-  const result = spawnSync(process.execPath, [...nodeArgs({ realAcl }), CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
+export function runCli(args, { home, cwd, env = {}, realAcl = false, preload = [] }) {
+  const result = spawnSync(process.execPath, [...nodeArgs({ realAcl }), ...preload.flatMap((f) => ["--import", pathToFileURL(f).href]), CLI, ...args], { cwd: cwd ?? home, encoding: "utf8", env: isolatedEnv(home, env) });
   return { ...result, out: (result.stdout ?? "") + (result.stderr ?? "") };
 }
 
