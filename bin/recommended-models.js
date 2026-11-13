@@ -66,14 +66,15 @@ function resolveRecommended(catalog, harness) {
   return { harness, choices, unset };
 }
 
-/** Replace the selected harness's level map and retain all agent overrides. */
+/** Apply resolved levels while retaining unresolved choices and agent overrides. */
 function applyRecommendedChoices(document, recommendation) {
   const { harness, choices } = recommendation;
   const data = document;
   data.harnesses ??= {};
   const current = data.harnesses[harness] ?? {};
   const next = { ...current };
-  if (Object.keys(choices ?? {}).length) next.levels = structuredClone(choices);
+  const levels = { ...(current.levels ?? {}), ...structuredClone(choices ?? {}) };
+  if (Object.keys(levels).length) next.levels = levels;
   else delete next.levels;
   if (Object.keys(next).length) data.harnesses[harness] = next;
   else delete data.harnesses[harness];
