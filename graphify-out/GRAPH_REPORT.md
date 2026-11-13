@@ -1,7 +1,7 @@
 # Graph Report - canonkit  (2026-11-13)
 
 ## Corpus Check
-- 278 files · ~517,074 words
+- 278 files · ~517,112 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 6, .jsonc 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `b0dbbda3`
+- Built from commit: `7160dfa6`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

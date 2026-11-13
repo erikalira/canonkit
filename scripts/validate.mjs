@@ -344,6 +344,7 @@ async function validateCodex(reporter, python) {
  * because the real list is detected per machine. Returns the problems found.
  */
 async function readmeSecurityProblems(readme) {
+  readme = readme.replace(/\r\n/g, "\n");
   const { classifyEnvironment, compileSecurity, compileNetworkSecurity, isBroadReadEntry, SECURITY_SETTINGS } = await import("../bin/security.js");
   const START = "<!-- canonkit:security-settings:start -->", END = "<!-- canonkit:security-settings:end -->";
   const from = readme.indexOf(START), to = readme.indexOf(END);

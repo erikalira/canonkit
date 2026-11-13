@@ -84,8 +84,9 @@ test("frontmatter validation requires a need level and rejects a vendor model la
 
 test("the README recommended security settings match the installer, and a hand edit is caught", async () => {
   const { readmeSecurityProblems } = await import(new URL("../scripts/validate.mjs", import.meta.url));
-  const readme = readFileSync(path.join(REPO, "README.md"), "utf8");
+  const readme = readFileSync(path.join(REPO, "README.md"), "utf8").replace(/\r\n/g, "\n");
   assert.deepEqual(await readmeSecurityProblems(readme), []);
+  assert.deepEqual(await readmeSecurityProblems(readme.replace(/\n/g, "\r\n")), []);
   // allowRead is compared by presence only: other example values are fine.
   assert.deepEqual(await readmeSecurityProblems(readme.replace('"~/.local/share/pipx"', '"~/.local/pipx"')), []);
 
