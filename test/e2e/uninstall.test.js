@@ -457,6 +457,10 @@ async function installedWithRuntimeReads(t, userSettings) {
   await writeFile(script, "if (process.argv.slice(2).join(' ') !== '--version') process.exit(2); console.log('2.1.314');");
   for (const name of ["claude", "bwrap", "socat"]) await writeCommand(bin, name, script);
   const env = { PATH: [nodeDir, bin].join(path.delimiter), NVM_DIR: "" };
+  if (process.platform === "win32") {
+    env.SystemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? "C:\\Windows";
+    env.ComSpec = process.env.ComSpec ?? process.env.COMSPEC ?? path.join(env.SystemRoot, "System32", "cmd.exe");
+  }
   const evidence = await collectEnvironment({ cwd: project, env });
   if (evidence.sandboxCapability !== "available-unverified") return null;
   const settings = path.join(home, ".claude", "settings.json");

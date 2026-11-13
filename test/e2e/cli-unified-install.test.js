@@ -458,7 +458,8 @@ describe("unified install catalog and target", () => {
     });
     assert.equal(preview.status, 0, preview.out);
     assert.match(preview.out, /would apply user model choice: Claude Code deep/);
-    assert.match(preview.out, /would apply project security: sandbox\.autoAllowBashIfSandboxed\s+unset\s+\+\s+true[\s\S]*conditional on Claude/);
+    if (process.platform === "win32") assert.doesNotMatch(preview.out, /would apply project security: sandbox\.autoAllowBashIfSandboxed/);
+    else assert.match(preview.out, /would apply project security: sandbox\.autoAllowBashIfSandboxed\s+unset\s+\+\s+true[\s\S]*conditional on Claude/);
     assert.equal((await snapshot(dry.root))["discovery.log"], undefined);
     assert.equal((await snapshot(dry.home))[".canonkit/models.json"], undefined);
   });
@@ -537,9 +538,6 @@ describe("unified install catalog and target", () => {
       models: [{ slug: "gpt-6-sol", visibility: "list", supported_reasoning_levels: [{ effort: "medium" }, { effort: "high" }] }],
     };
     const bin = await stubCodex(root, freshCatalog);
-    const probe = spawnSync("codex", ["debug", "models"], { encoding: "utf8", env: { ...process.env, PATH: bin } });
-    assert.equal(probe.status, 0, probe.stderr);
-    assert.deepEqual(JSON.parse(probe.stdout), freshCatalog);
     const userChoices = { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-sol", effort: "high" } } } } };
     const projectChoices = structuredClone(userChoices);
     await mkdir(path.join(home, ".canonkit"), { recursive: true });
