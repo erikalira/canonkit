@@ -42,3 +42,23 @@ Out-of-scope findings collected during the 3.1.1 change
   the `filesystem-exceptions` WARN comes back as noise. It fails safe.
 - **Ctrl-C newline:** after a Ctrl-C during the security review, the terminal
   gets no trailing newline.
+
+## Type checking for the CLI (JSDoc + `checkJs`, no build step)
+
+- **Where:** `bin/`, `package.json`, `scripts/validate.mjs`.
+- **Observation:** the CLI (~8.1k lines in `bin/`, `bin/cli.js` alone ~4.4k) has
+  no static type checking: no `tsconfig`/`jsconfig`, and almost no JSDoc. A full
+  `.ts` migration is not recommended for now: Node does not strip types inside
+  `node_modules`, so a published `.ts` package would need a build step and
+  `dist/`, and `hooks/` must stay plain JS.
+- **Confidence:** medium (recommendation, raised 2026-11-13).
+- **Next steps:**
+  1. Add `jsconfig.json`/`tsconfig.json` with `checkJs`, `noEmit` and `strict`
+     adopted gradually, plus `typescript` as a devDependency (`@types/prompts`
+     is already there).
+  2. Add `// @ts-check` file by file, starting with the smaller, contract-like
+     modules: `model-config`, `install-manifest`, `security`,
+     `recommended-models`. Type the core structures with `@typedef` (manifest,
+     model config, security settings).
+  3. Add an `npm run typecheck` script (`tsc -p . --noEmit`) and include it in
+     `validate`/CI.

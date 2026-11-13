@@ -461,7 +461,10 @@ async function installedWithRuntimeReads(t, userSettings) {
   if (evidence.sandboxCapability !== "available-unverified") return null;
   const settings = path.join(home, ".claude", "settings.json");
   if (userSettings) await put(settings, JSON.stringify(userSettings));
-  const result = await runMain(["install", "--claude", "--no-reference"], { home, cwd: project, env, confirmAction: async () => true, choose: async () => "apply" });
+  const result = await runMain(["install", "--claude", "--no-reference"], {
+    home, cwd: project, env, securityAnswer: "recommended",
+    prompt: async (question) => ({ [question.name]: question.name === "install-confirmation" || question.name === "project-scope" }),
+  });
   assert.equal(result.status, 0, result.out);
   return { home, project, env, settings, read: async () => JSON.parse(await readFile(settings, "utf8")) };
 }

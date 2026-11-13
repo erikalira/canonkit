@@ -232,8 +232,27 @@ export const SECURITY_SETTINGS = Object.freeze([
 ]);
 const REPOSITORY_RECOMMENDED = Object.fromEntries(SECURITY_SETTINGS.filter((row) => row.scope === "repository").map((row) => [row.key, row.value]));
 
-export function compileSecurity(data, environment, { userSettings = {}, projectLocalSettings = {}, projectLocalSettingsKnown = true } = {}) {
-  const out = structuredClone(data), changes = [], gaps = [], weaker = [];
+const dottedGet = (data, key) => key.split(".").reduce((value, part) => value?.[part], data);
+const dottedSetSecurity = (data, key, value) => {
+  const parts = key.split(".");
+  let at = data;
+  for (const part of parts.slice(0, -1)) at = at[part] ??= {};
+  at[parts.at(-1)] = value;
+};
+const settingReasonFor = (key) => SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
+const dottedDelete = (data, key) => {
+  const parts = key.split("."), leaf = parts.pop();
+  const parent = parts.reduce((value, part) => value?.[part], data);
+  if (!parent) return;
+  delete parent[leaf];
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const at = parts.slice(0, i + 1).reduce((value, part) => value?.[part], data);
+    if (at && typeof at === "object" && !Object.keys(at).length) delete at[parts[i]];
+  }
+};
+
+export function compileSecurity(data, environment, { userSettings = {}, projectLocalSettings = {}, projectLocalSettingsKnown = true, answers } = {}) {
+  const original = structuredClone(data), out = structuredClone(data), changes = [], gaps = [], weaker = [], rows = [], unapplied = [];
   let autoApprovalDefaulted = false;
   const reportWeaker = (key, current, source) => weaker.push({ path: key, current, recommended: REPOSITORY_RECOMMENDED[key], source });
   const set = (keys, value) => {
@@ -246,31 +265,50 @@ export function compileSecurity(data, environment, { userSettings = {}, projectL
   const localSandbox = projectLocalSettingsKnown ? projectLocalSettings.sandbox ?? {} : {};
   const localWeakensStrictProfile = localSandbox.enabled === false || localSandbox.failIfUnavailable === false || localSandbox.allowUnsandboxedCommands === true;
   const autoApprovalDefaultEligible = environment.sandboxCapability === "available-unverified" && projectLocalSettingsKnown && !localWeakensStrictProfile;
+  const compileStrict = (key, supported, value) => {
+    if (!supported) return;
+    const current = dottedGet(original, key);
+    const marker = current === undefined ? "+" : same(current, value) ? "=" : "->";
+    rows.push({ path: key, current: current === undefined ? null : structuredClone(current), recommended: structuredClone(value), marker, reason: settingReasonFor(key), source: "project", selectable: true });
+    if (marker === "->") reportWeaker(key, current, "project");
+    set(key.split("."), value);
+  };
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileRead)) {
-    if (data.permissions?.blockReadsOutsideWorkingDirectories === false) reportWeaker("permissions.blockReadsOutsideWorkingDirectories", false, "project");
-    set(["permissions", "blockReadsOutsideWorkingDirectories"], true);
+    compileStrict("permissions.blockReadsOutsideWorkingDirectories", true, true);
   } else gaps.push("file-read-control-version-unverified");
   if (atLeast(v, SECURITY_VERSION_FLOORS.fileWrite)) {
-    if (data.permissions?.blockWritesOutsideWorkingDirectories === false) reportWeaker("permissions.blockWritesOutsideWorkingDirectories", false, "project");
-    set(["permissions", "blockWritesOutsideWorkingDirectories"], true);
+    compileStrict("permissions.blockWritesOutsideWorkingDirectories", true, true);
   } else gaps.push("file-write-control-requires-2.1.314");
   if (environment.sandboxCapability === "available-unverified" && atLeast(v, SECURITY_VERSION_FLOORS.sandbox)) {
     for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands"]) {
       const full = `sandbox.${key}`, strict = REPOSITORY_RECOMMENDED[full];
-      if (data.sandbox?.[key] === !strict) reportWeaker(full, !strict, "project");
+      compileStrict(full, true, strict);
       if (localSandbox[key] === !strict) reportWeaker(full, !strict, "local");
     }
-    set(["sandbox", "enabled"], true);
-    set(["sandbox", "failIfUnavailable"], true);
-    set(["sandbox", "allowUnsandboxedCommands"], false);
     const autoSource = localSandbox.autoAllowBashIfSandboxed !== undefined ? "local" : data.sandbox?.autoAllowBashIfSandboxed !== undefined ? "project" : userSettings.sandbox?.autoAllowBashIfSandboxed !== undefined ? "user" : null;
     const autoApproval = localSandbox.autoAllowBashIfSandboxed ?? data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
-    if (autoApproval === undefined && autoApprovalDefaultEligible) { set(["sandbox", "autoAllowBashIfSandboxed"], true); autoApprovalDefaulted = true; }
-    else if (autoApproval === undefined) gaps.push(projectLocalSettingsKnown ? "sandbox-autoapproval-default-suppressed-by-project-local-override" : "project-local-sandbox-settings-unavailable");
-    else if (autoApproval === false) {
-      if (autoApprovalDefaultEligible) {
-        gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
-        reportWeaker("sandbox.autoAllowBashIfSandboxed", false, autoSource);
+    const fullProfile = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"].every((key) => same(dottedGet(out, key), REPOSITORY_RECOMMENDED[key]));
+    if (fullProfile && !localWeakensStrictProfile && localSandbox.autoAllowBashIfSandboxed === false) reportWeaker("sandbox.autoAllowBashIfSandboxed", false, "local");
+    const localBlocksAuto = localSandbox.autoAllowBashIfSandboxed !== undefined;
+    if (autoApproval === false && fullProfile && autoApprovalDefaultEligible) gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
+    if (fullProfile && !localBlocksAuto && autoApproval !== true && autoApprovalDefaultEligible) {
+      const key = "sandbox.autoAllowBashIfSandboxed";
+      const projectCurrent = dottedGet(original, key);
+      const current = autoApproval === undefined ? null : autoApproval;
+      rows.push({ path: key, current, recommended: true, marker: current === null ? "+" : "->", reason: settingReasonFor(key), source: autoSource ?? "project", selectable: true });
+      if (autoApproval === false && autoSource !== "local") reportWeaker(key, false, autoSource ?? "project");
+      if (autoApproval === undefined) {
+        set(["sandbox", "autoAllowBashIfSandboxed"], true);
+        autoApprovalDefaulted = projectCurrent === undefined;
+      }
+    } else if (!fullProfile) {
+      gaps.push("sandbox-autoapproval-requires-full-sandbox-profile");
+    } else if (autoApproval === undefined) {
+      gaps.push(projectLocalSettingsKnown ? "sandbox-autoapproval-default-suppressed-by-project-local-override" : "project-local-sandbox-settings-unavailable");
+    } else if (autoApproval === false) {
+      if (fullProfile && autoApprovalDefaultEligible && autoSource !== "local") {
+        rows.push({ path: "sandbox.autoAllowBashIfSandboxed", current: false, recommended: true, marker: "->", reason: settingReasonFor("sandbox.autoAllowBashIfSandboxed"), source: autoSource ?? "project", selectable: true });
+        reportWeaker("sandbox.autoAllowBashIfSandboxed", false, autoSource ?? "project");
       }
     } else gaps.push("existing-sandbox-autoapproval-preserved");
     // The native working-directory read block also covers sandbox shell reads
@@ -280,16 +318,54 @@ export function compileSecurity(data, environment, { userSettings = {}, projectL
     // guess runtime paths.
     gaps.push("shell-runtime-boundary-unverified");
   } else gaps.push(environment.platform === "win32" ? "native-windows-shell-unsandboxed" : "sandbox-unavailable-or-version-unverified");
+  const answerFor = (key) => answers instanceof Map ? answers.get(key) : answers?.[key];
+  for (const row of rows) {
+    if (!row.selectable) continue;
+    if (row.path === "sandbox.autoAllowBashIfSandboxed" && answerFor(row.path) === true) {
+      dottedSetSecurity(out, row.path, true);
+      if (!changes.includes(row.path)) changes.push(row.path);
+      gaps.splice(gaps.indexOf("sandbox-autoapproval-disabled-under-strict-profile"), gaps.includes("sandbox-autoapproval-disabled-under-strict-profile") ? 1 : 0);
+      continue;
+    }
+    if (answerFor(row.path) !== false) continue;
+    const before = dottedGet(original, row.path);
+    if (before === undefined) dottedDelete(out, row.path);
+    else dottedSetSecurity(out, row.path, structuredClone(before));
+    if (row.path === "sandbox.autoAllowBashIfSandboxed") autoApprovalDefaulted = false;
+    const index = changes.indexOf(row.path);
+    if (index >= 0) changes.splice(index, 1);
+    unapplied.push({ ...row, reason: row.reason || "recommended value not applied" });
+  }
+  if (rows.some((row) => row.path.startsWith("sandbox.") && answerFor(row.path) === false)) {
+    const profileEffective = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"].every((key) => {
+      const local = projectLocalSettingsKnown ? dottedGet(projectLocalSettings, key) : undefined;
+      const project = dottedGet(out, key);
+      const user = dottedGet(userSettings, key);
+      const effective = local !== undefined ? local : project !== undefined ? project : user;
+      return same(effective, REPOSITORY_RECOMMENDED[key]);
+    });
+    if (!profileEffective && autoApprovalDefaulted) {
+      dottedDelete(out, "sandbox.autoAllowBashIfSandboxed");
+      const index = changes.indexOf("sandbox.autoAllowBashIfSandboxed");
+      if (index >= 0) changes.splice(index, 1);
+      const autoRow = rows.find((row) => row.path === "sandbox.autoAllowBashIfSandboxed");
+      if (autoRow && !unapplied.some((row) => row.path === autoRow.path)) {
+        unapplied.push({ ...autoRow, reason: "auto-approval requires the full strict sandbox profile" });
+      }
+      autoApprovalDefaulted = false;
+      if (!gaps.includes("sandbox-autoapproval-requires-full-sandbox-profile")) gaps.push("sandbox-autoapproval-requires-full-sandbox-profile");
+    }
+  }
   // strictAllowlist is User/Managed-only. Project policy must not emit a key
   // that Claude ignores or pretend that allowedDomains=[] closes egress.
   gaps.push("network-strict-policy-assessed-separately-in-user-scope");
-  const original = structuredClone(data), result = structuredClone(out);
-  for (const value of [original, result]) {
+  const originalCheck = structuredClone(original), result = structuredClone(out);
+  for (const value of [originalCheck, result]) {
     if (value.permissions) { delete value.permissions.blockReadsOutsideWorkingDirectories; delete value.permissions.blockWritesOutsideWorkingDirectories; if (!Object.keys(value.permissions).length) delete value.permissions; }
     if (value.sandbox) { for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) delete value.sandbox[key]; if (!Object.keys(value.sandbox).length) delete value.sandbox; }
   }
-  if (!same(original, result)) throw new Error("Security compilation changed unrelated settings");
-  return { data: out, changes, gaps, weaker, autoApprovalDefaulted, coverage: "partial", environment, autoApprovalDefaultEligible };
+  if (!same(originalCheck, result)) throw new Error("Security compilation changed unrelated settings");
+  return { data: out, changes, gaps, weaker, rows, unapplied, autoApprovalDefaulted, coverage: "partial", environment, autoApprovalDefaultEligible };
 }
 
 const OWNED = [
@@ -382,6 +458,10 @@ export function compileRuntimeReads(data, environment, { detected = { roots: [],
   const result = { proposed: [], unhandled: [], broad: [], covered: [], gaps: [] };
   if (environment.sandboxCapability !== "available-unverified" || platform === "win32") return result;
   const options = { home, platform }, existing = data.sandbox?.filesystem?.allowRead ?? [];
+  if (!Array.isArray(existing) || existing.some((entry) => typeof entry !== "string" || !normalizeReadPath(entry, options))) {
+    result.gaps.push("runtime-reads-user-settings-ambiguous");
+    return result;
+  }
   result.broad = existing.filter((entry) => isBroadReadEntry(entry, options));
   // A dry run does not probe the version: it still previews the recommendation, marked conditional.
   const dryRunUnprobed = environment.claudeVersion == null && environment.versionEvidence === "not-probed-dry-run";

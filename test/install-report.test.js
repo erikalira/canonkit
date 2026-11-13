@@ -30,6 +30,14 @@ test("shortPath shows the home folder as ~", () => {
   assert.equal(shortPath(home, home), "~");
 });
 
+test("interactive result headings name dry runs and failures without ANSI on piped output", () => {
+  const dryRun = renderInstallReport([], { home, dryRun: true, interactive: true }).join("\n");
+  const failed = renderInstallReport([], { home, failed: true, interactive: true }).join("\n");
+  assert.match(dryRun, /── Dry run ──────────/);
+  assert.match(failed, /── Installation incomplete ──────────/);
+  assert.doesNotMatch(`${dryRun}${failed}`, /\u001b\[/);
+});
+
 test("a second install says nothing changed and keeps every warning", () => {
   const out = renderInstallReport(run, { version: "9.9.9", home, changed: new Set() }).join("\n");
   assert.match(out, /Claude Code +10 agents · 1 hook · 3 skills +up to date/);

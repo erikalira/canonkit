@@ -47,19 +47,25 @@ cd my-project
 npx canonkit install
 ```
 
-In a terminal, a menu asks which runtimes to install for. Claude Code and Codex
-come pre-selected; OpenCode and GitHub Copilot are opt-in. To install only the
+In a terminal, a menu asks which runtimes to install for. All four start
+unselected; choose at least one. To install only the
 Copilot profile without the menu, run `npx canonkit install --copilot`.
-With no runtime or project-item selection flags, an interactive install inside a
-Git project then offers optional tools, specialists and stack packs, with nothing
-selected in those project lists. Runtime flags suppress the interactive menus.
-Use repeatable `--tool`, `--specialist` and `--stack` flags to select project
-items in that case. A selected tool still asks before setup runs; the menu does
+After the runtime menu, install asks whether to set up the current project. Yes
+opens the tools, specialists and stack menus; Graphify and OpenSpec start
+selected, while specialists and stacks start empty. Install then shows model
+and security recommendations for Claude Code and Codex. You can apply the
+recommendations, keep current settings, or customize. A final USER / PROJECT
+summary asks before any writes. Runtime flags suppress the runtime menu. Use
+repeatable `--tool`, `--specialist` and `--stack` flags to select project items
+in scripts. `--recommended` applies recommended models and security without the
+interactive review, and `--no-project` limits an install to user-level changes.
+A selected tool still asks before setup runs; the menu does
 not imply `--yes` or turn on Git hooks. Its prompt names the tool and project;
 the default report summarizes successful tool output and retains warnings and
 actionable tool notes, while `--verbose` shows the full output. Without a
-terminal and without project-item flags, install keeps its global-only behavior. See
-[the install flow details](docs/install.md#project-items-in-the-install-flow).
+terminal and without project-item flags, install keeps its existing target
+defaults and does not set up a project. See [the install flow](docs/install.md#guided-install-flow)
+and [scope terminology](docs/install.md#terms-used-by-install).
 When Claude Code is selected and the
 current repository can be validated, installation automatically merges supported
 security restrictions into `<repo>/.claude/settings.json`. It does not set

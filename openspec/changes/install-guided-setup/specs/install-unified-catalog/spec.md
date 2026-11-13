@@ -19,6 +19,12 @@ When `canonkit install` runs in a terminal without harness flags, after the harn
 - **THEN** the optional tools `graphify` and `openspec` are preselected and tagged "(recommended)"
 - **AND** no domain specialist and no stack pack is preselected or tagged "(recommended)"
 
+#### Scenario: OpenSpec follows the install harness selection
+- **WHEN** OpenSpec is selected in the project tool menu
+- **THEN** install configures it for exactly the harnesses selected at the start of install, using OpenSpec's registry names and order
+- **AND** install does not ask for the harness choice again
+- **AND** standalone `canonkit tool add openspec` keeps its own harness selection
+
 #### Scenario: A new specialist or stack is added to the kit
 - **WHEN** a specialist agent file or stack-pack id is added to the catalog
 - **THEN** it appears in the install menu without a separate menu edit

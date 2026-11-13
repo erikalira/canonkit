@@ -141,6 +141,16 @@ and why it is neither cross-vendor mapping nor automatic choice.
 
 ## Risks / Trade-offs
 
+### Approved interactive presentation
+
+The approved install presentation uses readable text separators, phase spacing,
+and explicit `=`, `->`, `+` and `!` markers. Headings may be bold only on a
+TTY without `NO_COLOR` and outside `TERM=dumb`; meaning never depends on color.
+Unchanged model and security groups may be compacted in the final review, while
+the recommendation preview keeps model rows visible. Compact result headings
+identify success, dry run, failure or cancellation. Non-interactive output
+keeps its existing bytes.
+
 - [Plan/apply split regresses the just-shipped security review] → keep
   `reviewSecurity` intact for `customize`; drive the new answers through the
   same plan edits it already makes; rerun the security and e2e install tests.

@@ -30,9 +30,10 @@ import { resolveBin, projectOnlyHit, windowsOnlyHits, danglingHits, readWindowsR
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
 import { renderInstallReport, renderRemainingItems, shortPath } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
+import { LEGEND, rowText } from "./change-rows.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
-import { show as showModels, refresh as refreshModels, setup as setupModels, offerModelSetup, modelDiagnosis } from "./models-command.js";
+import { show as showModels, refresh as refreshModels, setup as setupModels, prepareRecommendedModels, modelDiagnosis } from "./models-command.js";
 import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-discovery.js";
 import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
@@ -432,7 +433,8 @@ const DEFAULT_TARGETS = ["claude", "codex"];
  * `--opencode`, `--copilot`, any combination); without one, a terminal gets the menu, and
  * anything else — a script, CI, the tests — gets the defaults, which is what
  * install did before the choice existed. Returns null when the menu is
- * cancelled: nothing is written.
+ * cancelled: nothing is written. A terminal menu starts empty; non-terminal
+ * runs keep the historic Claude + Codex defaults.
  */
 async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt } = {}) {
   const picked = TARGETS.filter((t) => flags.includes(`--${t}`));
@@ -441,25 +443,25 @@ async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && pr
 
   const { default: prompts } = await import("prompts");
   const ask = prompt ?? prompts;
-  const { targets } = await ask({
+  const answer = await askInstallChoice(ask, {
     type: "multiselect",
     name: "targets",
     message: "Install the team for",
-    // The defaults start checked: Enter alone keeps what install did before the menu.
     choices: [
-      { title: "Claude Code", value: "claude", selected: true, description: "~/.claude/agents, hooks, dashboard" },
-      { title: "Codex", value: "codex", selected: true, description: "$CODEX_HOME (~/.codex), ~/.agents/skills" },
+      { title: "Claude Code", value: "claude", selected: false, description: "~/.claude/agents, hooks, dashboard" },
+      { title: "Codex", value: "codex", selected: false, description: "$CODEX_HOME (~/.codex), ~/.agents/skills" },
       { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills" },
       { title: "GitHub Copilot", value: "copilot", selected: false, description: "~/.copilot/agents, ~/.copilot/skills" },
     ],
     min: 1,
-    hint: "space toggles, enter confirms",
+    hint: "space selects, enter confirms. Pick at least one.",
     // The hint already says how; prompts' own instruction block adds five lines
     // that a Windows terminal miscounts on redraw, leaving a copy of the header
     // behind on every keypress.
     instructions: false,
   });
-  return targets?.length ? targets : null;
+  const targets = answer.value;
+  return !answer.cancelled && targets?.length ? targets : null;
 }
 
 async function resolveInstallProjectTarget(cwd = process.cwd(), home = os.homedir()) {
@@ -472,9 +474,15 @@ async function resolveInstallProjectTarget(cwd = process.cwd(), home = os.homedi
   return target;
 }
 
+function projectMenuName(project) {
+  const name = path.basename(path.resolve(project));
+  return name.length > 42 ? `…${name.slice(-41)}` : name;
+}
+
 async function chooseProjectItems(catalog, project, {
   interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt,
   explicit = { tools: [], specialists: [], stacks: [] },
+  targets,
 } = {}) {
   const selected = {
     tools: [...new Set(explicit.tools)],
@@ -489,30 +497,57 @@ async function chooseProjectItems(catalog, project, {
       ["specialists", "Domain specialists", catalog.specialists],
       ["stacks", "Stack packs", catalog.stacks],
     ]) {
-      const answer = await ask({
+      const prompted = await askInstallChoice(ask, {
         type: "multiselect",
         name: category,
-        message: `${label} for ${project}`,
+        message: `${label} for ${projectMenuName(project)}`,
         choices: rows.map((item) => ({
-          title: item.name,
+          title: fitMenuLine(`${item.name}${category === "tools" && ["graphify", "openspec"].includes(item.name) ? " (recommended)" : ""}`),
           value: item.name,
-          description: [item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "),
+          selected: category === "tools" && ["graphify", "openspec"].includes(item.name),
+          description: fitMenuLine([item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "), 74),
         })),
         hint: "space toggles, enter confirms; none selected skips this category",
         instructions: false,
       });
-      if (!Array.isArray(answer?.[category])) return null;
-      selected[category] = answer[category];
+      if (prompted.cancelled) return null;
+      if (!Array.isArray(prompted.value)) {
+        console.error("Input closed: nothing was installed.");
+        return null;
+      }
+      selected[category] = prompted.value;
     }
   }
+  const selectedHarnesses = targets && new Set(targets.map((target) => target === "copilot" ? "github-copilot" : target));
   for (const name of [...new Set(selected.tools)]) {
     const tool = catalog.tools.find((item) => item.name === name)?.tool;
     if (!tool?.harness) continue;
+    if (selectedHarnesses) {
+      selected.toolHarnesses[name] = tool.harness.allowed.filter((key) => selectedHarnesses.has(key));
+      continue;
+    }
     const choice = await chooseHarness(tool, null, { interactive, prompt });
     if (!choice) return null;
     selected.toolHarnesses[name] = choice.keys;
   }
   return selected;
+}
+
+async function chooseProjectScope(project, { interactive, noProject, prompt } = {}) {
+  if (!project || noProject) return !noProject;
+  if (!interactive) return true;
+  const name = projectMenuName(project);
+  console.log(`Project: ${name}`);
+  console.log("Adds selected tools, specialists, and project model/security settings.");
+  const ask = prompt ?? (async (question) => (await import("prompts")).default(question));
+  const answer = await askInstallChoice(ask, {
+    type: "select", name: "project-scope", message: `Set up ${name}?`,
+    choices: [
+      { title: "Yes, set up this project (recommended)", value: true },
+      { title: "No, user level only", value: false },
+    ], initial: 0, hint: "Enter sets up this project; choose No for user-level setup only.", instructions: false,
+  });
+  return answer.cancelled ? null : !!answer.value;
 }
 
 const securityDigest = (value) => value === null ? null : createHash("sha256").update(value).digest("hex");
@@ -544,7 +579,7 @@ function scopedSecurityManifest(ctx, root, targets = ["claude", "codex"]) {
     stateDir: projectStateDir(os.homedir(), root), targets, dryRun: ctx.dryRun, log: ctx.log });
 }
 
-async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
+async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope = true } = {}) {
   if (!targets.includes("claude")) return null;
   const root = await repositoryRoot();
   const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), dryRun: ctx.dryRun, windowsRoots: readWindowsRoots() });
@@ -553,66 +588,69 @@ async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
   const globalBefore = await optionalBytes(globalFile);
   const userSettings = parseSecuritySettings(globalBefore, "user Claude settings");
   const migration = wireHooks ? null : migrateClaudeHooks(userSettings, claudeHome());
-  const globalPlan = { file: globalFile, before: globalBefore, migration, ...compileNetworkSecurity(migration?.data ?? userSettings, evidence) };
+  const globalSource = migration?.data ?? userSettings;
+  const globalPlan = { file: globalFile, before: globalBefore, migration, originalData: structuredClone(userSettings), sourceData: structuredClone(globalSource), ...compileNetworkSecurity(globalSource, evidence) };
+  globalPlan.rows = globalPlan.changes.map((key) => {
+    const current = key.split(".").reduce((value, part) => value?.[part], globalSource);
+    const recommended = key.split(".").reduce((value, part) => value?.[part], globalPlan.data);
+    return { path: key, scope: "user", current: current ?? null, recommended, marker: current === undefined ? "+" : "->", reason: settingReason(key), answerKey: `user:${key}`, selectable: true };
+  });
+  if (migration?.removed.length) globalPlan.rows.push({ path: "hooks.legacyCanonkit", scope: "user", current: `${migration.removed.length} handlers`, recommended: "unregistered", marker: "->", reason: "legacy canonkit hook handlers are removed during native security setup", answerKey: "user:hooks.legacyCanonkit", selectable: true });
   // Runtime read exceptions are only proposed here; the review step decides whether they are written.
   const detected = evidence.sandboxCapability === "available-unverified" ? detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() }) : undefined;
   globalPlan.runtimeReads = compileRuntimeReads(migration?.data ?? userSettings, evidence, { detected });
+  for (const root of globalPlan.runtimeReads.proposed) globalPlan.rows.push({
+    path: `sandbox.filesystem.allowRead:${root.item}`, scope: "user", current: null, recommended: root.item,
+    marker: "+", reason: `${root.label} needs this runtime read location`, answerKey: `runtime:${root.item}`, selectable: true,
+  });
   if (migration?.removed.length) globalPlan.changes.push("hooks.legacyCanonkit");
   let project = null;
   if (root) {
     const file = path.join(root, ".claude", "settings.json");
     const localFile = path.join(root, ".claude", "settings.local.json");
     await safePath(file);
-    await safePath(projectStateDir(os.homedir(), root));
+    if (projectInScope) await safePath(projectStateDir(os.homedir(), root));
     const before = await optionalBytes(file);
     const settings = parseSecuritySettings(before, "repository Claude settings");
     const migration = wireHooks ? null : migrateClaudeHooks(settings, claudeHome());
-    const local = await readProjectLocalSandbox(localFile);
-    project = { root, file, before, migration, localFile, localSettings: local.settings, localSettingsKnown: local.known,
-      ...compileSecurity(migration?.data ?? settings, evidence, { userSettings, projectLocalSettings: local.settings, projectLocalSettingsKnown: local.known }) };
-    if (migration?.removed.length) project.changes.push("hooks.legacyCanonkit");
+    if (projectInScope) {
+      const local = await readProjectLocalSandbox(localFile);
+      const sourceData = migration?.data ?? settings;
+      project = { root, file, before, migration, originalData: structuredClone(settings), sourceData: structuredClone(sourceData), localFile, localSettings: local.settings, localSettingsKnown: local.known,
+        ...compileSecurity(sourceData, evidence, { userSettings, projectLocalSettings: local.settings, projectLocalSettingsKnown: local.known }) };
+      project.rows = project.rows.map((row) => ({ ...row, scope: "project", answerKey: `project:${row.path}` }));
+      if (migration?.removed.length) {
+        project.changes.push("hooks.legacyCanonkit");
+        project.rows.push({ path: "hooks.legacyCanonkit", scope: "project", current: `${migration.removed.length} handlers`, recommended: "unregistered", marker: "->", reason: "legacy canonkit hook handlers are removed during native security setup", answerKey: "project:hooks.legacyCanonkit", selectable: true });
+      }
+    } else {
+      project = { root, file, before, migration: null, sourceData: structuredClone(settings), localFile, localSettings: {}, localSettingsKnown: true,
+        changes: [], gaps: [], weaker: [], rows: [], unapplied: [], notConfigured: true,
+        legacyLeft: migration?.removed ?? [] };
+    }
   }
   return { evidence, global: globalPlan, project };
 }
 
-// Resolves null when the input ends (Ctrl-D, closed pipe) instead of hanging; once
-// the process stdin has ended every later question is answered null at once.
-let stdinEnded = false;
-async function askLine(question, { input = process.stdin, output = process.stdout } = {}) {
-  if (input === process.stdin && stdinEnded) return null;
-  const rl = createInterface({ input, output });
-  let answer;
-  try {
-    // Ctrl-C aborts the install (nothing is written before the review ends).
-    answer = await new Promise((resolve, reject) => {
-      rl.once("close", () => resolve(null));
-      rl.once("SIGINT", () => reject(Object.assign(new Error("Interrupted during the security review; nothing was written"), { code: "INTERRUPTED" })));
-      rl.question(question, resolve);
-    });
-  } finally { rl.close(); }
-  if (answer === null && input === process.stdin) stdinEnded = true;
-  return answer === null ? null : answer.trim();
-}
-
-/**
- * The Apply/Keep/Choose question has no default: only A, K, C or the full word
- * is accepted, anything else (Enter included) asks again, and a closed input
- * means Keep (nothing is written for those keys).
- */
-async function askReviewMode(ask, question) {
-  for (;;) {
-    const raw = await ask(question);
-    if (raw === null || raw === undefined) return "keep";
-    const answer = raw.trim().toLowerCase();
-    if (answer === "a" || answer === "apply") return "apply";
-    if (answer === "k" || answer === "keep") return "keep";
-    if (answer === "c" || answer === "choose") return "choose";
-    console.log("  Please answer A (apply), K (keep) or C (choose per key).");
-  }
-}
-
 const AUTO_APPROVAL = "sandbox.autoAllowBashIfSandboxed";
 const settingReason = (key) => SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
+const fitMenuLine = (value, width = 78) => value.length <= width ? value : `${value.slice(0, width - 1)}…`;
+const wrapText = (value, width = 78) => {
+  const words = String(value).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    if (!line) line = word;
+    else if (`${line} ${word}`.length <= width) line += ` ${word}`;
+    else { lines.push(line); line = word; }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+};
+const actionRowText = (action, row) => {
+  const prefix = `${action} `;
+  return `${prefix}${rowText({ ...row, label: row.path }, { padded: false, limit: 78 - prefix.length })}`;
+};
 const dottedSet = (data, key, value) => {
   const parts = key.split(".");
   let at = data;
@@ -620,94 +658,151 @@ const dottedSet = (data, key, value) => {
   at[parts.at(-1)] = value;
 };
 
-/**
- * The install's one security review, after preflight and before the first write.
- * With a terminal it asks at most two grouped questions (runtime reads, weaker
- * repository values) and edits the already-compiled plans with the answers.
- * Without one it reproduces the previous release for every key: weaker
- * repository booleans stay overwritten, an explicit auto-approval value stays
- * preserved, and runtime reads are printed as a snippet, never written.
- * `ask` and `choose` are the test seams; without them it reads the terminal.
- */
-async function reviewSecurity(ctx, security, { interactive = false, confirmAction, choose, readLine = askLine } = {}) {
-  if (!security) return;
-  // A closed input (null) declines: nothing is written for that question.
-  // No default: only y/yes/n/no (any case) answers; anything else, Enter included, asks again.
-  const yesNo = async (question) => {
-    if (confirmAction) return Boolean(await confirmAction(question));
-    for (;;) {
-      const raw = await readLine(question);
-      if (raw === null || raw === undefined) return false;
-      const answer = raw.trim().toLowerCase();
-      if (answer === "y" || answer === "yes") return true;
-      if (answer === "n" || answer === "no") return false;
-      console.log("  Please answer y or n.");
+function applySecurityAnswer(security, { securityAnswer = "default", selectedRows = [] } = {}) {
+  if (!security || securityAnswer === "default") return security;
+  const selected = new Set(selectedRows);
+  if (securityAnswer === "customize" && security.project && !security.project.notConfigured) {
+    const auto = "project:sandbox.autoAllowBashIfSandboxed";
+    const base = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]
+      .map((key) => security.project.rows.find((row) => row.path === key && row.marker !== "="))
+      .filter(Boolean);
+    if (selected.has(auto) && base.some((row) => !selected.has(row.answerKey))) selected.delete(auto);
+  }
+  const checked = (row) => !!row && (securityAnswer === "recommended" || selected.has(row.answerKey) || selected.has(row.path));
+  const project = security.project;
+  if (project && !project.notConfigured) {
+    const migration = project.migration;
+    const migrationRow = project.rows.find((row) => row.path === "hooks.legacyCanonkit");
+    const migrationSelected = !!migration && checked(migrationRow);
+    const sourceData = migrationSelected ? migration.data : project.originalData;
+    const answers = {};
+    for (const row of project.rows) {
+      if (row.path === "hooks.legacyCanonkit" || row.marker === "=" || !row.selectable) continue;
+      answers[row.path] = checked(row);
     }
-  };
-  const pick = (question) => choose ? choose(question, ["apply", "keep", "choose"]) : askReviewMode(readLine, question);
-  const { global, project } = security;
-  const runtime = global.runtimeReads;
+    const compiled = compileSecurity(sourceData, security.evidence, {
+      userSettings: security.global.originalData,
+      projectLocalSettings: project.localSettings,
+      projectLocalSettingsKnown: project.localSettingsKnown,
+      answers,
+    });
+    Object.assign(project, compiled, { sourceData: structuredClone(sourceData), migration: migrationSelected ? migration : null });
+    if (migrationSelected) project.changes.push("hooks.legacyCanonkit");
+    project.rows = [
+      ...compiled.rows.map((row) => ({ ...row, scope: "project", answerKey: `project:${row.path}` })),
+      ...(migrationRow ? [migrationRow] : []),
+    ].filter(Boolean);
+    project.legacyLeft = migrationSelected ? [] : migration?.removed ?? [];
+  }
+
+  const global = security.global;
+  const globalMigration = global.migration;
+  const migrationRow = global.rows.find((row) => row.path === "hooks.legacyCanonkit");
+  const migrationSelected = !!globalMigration && checked(migrationRow);
+  const globalSource = migrationSelected ? globalMigration.data : global.originalData;
+  const network = compileNetworkSecurity(globalSource, security.evidence);
+  const networkRow = global.rows.find((row) => row.path === "sandbox.network.strictAllowlist");
+  const networkSelected = networkRow && checked(networkRow);
+  if (!networkSelected) {
+    network.data = structuredClone(globalSource);
+    network.changes = [];
+  }
+  Object.assign(global, network, { sourceData: structuredClone(globalSource), migration: migrationSelected ? globalMigration : null });
+  if (migrationSelected) global.changes.push("hooks.legacyCanonkit");
+  const runtimeItems = (global.runtimeReads?.proposed ?? []).filter((root) => checked(global.rows.find((row) => row.answerKey === `runtime:${root.item}`)));
+  if (runtimeItems.length) {
+    global.data = applyRuntimeReads(global.data, runtimeItems.map((root) => root.item));
+    if (!global.changes.includes("sandbox.filesystem.allowRead")) global.changes.push("sandbox.filesystem.allowRead");
+  }
+  return security;
+}
+
+function allSecurityRows(security) {
+  return [
+    ...(security?.global?.rows ?? []),
+    ...(security?.project?.rows ?? []),
+  ];
+}
+
+/** Resolve a security answer using arrow-key menus; no writes happen here. */
+async function reviewSecurity(ctx, security, { interactive = false, securityAnswer, prompt } = {}) {
+  if (!security) return { securityAnswer: "default", selectedRows: [] };
+  const runtime = security.global.runtimeReads;
   for (const item of runtime?.unhandled ?? []) ctx.log(`WARN security runtime-reads: ${item.item} (${item.label}) is not a known runtime location; no read exception was proposed for it`);
-  const proposed = runtime?.proposed ?? [];
-  const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
-  const weaker = (project?.weaker ?? []).filter((entry) => entry.source !== "local");
-  for (const entry of (project?.weaker ?? []).filter((item) => item.source === "local" && item.path !== AUTO_APPROVAL)) {
+  for (const entry of (security.project?.weaker ?? []).filter((item) => item.source === "local" && item.path !== AUTO_APPROVAL)) {
     ctx.log(`WARN security local: ${entry.path} is ${entry.current} in this repository's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
   }
-
-  let allowReads = false;
-  const answers = new Map();
-  if (interactive && (proposed.length || weaker.length)) {
-    console.log("Security review");
+  const proposed = runtime?.proposed ?? [];
+  if (!interactive && !securityAnswer) {
     if (proposed.length) {
-      console.log("  Runtime folders sandboxed commands need to read (user settings):");
-      for (const root of proposed) console.log(`    + ${root.item.padEnd(24)} ${root.label}`);
-      allowReads = await yesNo("  Add them? (recommended so sandboxed commands can find your tools) [y/n] ");
+      const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
+      ctx.log(`RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings (${ctx.dryRun ? "dry run" : "no terminal"}: not written; use canonkit install --recommended to apply them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`);
+      ctx.log(snippet);
     }
-    if (weaker.length) {
-      console.log("  Repository settings weaker than the recommended strict sandbox:");
-      for (const entry of weaker) console.log(`    ${entry.path.padEnd(36)} ${entry.current} -> ${entry.recommended}   (${settingReason(entry.path)})`);
-      const mode = await pick("  [A]pply (recommended) / [K]eep current / [C]hoose per key: ");
-      for (const entry of weaker) {
-        answers.set(entry.path, mode === "choose" ? await yesNo(`  Change ${entry.path} from ${entry.current} to ${entry.recommended}? [y/n] `) : mode !== "keep");
+    return { securityAnswer: "default", selectedRows: [] };
+  }
+  if (!securityAnswer) securityAnswer = "customize";
+  if (["recommended", "keep"].includes(securityAnswer)) {
+    if (securityAnswer === "keep") {
+      const changes = allSecurityRows(security).filter((row) => row.marker !== "=" && row.answerKey && !row.answerKey.startsWith("runtime:"));
+      if (changes.length) {
+        ctx.log("RECOMMENDATION security settings (not written; apply with canonkit install --recommended):");
+        for (const row of changes) ctx.log(rowTextForSecurity(row));
+      }
+      if (proposed.length) {
+        const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
+        ctx.log("RECOMMENDATION security runtime-reads: kept current; user Claude settings unchanged. Add these detected paths to sandbox.filesystem.allowRead later:");
+        ctx.log(snippet);
       }
     }
-  } else if (proposed.length) {
-    ctx.log(`RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings so sandboxed commands can find your tools (${ctx.dryRun ? "dry run" : "no terminal"}: not written; run canonkit install from a terminal to confirm them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`);
-    ctx.log(snippet);
+    return { securityAnswer, selectedRows: [] };
   }
-  if (!interactive) return;
-
-  if (allowReads) {
-    global.data = applyRuntimeReads(global.data, proposed.map((root) => root.item));
-    global.changes.push("sandbox.filesystem.allowRead");
-    for (const root of proposed) ctx.log(`${ctx.dryRun ? "would add" : "Adding"} runtime read exception ${root.item} (${root.label})`);
-  } else if (proposed.length) {
-    ctx.log("RECOMMENDATION security runtime-reads: declined, user Claude settings unchanged for runtime reads; add them later to sandbox.filesystem.allowRead:");
-    ctx.log(snippet);
+  if (securityAnswer !== "customize") throw new Error(`Unknown security answer: ${securityAnswer}`);
+  const ask = prompt ?? (async (question) => (await import("prompts")).default(question));
+  const answer = async (question) => {
+    const result = await askInstallChoice(ask, question, { report: false });
+    if (result.cancelled) throw Object.assign(new Error(result.message), { code: result.eof ? "INSTALL_INPUT_CLOSED" : "INSTALL_CANCELLED" });
+    return result.value;
+  };
+  let selectedRows = [];
+  if (proposed.length) {
+    const add = await answer({
+      type: "select", name: "security-runtime-reads", message: "Add detected runtime reads?",
+      choices: [
+        { title: "Yes, add them (recommended)", value: true },
+        { title: "Keep current", value: false },
+      ], initial: 0, hint: "Enter adds the listed runtime reads",
+    });
+    if (add) selectedRows.push(...proposed.map((root) => `runtime:${root.item}`));
   }
-  if (!project || !weaker.length) return;
-  let keptStrictSandbox = false;
-  for (const entry of weaker) {
-    const change = answers.get(entry.path) === true;
-    if (entry.path === AUTO_APPROVAL) {
-      if (!change) continue;
-      dottedSet(project.data, AUTO_APPROVAL, true);
-      if (!project.changes.includes(AUTO_APPROVAL)) project.changes.push(AUTO_APPROVAL);
-      project.gaps = project.gaps.filter((gap) => gap !== "sandbox-autoapproval-disabled-under-strict-profile");
-    } else if (!change) {
-      // The compiler already wrote the strict value; keep puts the existing one back.
-      dottedSet(project.data, entry.path, entry.current);
-      project.changes = project.changes.filter((key) => key !== entry.path);
-      if (entry.path.startsWith("sandbox.")) keptStrictSandbox = true;
-      ctx.log(`Kept ${entry.path}: ${entry.current} (recommended: ${entry.recommended})`);
+  const changes = allSecurityRows(security).filter((row) => row.selectable && row.marker !== "=" && !row.answerKey.startsWith("runtime:"));
+  if (changes.length) {
+    const choices = changes.map((row) => ({
+      title: fitMenuLine(`${row.scope.toUpperCase()}  ${rowTextForSecurity(row)}`),
+      value: row.answerKey,
+      selected: true,
+    }));
+    const selected = await answer({
+      type: "multiselect", name: "security-choices", message: "Security changes",
+      choices, hint: "Unchecked keeps current; unchecking any sandbox row keeps auto-approval off.",
+    });
+    if (!Array.isArray(selected)) throw Object.assign(new Error("Input closed: nothing was installed."), { code: "INSTALL_INPUT_CLOSED" });
+    selectedRows.push(...selected);
+    const checked = new Set(selectedRows);
+    const baseSandbox = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]
+      .map((key) => security.project?.rows.find((row) => row.path === key && row.marker !== "="))
+      .filter(Boolean);
+    if (baseSandbox.some((row) => !checked.has(row.answerKey))) {
+      checked.delete("project:sandbox.autoAllowBashIfSandboxed");
+      selectedRows = [...checked];
+      ctx.log("WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile; the selected sandbox settings leave the profile partial.");
     }
   }
-  // Automatic approval is only for the full strict sandbox profile.
-  if (keptStrictSandbox && project.autoApprovalDefaulted) {
-    delete project.data.sandbox[AUTO_APPROVAL.split(".")[1]];
-    project.changes = project.changes.filter((key) => key !== AUTO_APPROVAL);
-  }
+  return { securityAnswer: "customize", selectedRows };
+}
+
+function rowTextForSecurity(row) {
+  return fitMenuLine(rowText({ ...row, label: row.path }, { padded: false }));
 }
 
 async function applyClaudeUserPlan(ctx) {
@@ -715,35 +810,44 @@ async function applyClaudeUserPlan(ctx) {
   if (!plan?.changes.length) return;
   await safePath(plan.file);
   if (securityDigest(await optionalBytes(plan.file)) !== securityDigest(plan.before)) throw new Error("Concurrent edit of user Claude settings; security configuration was preserved");
-  for (const key of plan.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: ${key} (native modes and personal permissions preserved)`);
+  if (ctx.recommendedSetup) {
+    const rows = (plan.rows ?? []).filter((row) => row.marker !== "=" && plan.changes.some((key) => row.path === key || row.path.startsWith(`${key}:`)));
+    for (const row of rows) ctx.log(actionRowText(`${ctx.dryRun ? "would apply" : "Applying"} user security:`, row));
+  } else {
+    for (const key of plan.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: ${key} (native modes and personal permissions preserved)`);
+  }
   await ctx.writeAtomic(plan.file, serializeSecurity(plan.data, plan.before?.toString("utf8")).toString("utf8"));
 }
 
-async function install(ctx, options = {}) {
+async function planInstall(ctx, options = {}) {
   const targets = options.targets ?? DEFAULT_TARGETS;
+  const projectInScope = options.projectInScope !== false;
   // Every selected harness and both security stores are validated before a
   // manifest lock/recovery or any distribution write begins.
   if (options.wireHooks && targets.includes("claude")) await readSettingsForWiring(settingsPath());
   if (options.wireHooks && targets.includes("codex")) { refuseUnquotableCodexPath(); await readCodexHooksForWiring(codexHooksPath()); }
   if (options.wireHooks && targets.includes("opencode")) { await readOpencodeConfigForWiring(); if (!ctx.dryRun) refuseOpencodeBelow2(); }
   warnIgnoredCodexModel(ctx);
-  const security = await prepareSecurity(ctx, targets, options);
-  const codexRoot = targets.includes("codex") ? await repositoryRoot() : null;
-  const projectRootForInstall = security?.project?.root ?? codexRoot;
-  const projectCodexChoices = codexRoot ? await readChoices(projectConfigPath(codexRoot), { project: true }) : null;
-  const projectManifest = projectRootForInstall ? scopedSecurityManifest(ctx, projectRootForInstall, targets) : null;
+  const security = await prepareSecurity(ctx, targets, { ...options, projectInScope });
+  const codexRoot = projectInScope && targets.includes("codex") ? await repositoryRoot() : null;
+  const projectRootForInstall = projectInScope ? security?.project?.root ?? codexRoot : null;
+  const projectCodexChoices = projectInScope && codexRoot ? await readChoices(projectConfigPath(codexRoot), { project: true }) : null;
+  const projectManifest = projectInScope && projectRootForInstall ? scopedSecurityManifest(ctx, projectRootForInstall, targets) : null;
   if (projectManifest) await projectManifest.load();
   for (const manifest of [ctx.manifest, projectManifest].filter(Boolean)) {
     for (const spec of manifest.catalog.values()) if (spec.owners.some((owner) => targets.includes(owner))) await safePath(manifest.target(spec));
   }
-  // Preflight passed: ask what needs a person (nothing has been written yet).
-  await reviewSecurity(ctx, security, options.review);
-  const completed = [];
-  try {
+  return {
+    targets, security, projectInScope, projectRootForInstall, projectCodexChoices, projectManifest,
+    close: async () => { await projectManifest?.close(); },
+    apply: async (securityDecision, { userModelChoices } = {}) => {
+      applySecurityAnswer(security, securityDecision);
+      const completed = [];
+      try {
     // Fixed order: global distribution, then the current repository receipt.
     await ctx.manifest?.start();
     await projectManifest?.start();
-    const configured = { ...ctx, networkSecurityPlan: security?.global, hookWiringRequested: options.wireHooks === true };
+    const configured = { ...ctx, networkSecurityPlan: security?.global, hookWiringRequested: options.wireHooks === true, recommendedSetup: !!userModelChoices };
     if (security && !options.wireHooks) {
       for (const [label, plan] of [["user", security.global], ["repository", security.project]]) {
         if (!plan?.migration) continue;
@@ -753,7 +857,7 @@ async function install(ctx, options = {}) {
       await applyClaudeUserPlan(configured);
       if (!ctx.dryRun && security.global.changes.length) completed.push("user Claude settings");
     }
-    await installDistribution(configured, options);
+    await installDistribution(configured, { ...options, userModelChoices });
     if (projectManifest && targets.includes("codex")) {
       await installProjectCodex(ctx, projectManifest, projectRootForInstall, projectCodexChoices);
     }
@@ -761,14 +865,42 @@ async function install(ctx, options = {}) {
       for (const gap of security.global.gaps) ctx.log(`WARN security network: ${gap}`);
       const project = security.project;
       if (!project) ctx.log("WARN security repository: no validated repository; project policy pending, no global fallback");
+      else if (project.notConfigured) {
+        ctx.log(`WARN security repository: project security not configured for this project (${project.root}); install again with project setup selected to apply it`);
+        if (project.legacyLeft?.length) ctx.log(`WARN migration project: repository still has ${project.legacyLeft.length} legacy canonkit hook handler(s); setting up this project during install removes them`);
+      }
       else {
         ctx.log(`Security repository: ${project.root}`);
-        for (const key of project.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} repository control: ${key}`);
+        for (const key of project.changes) {
+          if (userModelChoices) {
+            const row = project.rows.find((item) => item.path === key);
+            if (row) ctx.log(actionRowText(`${ctx.dryRun ? "would apply" : "Applying"} project security:`, row));
+            else ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`);
+          } else ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`);
+        }
+        for (const row of project.unapplied ?? []) {
+          const current = row.current === null ? "is not set" : `remains ${JSON.stringify(row.current)}`;
+          ctx.log(`RECOMMENDATION security: ${row.path} ${current}; ${row.reason}. Apply with canonkit install --recommended`);
+        }
         const hasAutoApprovalChoice = project.data.sandbox?.autoAllowBashIfSandboxed !== undefined
           || project.localSettings.sandbox?.autoAllowBashIfSandboxed !== undefined
           || security.global.data.sandbox?.autoAllowBashIfSandboxed !== undefined;
-        if (ctx.dryRun && project.autoApprovalDefaultEligible && !hasAutoApprovalChoice) {
-          ctx.log(`would apply repository control: sandbox.autoAllowBashIfSandboxed: true (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}; version not probed in dry run)`);
+        const localSandbox = project.localSettings?.sandbox ?? {};
+        const localKeepsStrictProfile = project.localSettingsKnown
+          && localSandbox.enabled !== false
+          && localSandbox.failIfUnavailable !== false
+          && localSandbox.allowUnsandboxedCommands !== true;
+        if (ctx.dryRun && localKeepsStrictProfile && !hasAutoApprovalChoice
+          && project.environment?.versionEvidence === "not-probed-dry-run"
+          && project.environment.platform !== "win32") {
+          // A dry run deliberately does not probe Claude or infer sandbox
+          // support from PATH. Still show the conditional catalog row so the
+          // preview makes the recommended setting visible.
+          const conditional = rowText({
+            label: "sandbox.autoAllowBashIfSandboxed", current: "unset", recommended: true, marker: "+",
+          }, { padded: false });
+          ctx.log(`would apply project security: ${conditional}`);
+          ctx.log(wrapText(`  (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox} and OS sandbox support; version not probed in dry run)`));
         }
         if (project.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
           const target = project.localSettings.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
@@ -779,16 +911,177 @@ async function install(ctx, options = {}) {
         if (securityDigest(await optionalBytes(project.file)) !== securityDigest(project.before)) throw new Error("Concurrent edit of repository settings; security configuration was preserved");
         if (project.changes.length) await projectManifest.write(project.file, serializeSecurity(project.data, project.before?.toString("utf8")));
         if (!ctx.dryRun && project.changes.length) completed.push("repository Claude settings");
-        for (const gap of project.gaps) ctx.log(`WARN security coverage: ${gap}`);
+        for (const gap of project.gaps) {
+          if (gap === "sandbox-autoapproval-requires-full-sandbox-profile") ctx.log("WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile");
+          else ctx.log(`WARN security coverage: ${gap}`);
+        }
       }
       if (ctx.dryRun) ctx.log("Security version/runtime checks not executed in dry run; effective coverage unknown");
       if (security.evidence.versionEvidence === "windows-binary-ignored") ctx.log(`WARN security claude: a Windows copy at ${plain(security.evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`);
       ctx.log("Check native permissions and security coverage: npx canonkit doctor");
     }
-  } catch (err) {
-    if (completed.length) ctx.log(`Partial installation: completed ${completed.join(" and ")}; later stages did not complete. Receipts and private snapshots remain; fix the reported condition and re-run install. Removed hook registrations were not restored.`);
-    throw err;
-  } finally { await projectManifest?.close(); }
+      } catch (err) {
+        if (completed.length) ctx.log(`Partial installation: completed ${completed.join(" and ")}; later stages did not complete. Receipts and private snapshots remain; fix the reported condition and re-run install. Removed hook registrations were not restored.`);
+        throw err;
+      } finally { await projectManifest?.close(); }
+    },
+  };
+}
+
+async function install(ctx, options = {}) {
+  const plan = await planInstall(ctx, options);
+  try {
+    const securityDecision = await reviewSecurity(ctx, plan.security, options.review);
+    await plan.apply(securityDecision);
+  } finally {
+    await plan.close();
+  }
+}
+
+function interactiveHeading(title) {
+  const line = `── ${title} ──────────`;
+  return process.stdout.isTTY && !Object.hasOwn(process.env, "NO_COLOR") && process.env.TERM !== "dumb" ? `\u001b[1m${line}\u001b[0m` : line;
+}
+
+function printRecommendedSetup(ctx, modelPlan, security, projectInScope) {
+  const modelRows = modelPlan?.rows ?? [];
+  const allUserSecurityRows = security?.global?.rows ?? [];
+  const allProjectSecurityRows = projectInScope ? (security?.project?.rows ?? []) : [];
+  const securityComplete = allProjectSecurityRows.length > 0 && allProjectSecurityRows.every((row) => row.marker === "=");
+  const userRows = [
+    ...modelRows,
+    ...allUserSecurityRows.filter((row) => row.marker !== "=").map((row) => ({ ...row, label: row.path })),
+  ];
+  const projectRows = projectInScope
+    ? allProjectSecurityRows.filter((row) => row.marker !== "=").map((row) => ({ ...row, label: row.path }))
+    : [];
+  const allRows = [...modelRows, ...allUserSecurityRows, ...allProjectSecurityRows];
+  ctx.log(interactiveHeading("Recommended setup"));
+  ctx.log("");
+  ctx.log(LEGEND);
+  ctx.log("");
+  ctx.log("USER · Models");
+  if (modelRows.length) {
+    const labelWidth = Math.max(...modelRows.map((row) => row.label.length));
+    for (const row of modelRows) ctx.log(`  ${rowText({ ...row, label: row.label.padEnd(labelWidth) }, { limit: 76 })}`);
+  }
+  else ctx.log("  no model changes");
+  ctx.log("");
+  ctx.log("USER · Security");
+  const userSecurityRows = userRows.filter((row) => !modelRows.includes(row));
+  if (userSecurityRows.length) for (const row of userSecurityRows) ctx.log(`  ${rowText(row, { limit: 76 })}`);
+  else ctx.log("  no user security changes");
+  ctx.log("");
+  ctx.log("PROJECT · Security");
+  if (!projectInScope) ctx.log("  not set up");
+  else if (projectRows.length) for (const row of projectRows) ctx.log(`  ${rowText(row, { limit: 76 })}`);
+  else ctx.log("  no project changes");
+  if (securityComplete) {
+    ctx.log("  ✓ Already at the recommended profile");
+  }
+  const counts = { replaced: 0, added: 0, matched: 0, unresolved: 0 };
+  for (const row of allRows) {
+    if (row.marker === "->") counts.replaced++;
+    else if (row.marker === "+") counts.added++;
+    else if (row.marker === "=") counts.matched++;
+    else if (row.marker === "!") counts.unresolved++;
+  }
+  ctx.log("");
+  ctx.log(`${counts.replaced + counts.added} changes · ${counts.replaced} replaced · ${counts.added} added`);
+  ctx.log(`${counts.matched} already recommended${counts.unresolved ? ` · ! ${counts.unresolved} unresolved` : ""}`);
+  ctx.log("");
+  return { userRows, projectRows, allRows };
+}
+
+async function askInstallChoice(prompt, question, { report = true } = {}) {
+  const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
+  const configuration = {
+    ...question,
+    message: fitMenuLine(question.message ?? ""),
+    hint: question.hint ? fitMenuLine(question.hint) : question.hint,
+    choices: question.choices?.map((choice) => ({
+      ...choice,
+      title: fitMenuLine(choice.title ?? ""),
+      description: choice.description ? fitMenuLine(choice.description, 74) : choice.description,
+    })),
+    instructions: false,
+  };
+  const answer = await ask(configuration);
+  if (answer === undefined || answer === null) {
+    const message = "Cancelled: nothing was installed.";
+    if (report) console.error(message);
+    return { cancelled: true, message };
+  }
+  if (typeof answer === "object") {
+    if (!Object.hasOwn(answer, question.name)) {
+      const message = "Input closed: nothing was installed.";
+      if (report) console.error(message);
+      return { cancelled: true, eof: true, message };
+    }
+    if (answer[question.name] === undefined) {
+      const message = "Input closed: nothing was installed.";
+      if (report) console.error(message);
+      return { cancelled: true, eof: true, message };
+    }
+    if (answer[question.name] === null) {
+      const message = "Cancelled: nothing was installed.";
+      if (report) console.error(message);
+      return { cancelled: true, message };
+    }
+    return { value: answer[question.name] };
+  }
+  return { value: answer };
+}
+
+function printInstallSummary(ctx, { targets, projectItems, projectInScope, modelPlan, customModelPlan, setupAnswer, security, securityDecision }) {
+  ctx.log(interactiveHeading("Review installation"));
+  ctx.log("");
+  ctx.log("USER");
+  ctx.log(fitMenuLine(`  Harnesses: ${targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target]).join(", ")}`));
+  let legendPrinted = false;
+  const printLegend = () => {
+    if (!legendPrinted) ctx.log(`  ${LEGEND}`);
+    legendPrinted = true;
+  };
+  if (setupAnswer === "keep") ctx.log("  Models: unchanged (kept current)");
+  else if (setupAnswer === "recommended" && modelPlan?.rows.length && modelPlan.rows.every((row) => row.marker === "=")) ctx.log("  Models: unchanged");
+  else if (setupAnswer === "recommended" && modelPlan?.rows.length) {
+    printLegend();
+    for (const row of modelPlan.rows) ctx.log(fitMenuLine(`  ${rowText(row, { limit: 76 })}`));
+  } else if (setupAnswer === "customize" && customModelPlan?.apply) {
+    ctx.log("  Model choices: customized");
+  }
+  const userSecurity = security?.global?.rows ?? [];
+  const selected = new Set(securityDecision?.selectedRows ?? []);
+  const visibleUserSecurity = setupAnswer === "keep" ? [] : userSecurity.filter((row) =>
+    setupAnswer === "recommended" || setupAnswer === "default" || selected.has(row.answerKey) || selected.has(row.path));
+  if (setupAnswer === "keep") ctx.log("  Security: unchanged (kept current)");
+  else if (setupAnswer === "recommended" && userSecurity.length && userSecurity.every((row) => row.marker === "=")) ctx.log("  Security: unchanged");
+  else if (visibleUserSecurity.length) {
+    printLegend();
+    for (const row of visibleUserSecurity) ctx.log(fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`));
+  } else if (!modelPlan?.rows.length) ctx.log("  Models: unchanged");
+
+  ctx.log("");
+  ctx.log("PROJECT");
+  if (!projectInScope) ctx.log("  not set up");
+  else {
+    const itemNames = [...(projectItems?.tools ?? []), ...(projectItems?.specialists ?? []), ...(projectItems?.stacks ?? [])];
+    if (itemNames.length) ctx.log(fitMenuLine(`  Items: ${itemNames.join(", ")}`));
+    else ctx.log("  No project items selected");
+    const projectSecurity = security?.project?.rows ?? [];
+    const visibleProjectSecurity = setupAnswer === "keep" ? [] : projectSecurity.filter((row) =>
+      setupAnswer === "recommended" || setupAnswer === "default" || selected.has(row.answerKey) || selected.has(row.path));
+    if (setupAnswer === "keep") ctx.log("  Security: unchanged (kept current)");
+    else if (setupAnswer === "recommended" && projectSecurity.length && projectSecurity.every((row) => row.marker === "=")) ctx.log("  Security: unchanged");
+    else if (visibleProjectSecurity.length) {
+      printLegend();
+      for (const row of visibleProjectSecurity) ctx.log(fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`));
+    }
+    else if (security?.project?.notConfigured) ctx.log("  Security: not set up");
+    else ctx.log("  No project security changes");
+  }
+  ctx.log("");
 }
 
 /**
@@ -846,8 +1139,8 @@ async function installDistribution(ctx, options = {}) {
   // User-level agents follow the user's choices only: a project's choices
   // reach them through dispatch parameters, never by rewriting them here.
   // Read before any write, so a file this version cannot trust stops the install.
-  const userChoices = claude || codex ? await readChoices(userConfigPath()) : null;
-  await discoverModels(ctx, targets);
+  const userChoices = claude || codex ? options.userModelChoices ?? await readChoices(userConfigPath()) : null;
+  if (!options.userModelChoices) await discoverModels(ctx, targets);
   const codexCatalog = codex ? await readCatalog(catalogPath()).catch(() => null) : null;
 
   // Claude Code reads ~/.claude/agents only; no verified harness reads
@@ -2352,6 +2645,9 @@ async function securityDiagnosis() {
       projectLocalSettings: repositoryLocal?.data ?? {},
       projectLocalSettingsKnown: !repositoryLocal?.error,
     });
+    for (const row of desired.rows.filter((item) => item.current === null && item.marker === "+")) {
+      add("WARN", "security claude desired-controls", `partial: ${row.path} is not set in effective repository settings; ${row.reason}. Apply with canonkit install --recommended`);
+    }
     if (desired.changes.length) add("WARN", "security claude desired-controls", `partial: supported repository controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this repository`);
     if (desired.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
       const target = repositoryLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
@@ -2402,6 +2698,10 @@ async function securityDiagnosis() {
   else {
     // Read provenance without starting/recovering a store or creating locks.
     const receipt = scopedSecurityManifest({ dryRun: true, log: () => {} }, root);
+    const hasReceipt = await receipt.load();
+    if (!hasReceipt || !receipt.data?.entries["project:json:.claude/settings.json"]) {
+      add("WARN", "security repository", `project security not configured for this project (${root}); run canonkit install --claude from this repository to set it up`);
+    }
     await checkTracked(receipt, "project:json:.claude/settings.json", "repository");
   }
   const readConfig = async (file) => { try { await safePath(file); const bytes = await optionalBytes(file); return bytes?.toString("utf8") ?? null; } catch { return undefined; } };
@@ -3961,13 +4261,15 @@ Usage:
            [--specialist name]...    project items: optional specialists, stacks and tools
            [--stack name]...         can be repeated; tool setup still asks before running
            [--tool name]...
+           [--recommended]             apply recommended models and security without menus
+           [--no-project]              skip project setup and project security
            [--wire-hooks]             also wire hooks for selected runtimes that support them
            [--verbose]                print every step instead of the short summary
   canonkit doctor [--verbose]         check the install; exits 1 on any FAIL (--verbose: every row in full)
   canonkit uninstall [--claude] [--codex] [--opencode] [--copilot]
-                                      remove tracked global entries (default: all recorded runtimes)
+                                      remove tracked user-level entries (default: all recorded runtimes)
   canonkit reference [--claude] [--codex] [--opencode] [--copilot]
-                                      sync only the global reference blocks
+                                      sync only the user-level reference blocks
   canonkit add <name>...              add specialists or stack-pack skills to this project
   canonkit remove <name>...           remove specialists or tracked stack-pack skills
   canonkit list                       show the roster and what is installed
@@ -3984,6 +4286,8 @@ Usage:
 
 Options:
   --dry-run       report what would change without writing (or running) anything
+  --recommended  install: apply recommended model and security settings without a setup question
+  --no-project   install: apply user-level setup only; do not write project files or settings
   --project       uninstall: reverse tracked security settings and Codex core shadows in this repository;
                   models setup: write this project's .canonkit/models.json
   --json          models show: machine-readable output
@@ -4099,7 +4403,7 @@ process.stdout.on("error", (err) => {
 });
 
 const PROJECT_SELECTION_FLAGS = ["--specialist", "--stack", "--tool"];
-const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", ...PROJECT_SELECTION_FLAGS, "-h", "--help", "-v", "--version"];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--no-project", "--recommended", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", ...PROJECT_SELECTION_FLAGS, "-h", "--help", "-v", "--version"];
 
 // `--harness` is the one option with a value, so it is lifted out before the
 // split on a leading dash: otherwise `--harness a,b` leaves `a,b` as a
@@ -4158,6 +4462,7 @@ function validateProjectSelections(selected, catalog) {
 async function main(rawArgv, {
   interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
   prompt,
+  securityAnswer: givenSecurityAnswer,
   confirmAction,
   choose,
   readLine,
@@ -4225,7 +4530,11 @@ async function main(rawArgv, {
   switch (command) {
     case "install": {
       const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && interactive;
-      const checkProjectTarget = menu || projectSelectionFlags.size > 0;
+      if (flags.includes("--no-project") && projectSelectionFlags.size) {
+        console.error("--no-project cannot be combined with --tool, --specialist or --stack; no project items were installed");
+        return 1;
+      }
+      const checkProjectTarget = interactive || projectSelectionFlags.size > 0;
       const projectTarget = checkProjectTarget ? await resolveProjectTarget() : null;
       if (!projectTarget && projectSelectionFlags.size) {
         console.error("Project selections require a Git project outside canonkit and HOME. Run install from the project that should receive them.");
@@ -4240,30 +4549,28 @@ async function main(rawArgv, {
         return 1;
       }
       const targets = await chooseTargets(flags, { interactive, prompt });
-      if (!targets) {
-        console.error("Cancelled: nothing was installed.");
-        return 1;
-      }
+      if (!targets) return 1;
+      const projectInScope = await chooseProjectScope(projectTarget, {
+        interactive, noProject: flags.includes("--no-project"), prompt,
+      });
+      if (projectInScope === null) return 1;
       let projectItems = { tools: [], specialists: [], stacks: [], toolHarnesses: {} };
-      if (projectTarget) {
+      if (projectTarget && projectInScope) {
         projectItems = await chooseProjectItems(catalog, projectTarget, {
           interactive: menu && projectSelectionFlags.size === 0,
           explicit: selected,
+          targets,
           prompt,
         });
         if (!projectItems) {
-          console.error("Cancelled: nothing was installed.");
           return 1;
         }
       } else if (menu) {
-        console.log("Project items skipped: from a Git project outside canonkit, run npx canonkit add <specialist-or-stack> or npx canonkit tool add <tool>; see npx canonkit list.");
-      }
-      if (menu && !ctx.dryRun && targets.some((h) => h === "claude" || h === "codex") && !(await offerModelSetup(ctx, await readAgents(), { harnesses: targets.filter((h) => h === "claude" || h === "codex"), ask: prompt, isTTY: interactive }))) {
-        console.error("Cancelled: nothing was installed.");
-        return 1;
+        console.log(wrapText("Project items skipped: from a Git project outside canonkit, run npx canonkit add <specialist-or-stack> or npx canonkit tool add <tool>; see npx canonkit list."));
       }
       // Default output is a short grouped summary; --verbose prints every step as it happens.
       const verbose = flags.includes("--verbose");
+      const previewLog = ctx.log;
       const lines = [];
       const changed = new Set();
       if (!verbose) {
@@ -4273,14 +4580,95 @@ async function main(rawArgv, {
       }
       let failed = true;
       let remaining = null;
+      let guidedCancelled = false;
       try {
-        await trackedGlobal(ctx, targets, (tracked) => install(tracked, {
-          reference: !flags.includes("--no-reference"),
-          wireHooks: flags.includes("--wire-hooks"),
-          targets,
-          review: { interactive: interactive && !flags.includes("--yes") && !ctx.dryRun && process.env.TERM !== "dumb", confirmAction, choose, readLine },
-          showProjectHint: !menu && projectSelectionFlags.size === 0,
-        }));
+        await trackedGlobal(ctx, targets, async (tracked) => {
+          // Decision previews must be visible before prompts, even when install
+          // progress is buffered for the compact report.
+          const preview = interactive ? { ...tracked, log: previewLog } : tracked;
+          const options = {
+            reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"),
+            targets, projectInScope, showProjectHint: !menu && projectSelectionFlags.size === 0,
+          };
+          const plan = await planInstall(tracked, options);
+          try {
+            const modelHarnesses = targets.filter((h) => h === "claude" || h === "codex");
+            const recommendedFlag = flags.includes("--recommended");
+            const showSetupQuestion = interactive && !recommendedFlag && !givenSecurityAnswer && modelHarnesses.length > 0;
+            const modelPlan = modelHarnesses.length && (showSetupQuestion || recommendedFlag)
+              ? await prepareRecommendedModels(modelHarnesses, { dryRun: ctx.dryRun })
+              : null;
+            let customModelPlan = null;
+            let setupAnswer = recommendedFlag ? "recommended" : givenSecurityAnswer ?? "default";
+            if (showSetupQuestion) {
+              printRecommendedSetup(preview, modelPlan, plan.security, projectInScope);
+              const choices = [
+                { title: "Yes, use recommended", value: "recommended" },
+                ...(modelPlan.hasExisting ? [{ title: "No, keep current", value: "keep" }] : []),
+                { title: "No, customize", value: "customize" },
+              ];
+              const answer = await askInstallChoice(prompt, {
+                type: "select", name: "recommended-setup", message: "Use the recommended setup?",
+                choices, initial: 0, hint: "Enter accepts the recommended setup",
+              });
+              if (answer.cancelled) { guidedCancelled = true; return; }
+              setupAnswer = answer.value;
+            }
+            if (setupAnswer === "customize" && modelHarnesses.length) {
+              try {
+                customModelPlan = await setupModels(preview, await readAgents(), {
+                  harnesses: modelHarnesses, ask: prompt, isTTY: interactive, fromInstall: true, deferWrite: true,
+                });
+              } catch (err) {
+                if (/cancelled; nothing was written/.test(err.message)) {
+                  console.error("Cancelled: nothing was installed.");
+                  guidedCancelled = true;
+                  return;
+                }
+                throw err;
+              }
+              if (customModelPlan?.cancelled) { guidedCancelled = true; return; }
+            }
+            const securityDecision = plan.security
+              ? setupAnswer === "default"
+                ? await reviewSecurity(preview, plan.security, { interactive: interactive && !flags.includes("--yes") && !ctx.dryRun, securityAnswer: givenSecurityAnswer, prompt })
+                : setupAnswer === "recommended"
+                  ? await reviewSecurity(preview, plan.security, { interactive: false, securityAnswer: "recommended", prompt })
+                : setupAnswer === "keep"
+                  ? await reviewSecurity(preview, plan.security, { interactive: false, securityAnswer: "keep", prompt })
+                : setupAnswer === "customize"
+                  ? await reviewSecurity(preview, plan.security, { interactive: true, securityAnswer: "customize", prompt })
+                  : { securityAnswer: setupAnswer, selectedRows: [] }
+              : { securityAnswer: "default", selectedRows: [] };
+            if (interactive && !ctx.dryRun) {
+              printInstallSummary(preview, {
+                targets, projectItems, projectInScope, modelPlan, customModelPlan,
+                setupAnswer, security: plan.security, securityDecision,
+              });
+              const confirmation = await askInstallChoice(prompt, {
+                type: "select", name: "install-confirmation", message: "Write these changes?",
+                choices: [
+                  { title: "Yes, install", value: true },
+                  { title: "No, cancel (nothing is written)", value: false },
+                ], initial: 0, hint: "Enter writes the changes listed above.",
+              });
+              if (confirmation.cancelled || !confirmation.value) {
+                if (!confirmation.cancelled) console.log("Cancelled: nothing was installed.");
+                guidedCancelled = true;
+                return;
+              }
+            }
+            if (modelPlan && setupAnswer === "recommended") {
+              for (const row of modelPlan.rows) if (row.marker !== "=") tracked.log(fitMenuLine(`${ctx.dryRun ? "would apply" : "Applying"} user model choice: ${rowText(row, { padded: false })}`));
+            }
+            await plan.apply(securityDecision, {
+              userModelChoices: modelPlan && setupAnswer === "recommended" ? modelPlan.document : customModelPlan?.userChoices,
+            });
+            if (modelPlan && setupAnswer === "recommended" && !ctx.dryRun) await modelPlan.apply();
+            if (customModelPlan?.apply) await customModelPlan.apply();
+          } finally { await plan.close(); }
+        });
+        if (guidedCancelled) return 1;
         failed = false;
         for (const name of [...projectItems.specialists, ...projectItems.stacks]) {
           try {
@@ -4318,7 +4706,11 @@ async function main(rawArgv, {
       } finally {
         if (!verbose) {
           const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
-          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed, remaining }).join("\n"));
+          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed, remaining, interactive, cancelled: guidedCancelled }).join("\n"));
+        } else if (interactive) {
+          const title = guidedCancelled ? "Installation cancelled" : failed ? "Installation incomplete" : ctx.dryRun ? "Dry run" : "Installation complete";
+          console.log("");
+          console.log(interactiveHeading(title));
         }
       }
       return failed ? 1 : 0;
@@ -4400,8 +4792,6 @@ if (invokedDirectly) {
 
 export {
   main,
-  askLine,
-  askReviewMode,
   applyBlock,
   chooseTargets,
   readAgents,

@@ -1,14 +1,29 @@
 # Installation reference
 
 The README covers the happy path. This page is the detail: what each choice
-writes, how the Codex, OpenCode and Copilot targets differ, project-level specialists and
-stack packs, global reference blocks and skills, and upgrading from an older name.
+writes, how the Codex, OpenCode and Copilot targets differ, project-level tools,
+specialists and stack packs, model recommendations, security scope, reference
+blocks and skills, and upgrading from an older name.
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
 Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-12.
 
+Interactive install previews use text headings and `=`, `->`, `+` and `!`
+markers so current, recommended, added and unresolved values remain readable
+without color. Headings may be bold in a capable terminal; piped output stays
+plain. The final review groups model and security status under user and project.
+
 ## Core, at user level
+
+### Terms used by install
+
+- **User level** means configuration in the user's home or configured harness
+  directory. It is available across projects for that user.
+- **Project** means the current validated Git worktree and its project-scoped
+  files. Install asks before writing project items or project security settings.
+- **Repository** refers only to the Git repository. It does not mean the user's
+  home or all projects on the machine.
 
 Without cloning anything:
 
@@ -16,12 +31,11 @@ Without cloning anything:
 npx canonkit install
 ```
 
-It runs the same on Linux, macOS and Windows. In a terminal, it asks which
-runtimes to install for, as a multiple choice — Claude Code and Codex come
-checked, OpenCode and GitHub Copilot do not; space toggles, Enter confirms, and at least one must
-stay checked. `--claude`, `--codex`, `--opencode` and `--copilot` answer without the menu (they
-combine), and with no terminal (a script, CI) it installs for Claude Code and
-Codex, as it did before the menu existed. OpenCode is opt-in because writing
+It runs the same on Linux, macOS and Windows. In a terminal, choose one or more
+runtimes; all start unselected. Space toggles, Enter confirms, and at least one
+must be selected. `--claude`, `--codex`, `--opencode` and `--copilot` select
+targets without the menu (they combine), and with no terminal and no target
+flags it installs for Claude Code and Codex. OpenCode is opt-in because writing
 `~/.config/opencode/AGENTS.md` ends OpenCode's fallback to `~/.claude/CLAUDE.md`
 — not a change to make for someone who did not ask for OpenCode.
 
@@ -31,22 +45,42 @@ decided by flag or with no terminal runs on plain Node. An installer that runs
 **before** you trust the repository should not ask you to trust a dependency tree
 larger than that.
 
-### Project items in the install flow
+### Guided install flow
 
-On a plain interactive install, with no runtime or project-item flags, the
-runtime menu is followed by optional tools, domain specialists and stack packs,
-in that order. The model-choice step follows these project selections. All
-choices are collected before installation begins. Each list comes from the same
-catalog as `list` and `tool list`, shows the item's current state, and starts
-with nothing selected. The choices are project-scoped: run from the directory
-that should receive them, inside a Git repository other than the canonkit source repository
-or your home directory. If this interactive run has no valid project target, it
-skips the project steps and continues with the global core installation.
-Explicit project-item flags without a valid target fail before any writes.
+After choosing runtimes, an interactive install asks whether to set up the
+current project when it is a valid Git project outside the canonkit source and
+your home directory. Choosing Yes opens the optional tools, specialists and
+stack packs menus. Graphify and OpenSpec are preselected as recommended tools;
+specialists and stacks start unselected. Choosing No keeps the install at user
+level and skips project security and legacy-hook migration. Without a valid
+project target, the project question and menus are skipped. Explicit project
+item flags without a valid target fail before any writes.
+When OpenSpec is selected from the project tool menu, it uses the same harness
+targets selected at the start of install; install does not ask that choice a
+second time. `canonkit tool add openspec` still offers its own harness choice.
 
-The menu collects its selections before installation begins. Cancelling any
-selection menu leaves the global and project files unchanged and reports that
-nothing was installed. Before a selected tool runs, install shows its project,
+For Claude Code and Codex, the next screen shows the recommended model and
+security changes, including `=`, `->`, `+` and `!` markers. Choose the
+recommended setup, keep current settings when available, or customize. The
+customize path lets you choose model levels and answer security changes in one
+multi-select. A final summary groups writes under USER and PROJECT and asks
+before applying them. `--recommended` applies the recommendations without the
+interactive screens; `--no-project` selects user-level-only scope. These flags
+are useful for scripts and screen readers.
+
+Preview the interactive defaults without writing, or preview the unattended
+recommended path from a Git project:
+
+```bash
+cd my-project
+npx canonkit install --dry-run
+npx canonkit install --recommended --dry-run
+npx canonkit install --recommended --no-project --dry-run
+```
+
+The menu collects its selections before installation begins. Cancelling or
+closing input before final confirmation leaves user and project files unchanged
+and reports that nothing was installed. Before a selected tool runs, install shows its project,
 command, write locations and any material warning, then asks a confirmation
 that names the tool and project. The menu does not imply `--yes` and never
 enables Git hooks. By default, successful tool output is summarized; warnings,
@@ -180,90 +214,36 @@ private values. Existing settings and stricter restrictions are preserved.
 
 ### Security review during install
 
-Two files hold the policy, and they hold different things. **Repository** settings
-(`<repo>/.claude/settings.json`) carry the repository policy: the two
-`permissions.block*OutsideWorkingDirectories` keys and the four `sandbox`
-switches. **User** settings (`~/.claude/settings.json`) carry what depends on the
-machine: `sandbox.network.strictAllowlist` and the runtime read exceptions in
-`sandbox.filesystem.allowRead`. The [README](../README.md#recommended-security-settings)
-shows both side by side with a reason per key; a validation check keeps its JSON
-blocks (except the `allowRead` example values) and its reasons equal to the
-installer output.
+Claude's project settings (`<repo>/.claude/settings.json`) hold supported
+repository restrictions: `permissions.block*OutsideWorkingDirectories` and
+sandbox switches. User settings (`~/.claude/settings.json`) hold the strict
+network lock and detected runtime read exceptions. The [README security
+reference](../README.md#recommended-security-settings) explains each key and
+its scope.
 
-After preflight and before the first write, an interactive install (a terminal
-on stdin and stdout, no `--yes`, no `--dry-run`, `TERM` not `dumb`) asks at most
-two grouped questions, plus one yes/no per key if you choose *Choose per key*.
-Nothing is asked when nothing is missing or weaker.
+The recommended setup screen includes weaker values, absent strict keys,
+runtime reads and legacy-hook migration from the same install plan. **Yes, use
+recommended** applies all listed changes. **No, keep current** writes none of
+the security changes and prints the relevant manual snippet. **No, customize**
+asks whether to add detected runtime reads (Yes is preselected), then shows the
+other eligible changes as a prechecked multi-select. Unchecking a sandbox
+requirement also leaves automatic bash approval off. Keys controlled by
+`settings.local.json` are not selectable. A final confirmation occurs before
+any plan is applied. EOF, Escape or Ctrl-C cancels before writes.
 
-```text
-Security review
-  Runtime folders sandboxed commands need to read (user settings):
-    + ~/.nvm                   node (nvm)
-  Add them? (recommended so sandboxed commands can find your tools) [y/n]
-  Repository settings weaker than the recommended strict sandbox:
-    sandbox.autoAllowBashIfSandboxed     false -> true   (sandboxed commands run without a prompt each; ...)
-  [A]pply (recommended) / [K]eep current / [C]hoose per key:
-```
+`--recommended` skips the questions and applies the recommended answers.
+`--recommended --dry-run` prints `would apply` rows and starts no discovery
+processes. With no terminal and without `--recommended`, existing non-terminal
+behavior is preserved. An empty settings file is treated as `{}`; malformed or
+ambiguous settings stop preflight before writes.
 
-No question in the review has a default. The Apply/Keep/Choose question accepts
-only `A`, `K` or `C` (or `apply`, `keep`, `choose`, any case); the runtime-reads
-and per-key questions accept only `y`, `yes`, `n` or `no`. Enter or anything else
-asks again. If the input closes (Ctrl-D, a closed pipe) every pending question
-counts as declined and nothing is written for it. Ctrl-C aborts the install
-before anything is written.
-
-- **Runtime reads.** Install resolves `node` and `graphify` on `PATH` (Windows
-  programs are ignored on WSL), takes their real paths and maps them to a fixed
-  table: an nvm install (`$NVM_DIR`, default `~/.nvm`) and a pipx install
-  (`~/.local/bin` plus the folder above `venvs`, `~/.local/share/pipx` or
-  `~/.local/pipx`). Only locations missing from your `allowRead` are proposed;
-  `~/.nvm`, `/home/you/.nvm/` and a broader entry such as `~/.local` all count as
-  covering. Confirmed items are appended in `~/` form after your entries, which
-  keep their order. Any other location under your home (volta, fnm, asdf, a
-  custom prefix) is reported as not a known runtime location and nothing is
-  proposed for it; locations outside home need no entry. Native Windows, an
-  unavailable sandbox and an unknown Claude version propose nothing.
-- **Weaker repository values.** `sandbox.enabled: false`,
-  `sandbox.failIfUnavailable: false`, `sandbox.allowUnsandboxedCommands: true`,
-  `permissions.block*OutsideWorkingDirectories: false` and an explicit
-  `sandbox.autoAllowBashIfSandboxed: false` (including one in user settings, or
-  left by canonkit 3.0.0) are listed with the recommended value and the reason.
-  *Apply* writes the recommended values to the repository file, *Keep* leaves
-  the file unchanged, *Choose* asks per key. Keeping a weaker sandbox switch also
-  keeps automatic approval from being turned on by default. Values in
-  `settings.local.json` are never written: install reports the key and the
-  edit to make there. The `autoAllowBashIfSandboxed: false` offer appears only
-  when the sandbox is available and `settings.local.json` does not itself weaken
-  the strict profile (`enabled: false`, `failIfUnavailable: false` or
-  `allowUnsandboxedCommands: true`).
-
-Without a terminal, with `--yes`, with `--dry-run` or with `TERM=dumb`, nothing
-is asked and the previous behavior holds for every key: a weaker repository
-boolean is set to the strict value and listed in the plan, an explicit
-`autoAllowBashIfSandboxed` value is preserved with a `RECOMMENDATION`, and the
-runtime reads are printed as a snippet and not written. In a dry run the snippet
-is marked conditional because the Claude version is not probed (the output also
-carries the `[dry-run]` prefix, and "no terminal" reads "dry run"):
-
-```text
-RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings so sandboxed commands can find your tools (no terminal: not written; run canonkit install from a terminal to confirm them):
-  "sandbox": { "filesystem": { "allowRead": ["~/.nvm"] } }
-RECOMMENDATION security runtime-reads: ... (dry run: not written; run canonkit install from a terminal to confirm them; conditional on Claude >= 2.1.302, version not probed in dry run):
-```
-
-The appended items are recorded as kit-owned. `uninstall` removes only an item
-that is still present exactly once and unchanged; entries you added or edited
-stay, and the array and its parents are removed only when canonkit created
-them and they are empty. `uninstall --project` leaves user settings alone.
-`canonkit doctor` reports a detected runtime location missing from user
-`allowRead` as `WARN security claude runtime-reads`, an entry that covers the
-whole home directory as `WARN` (shell reads of home are reopened), and covered
-runtimes as `OK`. It writes nothing.
-
-An empty `settings.json`, user or repository (0 bytes, whitespace only or only a
-byte-order mark), is read as `{}`, like `settings.local.json`; the written file
-is valid JSON with only the planned keys. Malformed JSON still stops the install
-before any write.
+Only detected known runtime locations are proposed. Install resolves `node` and
+`graphify`, maps supported paths such as nvm and pipx to narrow `allowRead`
+entries, and skips locations already covered by existing entries. Other custom
+locations are reported rather than guessed. Confirmed additions are tracked so
+`uninstall` removes only entries still present exactly once and unchanged.
+`canonkit doctor` reports runtime-read coverage and whether project security is
+configured for the current project; it writes nothing.
 
 ### Returning existing Claude installations to native approvals
 

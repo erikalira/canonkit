@@ -98,10 +98,14 @@ describe("install target menu", () => {
   });
 
   test("in a terminal the menu's selection is returned", async () => {
-    prompts.inject([["claude"]]);
-    assert.deepEqual(await chooseTargets([], { interactive: true }), ["claude"]);
-    prompts.inject([["claude", "codex"]]);
-    assert.deepEqual(await chooseTargets([], { interactive: true }), ["claude", "codex"]);
+    let config;
+    const ask = async (question) => { config = question; return { targets: ["claude"] }; };
+    assert.deepEqual(await chooseTargets([], { interactive: true, prompt: ask }), ["claude"]);
+    assert.equal(config.min, 1);
+    assert.equal(config.hint, "space selects, enter confirms. Pick at least one.");
+    assert.ok(config.choices.every((choice) => choice.selected === false));
+    assert.equal(await chooseTargets([], { interactive: true, prompt: async () => ({ targets: [] }) }), null);
+    assert.deepEqual(await chooseTargets([], { interactive: false }), ["claude", "codex"]);
   });
 
   test("a cancelled menu returns null, so nothing is installed", async () => {

@@ -213,6 +213,59 @@ describe("models setup", () => {
   };
   const userFile = (s) => path.join(s.home, ".canonkit", "models.json");
 
+  test("Setup shows current and recommended for Claude Code and Codex", async () => {
+    const claude = await scratch();
+    try {
+      const c = base(claude, {});
+      const output = capture();
+      await setup(output.ctx, agents, c.opts);
+      const deepModel = c.q("deep-model");
+      const deepEffort = c.q("deep-effort");
+      assert.equal(deepModel.choices[deepModel.initial].value, "opus");
+      assert.match(deepModel.choices.find((choice) => choice.value === "opus").title, /\(recommended\)/);
+      assert.equal(deepEffort.choices[deepEffort.initial].value, "medium");
+      assert.match(deepEffort.choices.find((choice) => choice.value === "medium").title, /\(recommended\)/);
+      assert.match(c.q("deep-model").hint, /Enter chooses recommended opus/);
+      assert.match(output.text(), /deep\s+\(not set\)\s+\+\s+opus\/medium/);
+    } finally {
+      await claude.cleanup();
+    }
+
+    const codex = await scratch();
+    try {
+      await writeJson(userFile(codex), { version: 1, harnesses: { codex: {
+        levels: { deep: { model: "gpt-6-sol", effort: "high" } },
+        agents: { quinn: { effort: "low" } },
+      } } });
+      const a = asker({});
+      const run = (name, args) => {
+        if (name !== "codex") return { status: null, stdout: "", stderr: "", error: "not found" };
+        if (args[0] === "--version") return ok("codex-cli 0.166.0\\n");
+        return ok(JSON.stringify({ models: [
+          { slug: "gpt-6-sol", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }, { effort: "high" }] },
+          { slug: "gpt-6.1-sol", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }] },
+          { slug: "gpt-6-luna", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }] },
+          { slug: "gpt-6-terra", visibility: "list", supported_reasoning_levels: [{ effort: "low" }, { effort: "medium" }] },
+        ] }));
+      };
+      const output = capture();
+      await setup(output.ctx, agents, { ask: a.ask, run, now: NOW, home: codex.home, cwd: codex.project, harnesses: ["codex"] });
+      const deepModel = a.q("codex-deep-model");
+      const deepEffort = a.q("codex-deep-effort");
+      assert.equal(deepModel.choices[deepModel.initial].value, "gpt-6-sol");
+      assert.match(deepModel.choices.find((choice) => choice.value === "gpt-6-sol").title, /\(current\)/);
+      assert.match(deepModel.choices.find((choice) => choice.value === "gpt-6.1-sol").title, /\(recommended\)/);
+      assert.equal(deepEffort.choices[deepEffort.initial].value, "high");
+      assert.match(deepEffort.choices.find((choice) => choice.value === "high").title, /\(current\)/);
+      assert.match(deepEffort.choices.find((choice) => choice.value === "medium").title, /\(recommended\)/);
+      assert.match(deepModel.hint, /Enter keeps gpt-6-sol/);
+      assert.match(output.text(), /deep\s+gpt-6-sol\/high\s+->\s+gpt-6\.1-sol\/medium/);
+      assert.equal(JSON.parse(await readFile(userFile(codex), "utf8")).harnesses.codex.agents.quinn.effort, "low");
+    } finally {
+      await codex.cleanup();
+    }
+  });
+
   test("levels from discovered lists, then an agent override; discovery runs first", async () => {
     const s = await scratch();
     try {
@@ -224,7 +277,7 @@ describe("models setup", () => {
       assert.equal(await setup(capture().ctx, agents, opts), 0);
       assert.deepEqual(calls, ["claude --version", "claude --help"]);
       assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")), { version: 1, harnesses: { claude: {
-        levels: { deep: { model: "opus", effort: "high" }, standard: { model: "sonnet", effort: "medium" } },
+        levels: { deep: { model: "opus", effort: "high" }, standard: { model: "sonnet", effort: "medium" }, light: { model: "haiku", effort: "low" } },
         agents: { quinn: { effort: "xhigh" } },
       } } });
       // Menus, not typed text: inherit first, then the discovered aliases, then "other…".
@@ -248,7 +301,10 @@ describe("models setup", () => {
       await setup(capture().ctx, agents, opts);
       assert.equal(q("deep-model").choices[q("deep-model").initial].value, "opus");
       // quinn's override was preselected and kept by Enter.
-      assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, note: "kept", harnesses: { claude: { levels: { deep: { model: "opus" } }, agents: { quinn: { effort: "max" } } } } });
+      assert.deepEqual(JSON.parse(await readFile(file, "utf8")), { version: 1, note: "kept", harnesses: { claude: {
+        levels: { deep: { model: "opus" }, standard: { model: "sonnet", effort: "medium" }, light: { model: "haiku", effort: "low" } },
+        agents: { quinn: { effort: "max" } },
+      } } });
       assert.equal(existsSync(userFile(s)), false);
     } finally {
       await s.cleanup();
@@ -261,7 +317,11 @@ describe("models setup", () => {
       await writeJson(userFile(s), { version: 1, harnesses: { claude: { agents: { quinn: { effort: "max" } } } } });
       const { opts } = base(s, { agents: [] });
       await setup(capture().ctx, agents, opts);
-      assert.deepEqual(JSON.parse(await readFile(userFile(s), "utf8")).harnesses, {});
+      const written = JSON.parse(await readFile(userFile(s), "utf8"));
+      assert.deepEqual(written.harnesses.claude.agents ?? {}, {});
+      assert.deepEqual(written.harnesses.claude.levels, {
+        deep: { model: "opus", effort: "medium" }, standard: { model: "sonnet", effort: "medium" }, light: { model: "haiku", effort: "low" },
+      });
     } finally {
       await s.cleanup();
     }
@@ -276,8 +336,8 @@ describe("models setup", () => {
       assert.equal(q("deep-model-other").validate("bad name!"), "letters, digits and . _ : / @ + - [ ] only");
       assert.equal(q("deep-model-other").validate("claude-x-1"), true);
       const levels = JSON.parse(await readFile(userFile(s), "utf8")).harnesses.claude.levels;
-      assert.deepEqual(levels.deep, { model: "claude-x-1", unverified: true });
-      assert.deepEqual(levels.standard, { model: "sonnet[1m]", unverified: true });
+      assert.deepEqual(levels.deep, { model: "claude-x-1", effort: "medium", unverified: true });
+      assert.deepEqual(levels.standard, { model: "sonnet[1m]", effort: "medium", unverified: true });
     } finally {
       await s.cleanup();
     }
@@ -289,7 +349,7 @@ describe("models setup", () => {
       const declined = base(s, { "deep-model": "opus", save: false });
       const c = capture();
       assert.equal(await setup(c.ctx, agents, declined.opts), 0);
-      assert.match(c.text(), /deep +opus · inherit/);
+      assert.match(c.text(), /deep +\(not set\) +\+ +opus\/medium/);
       assert.match(c.text(), /Not saved; nothing changed\./);
       assert.equal(existsSync(userFile(s)), false);
       assert.equal(existsSync(path.join(s.home, ".canonkit", "model-catalog.json")), false);

@@ -29,7 +29,7 @@ The interactive "Install the team for" menu SHALL start with no harness selected
 - **THEN** Claude Code and Codex are installed, as in the previous release
 
 ### Requirement: Every interactive install question uses one menu pattern
-In a terminal, every install question SHALL be an arrow-key menu (a select or a multi-select) with the library's instruction block disabled; none SHALL be a typed `[y/n]` or letter-choice question. An option that is the current value SHALL be tagged "(current)" and canonkit's recommended option SHALL be tagged "(recommended)"; both tags are text. Each menu hint SHALL say what Enter does. Text printed before a menu SHALL be plain ASCII lines of at most 78 columns, and a menu frame SHALL NOT exceed 78 columns.
+In a terminal, every install question SHALL be an arrow-key menu (a select or a multi-select) with the library's instruction block disabled; none SHALL be a typed `[y/n]` or letter-choice question. An option that is the current value SHALL be tagged "(current)" and canonkit's recommended option SHALL be tagged "(recommended)"; both tags are text. Each menu hint SHALL say what Enter does. Text printed before a menu SHALL be readable without color, use at most 78 visible columns, and SHALL NOT rely on color to convey meaning. Heading emphasis MAY use ANSI bold only on a TTY when `NO_COLOR` is absent and `TERM` is not `dumb`. A menu frame SHALL NOT exceed 78 columns.
 
 #### Scenario: Security question in a terminal
 - **WHEN** a security question is asked

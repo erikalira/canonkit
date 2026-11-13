@@ -290,6 +290,43 @@ test("compileSecurity lists weaker values with their source and still writes the
   assert.equal(compileSecurity({ sandbox: { autoAllowBashIfSandboxed: true } }, env("linux")).autoApprovalDefaulted, false);
 });
 
+test("interactive per-key answers govern absent strict rows and auto-approval requires the full profile", () => {
+  const empty = compileSecurity({}, env("linux"));
+  for (const key of [
+    "permissions.blockReadsOutsideWorkingDirectories",
+    "permissions.blockWritesOutsideWorkingDirectories",
+    "sandbox.enabled",
+    "sandbox.failIfUnavailable",
+    "sandbox.allowUnsandboxedCommands",
+  ]) {
+    assert.equal(empty.rows.find((row) => row.path === key)?.marker, "+", key);
+  }
+  const keepAbsent = compileSecurity({}, env("linux"), { answers: { "permissions.blockReadsOutsideWorkingDirectories": false } });
+  assert.equal(keepAbsent.data.permissions.blockReadsOutsideWorkingDirectories, undefined);
+  assert.equal(keepAbsent.data.permissions.blockWritesOutsideWorkingDirectories, true);
+  assert.deepEqual(keepAbsent.unapplied.map((row) => row.path), ["permissions.blockReadsOutsideWorkingDirectories"]);
+
+  for (const key of ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]) {
+    const result = compileSecurity({}, env("linux"), { answers: { [key]: false } });
+    assert.equal(result.data.sandbox[key], undefined, key);
+    assert.equal(result.data.sandbox.autoAllowBashIfSandboxed, undefined, key);
+    assert.equal(result.changes.includes("sandbox.autoAllowBashIfSandboxed"), false, key);
+    assert.equal(result.autoApprovalDefaulted, false, key);
+    assert.ok(result.unapplied.some((row) => row.path === key), key);
+  }
+
+  const full = compileSecurity({}, env("linux"), { answers: {
+    "sandbox.enabled": true,
+    "sandbox.failIfUnavailable": true,
+    "sandbox.allowUnsandboxedCommands": true,
+    "sandbox.autoAllowBashIfSandboxed": true,
+  } });
+  assert.equal(full.data.sandbox.enabled, true);
+  assert.equal(full.data.sandbox.failIfUnavailable, true);
+  assert.equal(full.data.sandbox.allowUnsandboxedCommands, false);
+  assert.equal(full.data.sandbox.autoAllowBashIfSandboxed, true);
+});
+
 test("the recommended-settings table has exactly one row for every key the compilers manage", () => {
   const e = env("linux");
   const managed = [...compileSecurity({}, e).changes, ...compileNetworkSecurity({}, e).changes, "sandbox.filesystem.allowRead"].sort();
@@ -384,6 +421,9 @@ test("runtime reads propose only uncovered items, append after existing entries 
   const broad = compileRuntimeReads({ sandbox: { filesystem: { allowRead: ["~"] } } }, e, { detected, ...options });
   assert.deepEqual(broad.broad, ["~"]);
   assert.deepEqual(broad.proposed, []);
+  assert.deepEqual(applyRuntimeReads({ sandbox: { filesystem: { allowRead: ["~"] } } }, broad.proposed.map((root) => root.item)), {
+    sandbox: { filesystem: { allowRead: ["~"] } },
+  });
 
   for (const unsupported of [env("win32"), env("linux", "2.1.301"), env("linux", null), { ...env("linux"), sandboxCapability: "unavailable" }]) {
     assert.deepEqual(compileRuntimeReads({}, unsupported, { detected, ...options }).proposed, [], JSON.stringify([unsupported.platform, unsupported.claudeVersion]));

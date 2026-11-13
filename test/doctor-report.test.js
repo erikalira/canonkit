@@ -43,6 +43,18 @@ test("a covered runtime read row is a pass, not a warning", () => {
   assert.match(lines.join("\n"), /No check failed\.$/);
 });
 
+test("security gaps distinguish absent strict keys from projects not configured by install", () => {
+  const { lines, failed } = renderDoctorReport([
+    { status: "WARN", check: "security claude desired-controls", detail: "partial: sandbox.enabled is not set in effective repository settings; shell runs in a sandbox", more: ["sandbox.enabled is not set; apply with canonkit install --recommended"] },
+    { status: "WARN", check: "security repository", detail: "project security not configured for this project (/work/repo)", more: ["run canonkit install --claude from this repository to set it up"] },
+  ]);
+  const out = lines.join("\n");
+  assert.equal(failed, 0);
+  assert.match(out, /desired-controls partial/);
+  assert.match(out, /repository\s+!\s+policy project security not configured/);
+  assert.match(out, /2 warnings/);
+});
+
 test("a FAIL is marked and counted", () => {
   const { lines, failed } = renderDoctorReport([{ status: "FAIL", check: "agents", detail: "missing", more: ["fix it"] }]);
   assert.equal(failed, 1);
