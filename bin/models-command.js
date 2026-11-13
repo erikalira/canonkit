@@ -427,6 +427,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
   }
   if (deferWrite) return {
     userChoices: doc,
+    catalog,
     apply: async () => {
       await writeCatalog(catalog.pending, catalogPath(home), { now });
       await writeChoices(file, doc, { project });

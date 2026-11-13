@@ -840,7 +840,7 @@ async function planInstall(ctx, options = {}) {
   return {
     targets, security, projectInScope, projectRootForInstall, projectCodexChoices, projectManifest,
     close: async () => { await projectManifest?.close(); },
-    apply: async (securityDecision, { userModelChoices } = {}) => {
+    apply: async (securityDecision, { userModelChoices, userModelCatalog } = {}) => {
       applySecurityAnswer(security, securityDecision);
       const completed = [];
       try {
@@ -857,9 +857,9 @@ async function planInstall(ctx, options = {}) {
       await applyClaudeUserPlan(configured);
       if (!ctx.dryRun && security.global.changes.length) completed.push("user Claude settings");
     }
-    await installDistribution(configured, { ...options, userModelChoices });
+    await installDistribution(configured, { ...options, userModelChoices, userModelCatalog });
     if (projectManifest && targets.includes("codex")) {
-      await installProjectCodex(ctx, projectManifest, projectRootForInstall, projectCodexChoices);
+      await installProjectCodex(ctx, projectManifest, projectRootForInstall, projectCodexChoices, { userChoices: userModelChoices, catalog: userModelCatalog });
     }
     if (security) {
       for (const gap of security.global.gaps) ctx.log(`WARN security network: ${gap}`);
@@ -1141,7 +1141,9 @@ async function installDistribution(ctx, options = {}) {
   // Read before any write, so a file this version cannot trust stops the install.
   const userChoices = claude || codex ? options.userModelChoices ?? await readChoices(userConfigPath()) : null;
   if (!options.userModelChoices) await discoverModels(ctx, targets);
-  const codexCatalog = codex ? await readCatalog(catalogPath()).catch(() => null) : null;
+  const codexCatalog = codex
+    ? options.userModelCatalog ?? await readCatalog(catalogPath()).catch(() => null)
+    : null;
 
   // Claude Code reads ~/.claude/agents only; no verified harness reads
   // ~/.agents/<agent>.md, so install no longer writes it (doctor warns on leftovers).
@@ -1255,10 +1257,10 @@ async function installCodex(ctx, agents, dest, { userChoices, record } = {}) {
   }
 }
 
-async function installProjectCodex(ctx, manifest, root, project) {
+async function installProjectCodex(ctx, manifest, root, project, { userChoices, catalog } = {}) {
   const agents = core(await readAgents());
-  const user = await readChoices(userConfigPath());
-  const record = (await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
+  const user = userChoices ?? await readChoices(userConfigPath());
+  const record = (catalog ?? await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
   for (const agent of agents) {
     const file = path.join(root, ".codex", "agents", `${agent.name}.toml`);
     const relative = path.relative(root, file);
@@ -4663,6 +4665,7 @@ async function main(rawArgv, {
             }
             await plan.apply(securityDecision, {
               userModelChoices: modelPlan && setupAnswer === "recommended" ? modelPlan.document : customModelPlan?.userChoices,
+              userModelCatalog: modelPlan && setupAnswer === "recommended" ? modelPlan.catalog : customModelPlan?.catalog,
             });
             if (modelPlan && setupAnswer === "recommended" && !ctx.dryRun) await modelPlan.apply();
             if (customModelPlan?.apply) await customModelPlan.apply();
