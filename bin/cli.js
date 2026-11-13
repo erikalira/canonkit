@@ -660,6 +660,14 @@ const dottedSet = (data, key, value) => {
 
 function applySecurityAnswer(security, { securityAnswer = "default", selectedRows = [] } = {}) {
   if (!security || securityAnswer === "default") return security;
+  if (securityAnswer === "keep") {
+    // The install plan starts with recommended changes already compiled. A
+    // keep decision must disable those writes as well as leave proposed
+    // runtime read exceptions unapplied.
+    security.global.changes = [];
+    if (security.project) security.project.changes = [];
+    return security;
+  }
   const selected = new Set(selectedRows);
   if (securityAnswer === "customize" && security.project && !security.project.notConfigured) {
     const auto = "project:sandbox.autoAllowBashIfSandboxed";
@@ -4600,13 +4608,18 @@ async function main(rawArgv, {
             const modelPlan = modelHarnesses.length && (showSetupQuestion || recommendedFlag)
               ? await prepareRecommendedModels(modelHarnesses, { dryRun: ctx.dryRun })
               : null;
+            const inScopeSecurityRows = [
+              ...(plan.security?.global?.rows ?? []),
+              ...(projectInScope ? plan.security?.project?.rows ?? [] : []),
+            ];
+            const hasSecurityChanges = inScopeSecurityRows.some((row) => row.marker !== "=");
             let customModelPlan = null;
             let setupAnswer = recommendedFlag ? "recommended" : givenSecurityAnswer ?? "default";
             if (showSetupQuestion) {
               printRecommendedSetup(preview, modelPlan, plan.security, projectInScope);
               const choices = [
                 { title: "Yes, use recommended", value: "recommended" },
-                ...(modelPlan.hasExisting ? [{ title: "No, keep current", value: "keep" }] : []),
+                ...(modelPlan.hasExisting || hasSecurityChanges ? [{ title: "No, keep current", value: "keep" }] : []),
                 { title: "No, customize", value: "customize" },
               ];
               const answer = await askInstallChoice(prompt, {
