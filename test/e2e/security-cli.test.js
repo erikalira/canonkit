@@ -563,23 +563,24 @@ test("foreign hook homonyms never justify active canonkit instruction claims", a
 test("an empty user or repository settings.json is read as {} by install and install --wire-hooks", async (t) => {
   for (const empty of ["", "  \n\t", "﻿"]) {
     for (const wire of [false, true]) {
-      const f = await fixture(t);
+      const f = await fixture(t, "2.1.314", { sandbox: true });
       await put(f.global, empty); await put(f.local, empty);
       const result = f.run(["install", "--claude", "--no-reference", ...(wire ? ["--wire-hooks"] : [])]);
       assert.equal(result.status, 0, `${JSON.stringify(empty)} wire=${wire}\n${result.out}`);
       // A byte-order mark the user had is kept, so it is stripped here only for parsing.
       const read = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, ""));
       const user = await read(f.global), project = await read(f.local);
+      const environment = await collectEnvironment({ cwd: f.project, env: f.env });
       assert.equal(user.sandbox.network.strictAllowlist, true);
       assert.deepEqual(Object.keys(user).sort(), wire ? ["hooks", "sandbox"] : ["sandbox"]);
       assert.deepEqual(project, {
         permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true },
-        sandbox: {
+        ...(environment.sandboxCapability === "available-unverified" ? { sandbox: {
           enabled: true,
           failIfUnavailable: true,
           allowUnsandboxedCommands: false,
           autoAllowBashIfSandboxed: true,
-        },
+        } } : {}),
       });
       // Doctor reads the same files without calling them malformed.
       assert.doesNotMatch(f.run(["doctor"]).out, /malformed or inaccessible configuration/);
