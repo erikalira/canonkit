@@ -128,6 +128,70 @@ node $HOME\.claude\canonkit-dashboard\serve.js      # Windows PowerShell
 
 Then open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
 
+<!-- canonkit:security-settings:start -->
+## Recommended security settings
+
+This is the configuration `npx canonkit install --claude` aims for on macOS, or on
+Linux/WSL2 with `bwrap` and `socat`, with Claude Code 2.1.314 or later (older
+versions get fewer keys; `npx canonkit doctor` shows which). Repository policy
+lives in the repository's `.claude/settings.json`; machine-specific policy lives
+in your user settings. `a.b.c` below means key `c` inside `b` inside `a`. A
+`settings.local.json` or managed policy can override these values, and `doctor`
+flags conflicts. `npx canonkit doctor` shows what is missing. Per-version and per-platform detail,
+the install review prompt and the non-interactive behavior are in
+[docs/install.md](docs/install.md#security-review-during-install).
+
+Repository, `<repo>/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "blockReadsOutsideWorkingDirectories": true,
+    "blockWritesOutsideWorkingDirectories": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "failIfUnavailable": true,
+    "allowUnsandboxedCommands": false,
+    "autoAllowBashIfSandboxed": true
+  }
+}
+```
+
+User, `~/.claude/settings.json`:
+
+```json
+{
+  "sandbox": {
+    "network": {
+      "strictAllowlist": true
+    },
+    "filesystem": {
+      "allowRead": [
+        "~/.nvm",
+        "~/.local/bin",
+        "~/.local/share/pipx"
+      ]
+    }
+  }
+}
+```
+
+The `allowRead` list above is an example for nvm and pipx. The real list is
+detected per machine, and an interactive install asks before adding it.
+
+| Key | File | Why it exists, and what breaks without it |
+| --- | --- | --- |
+| `permissions.blockReadsOutsideWorkingDirectories` | repository | file tools cannot read your other projects or home data; without it a prompt injection can read them |
+| `permissions.blockWritesOutsideWorkingDirectories` | repository | file tools cannot write outside this repository; without it they can change files anywhere you can |
+| `sandbox.enabled` | repository | shell commands run in an OS sandbox; without it they run with all your user rights |
+| `sandbox.failIfUnavailable` | repository | a missing sandbox stops commands; without it they silently run unsandboxed |
+| `sandbox.allowUnsandboxedCommands` | repository | no command can escape the sandbox; without it a failed command may be retried outside it |
+| `sandbox.autoAllowBashIfSandboxed` | repository | sandboxed commands run without a prompt each, so repository scripts run unprompted: use only with repositories you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules |
+| `sandbox.network.strictAllowlist` | user | sandboxed commands reach only domains you allowed, and repositories cannot widen it (from Claude 2.1.285) |
+| `sandbox.filesystem.allowRead` | user | sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine |
+<!-- canonkit:security-settings:end -->
+
 ## How it decides: LOW vs HIGH
 
 Every agent uses one shared risk scale:

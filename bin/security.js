@@ -165,11 +165,22 @@ export function projectStateDir(home, root, platform = process.platform) {
   return path.join(home, ".canonkit", "projects", hash(canonical));
 }
 
+/**
+ * The one rule for an empty Claude settings file: a byte-order mark is
+ * stripped, and no text at all (0 bytes, whitespace, BOM only) reads as an
+ * empty object. Anything else is returned as is; malformed JSON still throws
+ * where it is parsed.
+ */
+export function readSettingsText(bytes) {
+  const text = (Buffer.isBuffer(bytes) ? bytes.toString("utf8") : String(bytes)).replace(/^\uFEFF/, "");
+  return text.trim() === "" ? "{}" : text;
+}
+
 export function parseSecuritySettings(bytes, label = "settings") {
   if (bytes === null) return {};
   if (Buffer.byteLength(bytes) > MAX_SECURITY_BYTES) throw new Error(`Configuration exceeds the safety limit in ${label}; nothing was written`);
   let data;
-  try { data = JSON.parse(Buffer.isBuffer(bytes) ? bytes.toString("utf8").replace(/^\uFEFF/, "") : bytes.replace(/^\uFEFF/, "")); }
+  try { data = JSON.parse(readSettingsText(bytes)); }
   catch { throw new Error(`Invalid JSON in ${label}; nothing was written`); }
   if (!object(data)) throw new Error(`Invalid object in ${label}; nothing was written`);
   for (const key of ["permissions", "sandbox", "autoMode"]) if (data[key] !== undefined && !object(data[key])) throw new Error(`Invalid ${key} shape in ${label}; nothing was written`);
@@ -204,8 +215,27 @@ export function parseProjectLocalSandboxSettings(bytes, { placeholder = false } 
   return { settings: { sandbox }, known: true };
 }
 
+/**
+ * The recommended security settings: one row per key, shared by the install
+ * review prompt, the README section and its drift check, so the wording
+ * cannot diverge. `scope` says which settings file holds the key.
+ */
+export const SECURITY_SETTINGS = Object.freeze([
+  { key: "permissions.blockReadsOutsideWorkingDirectories", scope: "repository", value: true, reason: "file tools cannot read your other projects or home data; without it a prompt injection can read them" },
+  { key: "permissions.blockWritesOutsideWorkingDirectories", scope: "repository", value: true, reason: "file tools cannot write outside this repository; without it they can change files anywhere you can" },
+  { key: "sandbox.enabled", scope: "repository", value: true, reason: "shell commands run in an OS sandbox; without it they run with all your user rights" },
+  { key: "sandbox.failIfUnavailable", scope: "repository", value: true, reason: "a missing sandbox stops commands; without it they silently run unsandboxed" },
+  { key: "sandbox.allowUnsandboxedCommands", scope: "repository", value: false, reason: "no command can escape the sandbox; without it a failed command may be retried outside it" },
+  { key: "sandbox.autoAllowBashIfSandboxed", scope: "repository", value: true, reason: "sandboxed commands run without a prompt each, so repository scripts run unprompted: use only with repositories you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules" },
+  { key: "sandbox.network.strictAllowlist", scope: "user", value: true, reason: "sandboxed commands reach only domains you allowed, and repositories cannot widen it (from Claude 2.1.285)" },
+  { key: "sandbox.filesystem.allowRead", scope: "user", value: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"], reason: "sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine" },
+]);
+const REPOSITORY_RECOMMENDED = Object.fromEntries(SECURITY_SETTINGS.filter((row) => row.scope === "repository").map((row) => [row.key, row.value]));
+
 export function compileSecurity(data, environment, { userSettings = {}, projectLocalSettings = {}, projectLocalSettingsKnown = true } = {}) {
-  const out = structuredClone(data), changes = [], gaps = [];
+  const out = structuredClone(data), changes = [], gaps = [], weaker = [];
+  let autoApprovalDefaulted = false;
+  const reportWeaker = (key, current, source) => weaker.push({ path: key, current, recommended: REPOSITORY_RECOMMENDED[key], source });
   const set = (keys, value) => {
     let at = out;
     for (const key of keys.slice(0, -1)) at = at[key] ??= {};
@@ -216,23 +246,38 @@ export function compileSecurity(data, environment, { userSettings = {}, projectL
   const localSandbox = projectLocalSettingsKnown ? projectLocalSettings.sandbox ?? {} : {};
   const localWeakensStrictProfile = localSandbox.enabled === false || localSandbox.failIfUnavailable === false || localSandbox.allowUnsandboxedCommands === true;
   const autoApprovalDefaultEligible = environment.sandboxCapability === "available-unverified" && projectLocalSettingsKnown && !localWeakensStrictProfile;
-  if (atLeast(v, SECURITY_VERSION_FLOORS.fileRead)) set(["permissions", "blockReadsOutsideWorkingDirectories"], true);
-  else gaps.push("file-read-control-version-unverified");
-  if (atLeast(v, SECURITY_VERSION_FLOORS.fileWrite)) set(["permissions", "blockWritesOutsideWorkingDirectories"], true);
-  else gaps.push("file-write-control-requires-2.1.314");
+  if (atLeast(v, SECURITY_VERSION_FLOORS.fileRead)) {
+    if (data.permissions?.blockReadsOutsideWorkingDirectories === false) reportWeaker("permissions.blockReadsOutsideWorkingDirectories", false, "project");
+    set(["permissions", "blockReadsOutsideWorkingDirectories"], true);
+  } else gaps.push("file-read-control-version-unverified");
+  if (atLeast(v, SECURITY_VERSION_FLOORS.fileWrite)) {
+    if (data.permissions?.blockWritesOutsideWorkingDirectories === false) reportWeaker("permissions.blockWritesOutsideWorkingDirectories", false, "project");
+    set(["permissions", "blockWritesOutsideWorkingDirectories"], true);
+  } else gaps.push("file-write-control-requires-2.1.314");
   if (environment.sandboxCapability === "available-unverified" && atLeast(v, SECURITY_VERSION_FLOORS.sandbox)) {
+    for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands"]) {
+      const full = `sandbox.${key}`, strict = REPOSITORY_RECOMMENDED[full];
+      if (data.sandbox?.[key] === !strict) reportWeaker(full, !strict, "project");
+      if (localSandbox[key] === !strict) reportWeaker(full, !strict, "local");
+    }
     set(["sandbox", "enabled"], true);
     set(["sandbox", "failIfUnavailable"], true);
     set(["sandbox", "allowUnsandboxedCommands"], false);
+    const autoSource = localSandbox.autoAllowBashIfSandboxed !== undefined ? "local" : data.sandbox?.autoAllowBashIfSandboxed !== undefined ? "project" : userSettings.sandbox?.autoAllowBashIfSandboxed !== undefined ? "user" : null;
     const autoApproval = localSandbox.autoAllowBashIfSandboxed ?? data.sandbox?.autoAllowBashIfSandboxed ?? userSettings.sandbox?.autoAllowBashIfSandboxed;
-    if (autoApproval === undefined && autoApprovalDefaultEligible) set(["sandbox", "autoAllowBashIfSandboxed"], true);
+    if (autoApproval === undefined && autoApprovalDefaultEligible) { set(["sandbox", "autoAllowBashIfSandboxed"], true); autoApprovalDefaulted = true; }
     else if (autoApproval === undefined) gaps.push(projectLocalSettingsKnown ? "sandbox-autoapproval-default-suppressed-by-project-local-override" : "project-local-sandbox-settings-unavailable");
     else if (autoApproval === false) {
-      if (autoApprovalDefaultEligible) gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
+      if (autoApprovalDefaultEligible) {
+        gaps.push("sandbox-autoapproval-disabled-under-strict-profile");
+        reportWeaker("sandbox.autoAllowBashIfSandboxed", false, autoSource);
+      }
     } else gaps.push("existing-sandbox-autoapproval-preserved");
     // The native working-directory read block also covers sandbox shell reads
-    // of user-data roots; project allowRead entries are ignored by that block.
-    // Do not synthesize broad compensating grants or guess runtime paths.
+    // of user-data roots. A project-level allowRead was ignored under that
+    // block (observed on WSL2, 2026-11-13, design D7), so runtime reads are
+    // written to user settings only. Do not synthesize broad compensating grants or
+    // guess runtime paths.
     gaps.push("shell-runtime-boundary-unverified");
   } else gaps.push(environment.platform === "win32" ? "native-windows-shell-unsandboxed" : "sandbox-unavailable-or-version-unverified");
   // strictAllowlist is User/Managed-only. Project policy must not emit a key
@@ -244,7 +289,7 @@ export function compileSecurity(data, environment, { userSettings = {}, projectL
     if (value.sandbox) { for (const key of ["enabled", "failIfUnavailable", "allowUnsandboxedCommands", "autoAllowBashIfSandboxed"]) delete value.sandbox[key]; if (!Object.keys(value.sandbox).length) delete value.sandbox; }
   }
   if (!same(original, result)) throw new Error("Security compilation changed unrelated settings");
-  return { data: out, changes, gaps, coverage: "partial", environment, autoApprovalDefaultEligible };
+  return { data: out, changes, gaps, weaker, autoApprovalDefaulted, coverage: "partial", environment, autoApprovalDefaultEligible };
 }
 
 const OWNED = [
@@ -262,12 +307,120 @@ export function compileNetworkSecurity(data, environment) {
   return { data: out, changes, gaps };
 }
 
-function scalarOwnership(keys) {
-  const allowed = new Set(keys.map((parts) => parts.join(".")));
+// Runtime read exceptions (user scope). Everything here is path arithmetic on
+// strings given by the caller, except detectRuntimeRoots, which looks at PATH.
+const pathFor = (platform) => (platform === "win32" ? path.win32 : path.posix);
+
+/** Absolute, normalized form of an allowRead entry (or null when it is not a plain path). Case folds on Windows. */
+export function normalizeReadPath(entry, { home, platform = process.platform } = {}) {
+  if (typeof entry !== "string" || !entry) return null;
+  const P = pathFor(platform), fold = (p) => (platform === "win32" ? p.toLowerCase() : p);
+  let expanded = entry;
+  if (entry === "~") expanded = home;
+  else if (entry.startsWith("~/") || (platform === "win32" && entry.startsWith("~\\"))) expanded = P.join(home, entry.slice(2));
+  if (!P.isAbsolute(expanded)) return null;
+  return fold(P.resolve(expanded));
+}
+
+/** True when `entry` is `candidate` or a folder above it. Both are allowRead-style paths. */
+export function readEntryCovers(entry, candidate, options) {
+  const a = normalizeReadPath(entry, options), b = normalizeReadPath(candidate, options);
+  if (!a || !b) return false;
+  const P = pathFor(options.platform ?? process.platform), rel = P.relative(a, b);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${P.sep}`) && !P.isAbsolute(rel));
+}
+
+/** An entry equal to home, or a folder above it, reopens the whole home directory. */
+export const isBroadReadEntry = (entry, options) => readEntryCovers(entry, "~", options);
+
+/**
+ * The fixed D1 table. Resolves each program with the Windows-PATH-filtered
+ * lookup and its realpath, and maps it to a known root under home. A location
+ * under home that is not in the table is returned as `unhandled`, never
+ * generalized to a parent; locations outside home need no entry.
+ */
+export function detectRuntimeRoots({ cwd = process.cwd(), env = process.env, platform = process.platform, home = os.homedir(), windowsRoots = [], resolve = resolveBin, realpath = (p) => realpathSync.native(p) } = {}) {
+  const roots = [], unhandled = [];
+  if (platform === "win32") return { roots, unhandled };
+  const tryReal = (p) => { try { return realpath(p); } catch { return p; } };
+  const homes = [...new Set([path.resolve(home), tryReal(home)])];
+  const within = (p, root) => { const rel = path.relative(root, p); return rel !== "" && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel); };
+  const tilde = (p) => { for (const h of homes) if (within(p, h)) return `~/${path.relative(h, p).split(path.sep).join("/")}`; return null; };
+  const find = (name) => { try { return resolve(name, { cwd, env, platform, windowsRoots }); } catch { return null; } };
+  const add = (item, label) => { if (!roots.some((root) => root.item === item)) roots.push({ item, label }); };
+
+  const node = find("node");
+  if (node) {
+    const real = tryReal(node), nvmDir = path.resolve(env.NVM_DIR || path.join(home, ".nvm"));
+    // nvm keeps every node under $NVM_DIR/versions/: an environment variable alone never widens the grant.
+    const underVersions = (root) => within(real, path.join(root, "versions"));
+    const item = underVersions(tryReal(nvmDir)) || underVersions(nvmDir) ? tilde(nvmDir) ?? tilde(tryReal(nvmDir)) : null;
+    if (item) add(item, "node (nvm)");
+    else if (tilde(real)) unhandled.push({ item: tilde(real), label: "node" });
+  }
+  const graphify = find("graphify");
+  if (graphify) {
+    const real = tryReal(graphify), binDir = path.dirname(graphify);
+    let pipx = null;
+    for (const h of homes) for (const rel of [".local/share/pipx", ".local/pipx"]) if (!pipx && within(real, path.join(h, rel, "venvs"))) pipx = `~/${rel}`;
+    const binItem = tilde(binDir) ?? tilde(tryReal(binDir));
+    if (pipx && (binItem === "~/.local/bin" || (!binItem && !homes.some((h) => binDir === h)))) {
+      if (binItem) add(binItem, "graphify (pipx)");
+      add(pipx, "graphify (pipx)");
+    } else if (tilde(real)) unhandled.push({ item: tilde(real), label: "graphify" });
+  }
+  return { roots, unhandled };
+}
+
+/**
+ * Compares detected runtime locations with the user's existing allowRead
+ * entries, item by item. Pure: it never changes `data`; applyRuntimeReads does,
+ * after the user confirmed. Gated like the sandbox itself: a capable platform,
+ * not native Windows, and Claude at the sandbox floor.
+ */
+export function compileRuntimeReads(data, environment, { detected = { roots: [], unhandled: [] }, home = os.homedir(), platform = environment.platform } = {}) {
+  const result = { proposed: [], unhandled: [], broad: [], covered: [], gaps: [] };
+  if (environment.sandboxCapability !== "available-unverified" || platform === "win32") return result;
+  const options = { home, platform }, existing = data.sandbox?.filesystem?.allowRead ?? [];
+  result.broad = existing.filter((entry) => isBroadReadEntry(entry, options));
+  // A dry run does not probe the version: it still previews the recommendation, marked conditional.
+  const dryRunUnprobed = environment.claudeVersion == null && environment.versionEvidence === "not-probed-dry-run";
+  if (!atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.sandbox) && !dryRunUnprobed) { result.gaps.push("runtime-reads-version-unverified"); return result; }
+  result.conditional = dryRunUnprobed;
+  result.unhandled = detected.unhandled;
+  for (const root of detected.roots) {
+    if (existing.some((entry) => readEntryCovers(entry, root.item, options))) result.covered.push(root);
+    else result.proposed.push(root);
+  }
+  return result;
+}
+
+/** Appends items after the existing allowRead entries; nothing existing is reordered or dropped. */
+export function applyRuntimeReads(data, items) {
+  const out = structuredClone(data);
+  out.sandbox ??= {};
+  out.sandbox.filesystem ??= {};
+  const list = out.sandbox.filesystem.allowRead ??= [];
+  for (const item of items) if (!list.includes(item)) list.push(item);
+  return out;
+}
+
+// Ownership of scalar booleans (`scalars`: key paths) and of strings appended to
+// string arrays (`arrays`: key paths). An array record lists only the items
+// canonkit appended, so undo can leave everything the user added or edited.
+const ALLOW_READ = ["sandbox", "filesystem", "allowRead"];
+function securityOwnership(scalars, arrays = []) {
+  const allowed = new Set(scalars.map((parts) => parts.join(".")));
+  const allowedArrays = new Set(arrays.map((parts) => parts.join(".")));
   const get = (data, parts) => parts.reduce((value, key) => value?.[key], data);
+  const validArray = (record) => object(record) && Object.keys(record).length === 3 &&
+    typeof record.beforePresent === "boolean" && typeof record.parentPresent === "boolean" &&
+    Array.isArray(record.appendedItems) && record.appendedItems.length > 0 &&
+    record.appendedItems.every((item) => typeof item === "string" && item.length > 0) && new Set(record.appendedItems).size === record.appendedItems.length;
   const validate = (metadata) => {
     if (!object(metadata)) throw new Error("Invalid security ownership metadata");
     for (const [key, record] of Object.entries(metadata)) {
+      if (allowedArrays.has(key)) { if (!validArray(record)) throw new Error("Invalid security ownership metadata"); continue; }
       if (!allowed.has(key) || !object(record) || Object.keys(record).some((field) => !["beforePresent", "beforeValue", "afterValue"].includes(field)) ||
           typeof record.beforePresent !== "boolean" || typeof record.afterValue !== "boolean" ||
           (record.beforePresent ? typeof record.beforeValue !== "boolean" : Object.hasOwn(record, "beforeValue"))) throw new Error("Invalid security ownership metadata");
@@ -276,24 +429,51 @@ function scalarOwnership(keys) {
   return { validate, capture: (beforeBytes, afterBytes, old) => {
     validate(old);
     const before = parseSecuritySettings(beforeBytes), after = parseSecuritySettings(afterBytes), metadata = structuredClone(old);
-    for (const parts of keys) {
+    for (const parts of scalars) {
       const prior = get(before, parts), installed = get(after, parts), key = parts.join(".");
       if (same(prior, installed) || typeof installed !== "boolean") continue;
       const baseline = old[key] && old[key].afterValue === prior ? old[key] : { beforePresent: prior !== undefined, ...(prior === undefined ? {} : { beforeValue: prior }) };
       metadata[key] = { ...baseline, afterValue: installed };
     }
+    for (const parts of arrays) {
+      const prior = get(before, parts), installed = get(after, parts), key = parts.join(".");
+      if (!Array.isArray(installed)) continue;
+      const priorItems = Array.isArray(prior) ? prior : [];
+      const added = installed.filter((item) => !priorItems.includes(item));
+      if (!added.length) continue;
+      // A later install adds to what an earlier one appended; the baseline stays the first one.
+      const carried = (old[key]?.appendedItems ?? []).filter((item) => priorItems.includes(item));
+      metadata[key] = carried.length
+        ? { beforePresent: old[key].beforePresent, parentPresent: old[key].parentPresent, appendedItems: [...carried, ...added] }
+        : { beforePresent: Array.isArray(prior), parentPresent: object(get(before, parts.slice(0, -1))), appendedItems: added };
+    }
     return metadata;
   } };
 }
-export const projectSecurityOwnership = scalarOwnership(OWNED);
-export const networkSecurityOwnership = scalarOwnership([["sandbox", "network", "strictAllowlist"]]);
+export const projectSecurityOwnership = securityOwnership(OWNED);
+export const networkSecurityOwnership = securityOwnership([["sandbox", "network", "strictAllowlist"]], [ALLOW_READ]);
 
 function undoOwned(beforeBytes, _afterBytes, currentBytes, ownership, metadata) {
   ownership.validate(metadata);
   const current = parseSecuritySettings(currentBytes);
   const get = (data, keys) => keys.reduce((value, key) => value?.[key], data);
   for (const [key, record] of Object.entries(metadata)) {
-    const keys = key.split("."), now = get(current, keys);
+    const keys = key.split(".");
+    if (Object.hasOwn(record, "appendedItems")) {
+      const parent = get(current, keys.slice(0, -1)), list = parent?.[keys.at(-1)];
+      if (!Array.isArray(list)) continue;
+      // Only an item that is still there exactly once, unchanged, was provably appended by canonkit.
+      for (const item of record.appendedItems) if (list.filter((entry) => entry === item).length === 1) list.splice(list.indexOf(item), 1);
+      if (!list.length && !record.beforePresent) {
+        delete parent[keys.at(-1)];
+        if (!record.parentPresent && !Object.keys(parent).length) {
+          delete current[keys[0]].filesystem;
+          if (!Object.keys(current[keys[0]]).length) delete current[keys[0]];
+        }
+      }
+      continue;
+    }
+    const now = get(current, keys);
     if (!same(now, record.afterValue)) continue;
     const parent = get(current, keys.slice(0, -1));
     if (!parent) continue;
@@ -315,7 +495,25 @@ export function serializeSecurity(data, original = "") {
   return Buffer.from((original.startsWith("\uFEFF") ? "\uFEFF" : "") + (original.includes("\r\n") ? text.replace(/\n/g, "\r\n") : text));
 }
 
-export function assessClaude(sources, environment) {
+/**
+ * The receipt is data on disk, so what it claims canonkit appended is checked
+ * before it can silence a warning: an array of strings, none broad, each one a
+ * value the runtime table can produce (nvm folder, ~/.local/bin, pipx roots).
+ * Anything else is ignored, never an error.
+ */
+export function trustedOwnedAllowRead(items, { home = os.homedir(), env = process.env, platform = process.platform } = {}) {
+  if (!Array.isArray(items) || items.some((item) => typeof item !== "string")) return [];
+  const producible = new Set(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx"]);
+  if (env.NVM_DIR) {
+    const rel = path.relative(home, path.resolve(env.NVM_DIR));
+    if (rel && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) producible.add(`~/${rel.split(path.sep).join("/")}`);
+  }
+  return items.filter((item) => producible.has(item) && !isBroadReadEntry(item, { home, platform }));
+}
+
+// `ownedAllowRead`: allowRead items the user-settings receipt says canonkit appended; they are not
+// "explicit outside exceptions" worth a review warning, user-added entries still are.
+export function assessClaude(sources, environment, { ownedAllowRead = [] } = {}) {
   const details = [], add = (status, control, coverage, detail) => details.push({ status, control, coverage, detail });
   let readBlocked = false, writeBlocked = false;
   const observedSandbox = {};
@@ -340,7 +538,8 @@ export function assessClaude(sources, environment) {
     if (permissions.additionalDirectories?.length) add("WARN", "working-directories", "partial", `${label}: additional working directories expand scope`);
     for (const key of ["excludedCommands", "ignoreViolations"]) if (sandbox[key]?.length) add("WARN", "sandbox-exemptions", "partial", `${label}: sandbox.${key} contains exemptions`);
     if (filesystem.disabled === true || sandbox.enableWeakerNestedSandbox === true || sandbox.enableWeakerNetworkIsolation === true) add("WARN", "sandbox", "partial", `${label}: a weaker or disabled isolation layer is configured`);
-    if (filesystem.allowRead?.length || filesystem.allowWrite?.length) add("WARN", "filesystem-exceptions", "partial", `${label}: explicit outside filesystem exceptions require review`);
+    const readExceptions = label === "user" ? (filesystem.allowRead ?? []).filter((item) => !ownedAllowRead.includes(item)) : filesystem.allowRead ?? [];
+    if (readExceptions.length || filesystem.allowWrite?.length) add("WARN", "filesystem-exceptions", "partial", `${label}: explicit outside filesystem exceptions require review`);
     if (network.allowedDomains?.length || network.httpProxyPort || network.socksProxyPort || network.allowAllUnixSockets || network.allowUnixSockets?.length || network.allowLocalBinding) add("WARN", "network-exceptions", "partial", `${label}: network/proxy/socket exceptions expand scope`);
     if (network.strictAllowlist !== undefined) add("WARN", "network-policy", "partial", `${label}: strictAllowlist is ${network.strictAllowlist === true ? "configured" : "off"}; only user/managed scope applies and runtime effectiveness is unverified`);
     if (network.strictAllowlist === true && !atLeast(environment.claudeVersion, SECURITY_VERSION_FLOORS.networkRepositoryLock)) add("WARN", "network-policy", "unknown", "repository network-expansion locks require Claude >=2.1.285; update the harness before relying on that ceiling");

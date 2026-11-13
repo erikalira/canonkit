@@ -37,7 +37,7 @@ import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-dis
 import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
-import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
+import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -554,6 +554,9 @@ async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
   const userSettings = parseSecuritySettings(globalBefore, "user Claude settings");
   const migration = wireHooks ? null : migrateClaudeHooks(userSettings, claudeHome());
   const globalPlan = { file: globalFile, before: globalBefore, migration, ...compileNetworkSecurity(migration?.data ?? userSettings, evidence) };
+  // Runtime read exceptions are only proposed here; the review step decides whether they are written.
+  const detected = evidence.sandboxCapability === "available-unverified" ? detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() }) : undefined;
+  globalPlan.runtimeReads = compileRuntimeReads(migration?.data ?? userSettings, evidence, { detected });
   if (migration?.removed.length) globalPlan.changes.push("hooks.legacyCanonkit");
   let project = null;
   if (root) {
@@ -570,6 +573,141 @@ async function prepareSecurity(ctx, targets, { wireHooks = false } = {}) {
     if (migration?.removed.length) project.changes.push("hooks.legacyCanonkit");
   }
   return { evidence, global: globalPlan, project };
+}
+
+// Resolves null when the input ends (Ctrl-D, closed pipe) instead of hanging; once
+// the process stdin has ended every later question is answered null at once.
+let stdinEnded = false;
+async function askLine(question, { input = process.stdin, output = process.stdout } = {}) {
+  if (input === process.stdin && stdinEnded) return null;
+  const rl = createInterface({ input, output });
+  let answer;
+  try {
+    // Ctrl-C aborts the install (nothing is written before the review ends).
+    answer = await new Promise((resolve, reject) => {
+      rl.once("close", () => resolve(null));
+      rl.once("SIGINT", () => reject(Object.assign(new Error("Interrupted during the security review; nothing was written"), { code: "INTERRUPTED" })));
+      rl.question(question, resolve);
+    });
+  } finally { rl.close(); }
+  if (answer === null && input === process.stdin) stdinEnded = true;
+  return answer === null ? null : answer.trim();
+}
+
+/**
+ * The Apply/Keep/Choose question has no default: only A, K, C or the full word
+ * is accepted, anything else (Enter included) asks again, and a closed input
+ * means Keep (nothing is written for those keys).
+ */
+async function askReviewMode(ask, question) {
+  for (;;) {
+    const raw = await ask(question);
+    if (raw === null || raw === undefined) return "keep";
+    const answer = raw.trim().toLowerCase();
+    if (answer === "a" || answer === "apply") return "apply";
+    if (answer === "k" || answer === "keep") return "keep";
+    if (answer === "c" || answer === "choose") return "choose";
+    console.log("  Please answer A (apply), K (keep) or C (choose per key).");
+  }
+}
+
+const AUTO_APPROVAL = "sandbox.autoAllowBashIfSandboxed";
+const settingReason = (key) => SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
+const dottedSet = (data, key, value) => {
+  const parts = key.split(".");
+  let at = data;
+  for (const part of parts.slice(0, -1)) at = at[part] ??= {};
+  at[parts.at(-1)] = value;
+};
+
+/**
+ * The install's one security review, after preflight and before the first write.
+ * With a terminal it asks at most two grouped questions (runtime reads, weaker
+ * repository values) and edits the already-compiled plans with the answers.
+ * Without one it reproduces the previous release for every key: weaker
+ * repository booleans stay overwritten, an explicit auto-approval value stays
+ * preserved, and runtime reads are printed as a snippet, never written.
+ * `ask` and `choose` are the test seams; without them it reads the terminal.
+ */
+async function reviewSecurity(ctx, security, { interactive = false, confirmAction, choose, readLine = askLine } = {}) {
+  if (!security) return;
+  // A closed input (null) declines: nothing is written for that question.
+  // No default: only y/yes/n/no (any case) answers; anything else, Enter included, asks again.
+  const yesNo = async (question) => {
+    if (confirmAction) return Boolean(await confirmAction(question));
+    for (;;) {
+      const raw = await readLine(question);
+      if (raw === null || raw === undefined) return false;
+      const answer = raw.trim().toLowerCase();
+      if (answer === "y" || answer === "yes") return true;
+      if (answer === "n" || answer === "no") return false;
+      console.log("  Please answer y or n.");
+    }
+  };
+  const pick = (question) => choose ? choose(question, ["apply", "keep", "choose"]) : askReviewMode(readLine, question);
+  const { global, project } = security;
+  const runtime = global.runtimeReads;
+  for (const item of runtime?.unhandled ?? []) ctx.log(`WARN security runtime-reads: ${item.item} (${item.label}) is not a known runtime location; no read exception was proposed for it`);
+  const proposed = runtime?.proposed ?? [];
+  const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
+  const weaker = (project?.weaker ?? []).filter((entry) => entry.source !== "local");
+  for (const entry of (project?.weaker ?? []).filter((item) => item.source === "local" && item.path !== AUTO_APPROVAL)) {
+    ctx.log(`WARN security local: ${entry.path} is ${entry.current} in this repository's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
+  }
+
+  let allowReads = false;
+  const answers = new Map();
+  if (interactive && (proposed.length || weaker.length)) {
+    console.log("Security review");
+    if (proposed.length) {
+      console.log("  Runtime folders sandboxed commands need to read (user settings):");
+      for (const root of proposed) console.log(`    + ${root.item.padEnd(24)} ${root.label}`);
+      allowReads = await yesNo("  Add them? (recommended so sandboxed commands can find your tools) [y/n] ");
+    }
+    if (weaker.length) {
+      console.log("  Repository settings weaker than the recommended strict sandbox:");
+      for (const entry of weaker) console.log(`    ${entry.path.padEnd(36)} ${entry.current} -> ${entry.recommended}   (${settingReason(entry.path)})`);
+      const mode = await pick("  [A]pply (recommended) / [K]eep current / [C]hoose per key: ");
+      for (const entry of weaker) {
+        answers.set(entry.path, mode === "choose" ? await yesNo(`  Change ${entry.path} from ${entry.current} to ${entry.recommended}? [y/n] `) : mode !== "keep");
+      }
+    }
+  } else if (proposed.length) {
+    ctx.log(`RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings so sandboxed commands can find your tools (${ctx.dryRun ? "dry run" : "no terminal"}: not written; run canonkit install from a terminal to confirm them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`);
+    ctx.log(snippet);
+  }
+  if (!interactive) return;
+
+  if (allowReads) {
+    global.data = applyRuntimeReads(global.data, proposed.map((root) => root.item));
+    global.changes.push("sandbox.filesystem.allowRead");
+    for (const root of proposed) ctx.log(`${ctx.dryRun ? "would add" : "Adding"} runtime read exception ${root.item} (${root.label})`);
+  } else if (proposed.length) {
+    ctx.log("RECOMMENDATION security runtime-reads: declined, user Claude settings unchanged for runtime reads; add them later to sandbox.filesystem.allowRead:");
+    ctx.log(snippet);
+  }
+  if (!project || !weaker.length) return;
+  let keptStrictSandbox = false;
+  for (const entry of weaker) {
+    const change = answers.get(entry.path) === true;
+    if (entry.path === AUTO_APPROVAL) {
+      if (!change) continue;
+      dottedSet(project.data, AUTO_APPROVAL, true);
+      if (!project.changes.includes(AUTO_APPROVAL)) project.changes.push(AUTO_APPROVAL);
+      project.gaps = project.gaps.filter((gap) => gap !== "sandbox-autoapproval-disabled-under-strict-profile");
+    } else if (!change) {
+      // The compiler already wrote the strict value; keep puts the existing one back.
+      dottedSet(project.data, entry.path, entry.current);
+      project.changes = project.changes.filter((key) => key !== entry.path);
+      if (entry.path.startsWith("sandbox.")) keptStrictSandbox = true;
+      ctx.log(`Kept ${entry.path}: ${entry.current} (recommended: ${entry.recommended})`);
+    }
+  }
+  // Automatic approval is only for the full strict sandbox profile.
+  if (keptStrictSandbox && project.autoApprovalDefaulted) {
+    delete project.data.sandbox[AUTO_APPROVAL.split(".")[1]];
+    project.changes = project.changes.filter((key) => key !== AUTO_APPROVAL);
+  }
 }
 
 async function applyClaudeUserPlan(ctx) {
@@ -598,6 +736,8 @@ async function install(ctx, options = {}) {
   for (const manifest of [ctx.manifest, projectManifest].filter(Boolean)) {
     for (const spec of manifest.catalog.values()) if (spec.owners.some((owner) => targets.includes(owner))) await safePath(manifest.target(spec));
   }
+  // Preflight passed: ask what needs a person (nothing has been written yet).
+  await reviewSecurity(ctx, security, options.review);
   const completed = [];
   try {
     // Fixed order: global distribution, then the current repository receipt.
@@ -1275,7 +1415,7 @@ async function reportHookWiring(ctx, dest, files) {
   let parsed = {};
   if (existsSync(settings)) {
     try {
-      parsed = JSON.parse(await readFile(settings, "utf8"));
+      parsed = JSON.parse(readSettingsText(await readFile(settings, "utf8")));
     } catch {
       ctx.log("  ~/.claude/settings.json is not valid JSON — cannot check hook wiring");
       return;
@@ -1325,7 +1465,7 @@ async function readHooksFileForWiring(file, label) {
   const refuse = (why) =>
     new Error(`Refusing --wire-hooks: ${label} ${why}. Nothing was written; fix it, then re-run.`);
   let data;
-  try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse("is not valid JSON"); }
+  try { data = JSON.parse(readSettingsText(text)); } catch { throw refuse("is not valid JSON"); }
   if (!isObject(data)) throw refuse("is not a JSON object");
   if (data.hooks !== undefined) {
     if (!isObject(data.hooks)) throw refuse('has a "hooks" that is not an object');
@@ -1780,7 +1920,7 @@ async function syncClaudeRouting(ctx, { existingOnly = false } = {}) {
       for (const file of [settingsPath(), path.join(claudeHome(), "settings.local.json")]) {
         const bytes = ctx.hookWiringRequested === false && file === settingsPath() && ctx.networkSecurityPlan ? serializeSecurity(ctx.networkSecurityPlan.data) : await optionalBytes(file);
         if (bytes === null) continue;
-        const data = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, ""));
+        const data = JSON.parse(readSettingsText(bytes));
         disabled ||= data.disableAllHooks === true;
         for (const [event, groups] of Object.entries(isObject(data.hooks) ? data.hooks : {})) if (Array.isArray(groups)) combined[event] = [...(combined[event] ?? []), ...groups];
       }
@@ -2194,7 +2334,13 @@ async function securityDiagnosis() {
   add("WARN", "security claude version", evidence.versionEvidence === "windows-binary-ignored"
     ? `unknown; a Windows copy at ${plain(evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these); no authenticated session or boundary test was started`
     : `${evidence.claudeVersion ?? "unknown"}; ${evidence.versionEvidence}; no authenticated session or boundary test was started`);
-  for (const detail of assessClaude(sources, evidence)) add(detail.status, `security claude ${detail.control}`, `${detail.coverage}: ${detail.detail}`);
+  // allowRead items canonkit appended (per the user receipt) are not review-worthy exceptions.
+  let ownedAllowRead = [];
+  try {
+    const receipt = new InstallManifest({ home: os.homedir(), ...await installCatalog(await readAgents()), targets: ["claude"], dryRun: true });
+    if (await receipt.load()) ownedAllowRead = trustedOwnedAllowRead(receipt.data.entries["claude:json:settings.json"]?.securityChanges?.["sandbox.filesystem.allowRead"]?.appendedItems);
+  } catch { /* an unreadable receipt is reported by the tracked-policy check below */ }
+  for (const detail of assessClaude(sources, evidence, { ownedAllowRead })) add(detail.status, `security claude ${detail.control}`, `${detail.coverage}: ${detail.detail}`);
   const profile = evidence.platform === "win32" ? "native-windows-partial" : evidence.sandboxCapability === "available-unverified" ? "sandbox-configured-runtime-unverified" : "available-file-controls-partial";
   add("WARN", "security claude desired-profile", `partial: ${profile}; configured keys do not establish effective session containment`);
   const user = sources.find((source) => source.label === "user");
@@ -2210,8 +2356,17 @@ async function securityDiagnosis() {
     if (desired.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
       const target = repositoryLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
         : repository?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.json" : "user Claude settings";
-      add("WARN", "security claude approval-recommendation", `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired. Doctor did not edit settings`);
+      add("WARN", "security claude approval-recommendation", `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired; canonkit install offers this change from a terminal. Doctor did not edit settings`);
     }
+  }
+  const userSources = sources.filter((source) => ["user", "user-local"].includes(source.label));
+  if (userSources.length && !userSources.some((source) => source.error)) {
+    const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
+    const detected = evidence.sandboxCapability === "available-unverified" ? detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() }) : undefined;
+    const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
+    for (const item of runtime.proposed) add("WARN", "security claude runtime-reads", `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`);
+    for (const entry of runtime.broad) add("WARN", "security claude runtime-reads", `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`);
+    if (runtime.covered.length && !runtime.proposed.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
   }
   if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
   add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the repository; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
@@ -2229,6 +2384,13 @@ async function securityDiagnosis() {
       const get = (data, keys) => keys.reduce((value, key) => value?.[key], data);
       for (const [key, record] of Object.entries(entry.securityChanges)) {
         const keys = key.split(".");
+        if (Object.hasOwn(record, "appendedItems")) {
+          // Appended read exceptions: the install snapshot must hold them. A later removal is the user's
+          // choice (it narrows access); the runtime-reads check reports a missing one.
+          const list = get(installed, keys);
+          if (!Array.isArray(list) || record.appendedItems.some((item) => !list.includes(item))) throw new Error("Ownership evidence does not match");
+          continue;
+        }
         if (get(installed, keys) !== record.afterValue) throw new Error("Ownership evidence does not match");
         if (get(source?.data, keys) !== record.afterValue) add("FAIL", "security claude tracked-policy", `partial: tracked ${label} ${key} is missing or changed; re-run canonkit install in this repository`);
       }
@@ -2347,7 +2509,7 @@ async function doctor({ verbose = false } = {}) {
     if (f === "settings.local.json" && raw === "") continue; // empty: a sandbox placeholder, nothing wired
     anySettings = true;
     let parsed;
-    try { parsed = JSON.parse(raw.replace(/^﻿/, "")); } catch { bad.push(f); continue; }
+    try { parsed = JSON.parse(readSettingsText(raw)); } catch { bad.push(f); continue; }
     for (const [event, entries] of Object.entries(isObject(parsed?.hooks) ? parsed.hooks : {})) {
       if (Array.isArray(entries)) hooks[event] = [...(hooks[event] ?? []), ...entries];
     }
@@ -3635,7 +3797,7 @@ const equalJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function configuration(bytes) {
   if (bytes === null) return {};
   let value;
-  try { value = JSON.parse(bytes.toString("utf8").replace(/^\uFEFF/, "")); } catch { throw new Error("Configuration is not valid JSON; runtime retained"); }
+  try { value = JSON.parse(readSettingsText(bytes)); } catch { throw new Error("Configuration is not valid JSON; runtime retained"); }
   if (!isObject(value)) throw new Error("Configuration is not a JSON object; runtime retained");
   return value;
 }
@@ -3997,6 +4159,8 @@ async function main(rawArgv, {
   interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
   prompt,
   confirmAction,
+  choose,
+  readLine,
   resolveProjectTarget = resolveInstallProjectTarget,
   catalogReader = readInstallCatalog,
 } = {}) {
@@ -4114,6 +4278,7 @@ async function main(rawArgv, {
           reference: !flags.includes("--no-reference"),
           wireHooks: flags.includes("--wire-hooks"),
           targets,
+          review: { interactive: interactive && !flags.includes("--yes") && !ctx.dryRun && process.env.TERM !== "dumb", confirmAction, choose, readLine },
           showProjectHint: !menu && projectSelectionFlags.size === 0,
         }));
         failed = false;
@@ -4235,6 +4400,8 @@ if (invokedDirectly) {
 
 export {
   main,
+  askLine,
+  askReviewMode,
   applyBlock,
   chooseTargets,
   readAgents,

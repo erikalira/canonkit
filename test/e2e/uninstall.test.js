@@ -6,6 +6,8 @@ import os from "node:os";
 import path from "node:path";
 import { InstallManifest, removeManagedBlock } from "../../bin/install-manifest.js";
 import { runCli, writeCommand } from "../helpers/cli-harness.js";
+import { runMain } from "../helpers/interactive-install.js";
+import { collectEnvironment } from "../../bin/security.js";
 
 async function scratch(t) {
   const root = realpathSync.native(await mkdtemp(path.join(os.tmpdir(), "canonkit-uninstall-test-")));
@@ -442,4 +444,67 @@ test("configuration edits after preflight are retained instead of overwritten by
     assert.deepEqual(JSON.parse(await readFile(file)), { user: "concurrent edit", hook: true });
     assert.ok((await manifest(home)).entries["home:json:settings.json"]);
   } finally { await removal.close(); }
+});
+
+// Installs with the runtime-read question answered "yes" in a sandbox-capable fixture; null when the host cannot.
+async function installedWithRuntimeReads(t, userSettings) {
+  const { root, home } = await scratch(t);
+  const project = path.join(root, "project"), bin = path.join(root, "bin"), nodeDir = path.join(home, ".nvm", "versions", "node", "v20.0.0", "bin");
+  await mkdir(path.join(project, ".git"), { recursive: true }); await mkdir(bin); await mkdir(nodeDir, { recursive: true });
+  await writeFile(path.join(project, ".git", "HEAD"), "ref: refs/heads/main\n");
+  await writeFile(path.join(nodeDir, "node"), "#!/bin/sh\n", { mode: 0o755 });
+  const script = path.join(bin, "version.cjs");
+  await writeFile(script, "if (process.argv.slice(2).join(' ') !== '--version') process.exit(2); console.log('2.1.314');");
+  for (const name of ["claude", "bwrap", "socat"]) await writeCommand(bin, name, script);
+  const env = { PATH: [nodeDir, bin].join(path.delimiter), NVM_DIR: "" };
+  const evidence = await collectEnvironment({ cwd: project, env });
+  if (evidence.sandboxCapability !== "available-unverified") return null;
+  const settings = path.join(home, ".claude", "settings.json");
+  if (userSettings) await put(settings, JSON.stringify(userSettings));
+  const result = await runMain(["install", "--claude", "--no-reference"], { home, cwd: project, env, confirmAction: async () => true, choose: async () => "apply" });
+  assert.equal(result.status, 0, result.out);
+  return { home, project, env, settings, read: async () => JSON.parse(await readFile(settings, "utf8")) };
+}
+
+test("uninstall removes only the allowRead items canonkit appended; --project leaves them", async (t) => {
+  const s = await installedWithRuntimeReads(t, { custom: 1, sandbox: { filesystem: { allowRead: ["~/keep"] } } });
+  if (!s) { t.skip("host has no supported sandbox capability"); return; }
+  const installed = await s.read();
+  assert.deepEqual(installed.sandbox.filesystem.allowRead, ["~/keep", "~/.nvm"]);
+  assert.deepEqual((await manifest(s.home)).entries["claude:json:settings.json"].securityChanges["sandbox.filesystem.allowRead"],
+    { beforePresent: true, parentPresent: true, appendedItems: ["~/.nvm"] });
+  installed.sandbox.filesystem.allowRead.push("~/later");
+  await writeFile(s.settings, JSON.stringify(installed));
+
+  ok(runCli(["uninstall", "--project"], { home: s.home, cwd: s.project, env: s.env }));
+  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/keep", "~/.nvm", "~/later"]);
+  ok(runCli(["uninstall", "--claude"], { home: s.home, cwd: s.project, env: s.env }));
+  const after = await s.read();
+  assert.deepEqual(after, { custom: 1, sandbox: { filesystem: { allowRead: ["~/keep", "~/later"] } } });
+});
+
+test("uninstall drops the allowRead array and its parents only when canonkit created them", async (t) => {
+  const s = await installedWithRuntimeReads(t, null);
+  if (!s) { t.skip("host has no supported sandbox capability"); return; }
+  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/.nvm"]);
+  ok(runCli(["uninstall", "--claude"], { home: s.home, cwd: s.project, env: s.env }));
+  assert.equal(existsSync(s.settings), false);
+
+  const later = await installedWithRuntimeReads(t, null);
+  const data = await later.read(); data.sandbox.filesystem.other = true;
+  await writeFile(later.settings, JSON.stringify(data));
+  ok(runCli(["uninstall", "--claude"], { home: later.home, cwd: later.project, env: later.env }));
+  assert.deepEqual(await later.read(), { sandbox: { filesystem: { other: true } } });
+});
+
+test("uninstall refuses forged allowRead ownership metadata and leaves the settings untouched", async (t) => {
+  const s = await installedWithRuntimeReads(t, { custom: 1 });
+  if (!s) { t.skip("host has no supported sandbox capability"); return; }
+  const receipt = await manifest(s.home);
+  receipt.entries["claude:json:settings.json"].securityChanges["sandbox.filesystem.allowRead"].appendedItems = [42];
+  await writeFile(manifestFile(s.home), JSON.stringify(receipt));
+  const before = await readFile(s.settings);
+  const result = runCli(["uninstall", "--claude"], { home: s.home, cwd: s.project, env: s.env });
+  assert.notEqual(result.status, 0, result.out);
+  assert.deepEqual(await readFile(s.settings), before);
 });

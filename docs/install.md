@@ -69,7 +69,7 @@ remain available in each category and points to `canonkit list`.
 
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings |
+| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders appended to `sandbox.filesystem.allowRead` in user settings |
 | Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | GitHub Copilot | `~/.copilot/agents/*.agent.md`, `~/.copilot/skills` |
@@ -178,6 +178,93 @@ installation, unsafe paths or malformed settings stop preflight before any
 selected-target writes. Reports name affected keys and controls, never their
 private values. Existing settings and stricter restrictions are preserved.
 
+### Security review during install
+
+Two files hold the policy, and they hold different things. **Repository** settings
+(`<repo>/.claude/settings.json`) carry the repository policy: the two
+`permissions.block*OutsideWorkingDirectories` keys and the four `sandbox`
+switches. **User** settings (`~/.claude/settings.json`) carry what depends on the
+machine: `sandbox.network.strictAllowlist` and the runtime read exceptions in
+`sandbox.filesystem.allowRead`. The [README](../README.md#recommended-security-settings)
+shows both side by side with a reason per key; a validation check keeps its JSON
+blocks (except the `allowRead` example values) and its reasons equal to the
+installer output.
+
+After preflight and before the first write, an interactive install (a terminal
+on stdin and stdout, no `--yes`, no `--dry-run`, `TERM` not `dumb`) asks at most
+two grouped questions, plus one yes/no per key if you choose *Choose per key*.
+Nothing is asked when nothing is missing or weaker.
+
+```text
+Security review
+  Runtime folders sandboxed commands need to read (user settings):
+    + ~/.nvm                   node (nvm)
+  Add them? (recommended so sandboxed commands can find your tools) [y/n]
+  Repository settings weaker than the recommended strict sandbox:
+    sandbox.autoAllowBashIfSandboxed     false -> true   (sandboxed commands run without a prompt each; ...)
+  [A]pply (recommended) / [K]eep current / [C]hoose per key:
+```
+
+No question in the review has a default. The Apply/Keep/Choose question accepts
+only `A`, `K` or `C` (or `apply`, `keep`, `choose`, any case); the runtime-reads
+and per-key questions accept only `y`, `yes`, `n` or `no`. Enter or anything else
+asks again. If the input closes (Ctrl-D, a closed pipe) every pending question
+counts as declined and nothing is written for it. Ctrl-C aborts the install
+before anything is written.
+
+- **Runtime reads.** Install resolves `node` and `graphify` on `PATH` (Windows
+  programs are ignored on WSL), takes their real paths and maps them to a fixed
+  table: an nvm install (`$NVM_DIR`, default `~/.nvm`) and a pipx install
+  (`~/.local/bin` plus the folder above `venvs`, `~/.local/share/pipx` or
+  `~/.local/pipx`). Only locations missing from your `allowRead` are proposed;
+  `~/.nvm`, `/home/you/.nvm/` and a broader entry such as `~/.local` all count as
+  covering. Confirmed items are appended in `~/` form after your entries, which
+  keep their order. Any other location under your home (volta, fnm, asdf, a
+  custom prefix) is reported as not a known runtime location and nothing is
+  proposed for it; locations outside home need no entry. Native Windows, an
+  unavailable sandbox and an unknown Claude version propose nothing.
+- **Weaker repository values.** `sandbox.enabled: false`,
+  `sandbox.failIfUnavailable: false`, `sandbox.allowUnsandboxedCommands: true`,
+  `permissions.block*OutsideWorkingDirectories: false` and an explicit
+  `sandbox.autoAllowBashIfSandboxed: false` (including one in user settings, or
+  left by canonkit 3.0.0) are listed with the recommended value and the reason.
+  *Apply* writes the recommended values to the repository file, *Keep* leaves
+  the file unchanged, *Choose* asks per key. Keeping a weaker sandbox switch also
+  keeps automatic approval from being turned on by default. Values in
+  `settings.local.json` are never written: install reports the key and the
+  edit to make there. The `autoAllowBashIfSandboxed: false` offer appears only
+  when the sandbox is available and `settings.local.json` does not itself weaken
+  the strict profile (`enabled: false`, `failIfUnavailable: false` or
+  `allowUnsandboxedCommands: true`).
+
+Without a terminal, with `--yes`, with `--dry-run` or with `TERM=dumb`, nothing
+is asked and the previous behavior holds for every key: a weaker repository
+boolean is set to the strict value and listed in the plan, an explicit
+`autoAllowBashIfSandboxed` value is preserved with a `RECOMMENDATION`, and the
+runtime reads are printed as a snippet and not written. In a dry run the snippet
+is marked conditional because the Claude version is not probed (the output also
+carries the `[dry-run]` prefix, and "no terminal" reads "dry run"):
+
+```text
+RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings so sandboxed commands can find your tools (no terminal: not written; run canonkit install from a terminal to confirm them):
+  "sandbox": { "filesystem": { "allowRead": ["~/.nvm"] } }
+RECOMMENDATION security runtime-reads: ... (dry run: not written; run canonkit install from a terminal to confirm them; conditional on Claude >= 2.1.302, version not probed in dry run):
+```
+
+The appended items are recorded as kit-owned. `uninstall` removes only an item
+that is still present exactly once and unchanged; entries you added or edited
+stay, and the array and its parents are removed only when canonkit created
+them and they are empty. `uninstall --project` leaves user settings alone.
+`canonkit doctor` reports a detected runtime location missing from user
+`allowRead` as `WARN security claude runtime-reads`, an entry that covers the
+whole home directory as `WARN` (shell reads of home are reopened), and covered
+runtimes as `OK`. It writes nothing.
+
+An empty `settings.json`, user or repository (0 bytes, whitespace only or only a
+byte-order mark), is read as `{}`, like `settings.local.json`; the written file
+is valid JSON with only the planned keys. Malformed JSON still stops the install
+before any write.
+
 ### Returning existing Claude installations to native approvals
 
 This migration runs automatically on `install` when Claude is selected and
@@ -257,7 +344,10 @@ scripts; use this default only with repositories you trust. Canonkit reports
 runtime containment as unverified, so it does not promise that sandbox
 protections cover `.git` paths in every supported environment. To keep command
 review, set `sandbox.autoAllowBashIfSandboxed` to `false` in your project or
-user settings. Existing explicit project or user choices are preserved.
+user settings. An existing explicit project or user choice is never overwritten
+silently: an interactive install asks whether to keep a `false` or change it to
+`true` (see [Security review during install](#security-review-during-install)),
+and without a terminal it is preserved and the recommendation is printed.
 
 If you want confirmation before publishing, add content-scoped `ask` rules for
 Git commit and push commands. Claude Code documents that these rules still
@@ -334,8 +424,9 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.enabled: true` | 2.1.302 (conservative) | [Shell sandbox](https://code.claude.com/docs/en/settings-reference#sandbox-enabled) |
 | `sandbox.failIfUnavailable: true` | 2.1.302 (conservative) | [Startup failure policy](https://code.claude.com/docs/en/settings-reference#sandbox-failifunavailable) |
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
-| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
+| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written (or when you confirm the change from an explicit `false`) | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
+| `sandbox.filesystem.allowRead` items for detected runtimes, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
 
 The four shell switches additionally require an available, unverified sandbox
 capability. The 2.1.302 floors are canonkit's supported baseline, not claims

@@ -25,6 +25,24 @@ test("groups passes, keeps every warning by name, and counts failures", () => {
   assert.ok(lines.length < 20);
 });
 
+test("runtime read coverage rows are named in the grouped security summary", () => {
+  const { lines } = renderDoctorReport([
+    { status: "OK", check: "security environment", detail: "detected linux, WSL none; sandbox available-unverified", more: [] },
+    { status: "WARN", check: "security claude runtime-reads", detail: "partial: ~/.nvm (node (nvm)) is not covered by sandbox.filesystem.allowRead in user settings", more: [] },
+    { status: "WARN", check: "security claude runtime-reads", detail: "partial: a sandbox.filesystem.allowRead entry (~) covers the whole home directory", more: [] },
+  ]);
+  const out = lines.join("\n");
+  // The renderer joins a mark and its name with a non-breaking space, hence \s.
+  assert.match(out, /claude\s+!\sruntime-reads\spartial\s·\s!\sruntime-reads\spartial/);
+  assert.match(out, /No check failed\. 2 warnings/);
+});
+
+test("a covered runtime read row is a pass, not a warning", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "security claude runtime-reads", detail: "configured: ~/.nvm covered by sandbox.filesystem.allowRead in user settings", more: [] }]);
+  assert.match(lines.join("\n"), /claude\s+✓\sruntime-reads\sconfigured/);
+  assert.match(lines.join("\n"), /No check failed\.$/);
+});
+
 test("a FAIL is marked and counted", () => {
   const { lines, failed } = renderDoctorReport([{ status: "FAIL", check: "agents", detail: "missing", more: ["fix it"] }]);
   assert.equal(failed, 1);

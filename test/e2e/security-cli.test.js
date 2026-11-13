@@ -7,6 +7,9 @@ import path from "node:path";
 import os from "node:os";
 import { projectStateDir, collectEnvironment } from "../../bin/security.js";
 import { CLI, runCli, startCli, writeCommand } from "../helpers/cli-harness.js";
+import { runMain } from "../helpers/interactive-install.js";
+import { askLine, askReviewMode } from "../../bin/cli.js";
+import { PassThrough } from "node:stream";
 
 async function fixture(t, version = "2.1.314", { sandbox = false } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-cli-")));
@@ -21,7 +24,8 @@ async function fixture(t, version = "2.1.314", { sandbox = false } = {}) {
     await writeCommand(bin, "bwrap", script);
     await writeCommand(bin, "socat", script);
   }
-  const env = { PATH: bin };
+  // NVM_DIR blank: a developer's own nvm folder must not decide where the fixture's node counts as nvm.
+  const env = { PATH: bin, NVM_DIR: "" };
   if (process.platform === "win32") {
     const systemRoot = process.env.SystemRoot ?? process.env.SYSTEMROOT ?? process.env.WINDIR ?? "C:\\Windows";
     env.SystemRoot = systemRoot;
@@ -526,4 +530,431 @@ test("foreign hook homonyms never justify active canonkit instruction claims", a
   assert.equal(native.status, 0, native.out);
   assert.deepEqual((await json(f.global)).hooks, settings.hooks);
   assert.doesNotMatch(await readFile(path.join(f.home, ".claude", "CLAUDE.md"), "utf8"), /\[ENFORCED\]/);
+});
+
+// ---- Empty settings files, the install security review and runtime reads ----
+
+test("an empty user or repository settings.json is read as {} by install and install --wire-hooks", async (t) => {
+  for (const empty of ["", "  \n\t", "﻿"]) {
+    for (const wire of [false, true]) {
+      const f = await fixture(t);
+      await put(f.global, empty); await put(f.local, empty);
+      const result = f.run(["install", "--claude", "--no-reference", ...(wire ? ["--wire-hooks"] : [])]);
+      assert.equal(result.status, 0, `${JSON.stringify(empty)} wire=${wire}\n${result.out}`);
+      // A byte-order mark the user had is kept, so it is stripped here only for parsing.
+      const read = async (file) => JSON.parse((await readFile(file, "utf8")).replace(/^﻿/, ""));
+      const user = await read(f.global), project = await read(f.local);
+      assert.equal(user.sandbox.network.strictAllowlist, true);
+      assert.deepEqual(Object.keys(user).sort(), wire ? ["hooks", "sandbox"] : ["sandbox"]);
+      assert.deepEqual(project, { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } });
+      // Doctor reads the same files without calling them malformed.
+      assert.doesNotMatch(f.run(["doctor"]).out, /malformed or inaccessible configuration/);
+    }
+  }
+  const broken = await fixture(t);
+  await put(broken.local, "{");
+  const refused = broken.run(["install", "--claude", "--no-reference"]);
+  assert.equal(refused.status, 1);
+  assert.equal(existsSync(path.join(broken.home, ".claude")), false);
+});
+
+const STRICT_PROJECT = { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true }, sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true } };
+const withProject = (patch) => ({ permissions: { ...STRICT_PROJECT.permissions, ...patch.permissions }, sandbox: { ...STRICT_PROJECT.sandbox, ...patch.sandbox } });
+const INSTALL = ["install", "--claude", "--no-reference"];
+
+async function capable(t, f) {
+  const evidence = await collectEnvironment({ cwd: f.project, env: f.env });
+  if (evidence.sandboxCapability === "available-unverified") return true;
+  t.skip("host has no supported sandbox capability");
+  return false;
+}
+// A node under an nvm layout in the fixture home, first on PATH.
+async function nvmNode(f, ...parts) {
+  const dir = path.join(f.home, ...(parts.length ? parts : [".nvm", "versions", "node", "v20.0.0", "bin"]));
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, "node"), "#!/bin/sh\n", { mode: 0o755 });
+  return [dir, f.bin].join(path.delimiter);
+}
+const interactive = (f, { confirm = async () => true, choose = async () => "apply", args = INSTALL, env = {} } = {}) =>
+  runMain(args, { home: f.home, cwd: f.project, env: { PATH: f.bin, ...env }, confirmAction: confirm, choose });
+const never = async (question) => { throw new Error(`unexpected question: ${question}`); };
+const fileBytes = (file) => readFile(file).catch(() => null);
+
+test("interactive install: apply writes recommended values and detected runtime reads, then a second install asks nothing", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  await put(f.local, { custom: "keep", sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true }, permissions: { blockReadsOutsideWorkingDirectories: false } });
+  await put(f.global, { custom: "user", sandbox: { filesystem: { allowRead: ["~/mine"] } } });
+  const first = await interactive(f, { env: { PATH } });
+  assert.equal(first.status, 0, first.out);
+  assert.match(first.out, /Security review/);
+  assert.match(first.out, /Runtime folders sandboxed commands need to read \(user settings\):\n\s+\+ ~\/\.nvm\s+node \(nvm\)/);
+  assert.match(first.out, /Repository settings weaker than the recommended strict sandbox:/);
+  assert.match(first.out, /sandbox\.autoAllowBashIfSandboxed\s+false -> true\s+\(sandboxed commands run without a prompt each/);
+  assert.match(first.out, /sandbox\.allowUnsandboxedCommands\s+true -> false/);
+  assert.match(first.out, /permissions\.blockReadsOutsideWorkingDirectories\s+false -> true/);
+  assert.equal(first.questions.length, 2);
+  assert.match(first.questions[0], /Add them\? \(recommended so sandboxed commands can find your tools\) \[y\/n\]/);
+  assert.match(first.questions[1], /\[A\]pply \(recommended\) \/ \[K\]eep current \/ \[C\]hoose per key: $/);
+  const project = await json(f.local);
+  assert.deepEqual(project, { custom: "keep", ...withProject({}) });
+  const user = await json(f.global);
+  assert.equal(user.custom, "user");
+  assert.deepEqual(user.sandbox.filesystem.allowRead, ["~/mine", "~/.nvm"]);
+  assert.equal(user.sandbox.network.strictAllowlist, true);
+
+  // Idempotent and quiet once everything is recommended and covered; doctor accepts the receipt.
+  const settled = await bytes(f.home), settledProject = await fileBytes(f.local);
+  const second = await interactive(f, { env: { PATH }, confirm: never, choose: never });
+  assert.equal(second.status, 0, second.out);
+  assert.deepEqual(second.questions, []);
+  assert.doesNotMatch(second.out, /Security review/);
+  assert.deepEqual(await bytes(f.home), settled);
+  assert.deepEqual(await fileBytes(f.local), settledProject);
+  const diagnosis = f.run(["doctor"], f.project, { PATH });
+  assert.doesNotMatch(diagnosis.out, /FAIL +security/);
+  assert.match(diagnosis.out, /OK +security claude runtime-reads: configured: ~\/\.nvm/);
+});
+
+test("interactive install: keep leaves repository settings byte-identical and declining runtime reads prints the snippet", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true } }));
+  const before = await fileBytes(f.local);
+  const result = await interactive(f, { env: { PATH }, confirm: async () => false, choose: async () => "keep" });
+  assert.equal(result.status, 0, result.out);
+  assert.deepEqual(await fileBytes(f.local), before);
+  assert.equal((await json(f.global)).sandbox.filesystem, undefined);
+  assert.match(result.out, /Kept sandbox\.allowUnsandboxedCommands: true \(recommended: false\)/);
+  assert.match(result.out, /RECOMMENDATION security runtime-reads: declined.*\n\s*"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm"\] \} \}/);
+  assert.match(result.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this repository's \.claude\/settings\.json/);
+});
+
+test("interactive install: choose per key writes only the chosen keys", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true } }));
+  const result = await interactive(f, { choose: async () => "choose", confirm: async (question) => !/allowUnsandboxedCommands/.test(question) });
+  assert.equal(result.status, 0, result.out);
+  assert.equal(result.questions.length, 3);
+  assert.match(result.questions.join("\n"), /Change sandbox\.autoAllowBashIfSandboxed from false to true\? \[y\/n\]/);
+  assert.match(result.questions.join("\n"), /Change sandbox\.allowUnsandboxedCommands from true to false\? \[y\/n\]/);
+  assert.deepEqual(await json(f.local), withProject({ sandbox: { allowUnsandboxedCommands: true } }));
+});
+
+test("interactive install on a 3.0.0 project: leftover auto-approval false is offered, changed on apply and preserved on keep", async (t) => {
+  const upgraded = withProject({ sandbox: { autoAllowBashIfSandboxed: false } });
+  const apply = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, apply)) return;
+  await put(apply.local, upgraded);
+  const applied = await interactive(apply);
+  assert.equal(applied.status, 0, applied.out);
+  assert.match(applied.out, /sandbox\.autoAllowBashIfSandboxed\s+false -> true/);
+  assert.deepEqual(await json(apply.local), STRICT_PROJECT);
+  assert.doesNotMatch(applied.out, /RECOMMENDATION security approval/);
+
+  const keep = await fixture(t, "2.1.314", { sandbox: true });
+  await put(keep.local, upgraded);
+  const before = await fileBytes(keep.local);
+  const kept = await interactive(keep, { choose: async () => "keep" });
+  assert.equal(kept.status, 0, kept.out);
+  assert.deepEqual(await fileBytes(keep.local), before);
+
+  // A user-scope false is offered too, and "change" writes true to the repository file.
+  const personal = await fixture(t, "2.1.314", { sandbox: true });
+  await put(personal.global, { sandbox: { autoAllowBashIfSandboxed: false } });
+  const changed = await interactive(personal);
+  assert.equal(changed.status, 0, changed.out);
+  assert.equal((await json(personal.local)).sandbox.autoAllowBashIfSandboxed, true);
+  assert.equal((await json(personal.global)).sandbox.autoAllowBashIfSandboxed, false);
+  const personalKeep = await fixture(t, "2.1.314", { sandbox: true });
+  await put(personalKeep.global, { sandbox: { autoAllowBashIfSandboxed: false } });
+  assert.equal((await interactive(personalKeep, { choose: async () => "keep" })).status, 0);
+  assert.equal((await json(personalKeep.local)).sandbox.autoAllowBashIfSandboxed, undefined);
+});
+
+test("interactive install never writes or asks about settings.local.json values", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const localFile = path.join(f.project, ".claude", "settings.local.json");
+  await put(localFile, { sandbox: { allowUnsandboxedCommands: true, enabled: false } });
+  const before = await fileBytes(localFile);
+  const result = await interactive(f, { confirm: never, choose: never });
+  assert.equal(result.status, 0, result.out);
+  assert.deepEqual(result.questions, []);
+  assert.deepEqual(await fileBytes(localFile), before);
+  assert.match(result.out, /WARN security local: sandbox\.enabled is false in this repository's \.claude\/settings\.local\.json; set it to true there/);
+  assert.match(result.out, /WARN security local: sandbox\.allowUnsandboxedCommands is true/);
+  assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, undefined);
+});
+
+test("keeping a weaker sandbox switch does not enable automatic approval", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  await put(f.local, { sandbox: { enabled: false } });
+  const result = await interactive(f, { choose: async () => "keep" });
+  assert.equal(result.status, 0, result.out);
+  const project = await json(f.local);
+  assert.equal(project.sandbox.enabled, false);
+  assert.equal(project.sandbox.autoAllowBashIfSandboxed, undefined);
+  assert.equal(project.sandbox.failIfUnavailable, true);
+  assert.equal(project.sandbox.allowUnsandboxedCommands, false);
+});
+
+const WEAKER = [
+  ["permissions.blockReadsOutsideWorkingDirectories", false, true], ["permissions.blockWritesOutsideWorkingDirectories", false, true],
+  ["sandbox.enabled", false, true], ["sandbox.failIfUnavailable", false, true], ["sandbox.allowUnsandboxedCommands", true, false],
+  ["sandbox.autoAllowBashIfSandboxed", false, false],
+];
+const dotted = (data, key) => key.split(".").reduce((value, part) => value?.[part], data);
+const seed = (key, value) => key.split(".").reduceRight((inner, part) => ({ [part]: inner }), value);
+
+test("without a terminal, --yes or --dry-run each weaker key behaves exactly as in 3.1.0", async (t) => {
+  for (const [key, weak, expected] of WEAKER) {
+    for (const args of [INSTALL, [...INSTALL, "--yes"]]) {
+      const f = await fixture(t, "2.1.314", { sandbox: true });
+      if (!await capable(t, f)) return;
+      await put(f.local, seed(key, weak));
+      const result = f.run([...args, "--verbose"]);
+      assert.equal(result.status, 0, `${key}\n${result.out}`);
+      assert.doesNotMatch(result.out, /Security review|Kept /);
+      assert.equal(dotted(await json(f.local), key), expected, key);
+      if (key.endsWith("autoAllowBashIfSandboxed")) assert.match(result.out, /RECOMMENDATION security approval: .*the explicit false was preserved/);
+      else assert.match(result.out, new RegExp(`Applying repository control: ${key.replaceAll(".", "\\.")}`));
+    }
+  }
+  // An interactive terminal that passes --yes, --dry-run or TERM=dumb is not asked either.
+  for (const [extra, env] of [[["--yes"], {}], [["--dry-run"], {}], [[], { TERM: "dumb" }]]) {
+    const f = await fixture(t, "2.1.314", { sandbox: true });
+    if (!await capable(t, f)) return;
+    const PATH = await nvmNode(f);
+    await put(f.local, withProject({ sandbox: { allowUnsandboxedCommands: true, autoAllowBashIfSandboxed: false } }));
+    const before = await bytes(f.root);
+    const result = await interactive(f, { args: [...INSTALL, ...extra], env: { PATH, ...env }, confirm: never, choose: never });
+    assert.equal(result.status, 0, `${extra} ${JSON.stringify(env)}\n${result.out}`);
+    assert.deepEqual(result.questions, []);
+    assert.doesNotMatch(result.out, /Security review/);
+    if (extra[0] === "--dry-run") assert.deepEqual(await bytes(f.root), before);
+    else {
+      assert.equal((await json(f.local)).sandbox.allowUnsandboxedCommands, false);
+      assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, false);
+      assert.equal((await json(f.global)).sandbox.filesystem, undefined);
+    }
+  }
+});
+
+test("without a terminal runtime reads are printed as a snippet and never written; unknown managers are reported", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  const result = f.run([...INSTALL, "--verbose"], f.project, { PATH });
+  assert.equal(result.status, 0, result.out);
+  assert.match(result.out, /RECOMMENDATION security runtime-reads: add these to sandbox\.filesystem\.allowRead in user Claude settings/);
+  assert.match(result.out, /"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm"\] \} \}/);
+  assert.equal((await json(f.global)).sandbox.filesystem, undefined);
+
+  const dry = await fixture(t, "2.1.314", { sandbox: true });
+  const dryPath = await nvmNode(dry);
+  const before = await bytes(dry.root);
+  const preview = dry.run([...INSTALL, "--dry-run", "--verbose"], dry.project, { PATH: dryPath });
+  assert.equal(preview.status, 0, preview.out);
+  assert.match(preview.out, /dry run: not written.*conditional on Claude >= 2\.1\.302, version not probed in dry run/);
+  assert.match(preview.out, /\["~\/\.nvm"\]/);
+  assert.deepEqual(await bytes(dry.root), before);
+
+  const volta = await fixture(t, "2.1.314", { sandbox: true });
+  const voltaPath = await nvmNode(volta, ".volta", "bin");
+  const unknown = volta.run([...INSTALL, "--verbose"], volta.project, { PATH: voltaPath });
+  assert.equal(unknown.status, 0, unknown.out);
+  assert.match(unknown.out, /WARN security runtime-reads: ~\/\.volta\/bin\/node \(node\) is not a known runtime location/);
+  assert.doesNotMatch(unknown.out, /RECOMMENDATION security runtime-reads/);
+  assert.equal((await json(volta.global)).sandbox.filesystem, undefined);
+});
+
+test("covered runtime reads in any spelling, or nothing weaker, ask nothing and rewrite nothing", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  const spelled = [`${f.home}/.nvm/`];
+  await put(f.global, { sandbox: { filesystem: { allowRead: spelled } } });
+  const first = await interactive(f, { env: { PATH }, confirm: never, choose: never });
+  assert.equal(first.status, 0, first.out);
+  assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, spelled);
+  const settled = await fileBytes(f.global);
+  const again = await interactive(f, { env: { PATH }, confirm: never, choose: never });
+  assert.equal(again.status, 0, again.out);
+  assert.deepEqual(await fileBytes(f.global), settled);
+  assert.doesNotMatch(again.out, /runtime-reads/);
+});
+
+test("doctor reports missing and over-broad runtime read exceptions as WARN, covered ones as OK, and writes nothing", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  const check = () => { const before = f.run(["doctor"], f.project, { PATH }); return before; };
+  const missing = check();
+  assert.match(missing.out, /WARN +security claude runtime-reads: partial: ~\/\.nvm \(node \(nvm\)\) is not covered by sandbox\.filesystem\.allowRead.*canonkit install/);
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } });
+  const covered = check();
+  assert.match(covered.out, /OK +security claude runtime-reads: configured: ~\/\.nvm/);
+  assert.doesNotMatch(covered.out, /WARN +security claude runtime-reads/);
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~"] } } });
+  const before = await bytes(f.root);
+  const broad = check();
+  assert.match(broad.out, /WARN +security claude runtime-reads: partial: a sandbox\.filesystem\.allowRead entry \(~\) covers the whole home directory/);
+  assert.deepEqual(await bytes(f.root), before);
+  // No detected runtime and no entry: no runtime-reads row at all.
+  await put(f.global, {});
+  assert.doesNotMatch(f.run(["doctor"]).out, /runtime-reads/);
+});
+
+test("askLine resolves null when its input ends instead of hanging, and returns a trimmed answer otherwise", async () => {
+  const output = new PassThrough();
+  const ended = new PassThrough();
+  const pending = askLine("q? ", { input: ended, output });
+  ended.end();
+  assert.equal(await pending, null);
+  const answered = new PassThrough();
+  const reply = askLine("q? ", { input: answered, output });
+  answered.write("  yes \n");
+  assert.equal(await reply, "yes");
+  assert.equal(await askReviewMode(async () => null, "q"), "keep");
+});
+
+const scripted = (answers) => async () => (answers.length ? answers.shift() : null);
+
+test("the Apply/Keep/Choose question has no default: Enter and other answers ask again, then k keeps and a applies", async (t) => {
+  const keep = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, keep)) return;
+  await put(keep.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false } }));
+  const before = await fileBytes(keep.local);
+  const answers = ["", "n", "não", "  K  "];
+  const kept = await runMain(INSTALL, { home: keep.home, cwd: keep.project, env: { PATH: keep.bin }, readLine: scripted(answers) });
+  assert.equal(kept.status, 0, kept.out);
+  assert.equal(kept.questions.length, 4);
+  assert.equal(new Set(kept.questions).size, 1, "the same question is asked again");
+  assert.match(kept.out, /Please answer A \(apply\), K \(keep\) or C \(choose per key\)\./);
+  assert.deepEqual(await fileBytes(keep.local), before);
+  assert.match(kept.out, /RECOMMENDATION security approval/);
+
+  const apply = await fixture(t, "2.1.314", { sandbox: true });
+  await put(apply.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false } }));
+  const applied = await runMain(INSTALL, { home: apply.home, cwd: apply.project, env: { PATH: apply.bin }, readLine: scripted(["x", "A"]) });
+  assert.equal(applied.status, 0, applied.out);
+  assert.equal(applied.questions.length, 2);
+  assert.equal((await json(apply.local)).sandbox.autoAllowBashIfSandboxed, true);
+
+  const word = await fixture(t, "2.1.314", { sandbox: true });
+  await put(word.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false } }));
+  const chosen = await runMain(INSTALL, { home: word.home, cwd: word.project, env: { PATH: word.bin }, readLine: scripted(["Choose", "y"]) });
+  assert.equal(chosen.status, 0, chosen.out);
+  assert.equal((await json(word.local)).sandbox.autoAllowBashIfSandboxed, true);
+});
+
+test("yes/no questions have no default: Enter asks again, then n keeps and y appends", async (t) => {
+  const c = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, c)) return;
+  await put(c.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false } }));
+  const before = await fileBytes(c.local);
+  const kept = await runMain(INSTALL, { home: c.home, cwd: c.project, env: { PATH: c.bin }, readLine: scripted(["c", "", "maybe", "N"]) });
+  assert.equal(kept.status, 0, kept.out);
+  assert.equal(kept.questions.length, 4);
+  assert.match(kept.questions[1], /Change sandbox\.autoAllowBashIfSandboxed from false to true\? \[y\/n\]/);
+  assert.match(kept.out, /Please answer y or n\./);
+  assert.deepEqual(await fileBytes(c.local), before);
+
+  const r = await fixture(t, "2.1.314", { sandbox: true });
+  const PATH = await nvmNode(r);
+  const added = await runMain(INSTALL, { home: r.home, cwd: r.project, env: { PATH }, readLine: scripted(["", " YES "]) });
+  assert.equal(added.status, 0, added.out);
+  assert.equal(added.questions.length, 2);
+  assert.match(added.questions[0], /Add them\?.*\[y\/n\]/);
+  assert.deepEqual((await json(r.global)).sandbox.filesystem.allowRead, ["~/.nvm"]);
+});
+
+test("Ctrl-C during a security question aborts the install before any write", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false } }));
+  const before = await bytes(f.root);
+  const interrupted = async () => { throw Object.assign(new Error("Interrupted during the security review; nothing was written"), { code: "INTERRUPTED" }); };
+  await assert.rejects(runMain(INSTALL, { home: f.home, cwd: f.project, env: { PATH }, readLine: interrupted }), /Interrupted/);
+  assert.deepEqual(await bytes(f.root), before);
+  assert.equal(existsSync(path.join(f.home, ".claude")), false);
+
+  // The real reader: Ctrl-C (\x03) on a terminal rejects with the same error.
+  const input = new PassThrough(), output = new PassThrough();
+  input.isTTY = true; input.setRawMode = () => input; output.isTTY = true;
+  const pending = askLine("q? ", { input, output });
+  input.write("\x03");
+  await assert.rejects(pending, (error) => error.code === "INTERRUPTED");
+});
+
+test("a closed input (EOF) declines every pending question and writes nothing for them", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true } }));
+  const before = await fileBytes(f.local);
+  const result = await runMain(INSTALL, { home: f.home, cwd: f.project, env: { PATH }, readLine: async () => null });
+  assert.equal(result.status, 0, result.out);
+  assert.equal(result.questions.length, 2, "one runtime question and one review question, no re-ask loop");
+  assert.deepEqual(await fileBytes(f.local), before);
+  assert.equal((await json(f.global)).sandbox.filesystem, undefined);
+  assert.match(result.out, /RECOMMENDATION security runtime-reads: declined/);
+});
+
+test("doctor does not trust a tampered receipt to silence warnings, and never crashes on a malformed one", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  assert.equal((await interactive(f, { env: { PATH } })).status, 0);
+  const receiptFile = path.join(f.home, ".canonkit", "install-manifest.json");
+  const receipt = JSON.parse(await readFile(receiptFile, "utf8"));
+  const record = receipt.entries["claude:json:settings.json"].securityChanges["sandbox.filesystem.allowRead"];
+  const original = structuredClone(record);
+  const settings = await json(f.global);
+  settings.sandbox.filesystem.allowRead = ["~", "~/.nvm"];
+  await put(f.global, settings);
+  record.appendedItems = ["~/.nvm", "~"];
+  await put(receiptFile, receipt);
+  const forged = f.run(["doctor"], f.project, { PATH });
+  assert.match(forged.out, /WARN +security claude filesystem-exceptions/);
+  assert.match(forged.out, /runtime-reads: partial: a sandbox\.filesystem\.allowRead entry/);
+  for (const bad of ["~/.nvm", 42, null, { a: 1 }, [42]]) {
+    record.appendedItems = bad;
+    await put(receiptFile, receipt);
+    const result = f.run(["doctor"], f.project, { PATH });
+    assert.ok(result.out.includes("security claude filesystem-exceptions"), JSON.stringify(bad));
+    assert.doesNotMatch(result.out, /TypeError|at .*\.js:\d+/, JSON.stringify(bad));
+  }
+  assert.deepEqual(original.appendedItems, ["~/.nvm"]);
+});
+
+test("doctor accepts a receipt after the user removed an appended allowRead item, and does not warn about kit-owned items", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  const PATH = await nvmNode(f);
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/mine"] } } });
+  const installed = await interactive(f, { env: { PATH } });
+  assert.equal(installed.status, 0, installed.out);
+  assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, ["~/mine", "~/.nvm"]);
+  const owned = f.run(["doctor"], f.project, { PATH });
+  // Only the user's own entry is an exception to review.
+  assert.match(owned.out, /WARN +security claude filesystem-exceptions/);
+  assert.doesNotMatch(owned.out, /FAIL +security/);
+
+  const settings = await json(f.global);
+  settings.sandbox.filesystem.allowRead = ["~/.nvm"];
+  await put(f.global, settings);
+  assert.doesNotMatch(f.run(["doctor"], f.project, { PATH }).out, /filesystem-exceptions/);
+
+  settings.sandbox.filesystem.allowRead = ["~/mine"];
+  await put(f.global, settings);
+  const removed = f.run(["doctor"], f.project, { PATH });
+  assert.doesNotMatch(removed.out, /FAIL +security/);
+  assert.match(removed.out, /WARN +security claude runtime-reads: partial: ~\/\.nvm/);
 });

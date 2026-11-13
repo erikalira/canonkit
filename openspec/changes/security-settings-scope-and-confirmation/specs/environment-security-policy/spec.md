@@ -150,7 +150,7 @@ On a sandbox-capable platform with a supported Claude version, installation SHAL
 - **THEN** no runtime read exception is proposed or written
 
 ### Requirement: Weaker repository values require confirmation
-When the effective repository security settings hold a value weaker than the strict profile canonkit would write, an interactive installation SHALL ask whether to keep the existing value or apply the recommended one, stating which value is recommended for a secure environment and why. Without an interactive terminal, the behavior of the previous release SHALL hold for each key.
+When the effective repository security settings hold a value weaker than the strict profile canonkit would write, an interactive installation SHALL ask whether to keep the existing value or apply the recommended one, stating which value is recommended for a secure environment and why. No security question SHALL have a default answer: only an explicit choice (or an explicit yes or no) is accepted, any other input is asked again, a closed input counts as keep or decline, and an interrupt aborts the installation before any write. Without an interactive terminal, the behavior of the previous release SHALL hold for each key.
 
 #### Scenario: Weaker values in the repository settings
 - **GIVEN** repository settings with any of `sandbox.enabled: false`, `sandbox.failIfUnavailable: false`, `sandbox.allowUnsandboxedCommands: true`, `permissions.blockReadsOutsideWorkingDirectories: false` or `permissions.blockWritesOutsideWorkingDirectories: false`

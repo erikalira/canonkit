@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import os from "node:os";
@@ -80,4 +80,33 @@ test("frontmatter validation requires a need level and rejects a vendor model la
   assert.deepEqual(check("model: opus\n"), [["fail", "zed: 'model: opus' is no longer accepted — replace it with need: light | standard | deep"]]);
   assert.deepEqual(check("need: deep\nmodel: opus\n")[0][0], "fail");
   assert.deepEqual(check(""), [["fail", "zed: need is 'missing' — expected light, standard, or deep"]]);
+});
+
+test("the README recommended security settings match the installer, and a hand edit is caught", async () => {
+  const { readmeSecurityProblems } = await import(new URL("../scripts/validate.mjs", import.meta.url));
+  const readme = readFileSync(path.join(REPO, "README.md"), "utf8");
+  assert.deepEqual(await readmeSecurityProblems(readme), []);
+  // allowRead is compared by presence only: other example values are fine.
+  assert.deepEqual(await readmeSecurityProblems(readme.replace('"~/.local/share/pipx"', '"~/.local/pipx"')), []);
+
+  const edits = [
+    ['"allowUnsandboxedCommands": false', '"allowUnsandboxedCommands": true', /repository settings block differs/],
+    ['"strictAllowlist": true', '"strictAllowlist": false', /user settings block differs/],
+    ['"autoAllowBashIfSandboxed": true\n  }', '"autoAllowBashIfSandboxed": true,\n    "extra": true\n  }', /repository settings block differs/],
+    ["a missing sandbox stops commands;", "a missing sandbox is fine;", /sandbox\.failIfUnavailable.*differs/],
+    ["| `sandbox.enabled` | repository |", "| `sandbox.enabled` | user |", /sandbox\.enabled.*differs/],
+  ];
+  for (const broad of ['"~"', '"~/"', '"/home/user"', '"/"', '"~/.local/bin/../.."']) {
+    const problems = await readmeSecurityProblems(readme.replace('"~/.local/share/pipx"', broad));
+    assert.ok(problems.some((problem) => /broad or not a ~\/ subfolder/.test(problem)), `${broad}\n${problems.join("\n")}`);
+  }
+  for (const [from, to, expected] of edits) {
+    assert.ok(readme.includes(from), from);
+    const problems = await readmeSecurityProblems(readme.replace(from, to));
+    assert.ok(problems.some((problem) => expected.test(problem)), `${from}\n${problems.join("\n")}`);
+  }
+  const rows = readme.split("\n").filter((line) => line.startsWith("| `sandbox.enabled`")).join("\n");
+  assert.ok((await readmeSecurityProblems(readme.replace(rows, ""))).some((problem) => /no row for sandbox\.enabled/.test(problem)));
+  assert.ok((await readmeSecurityProblems(readme.replace(rows, `${rows}\n| \`sandbox.extra\` | user | something |`))).some((problem) => /sandbox\.extra/.test(problem)));
+  assert.ok((await readmeSecurityProblems("# no section")).some((problem) => /has no/.test(problem)));
 });

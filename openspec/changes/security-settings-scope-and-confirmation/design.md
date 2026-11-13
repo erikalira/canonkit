@@ -103,16 +103,20 @@ that may ask at most two questions, each one grouped:
 Security review
   Runtime folders sandboxed commands need to read (user settings):
     + ~/.local/share/pipx      graphify (pipx)
-  Add them? (recommended so sandboxed commands can find your tools) [Y/n]
+  Add them? (recommended so sandboxed commands can find your tools) [y/n]
 
   Repository settings weaker than the recommended strict sandbox:
     sandbox.autoAllowBashIfSandboxed   false -> true   (sandboxed commands run without a prompt each)
     sandbox.allowUnsandboxedCommands   true  -> false  (no command escapes the sandbox)
-  [A]pply recommended / [K]eep current / [C]hoose per key  (A)
+  [A]pply (recommended) / [K]eep current / [C]hoose per key:
 ```
 
-"Choose per key" asks y/n per listed key. The defaults are the recommended
-values. Each line carries a one-line reason taken from the same table that
+No question in the review has a default (user decision): Apply is marked
+recommended, but only `A`, `K`, `C` or the full word (any case) is accepted for
+the three-way question. "Choose per key" and the runtime-reads question accept
+only `y`/`yes`/`n`/`no` (`[y/n]`). Enter or anything else asks again, and a
+closed input (EOF) declines (Keep for the three-way question). Ctrl-C aborts the
+install before any write. Each line carries a one-line reason taken from the same table that
 feeds the README (D6), so the wording never diverges.
 
 Interactivity follows the existing rule: TTY on stdin and stdout, not
@@ -167,6 +171,16 @@ project settings carry it, then run `node --version`. If the read is refused,
 the entry is dead and is removed in this change. If the read succeeds, the
 entry stays, the code comment is corrected, and canonkit still writes runtime
 reads only to user scope (D1 to D3 are unchanged either way).
+
+**Result (2026-11-13, WSL2).** In a scratch repository with the read block on
+and `allowRead: ["~/.nvm"]` only in project settings, `node --version` in a
+fresh sandboxed session failed with `node: command not found` (exit 127). The
+same session's sandbox read allowlist also omitted `~/.nvm` while canonkit's
+own project settings still listed it. Claude Code ignores project-level
+`allowRead` under the working-directory read block. The `compileSecurity`
+comment, `docs/tools.md` and the 3.1.1 notes state this. This repository's
+`.claude/settings.json` is git-ignored, so removing its dead entry is a local
+cleanup, not part of the commit.
 
 ## Risks / Trade-offs
 
