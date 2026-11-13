@@ -859,7 +859,13 @@ async function planInstall(ctx, options = {}) {
     if (security && !options.wireHooks) {
       for (const [label, plan] of [["user", security.global], ["repository", security.project]]) {
         if (!plan?.migration) continue;
-        if (plan.migration.removed.length) ctx.log(`${ctx.dryRun ? "would unregister" : "Unregistering"} ${plan.migration.removed.length} canonical canonkit hook handlers in ${label} settings`);
+        if (plan.migration.removed.length) {
+          if (securityDecision.securityAnswer === "keep") {
+            ctx.log(`WARN migration ${label}: ${plan.migration.removed.length} canonical canonkit hook handler(s) remain in ${label} settings; apply with canonkit install --recommended`);
+          } else {
+            ctx.log(`${ctx.dryRun ? "would unregister" : "Unregistering"} ${plan.migration.removed.length} canonical canonkit hook handlers in ${label} settings`);
+          }
+        }
         for (const key of plan.migration.ambiguous) ctx.log(`WARN migration ${label} ${key}: ambiguous canonkit command preserved; inspect /hooks manually`);
       }
       await applyClaudeUserPlan(configured);

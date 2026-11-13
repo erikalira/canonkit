@@ -916,6 +916,26 @@ test("recommended and keep security answers apply exactly the planned rows", asy
   assert.match(kept.out, /sandbox\.enabled  false  ->  true/);
 });
 
+test("keep reports legacy hook handlers as preserved instead of claiming they were unregistered", async (t) => {
+  const f = await fixture(t);
+  const user = { hooks: { Stop: [{ hooks: [kitHandler(f.home)] }] } };
+  const project = { hooks: { Stop: [{ hooks: [kitHandler(f.home)] }] } };
+  await put(f.global, user);
+  await put(f.local, project);
+  const beforeUser = await fileBytes(f.global), beforeProject = await fileBytes(f.local);
+
+  const kept = await runMain(INSTALL, {
+    home: f.home, cwd: f.project, env: { PATH: f.bin }, interactive: false, securityAnswer: "keep",
+  });
+
+  assert.equal(kept.status, 0, kept.out);
+  assert.doesNotMatch(kept.out, /Unregistering \d+ canonical canonkit hook handlers/);
+  assert.match(kept.out, /WARN migration user: \d+ canonical canonkit hook handler\(s\) remain in user settings/);
+  assert.match(kept.out, /WARN migration repository: \d+ canonical canonkit hook handler\(s\) remain in repository settings/);
+  assert.deepEqual(await fileBytes(f.global), beforeUser);
+  assert.deepEqual(await fileBytes(f.local), beforeProject);
+});
+
 test("--recommended --dry-run previews security rows without writing settings", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
   if (!await capable(t, f)) return;
