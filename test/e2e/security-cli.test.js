@@ -702,6 +702,31 @@ test("interactive install: keep leaves repository settings byte-identical and de
   assert.match(result.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this repository's \.claude\/settings\.json/);
 });
 
+test("guided install offers keep current for security changes without saved model choices", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  await put(f.local, {});
+  const beforeGlobal = await fileBytes(f.global), beforeProject = await fileBytes(f.local);
+  let setupChoices;
+  const result = await interactive(f, {
+    prompt: async (question) => {
+      if (question.name === "project-scope") return { [question.name]: true };
+      if (["tools", "specialists", "stacks"].includes(question.name)) return { [question.name]: [] };
+      if (question.name === "recommended-setup") {
+        setupChoices = question.choices.map((choice) => choice.value);
+        return { [question.name]: "keep" };
+      }
+      if (question.name === "install-confirmation") return { [question.name]: true };
+      throw new Error(`unexpected prompt ${question.name}`);
+    },
+  });
+  assert.equal(result.status, 0, result.out);
+  assert.deepEqual(setupChoices, ["recommended", "keep", "customize"], result.out);
+  assert.equal(existsSync(path.join(f.home, ".canonkit", "models.json")), false);
+  assert.deepEqual(await fileBytes(f.global), beforeGlobal);
+  assert.deepEqual(await fileBytes(f.local), beforeProject);
+});
+
 test("interactive install: choose per key writes only the chosen keys", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
   if (!await capable(t, f)) return;

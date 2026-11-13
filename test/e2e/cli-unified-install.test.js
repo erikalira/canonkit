@@ -14,8 +14,15 @@ async function repository(dir) {
 
 async function stubClaude(root) {
   const bin = path.join(root, "claude-bin"), script = path.join(root, "claude.cjs");
-  await writeFile(script, `const fs=require("node:fs"); fs.appendFileSync(process.env.DISCOVERY_LOG, process.argv.slice(2).join(" ")+"\\n"); if (process.argv[2] === "--version") console.log("2.1.314"); else if (process.argv[2] === "--help") { console.log("  --model <model> Select a model ('opus', 'sonnet', 'haiku')"); console.log("  --effort <effort> Set effort (low, medium, high)"); } else process.exit(2);\n`);
+  await writeFile(script, `const fs=require("node:fs"); if (process.env.DISCOVERY_LOG) fs.appendFileSync(process.env.DISCOVERY_LOG, process.argv.slice(2).join(" ")+"\\n"); if (process.argv[2] === "--version") console.log("2.1.314"); else if (process.argv[2] === "--help") { console.log("  --model <model> Select a model ('opus', 'sonnet', 'haiku')"); console.log("  --effort <effort> Set effort (low, medium, high)"); } else process.exit(2);\n`);
   await writeCommand(bin, "claude", script);
+  return bin;
+}
+
+async function stubCodex(root, catalog) {
+  const bin = path.join(root, "codex-bin"), script = path.join(root, "codex.cjs");
+  await writeFile(script, `if (process.argv[2] === "--version") process.stdout.write("0.1.0\\n"); else if (process.argv[2] === "debug") process.stdout.write(${JSON.stringify(JSON.stringify(catalog))} + "\\n"); else process.exit(2);\n`);
+  await writeCommand(bin, "codex", script);
   return bin;
 }
 
@@ -403,7 +410,7 @@ describe("unified install catalog and target", () => {
     const setup = asked.find((question) => question.name === "recommended-setup");
     const confirmation = asked.find((question) => question.name === "install-confirmation");
     assert.equal(setup.message, "Use the recommended setup?");
-    assert.deepEqual(setup.choices.map((choice) => choice.value), ["recommended", "customize"]);
+    assert.deepEqual(setup.choices.map((choice) => choice.value), ["recommended", "keep", "customize"]);
     assert.equal(setup.initial, 0);
     assert.deepEqual(confirmation.choices.map((choice) => choice.title), ["Yes, install", "No, cancel (nothing is written)"]);
     assert.match(confirmation.message, /Write these changes\?/);
@@ -521,6 +528,49 @@ describe("unified install catalog and target", () => {
     });
     assert.equal(onlyOther.status, 0, onlyOther.out);
     assert.doesNotMatch(onlyOther.out, /Use the recommended setup\?/);
+  });
+
+  test("recommended Codex setup uses staged discovery for user agents and preserves project overrides", async () => {
+    const { root, home, project } = await scratch("unified-staged-codex-models");
+    await repository(project);
+    const freshCatalog = {
+      models: [{ slug: "gpt-6-sol", visibility: "list", supported_reasoning_levels: [{ effort: "medium" }, { effort: "high" }] }],
+    };
+    const bin = await stubCodex(root, freshCatalog);
+    const probe = spawnSync("codex", ["debug", "models"], { encoding: "utf8", env: { ...process.env, PATH: bin } });
+    assert.equal(probe.status, 0, probe.stderr);
+    assert.deepEqual(JSON.parse(probe.stdout), freshCatalog);
+    const userChoices = { version: 1, harnesses: { codex: { levels: { deep: { model: "gpt-6-sol", effort: "high" } } } } };
+    const projectChoices = structuredClone(userChoices);
+    await mkdir(path.join(home, ".canonkit"), { recursive: true });
+    await writeFile(path.join(home, ".canonkit", "models.json"), JSON.stringify(userChoices));
+    await writeFile(path.join(home, ".canonkit", "model-catalog.json"), JSON.stringify({
+      version: 1, harnesses: { codex: { status: "discovered", models: [{ id: "gpt-6-sol", efforts: ["high"] }] } },
+    }));
+    await mkdir(path.join(project, ".canonkit"), { recursive: true });
+    await writeFile(path.join(project, ".canonkit", "models.json"), JSON.stringify(projectChoices));
+
+    const result = await runInstall(["install", "--codex", "--no-reference"], {
+      home, cwd: project, env: { PATH: bin }, interactive: true,
+      prompt: async (question) => {
+        if (question.name === "project-scope") return { [question.name]: true };
+        if (["tools", "specialists", "stacks"].includes(question.name)) return { [question.name]: [] };
+        if (question.name === "recommended-setup") return { [question.name]: "recommended" };
+        if (question.name === "install-confirmation") return { [question.name]: true };
+        throw new Error(`unexpected prompt ${question.name}`);
+      },
+    });
+
+    assert.equal(result.status, 0, result.out);
+    const stagedCatalog = JSON.parse(await readFile(path.join(home, ".canonkit", "model-catalog.json"), "utf8"));
+    assert.equal(stagedCatalog.harnesses.codex.status, "discovered", JSON.stringify(stagedCatalog.harnesses.codex));
+    assert.match(result.out, /Installed project Codex agent: archie/);
+    const userAgent = await readFile(path.join(home, ".codex", "agents", "archie.toml"), "utf8");
+    const projectAgent = await readFile(path.join(project, ".codex", "agents", "archie.toml"), "utf8");
+    assert.match(userAgent, /^model = "gpt-6-sol"$/m);
+    assert.match(userAgent, /^model_reasoning_effort = "medium"$/m);
+    assert.match(projectAgent, /^model = "gpt-6-sol"$/m);
+    assert.match(projectAgent, /^model_reasoning_effort = "high"$/m);
   });
 
   test("recommended setup with no security changes keeps the model rows visible", async () => {

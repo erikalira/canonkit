@@ -115,4 +115,21 @@ describe("recommended model resolution", () => {
     assert.deepEqual(existing.harnesses.claude.levels, recommendation.choices);
     assert.deepEqual(existing.harnesses.claude.agents, { quinn: { effort: "xhigh" } });
   });
+
+  test("applying partial recommendations preserves saved unresolved levels", () => {
+    const existing = { version: 1, harnesses: { claude: {
+      levels: {
+        deep: { model: "old-opus", effort: "high" },
+        standard: { model: "saved-sonnet", effort: "low" },
+        light: { model: "saved-haiku", effort: "low" },
+      },
+    } } };
+    const recommendation = resolveRecommended(catalog("claude", [model("opus", ["medium"])]), "claude");
+    applyRecommendedChoices(existing, recommendation);
+    assert.deepEqual(existing.harnesses.claude.levels, {
+      deep: { model: "opus", effort: "medium" },
+      standard: { model: "saved-sonnet", effort: "low" },
+      light: { model: "saved-haiku", effort: "low" },
+    });
+  });
 });
