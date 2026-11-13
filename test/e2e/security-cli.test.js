@@ -572,7 +572,15 @@ test("an empty user or repository settings.json is read as {} by install and ins
       const user = await read(f.global), project = await read(f.local);
       assert.equal(user.sandbox.network.strictAllowlist, true);
       assert.deepEqual(Object.keys(user).sort(), wire ? ["hooks", "sandbox"] : ["sandbox"]);
-      assert.deepEqual(project, { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } });
+      assert.deepEqual(project, {
+        permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true },
+        sandbox: {
+          enabled: true,
+          failIfUnavailable: true,
+          allowUnsandboxedCommands: false,
+          autoAllowBashIfSandboxed: true,
+        },
+      });
       // Doctor reads the same files without calling them malformed.
       assert.doesNotMatch(f.run(["doctor"]).out, /malformed or inaccessible configuration/);
     }
