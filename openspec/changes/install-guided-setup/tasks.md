@@ -3,7 +3,7 @@
 ## 1. Release bookkeeping (3.1.1 -> 3.2.0)
 
 - [ ] 1.1 Rename the local branch `release/3.1.1-security-settings` to `release/3.2.0` (`git branch -m`), unset the old upstream, and, after asking before each push, push `release/3.2.0` with its own upstream (never `origin/main`) and delete `origin/release/3.1.1-security-settings`; if a PR was open from the old branch, open one from `release/3.2.0`; verify `git status -sb` shows `release/3.2.0...origin/release/3.2.0` and `git ls-remote --heads origin` no longer lists the old branch
-- [ ] 1.2 Bump `package.json` and `package-lock.json` to 3.2.0 and rename `docs/release-notes/3.1.1.md` to `3.2.0.md` with its title, install command and "prepared" line updated; verify `grep -rn "3\.1\.1" package.json package-lock.json docs/release-notes/3.2.0.md` returns no stale reference
+- [x] 1.2 Bump `package.json` and `package-lock.json` to 3.2.0 and rename `docs/release-notes/3.1.1.md` to `3.2.0.md` with its title, install command and "prepared" line updated; verify `grep -rn "3\.1\.1" package.json package-lock.json docs/release-notes/3.2.0.md` returns no stale reference
 
 ## 2. Shared row renderer and recommended model presets
 

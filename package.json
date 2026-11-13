@@ -1,6 +1,6 @@
 {
   "name": "canonkit",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "A versioned agent team for Claude Code, Codex, OpenCode and GitHub Copilot. Installs 10 core agents and 5 opt-in domain specialists, each owning a domain and classifying its own risk.",
   "type": "module",
   "bin": {
