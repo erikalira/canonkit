@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { accessProblem } from "../bin/agent-access.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
@@ -335,6 +336,59 @@ async function validateCodex(reporter, python) {
   }
 }
 
+/**
+ * The README's recommended-settings section is checked against what the
+ * installer generates for a fully supported Linux environment, so the two
+ * cannot drift: the repository and user JSON blocks, and one table row per key
+ * with the installer's own reason. `allowRead` is compared by presence only,
+ * because the real list is detected per machine. Returns the problems found.
+ */
+async function readmeSecurityProblems(readme) {
+  readme = readme.replace(/\r\n/g, "\n");
+  const { classifyEnvironment, compileSecurity, compileNetworkSecurity, isBroadReadEntry, SECURITY_SETTINGS } = await import("../bin/security.js");
+  const START = "<!-- canonkit:security-settings:start -->", END = "<!-- canonkit:security-settings:end -->";
+  const from = readme.indexOf(START), to = readme.indexOf(END);
+  if (from < 0 || to < from) return [`README.md has no ${START} ... ${END} section`];
+  const section = readme.slice(from, to);
+  const environment = { ...classifyEnvironment({ platform: "linux", release: "6.1.0", env: {}, bwrap: true, socat: true }), claudeVersion: "2.1.314" };
+  const expected = { repository: compileSecurity({}, environment).data, user: compileNetworkSecurity({}, environment).data };
+  const problems = [];
+  const blocks = [];
+  for (const match of section.matchAll(/```json\n([\s\S]*?)\n```/g)) {
+    try { blocks.push(JSON.parse(match[1])); } catch { problems.push("README security section has a JSON block that does not parse"); }
+  }
+  if (blocks.length !== 2) problems.push(`README security section must hold exactly 2 JSON blocks (repository, user); found ${blocks.length}`);
+  else {
+    const [repository, user] = blocks;
+    if (!isDeepStrictEqual(repository, expected.repository)) problems.push("README repository settings block differs from what the installer writes");
+    const allowRead = user?.sandbox?.filesystem?.allowRead;
+    if (!Array.isArray(allowRead) || !allowRead.length) problems.push("README user settings block must show an example sandbox.filesystem.allowRead");
+    else {
+      // The example must never show an entry that reopens the home directory.
+      for (const entry of allowRead) if (isBroadReadEntry(entry, { home: "/home/user", platform: "linux" }) || !/^~\/[^/]/.test(entry)) problems.push(`README user settings example allowRead entry ${JSON.stringify(entry)} is broad or not a ~/ subfolder`);
+      const rest = structuredClone(user);
+      delete rest.sandbox.filesystem.allowRead;
+      if (!Object.keys(rest.sandbox.filesystem).length) delete rest.sandbox.filesystem;
+      if (!isDeepStrictEqual(rest, expected.user)) problems.push("README user settings block differs from what the installer writes");
+    }
+  }
+  const rows = new Map();
+  for (const match of section.matchAll(/^\|\s*`([^`]+)`\s*\|\s*([^|]+?)\s*\|\s*(.+?)\s*\|\s*$/gm)) rows.set(match[1], { scope: match[2], reason: match[3] });
+  for (const row of SECURITY_SETTINGS) {
+    const found = rows.get(row.key);
+    if (!found) problems.push(`README security table has no row for ${row.key}`);
+    else if (found.scope !== row.scope || found.reason !== row.reason) problems.push(`README security table row for ${row.key} differs from the installer's scope or reason`);
+  }
+  for (const key of rows.keys()) if (!SECURITY_SETTINGS.some((row) => row.key === key)) problems.push(`README security table has a row for ${key}, which the installer does not manage`);
+  return problems;
+}
+
+async function validateReadmeSecurity(reporter) {
+  const problems = await readmeSecurityProblems(readFileSync(path.join(REPO_ROOT, "README.md"), "utf8"));
+  if (problems.length) for (const problem of problems) reporter.fail(problem);
+  else reporter.pass("README recommended security settings match the installer");
+}
+
 function gitResult(args) {
   return run("git", args);
 }
@@ -500,6 +554,7 @@ async function validate(options) {
   if (!scriptPython) return 1;
 
   await validatePackage(reporter);
+  await validateReadmeSecurity(reporter);
   await validateCodex(reporter, python);
   validateHygiene(reporter);
 
@@ -538,4 +593,4 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
   });
 }
 
-export { checkBashScript, validateFrontmatter };
+export { checkBashScript, validateFrontmatter, readmeSecurityProblems };

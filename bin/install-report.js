@@ -48,7 +48,7 @@ export function renderRemainingItems(remaining) {
  * @param {{dryRun?: boolean, version?: string, changed?: Set<string>, home?: string, failed?: boolean}} opts
  * @returns {string[]} the lines to print
  */
-export function renderInstallReport(lines, { dryRun = false, version = "", changed = new Set(), home = os.homedir(), failed = false, remaining = null } = {}) {
+export function renderInstallReport(lines, { dryRun = false, version = "", changed = new Set(), home = os.homedir(), failed = false, remaining = null, interactive = false, cancelled = false } = {}) {
   const rows = new Map(); // harness -> { items: [], touched: bool }
   const row = (h) => { if (!rows.has(h)) rows.set(h, { items: [], touched: false }); return rows.get(h); };
   const touchedUnder = (dir) => {
@@ -143,6 +143,11 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
 
   const out = [];
   const verb = dryRun ? "would be" : "";
+  if (interactive) {
+    const title = cancelled ? "Installation cancelled" : failed ? "Installation incomplete" : dryRun ? "Dry run" : "Installation complete";
+    const heading = `── ${title} ──────────`;
+    out.push(process.stdout.isTTY && !Object.hasOwn(process.env, "NO_COLOR") && process.env.TERM !== "dumb" ? `\u001b[1m${heading}\u001b[0m` : heading, "");
+  }
   out.push(`canonkit ${version}${version ? " · " : ""}install${dryRun ? " (dry run: nothing is written)" : ""}`.trim());
   out.push("");
 
@@ -206,7 +211,8 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
   }
 
   out.push("");
-  if (failed) out.push("Install did not finish — see the error below. Re-run `npx canonkit install --verbose` for every step.");
+  if (cancelled) out.push("Nothing was written: installation was cancelled.");
+  else if (failed) out.push("Install did not finish — see the error below. Re-run `npx canonkit install --verbose` for every step.");
   else if (dryRun) out.push("Nothing was written. Run without --dry-run to apply.");
   else if (!anyChange) out.push("Nothing to update: everything was already current.");
   else out.push("Done.");

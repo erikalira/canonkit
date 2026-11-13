@@ -35,11 +35,11 @@ Installation targeting Claude Code from a validated repository SHALL apply suppo
 - **AND** no repository policy is written into the user's global Claude settings
 
 ### Requirement: The approved strict network setting has trusted global scope
-For supported Claude versions, installation SHALL apply only `sandbox.network.strictAllowlist:true` as an automatic global access-policy change, composed with the separately authorized legacy hook migration when applicable. Personal permissions, modes and domain lists MUST remain unchanged. This key SHALL NOT be emitted as effective repository configuration. A preexisting true value MUST NOT become kit-owned merely by observation.
+For supported Claude versions, installation SHALL apply only `sandbox.network.strictAllowlist:true` and confirmed runtime read exceptions as automatic global access-policy changes, composed with the separately authorized legacy hook migration when applicable. Personal permissions, modes and domain lists MUST remain unchanged. The strict network key SHALL NOT be emitted as effective repository configuration. A preexisting true value MUST NOT become kit-owned merely by observation.
 
 #### Scenario: Strict network configuration without hook wiring
 - **WHEN** Claude installation runs with a version supporting the strict network key, with or without a repository target or `--wire-hooks`
-- **THEN** the key is planned in the user settings file, composing with any explicitly requested hook wiring in one tracked JSON change
+- **THEN** the key is planned in the user settings file, composing with any explicitly requested hook wiring and confirmed runtime read exceptions in one tracked JSON change
 - **AND** all unrelated user settings remain unchanged
 
 #### Scenario: Existing strict network setting
@@ -94,14 +94,15 @@ Canonkit MUST preserve the selected Claude approval mode and MUST NOT set a defa
 
 #### Scenario: Explicit value already present
 - **GIVEN** an explicit auto-approval value, true or false, in project or user settings, including one written by an earlier canonkit version
-- **WHEN** canonkit installs again
+- **WHEN** canonkit installs without an interactive terminal, with `--yes`, or as a dry run
 - **THEN** that value is preserved and reported, not overwritten
 
 #### Scenario: Existing false next to the strict profile
-- **GIVEN** an explicit `false` and the full strict sandbox profile
-- **WHEN** canonkit installs or diagnoses
-- **THEN** it recommends setting automatic approval to `true` and shows the edit
-- **AND** it does not change the file
+- **GIVEN** an explicit `false` in project or user settings and the full strict sandbox profile
+- **WHEN** canonkit installs from an interactive terminal
+- **THEN** it asks whether to keep `false` or change to `true`, naming `true` as the value recommended with the strict sandbox
+- **AND** on "change" it writes `true` to the repository settings, and on "keep" it leaves every file unchanged
+- **AND** when it installs without a terminal or diagnoses, it recommends `true`, shows the edit and does not change the file
 
 #### Scenario: Publishing still needs confirmation
 - **WHEN** sandbox automatic approval is enabled
@@ -152,7 +153,7 @@ Where supported, canonkit SHALL configure shell sandboxing to refuse unsandboxed
 - **AND** they warn when it is enabled with any weaker or missing element of that profile
 
 ### Requirement: Repository data boundary and limited exceptions
-Canonkit SHALL apply supported file-tool and shell restrictions independently, using the active session's repository boundary rather than the install directory. Exceptions SHALL be minimal and documented for runtime/toolchain, private temporary storage and harness operation; unrelated outside data MUST NOT gain access through kit-generated rules.
+Canonkit SHALL apply supported file-tool and shell restrictions independently, using the active session's repository boundary rather than the install directory. Exceptions SHALL be minimal, limited to runtime/toolchain, private temporary storage and harness operation; runtime read exceptions SHALL be detected from the machine and confirmed before they are written. Unrelated outside data MUST NOT gain access through kit-generated rules.
 
 #### Scenario: Another project is opened later
 - **WHEN** the user opens a repository other than the one used during installation
@@ -169,7 +170,7 @@ Canonkit SHALL apply supported file-tool and shell restrictions independently, u
 
 #### Scenario: Shell reads need separate restrictions
 - **WHEN** a sandbox profile permits reads outside the active repository by default
-- **THEN** canonkit applies supported shell read restrictions and documents narrowly required runtime exceptions independently of the file-tool controls
+- **THEN** canonkit applies supported shell read restrictions and handles narrowly required runtime exceptions independently of the file-tool controls
 - **AND** any unbounded or unverified external data access leaves shell read coverage partial or unknown
 
 ### Requirement: Network authorization remains outside repository control
@@ -193,11 +194,16 @@ Canonkit SHALL add no project-process network destinations by default or infer a
 - **THEN** canonkit evaluates the applicable separate controls and reports uncovered access instead of treating the shell domain list as enforcement for that traffic
 
 ### Requirement: Restrictive and reversible installation lifecycle
-Security installation SHALL preflight all selected targets, display a sanitized change plan, preserve stronger restrictions and unrelated settings, and track its changes with private backups and conservative undo. Malformed configuration or unsafe destination paths MUST stop the install before writes. Repeated installation MUST be idempotent.
+Security installation SHALL preflight all selected targets, display a sanitized change plan, preserve stronger restrictions and unrelated settings, and track its changes with private backups and conservative undo. Malformed configuration or unsafe destination paths MUST stop the install before writes. An empty settings file is not malformed. Repeated installation MUST be idempotent.
 
 #### Scenario: Broken settings in a mixed-target installation
 - **WHEN** an automatically managed security target has malformed JSON, invalid key shapes or a symlinked destination
 - **THEN** the entire selected installation refuses preflight without exposing configuration values or leaving a partial install
+
+#### Scenario: Empty settings file
+- **WHEN** the user or repository Claude settings file exists and is empty, whitespace-only or holds only a byte-order mark
+- **THEN** canonkit reads it as an empty object and proceeds as if no settings were present
+- **AND** the written file is valid JSON containing only the planned keys
 
 #### Scenario: Reinstallation or environment change
 - **WHEN** the selected profile would remove an existing deny or widen a previously installed restriction
@@ -211,12 +217,12 @@ Security installation SHALL preflight all selected targets, display a sanitized 
 - **WHEN** the user requests `uninstall --project` from a validated repository
 - **THEN** only attributable security changes for that current repository are eligible for reversal
 - **AND** global distribution and other repositories remain untouched
-- **AND** the global strict-network setting is left unchanged
+- **AND** the global strict-network setting and runtime read exceptions are left unchanged
 
 #### Scenario: Ordinary global removal
 - **WHEN** the user requests uninstall without project scope
 - **THEN** canonkit does not discover or modify repository security configurations through global receipts
-- **AND** only a still-attributable kit-owned global network key is eligible for conservative reversal, preserving preexisting values and later edits
+- **AND** only a still-attributable kit-owned global network key and the runtime read items canonkit appended are eligible for conservative reversal, preserving preexisting values and later edits
 
 #### Scenario: Dry run
 - **WHEN** installation is requested with `--dry-run`
@@ -232,3 +238,50 @@ Automatic security configuration MUST NOT install WSL, Docker or system packages
 #### Scenario: Stronger environment is absent
 - **WHEN** a requested isolation boundary requires unavailable infrastructure
 - **THEN** canonkit explains the preparation required and does not perform that preparation as an installation side effect
+
+### Requirement: Detected runtime read exceptions in user settings
+On a sandbox-capable platform with a supported Claude version, installation SHALL detect the home-directory locations of the runtimes and canonkit-installed tools that sandboxed commands need, and compare them item by item with the user `sandbox.filesystem.allowRead` array. Only uncovered items SHALL be proposed, and only for known runtime locations. Equivalent spellings and broader existing entries count as covering.
+
+#### Scenario: Everything already covered
+- **GIVEN** user settings whose `allowRead` already contains `~/.nvm`, `~/.local/bin` and the pipx venv root, in any equivalent spelling
+- **WHEN** installation runs on a machine using nvm and pipx
+- **THEN** no runtime read change is proposed and the user settings file is not rewritten for it
+
+#### Scenario: Missing item confirmed interactively
+- **GIVEN** a detected runtime location not covered by the user `allowRead` array
+- **WHEN** installation runs from an interactive terminal and the user confirms
+- **THEN** only the missing items are appended in `~/`-relative form, existing entries and their order are kept, and the appended items are recorded as kit-owned
+
+#### Scenario: Missing item declined or no terminal
+- **WHEN** the user declines, or installation runs without an interactive terminal, with `--yes`, or as a dry run
+- **THEN** the user settings file is not changed for runtime reads
+- **AND** canonkit prints the recommended `allowRead` snippet
+
+#### Scenario: Unknown or out-of-home location
+- **WHEN** a runtime resolves outside the home directory, or inside it at a location that is not a known runtime manager or tool root
+- **THEN** canonkit proposes no entry for it and reports that location as unhandled instead of granting its parent folder
+
+#### Scenario: Unsupported environment
+- **WHEN** the platform is native Windows, the sandbox capability is unavailable, or the Claude version is unknown or below the sandbox floor
+- **THEN** no runtime read exception is proposed or written
+
+### Requirement: Weaker repository values require confirmation
+When the effective repository security settings hold a value weaker than the strict profile canonkit would write, an interactive installation SHALL ask whether to keep the existing value or apply the recommended one, stating which value is recommended for a secure environment and why. No security question SHALL have a default answer: only an explicit choice (or an explicit yes or no) is accepted, any other input is asked again, a closed input counts as keep or decline, and an interrupt aborts the installation before any write. Without an interactive terminal, the behavior of the previous release SHALL hold for each key.
+
+#### Scenario: Weaker values in the repository settings
+- **GIVEN** repository settings with any of `sandbox.enabled: false`, `sandbox.failIfUnavailable: false`, `sandbox.allowUnsandboxedCommands: true`, `permissions.blockReadsOutsideWorkingDirectories: false` or `permissions.blockWritesOutsideWorkingDirectories: false`
+- **WHEN** installation runs from an interactive terminal on an environment that supports those keys
+- **THEN** canonkit lists each weaker key with its current and recommended value and asks to keep or change
+- **AND** only the keys the user chose to change are written
+
+#### Scenario: Weaker values without a terminal
+- **WHEN** the same settings are found without an interactive terminal, with `--yes`, or as a dry run
+- **THEN** those keys are set to the strict profile as in the previous release, and the change plan lists each one
+
+#### Scenario: Weaker value in local settings
+- **WHEN** the weaker value comes from the repository's `.claude/settings.local.json`
+- **THEN** canonkit does not write that file, reports the key and the recommended edit, and keeps the automatic approval default suppressed
+
+#### Scenario: Nothing weaker
+- **WHEN** no repository or local value is weaker than the strict profile
+- **THEN** installation asks no security question

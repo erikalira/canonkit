@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
+import { trustedOwnedAllowRead, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-")));
@@ -245,4 +245,271 @@ test("diagnosis merges observed strict requirements across scopes and respects e
   const blocked = assessClaude([{ label: "user", data: { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } } }, { label: "repository", data: { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false } } }], env());
   assert.ok(blocked.some(row => row.control === "file-reads" && row.status === "OK"));
   assert.ok(blocked.some(row => row.control === "file-writes" && row.status === "OK"));
+});
+
+test("an empty settings file reads as an empty object, and malformed JSON still throws", () => {
+  for (const empty of [Buffer.alloc(0), Buffer.from("  \n\t"), Buffer.from("\uFEFF"), Buffer.from("\uFEFF \r\n"), ""]) assert.deepEqual(parseSecuritySettings(empty), {});
+  assert.equal(readSettingsText(Buffer.from("\uFEFF")), "{}");
+  assert.equal(readSettingsText('\uFEFF{"a":1}'), '{"a":1}');
+  assert.throws(() => parseSecuritySettings("{"), /Invalid JSON/);
+  assert.throws(() => parseSecuritySettings("\uFEFF{"), /Invalid JSON/);
+  assert.throws(() => parseSecuritySettings("[]"), /Invalid object/);
+});
+
+test("compileSecurity lists weaker values with their source and still writes the strict profile", () => {
+  const weak = { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false }, sandbox: { enabled: false, failIfUnavailable: false, allowUnsandboxedCommands: true, autoAllowBashIfSandboxed: false } };
+  const plan = compileSecurity(weak, env("linux"));
+  assert.deepEqual(plan.weaker.map((row) => `${row.source}:${row.path}`).sort(), [
+    "project:permissions.blockReadsOutsideWorkingDirectories", "project:permissions.blockWritesOutsideWorkingDirectories",
+    "project:sandbox.allowUnsandboxedCommands", "project:sandbox.autoAllowBashIfSandboxed", "project:sandbox.enabled", "project:sandbox.failIfUnavailable",
+  ]);
+  const row = (key) => plan.weaker.find((item) => item.path === key);
+  assert.deepEqual([row("sandbox.enabled").current, row("sandbox.enabled").recommended], [false, true]);
+  assert.deepEqual([row("sandbox.allowUnsandboxedCommands").current, row("sandbox.allowUnsandboxedCommands").recommended], [true, false]);
+  // The output data is what 3.1.0 produced: strict values, explicit auto-approval preserved.
+  assert.equal(plan.data.sandbox.enabled, true);
+  assert.equal(plan.data.sandbox.allowUnsandboxedCommands, false);
+  assert.equal(plan.data.permissions.blockReadsOutsideWorkingDirectories, true);
+  assert.equal(plan.data.sandbox.autoAllowBashIfSandboxed, false);
+  assert.ok(plan.changes.includes("sandbox.enabled") && !plan.changes.includes("sandbox.autoAllowBashIfSandboxed"));
+
+  const local = compileSecurity({}, env("linux"), { projectLocalSettings: { sandbox: { enabled: false, allowUnsandboxedCommands: true, autoAllowBashIfSandboxed: false } } });
+  assert.deepEqual(local.weaker.map((item) => `${item.source}:${item.path}`).sort(), ["local:sandbox.allowUnsandboxedCommands", "local:sandbox.enabled"]);
+  const localApproval = compileSecurity({}, env("linux"), { projectLocalSettings: { sandbox: { autoAllowBashIfSandboxed: false } } });
+  assert.deepEqual(localApproval.weaker.map((item) => `${item.source}:${item.path}`), ["local:sandbox.autoAllowBashIfSandboxed"]);
+  const user = compileSecurity({}, env("linux"), { userSettings: { sandbox: { autoAllowBashIfSandboxed: false } } });
+  assert.deepEqual(user.weaker.map((item) => `${item.source}:${item.path}`), ["user:sandbox.autoAllowBashIfSandboxed"]);
+  assert.equal(user.data.sandbox.autoAllowBashIfSandboxed, undefined);
+
+  // Nothing weaker, nothing listed; unsupported environments do not list sandbox keys.
+  assert.deepEqual(compileSecurity(compileSecurity({}, env("linux")).data, env("linux")).weaker, []);
+  assert.deepEqual(compileSecurity({ sandbox: { enabled: false } }, env("win32")).weaker, []);
+  assert.deepEqual(compileSecurity(weak, env("win32", "2.1.256")).weaker, []);
+  assert.deepEqual(compileSecurity(weak, env("win32")).weaker.map((item) => item.path).sort(), ["permissions.blockReadsOutsideWorkingDirectories", "permissions.blockWritesOutsideWorkingDirectories"]);
+  assert.equal(compileSecurity({}, env("linux")).autoApprovalDefaulted, true);
+  assert.equal(compileSecurity({ sandbox: { autoAllowBashIfSandboxed: true } }, env("linux")).autoApprovalDefaulted, false);
+});
+
+test("interactive per-key answers govern absent strict rows and auto-approval requires the full profile", () => {
+  const empty = compileSecurity({}, env("linux"));
+  for (const key of [
+    "permissions.blockReadsOutsideWorkingDirectories",
+    "permissions.blockWritesOutsideWorkingDirectories",
+    "sandbox.enabled",
+    "sandbox.failIfUnavailable",
+    "sandbox.allowUnsandboxedCommands",
+  ]) {
+    assert.equal(empty.rows.find((row) => row.path === key)?.marker, "+", key);
+  }
+  const keepAbsent = compileSecurity({}, env("linux"), { answers: { "permissions.blockReadsOutsideWorkingDirectories": false } });
+  assert.equal(keepAbsent.data.permissions.blockReadsOutsideWorkingDirectories, undefined);
+  assert.equal(keepAbsent.data.permissions.blockWritesOutsideWorkingDirectories, true);
+  assert.deepEqual(keepAbsent.unapplied.map((row) => row.path), ["permissions.blockReadsOutsideWorkingDirectories"]);
+
+  for (const key of ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]) {
+    const result = compileSecurity({}, env("linux"), { answers: { [key]: false } });
+    assert.equal(result.data.sandbox[key], undefined, key);
+    assert.equal(result.data.sandbox.autoAllowBashIfSandboxed, undefined, key);
+    assert.equal(result.changes.includes("sandbox.autoAllowBashIfSandboxed"), false, key);
+    assert.equal(result.autoApprovalDefaulted, false, key);
+    assert.ok(result.unapplied.some((row) => row.path === key), key);
+  }
+
+  const full = compileSecurity({}, env("linux"), { answers: {
+    "sandbox.enabled": true,
+    "sandbox.failIfUnavailable": true,
+    "sandbox.allowUnsandboxedCommands": true,
+    "sandbox.autoAllowBashIfSandboxed": true,
+  } });
+  assert.equal(full.data.sandbox.enabled, true);
+  assert.equal(full.data.sandbox.failIfUnavailable, true);
+  assert.equal(full.data.sandbox.allowUnsandboxedCommands, false);
+  assert.equal(full.data.sandbox.autoAllowBashIfSandboxed, true);
+});
+
+test("the recommended-settings table has exactly one row for every key the compilers manage", () => {
+  const e = env("linux");
+  const managed = [...compileSecurity({}, e).changes, ...compileNetworkSecurity({}, e).changes, "sandbox.filesystem.allowRead"].sort();
+  const rows = SECURITY_SETTINGS.map((row) => row.key);
+  assert.deepEqual([...rows].sort(), managed);
+  assert.equal(new Set(rows).size, rows.length);
+  for (const row of SECURITY_SETTINGS) {
+    assert.ok(["repository", "user"].includes(row.scope), row.key);
+    assert.ok(typeof row.reason === "string" && row.reason.length > 10 && !row.reason.includes("\n"), row.key);
+  }
+  // Each repository row carries the value the compiler writes.
+  const written = compileSecurity({}, e).data;
+  for (const row of SECURITY_SETTINGS.filter((item) => item.scope === "repository")) assert.equal(row.key.split(".").reduce((value, key) => value[key], written), row.value, row.key);
+});
+
+test("read-exception coverage is path based: spellings match, an ancestor covers, home or above is broad", () => {
+  const options = { home: "/home/u", platform: "linux" };
+  assert.ok(readEntryCovers("~/.nvm", "/home/u/.nvm/", options));
+  assert.ok(readEntryCovers("/home/u/.nvm/", "~/.nvm", options));
+  assert.ok(readEntryCovers("~/.local", "~/.local/bin", options));
+  assert.ok(readEntryCovers("~/.local/bin", "~/.local/bin", options));
+  assert.ok(!readEntryCovers("~/.local/bin", "~/.local", options));
+  assert.ok(!readEntryCovers("~/.nvm", "~/.nvmx", options));
+  assert.ok(!readEntryCovers("~/.nvm", "~/.local/bin", options));
+  assert.ok(!readEntryCovers("relative/dir", "~/relative/dir", options));
+  for (const broad of ["~", "~/", "/home/u", "/home/u/", "/home", "/"]) assert.ok(isBroadReadEntry(broad, options), broad);
+  for (const narrow of ["~/.nvm", "/home/u2", "/homework", "relative"]) assert.ok(!isBroadReadEntry(narrow, options), narrow);
+  const windows = { home: "C:\\Users\\U", platform: "win32" };
+  assert.ok(readEntryCovers("c:\\users\\u\\.NVM\\", "~/.nvm", windows));
+  assert.ok(isBroadReadEntry("C:\\Users", windows));
+  assert.equal(normalizeReadPath("~", { home: "/home/u", platform: "linux" }), "/home/u");
+});
+
+test("runtime detection maps known roots under home, reports unknown ones and never generalizes", { skip: process.platform === "win32" && "POSIX symlinks" }, async (t) => {
+  const root = await fixture(t), home = path.join(root, "home");
+  const file = async (p, link) => { await mkdir(path.dirname(p), { recursive: true }); if (link) await symlink(link, p); else await writeFile(p, "x", { mode: 0o755 }); return p; };
+  const find = (map) => (name) => map[name] ?? null;
+  const detect = (map, extra = {}) => detectRuntimeRoots({ home, env: {}, platform: "linux", resolve: find(map), ...extra });
+
+  const nvmNode = await file(path.join(home, ".nvm", "versions", "node", "v20.1.0", "bin", "node"));
+  assert.deepEqual(detect({ node: nvmNode }), { roots: [{ item: "~/.nvm", label: "node (nvm)" }], unhandled: [] });
+  const custom = await file(path.join(home, "tools", "nvm", "versions", "node", "v18", "bin", "node"));
+  assert.deepEqual(detect({ node: custom }, { env: { NVM_DIR: path.join(home, "tools", "nvm") } }).roots.map((r) => r.item), ["~/tools/nvm"]);
+  // NVM_DIR set to home itself, or to a folder that is not an nvm layout, is never proposed.
+  assert.deepEqual(detect({ node: custom }, { env: { NVM_DIR: home } }).roots, []);
+  assert.deepEqual(detect({ node: custom }, { env: { NVM_DIR: path.join(home, "tools") } }).roots, []);
+  assert.deepEqual(detect({ node: custom }, { env: { NVM_DIR: path.join(home, "tools") } }).unhandled.map((u) => u.item), ["~/tools/nvm/versions/node/v18/bin/node"]);
+
+  for (const layout of [[".local", "share", "pipx"], [".local", "pipx"]]) {
+    const target = await file(path.join(home, ...layout, "venvs", "graphify", "bin", "graphify"));
+    const link = await file(path.join(home, ".local", "bin", "graphify"), target);
+    const found = detect({ graphify: link });
+    assert.deepEqual(found.roots.map((r) => r.item), ["~/.local/bin", `~/${layout.join("/")}`], layout.join("/"));
+    assert.deepEqual(found.unhandled, []);
+    await rm(path.join(home, ".local"), { recursive: true });
+  }
+
+  // An unknown manager under home is reported and nothing is proposed, not even its parent.
+  const volta = await file(path.join(home, ".volta", "bin", "node"));
+  assert.deepEqual(detect({ node: volta }), { roots: [], unhandled: [{ item: "~/.volta/bin/node", label: "node" }] });
+  const uvTarget = await file(path.join(home, ".local", "share", "uv", "tools", "graphify", "bin", "graphify"));
+  const uvLink = await file(path.join(home, ".local", "bin", "graphify"), uvTarget);
+  const uv = detect({ graphify: uvLink });
+  assert.deepEqual(uv.roots, []);
+  assert.deepEqual(uv.unhandled.map((u) => u.item), ["~/.local/share/uv/tools/graphify/bin/graphify"]);
+
+  // A system node outside home needs no entry; native Windows detects nothing.
+  const system = await file(path.join(root, "usr", "bin", "node"));
+  assert.deepEqual(detect({ node: system }), { roots: [], unhandled: [] });
+  assert.deepEqual(detect({ node: nvmNode }, { platform: "win32" }), { roots: [], unhandled: [] });
+  assert.deepEqual(detect({}), { roots: [], unhandled: [] });
+});
+
+test("runtime reads propose only uncovered items, append after existing entries and honor the sandbox gate", () => {
+  const e = env("linux"), options = { home: "/home/u" };
+  const detected = { roots: [{ item: "~/.nvm", label: "node (nvm)" }, { item: "~/.local/bin", label: "graphify (pipx)" }, { item: "~/.local/share/pipx", label: "graphify (pipx)" }], unhandled: [{ item: "~/.volta/bin/node", label: "node" }] };
+  const covered = { sandbox: { filesystem: { allowRead: ["/home/u/.nvm/", "~/.local"] } } };
+  const everything = compileRuntimeReads(covered, e, { detected, ...options });
+  assert.deepEqual(everything.proposed, []);
+  assert.equal(everything.covered.length, 3);
+  assert.deepEqual(everything.unhandled, detected.unhandled);
+  assert.deepEqual(covered, { sandbox: { filesystem: { allowRead: ["/home/u/.nvm/", "~/.local"] } } });
+
+  const partial = { sandbox: { filesystem: { allowRead: ["~/keep", "~/.nvm"] } } };
+  const plan = compileRuntimeReads(partial, e, { detected, ...options });
+  assert.deepEqual(plan.proposed.map((r) => r.item), ["~/.local/bin", "~/.local/share/pipx"]);
+  const applied = applyRuntimeReads(partial, plan.proposed.map((r) => r.item));
+  assert.deepEqual(applied.sandbox.filesystem.allowRead, ["~/keep", "~/.nvm", "~/.local/bin", "~/.local/share/pipx"]);
+  assert.deepEqual(partial.sandbox.filesystem.allowRead, ["~/keep", "~/.nvm"]);
+  assert.deepEqual(applyRuntimeReads({ custom: 1 }, ["~/.nvm"]), { custom: 1, sandbox: { filesystem: { allowRead: ["~/.nvm"] } } });
+
+  const broad = compileRuntimeReads({ sandbox: { filesystem: { allowRead: ["~"] } } }, e, { detected, ...options });
+  assert.deepEqual(broad.broad, ["~"]);
+  assert.deepEqual(broad.proposed, []);
+  assert.deepEqual(applyRuntimeReads({ sandbox: { filesystem: { allowRead: ["~"] } } }, broad.proposed.map((root) => root.item)), {
+    sandbox: { filesystem: { allowRead: ["~"] } },
+  });
+
+  for (const unsupported of [env("win32"), env("linux", "2.1.301"), env("linux", null), { ...env("linux"), sandboxCapability: "unavailable" }]) {
+    assert.deepEqual(compileRuntimeReads({}, unsupported, { detected, ...options }).proposed, [], JSON.stringify([unsupported.platform, unsupported.claudeVersion]));
+  }
+  // A dry run does not probe the version: the preview is kept, marked conditional.
+  const dryRun = compileRuntimeReads({}, { ...env("linux", null), versionEvidence: "not-probed-dry-run" }, { detected, ...options });
+  assert.equal(dryRun.proposed.length, 3);
+  assert.equal(dryRun.conditional, true);
+  assert.equal(compileRuntimeReads({}, e, { detected, ...options }).conditional, false);
+});
+
+test("allowRead ownership records appended items and undo removes only those", () => {
+  const bytes = (value) => Buffer.from(JSON.stringify(value));
+  const undo = (before, installed, current, meta) => {
+    const result = undoNetworkSecurity(before === null ? null : bytes(before), bytes(installed), bytes(current), { securityChanges: meta });
+    return result === null ? null : JSON.parse(result);
+  };
+  const before = { sandbox: { filesystem: { allowRead: ["~/keep"] } }, custom: 1 };
+  const installed = applyRuntimeReads(before, ["~/.nvm", "~/.local/bin"]);
+  const meta = networkSecurityOwnership.capture(bytes(before), bytes(installed), {});
+  assert.deepEqual(meta["sandbox.filesystem.allowRead"], { beforePresent: true, parentPresent: true, appendedItems: ["~/.nvm", "~/.local/bin"] });
+  // User additions, edits and the preexisting entry stay; the order of what is left is kept.
+  const current = structuredClone(installed);
+  current.sandbox.filesystem.allowRead = ["~/user-added", "~/keep", "~/.nvm", "~/.local/bin-edited"];
+  assert.deepEqual(undo(before, installed, current, meta).sandbox.filesystem.allowRead, ["~/user-added", "~/keep", "~/.local/bin-edited"]);
+  // An item present twice is not provably ours.
+  current.sandbox.filesystem.allowRead = ["~/.nvm", "~/.nvm", "~/.local/bin"];
+  assert.deepEqual(undo(before, installed, current, meta).sandbox.filesystem.allowRead, ["~/.nvm", "~/.nvm"]);
+  // A preexisting empty array stays.
+  const emptyBefore = { sandbox: { filesystem: { allowRead: [] } } };
+  const emptyInstalled = applyRuntimeReads(emptyBefore, ["~/.nvm"]);
+  assert.deepEqual(undo(emptyBefore, emptyInstalled, emptyInstalled, networkSecurityOwnership.capture(bytes(emptyBefore), bytes(emptyInstalled), {})), emptyBefore);
+
+  // Created from nothing: the array and parents go, only when empty.
+  const created = applyRuntimeReads({}, ["~/.nvm"]);
+  const createdMeta = networkSecurityOwnership.capture(null, bytes(created), {});
+  assert.deepEqual(createdMeta["sandbox.filesystem.allowRead"], { beforePresent: false, parentPresent: false, appendedItems: ["~/.nvm"] });
+  assert.equal(undo(null, created, created, createdMeta), null);
+  const kept = structuredClone(created); kept.sandbox.filesystem.allowRead.push("~/later"); kept.sandbox.filesystem.other = true;
+  assert.deepEqual(undo(null, created, kept, createdMeta).sandbox.filesystem, { allowRead: ["~/later"], other: true });
+  const onlyOther = { sandbox: { filesystem: { other: true } } };
+  assert.deepEqual(undo(null, created, onlyOther, createdMeta), onlyOther);
+  // A parent that existed before is not removed.
+  const parentBefore = { sandbox: { filesystem: {} } };
+  const parentInstalled = applyRuntimeReads(parentBefore, ["~/.nvm"]);
+  const parentMeta = networkSecurityOwnership.capture(bytes(parentBefore), bytes(parentInstalled), {});
+  assert.deepEqual(undo(parentBefore, parentInstalled, parentInstalled, parentMeta), parentBefore);
+
+  // A second install adds to the first record and keeps its baseline; scalar ownership composes.
+  const second = applyRuntimeReads(created, ["~/.local/bin"]);
+  second.sandbox.network = { strictAllowlist: true };
+  const merged = networkSecurityOwnership.capture(bytes(created), bytes(second), createdMeta);
+  assert.deepEqual(merged["sandbox.filesystem.allowRead"], { beforePresent: false, parentPresent: false, appendedItems: ["~/.nvm", "~/.local/bin"] });
+  assert.equal(merged["sandbox.network.strictAllowlist"].afterValue, true);
+  assert.equal(undo(null, second, second, merged), null);
+});
+
+test("assessClaude skips allowRead items canonkit appended but warns for user-added ones", () => {
+  const warns = (data, owned) => assessClaude([{ label: "user", data }], env("linux"), { ownedAllowRead: owned }).filter((row) => row.control === "filesystem-exceptions");
+  const data = { sandbox: { filesystem: { allowRead: ["~/mine", "~/.nvm"] } } };
+  assert.equal(warns(data, []).length, 1);
+  assert.equal(warns(data, ["~/.nvm"]).length, 1);
+  assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"] } } }, ["~/.nvm"]).length, 0);
+  assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"] } } }, []).length, 1);
+  assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"], allowWrite: ["~/w"] } } }, ["~/.nvm"]).length, 1);
+  // Repository entries are never kit-owned.
+  assert.equal(assessClaude([{ label: "repository", data: { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } } }], env("linux"), { ownedAllowRead: ["~/.nvm"] }).filter((row) => row.control === "filesystem-exceptions").length, 1);
+});
+
+test("owned allowRead from a receipt is trusted only when the runtime table can produce it", () => {
+  const options = { home: "/home/u", env: {}, platform: "linux" };
+  assert.deepEqual(trustedOwnedAllowRead(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx"], options), ["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx"]);
+  assert.deepEqual(trustedOwnedAllowRead(["~", "/home/u", "~/Documents", "~/.nvm"], options), ["~/.nvm"]);
+  assert.deepEqual(trustedOwnedAllowRead(["~/tools/nvm", "~/.nvm"], { ...options, env: { NVM_DIR: "/home/u/tools/nvm" } }), ["~/tools/nvm", "~/.nvm"]);
+  assert.deepEqual(trustedOwnedAllowRead(["~/tools/nvm"], { ...options, env: { NVM_DIR: "/home/u" } }), []);
+  for (const bad of ["~/.nvm", 42, null, undefined, { a: 1 }, [42], ["~/.nvm", 1]]) assert.deepEqual(trustedOwnedAllowRead(bad, options), [], JSON.stringify(bad));
+});
+
+test("allowRead ownership metadata is validated and refused when malformed", () => {
+  const key = "sandbox.filesystem.allowRead", good = { beforePresent: false, parentPresent: false, appendedItems: ["~/.nvm"] };
+  assert.doesNotThrow(() => networkSecurityOwnership.validate({ [key]: good }));
+  for (const bad of [
+    { ...good, appendedItems: [] }, { ...good, appendedItems: "~/.nvm" }, { ...good, appendedItems: [1] }, { ...good, appendedItems: ["a", "a"] }, { ...good, appendedItems: [""] },
+    { ...good, beforePresent: "no" }, { beforePresent: false, appendedItems: ["a"] }, { ...good, extra: true }, { ...good, afterValue: true }, "SENSITIVE",
+  ]) assert.throws(() => networkSecurityOwnership.validate({ [key]: bad }), (error) => /Invalid security ownership/.test(error.message) && !error.message.includes("SENSITIVE"));
+  // The project store has no array ownership.
+  assert.throws(() => projectSecurityOwnership.validate({ [key]: good }), /Invalid security ownership/);
+  assert.throws(() => networkSecurityOwnership.validate({ "sandbox.filesystem.denyRead": good }), /Invalid security ownership/);
 });

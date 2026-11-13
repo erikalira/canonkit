@@ -25,6 +25,36 @@ test("groups passes, keeps every warning by name, and counts failures", () => {
   assert.ok(lines.length < 20);
 });
 
+test("runtime read coverage rows are named in the grouped security summary", () => {
+  const { lines } = renderDoctorReport([
+    { status: "OK", check: "security environment", detail: "detected linux, WSL none; sandbox available-unverified", more: [] },
+    { status: "WARN", check: "security claude runtime-reads", detail: "partial: ~/.nvm (node (nvm)) is not covered by sandbox.filesystem.allowRead in user settings", more: [] },
+    { status: "WARN", check: "security claude runtime-reads", detail: "partial: a sandbox.filesystem.allowRead entry (~) covers the whole home directory", more: [] },
+  ]);
+  const out = lines.join("\n");
+  // The renderer joins a mark and its name with a non-breaking space, hence \s.
+  assert.match(out, /claude\s+!\sruntime-reads\spartial\s·\s!\sruntime-reads\spartial/);
+  assert.match(out, /No check failed\. 2 warnings/);
+});
+
+test("a covered runtime read row is a pass, not a warning", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "security claude runtime-reads", detail: "configured: ~/.nvm covered by sandbox.filesystem.allowRead in user settings", more: [] }]);
+  assert.match(lines.join("\n"), /claude\s+✓\sruntime-reads\sconfigured/);
+  assert.match(lines.join("\n"), /No check failed\.$/);
+});
+
+test("security gaps distinguish absent strict keys from projects not configured by install", () => {
+  const { lines, failed } = renderDoctorReport([
+    { status: "WARN", check: "security claude desired-controls", detail: "partial: sandbox.enabled is not set in effective repository settings; shell runs in a sandbox", more: ["sandbox.enabled is not set; apply with canonkit install --recommended"] },
+    { status: "WARN", check: "security repository", detail: "project security not configured for this project (/work/repo)", more: ["run canonkit install --claude from this repository to set it up"] },
+  ]);
+  const out = lines.join("\n");
+  assert.equal(failed, 0);
+  assert.match(out, /desired-controls partial/);
+  assert.match(out, /repository\s+!\s+policy project security not configured/);
+  assert.match(out, /2 warnings/);
+});
+
 test("a FAIL is marked and counted", () => {
   const { lines, failed } = renderDoctorReport([{ status: "FAIL", check: "agents", detail: "missing", more: ["fix it"] }]);
   assert.equal(failed, 1);

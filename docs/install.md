@@ -1,14 +1,29 @@
 # Installation reference
 
 The README covers the happy path. This page is the detail: what each choice
-writes, how the Codex, OpenCode and Copilot targets differ, project-level specialists and
-stack packs, global reference blocks and skills, and upgrading from an older name.
+writes, how the Codex, OpenCode and Copilot targets differ, project-level tools,
+specialists and stack packs, model recommendations, security scope, reference
+blocks and skills, and upgrading from an older name.
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
 Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-12.
 
+Interactive install previews use text headings and `=`, `->`, `+` and `!`
+markers so current, recommended, added and unresolved values remain readable
+without color. Headings may be bold in a capable terminal; piped output stays
+plain. The final review groups model and security status under user and project.
+
 ## Core, at user level
+
+### Terms used by install
+
+- **User level** means configuration in the user's home or configured harness
+  directory. It is available across projects for that user.
+- **Project** means the current validated Git worktree and its project-scoped
+  files. Install asks before writing project items or project security settings.
+- **Repository** refers only to the Git repository. It does not mean the user's
+  home or all projects on the machine.
 
 Without cloning anything:
 
@@ -16,12 +31,11 @@ Without cloning anything:
 npx canonkit install
 ```
 
-It runs the same on Linux, macOS and Windows. In a terminal, it asks which
-runtimes to install for, as a multiple choice — Claude Code and Codex come
-checked, OpenCode and GitHub Copilot do not; space toggles, Enter confirms, and at least one must
-stay checked. `--claude`, `--codex`, `--opencode` and `--copilot` answer without the menu (they
-combine), and with no terminal (a script, CI) it installs for Claude Code and
-Codex, as it did before the menu existed. OpenCode is opt-in because writing
+It runs the same on Linux, macOS and Windows. In a terminal, choose one or more
+runtimes; all start unselected. Space toggles, Enter confirms, and at least one
+must be selected. `--claude`, `--codex`, `--opencode` and `--copilot` select
+targets without the menu (they combine), and with no terminal and no target
+flags it installs for Claude Code and Codex. OpenCode is opt-in because writing
 `~/.config/opencode/AGENTS.md` ends OpenCode's fallback to `~/.claude/CLAUDE.md`
 — not a change to make for someone who did not ask for OpenCode.
 
@@ -31,22 +45,42 @@ decided by flag or with no terminal runs on plain Node. An installer that runs
 **before** you trust the repository should not ask you to trust a dependency tree
 larger than that.
 
-### Project items in the install flow
+### Guided install flow
 
-On a plain interactive install, with no runtime or project-item flags, the
-runtime menu is followed by optional tools, domain specialists and stack packs,
-in that order. The model-choice step follows these project selections. All
-choices are collected before installation begins. Each list comes from the same
-catalog as `list` and `tool list`, shows the item's current state, and starts
-with nothing selected. The choices are project-scoped: run from the directory
-that should receive them, inside a Git repository other than the canonkit source repository
-or your home directory. If this interactive run has no valid project target, it
-skips the project steps and continues with the global core installation.
-Explicit project-item flags without a valid target fail before any writes.
+After choosing runtimes, an interactive install asks whether to set up the
+current project when it is a valid Git project outside the canonkit source and
+your home directory. Choosing Yes opens the optional tools, specialists and
+stack packs menus. Graphify and OpenSpec are preselected as recommended tools;
+specialists and stacks start unselected. Choosing No keeps the install at user
+level and skips project security and legacy-hook migration. Without a valid
+project target, the project question and menus are skipped. Explicit project
+item flags without a valid target fail before any writes.
+When OpenSpec is selected from the project tool menu, it uses the same harness
+targets selected at the start of install; install does not ask that choice a
+second time. `canonkit tool add openspec` still offers its own harness choice.
 
-The menu collects its selections before installation begins. Cancelling any
-selection menu leaves the global and project files unchanged and reports that
-nothing was installed. Before a selected tool runs, install shows its project,
+For Claude Code and Codex, the next screen shows the recommended model and
+security changes, including `=`, `->`, `+` and `!` markers. Choose the
+recommended setup, keep current settings when available, or customize. The
+customize path lets you choose model levels and answer security changes in one
+multi-select. A final summary groups writes under USER and PROJECT and asks
+before applying them. `--recommended` applies the recommendations without the
+interactive screens; `--no-project` selects user-level-only scope. These flags
+are useful for scripts and screen readers.
+
+Preview the interactive defaults without writing, or preview the unattended
+recommended path from a Git project:
+
+```bash
+cd my-project
+npx canonkit install --dry-run
+npx canonkit install --recommended --dry-run
+npx canonkit install --recommended --no-project --dry-run
+```
+
+The menu collects its selections before installation begins. Cancelling or
+closing input before final confirmation leaves user and project files unchanged
+and reports that nothing was installed. Before a selected tool runs, install shows its project,
 command, write locations and any material warning, then asks a confirmation
 that names the tool and project. The menu does not imply `--yes` and never
 enables Git hooks. By default, successful tool output is summarized; warnings,
@@ -69,7 +103,7 @@ remain available in each category and points to `canonkit list`.
 
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings |
+| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders appended to `sandbox.filesystem.allowRead` in user settings |
 | Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | GitHub Copilot | `~/.copilot/agents/*.agent.md`, `~/.copilot/skills` |
@@ -178,6 +212,39 @@ installation, unsafe paths or malformed settings stop preflight before any
 selected-target writes. Reports name affected keys and controls, never their
 private values. Existing settings and stricter restrictions are preserved.
 
+### Security review during install
+
+Claude's project settings (`<repo>/.claude/settings.json`) hold supported
+repository restrictions: `permissions.block*OutsideWorkingDirectories` and
+sandbox switches. User settings (`~/.claude/settings.json`) hold the strict
+network lock and detected runtime read exceptions. The [README security
+reference](../README.md#recommended-security-settings) explains each key and
+its scope.
+
+The recommended setup screen includes weaker values, absent strict keys,
+runtime reads and legacy-hook migration from the same install plan. **Yes, use
+recommended** applies all listed changes. **No, keep current** writes none of
+the security changes and prints the relevant manual snippet. **No, customize**
+asks whether to add detected runtime reads (Yes is preselected), then shows the
+other eligible changes as a prechecked multi-select. Unchecking a sandbox
+requirement also leaves automatic bash approval off. Keys controlled by
+`settings.local.json` are not selectable. A final confirmation occurs before
+any plan is applied. EOF, Escape or Ctrl-C cancels before writes.
+
+`--recommended` skips the questions and applies the recommended answers.
+`--recommended --dry-run` prints `would apply` rows and starts no discovery
+processes. With no terminal and without `--recommended`, existing non-terminal
+behavior is preserved. An empty settings file is treated as `{}`; malformed or
+ambiguous settings stop preflight before writes.
+
+Only detected known runtime locations are proposed. Install resolves `node` and
+`graphify`, maps supported paths such as nvm and pipx to narrow `allowRead`
+entries, and skips locations already covered by existing entries. Other custom
+locations are reported rather than guessed. Confirmed additions are tracked so
+`uninstall` removes only entries still present exactly once and unchanged.
+`canonkit doctor` reports runtime-read coverage and whether project security is
+configured for the current project; it writes nothing.
+
 ### Returning existing Claude installations to native approvals
 
 This migration runs automatically on `install` when Claude is selected and
@@ -257,7 +324,10 @@ scripts; use this default only with repositories you trust. Canonkit reports
 runtime containment as unverified, so it does not promise that sandbox
 protections cover `.git` paths in every supported environment. To keep command
 review, set `sandbox.autoAllowBashIfSandboxed` to `false` in your project or
-user settings. Existing explicit project or user choices are preserved.
+user settings. An existing explicit project or user choice is never overwritten
+silently: an interactive install asks whether to keep a `false` or change it to
+`true` (see [Security review during install](#security-review-during-install)),
+and without a terminal it is preserved and the recommendation is printed.
 
 If you want confirmation before publishing, add content-scoped `ask` rules for
 Git commit and push commands. Claude Code documents that these rules still
@@ -334,8 +404,9 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.enabled: true` | 2.1.302 (conservative) | [Shell sandbox](https://code.claude.com/docs/en/settings-reference#sandbox-enabled) |
 | `sandbox.failIfUnavailable: true` | 2.1.302 (conservative) | [Startup failure policy](https://code.claude.com/docs/en/settings-reference#sandbox-failifunavailable) |
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
-| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
+| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written (or when you confirm the change from an explicit `false`) | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
+| `sandbox.filesystem.allowRead` items for detected runtimes, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
 
 The four shell switches additionally require an available, unverified sandbox
 capability. The 2.1.302 floors are canonkit's supported baseline, not claims

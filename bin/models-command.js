@@ -19,6 +19,8 @@ import path from "node:path";
 import { HARNESSES, catalogPath, readCatalog, refreshCatalog, writeCatalog } from "./model-discovery.js";
 import { APPLIED, userConfigPath, projectConfigPath, projectRoot, readChoices, writeChoices, setChoice, resolve, VALUE } from "./model-config.js";
 import { repositoryRoot, projectStateDir, safePath } from "./security.js";
+import { LEGEND, rowText } from "./change-rows.js";
+import { NEEDS, PRESETS, applyRecommendedChoices, resolveRecommended } from "./recommended-models.js";
 
 const NEED_ORDER = ["deep", "standard", "light"];
 // The shape of `models show --json`. Bumped only when a field changes meaning;
@@ -233,13 +235,19 @@ const summarize = (entry) => entry && (entry.model || entry.effort)
  * `none` is the first row: "inherit" for a level, "same as the level" for an
  * agent. `other` adds a free-text row (models only).
  */
-async function pick(ask, { name, message, offered, current, none, other }) {
+async function pick(ask, { name, message, offered, current, recommended, none, other }) {
   const choices = [{ title: none.title, description: none.description, value: NONE }];
-  for (const v of offered) choices.push({ title: v, value: v });
-  if (current && !offered.includes(current)) choices.push({ title: current, description: "current; not in the latest discovery", value: current });
+  const option = (v, extra = {}) => {
+    const tags = [v === current ? "(current)" : null, v === recommended ? "(recommended)" : null].filter(Boolean);
+    return { title: `${v}${tags.length ? ` ${tags.join(" ")}` : ""}`, value: v, ...extra };
+  };
+  for (const v of offered) choices.push(option(v));
+  if (current && !offered.includes(current)) choices.push(option(current, { description: "current; not in the latest discovery" }));
   if (other) choices.push({ title: "other…", description: "alias or full model ID; recorded as unverified", value: OTHER });
-  const initial = Math.max(0, choices.findIndex((c) => c.value === (current ?? NONE)));
-  let value = await ask({ type: "select", name, message, choices, initial, hint: "↑↓ to move, enter to choose" });
+  const preselected = current ?? recommended ?? NONE;
+  const initial = Math.max(0, choices.findIndex((c) => c.value === preselected));
+  const takes = current ? `Enter keeps ${current}.` : recommended ? `Enter chooses recommended ${recommended}.` : `Enter selects ${none.title}.`;
+  let value = await ask({ type: "select", name, message, choices, initial, hint: `${takes} ↑↓ to move.` });
   if (value === OTHER) {
     value = (await ask({
       type: "text",
@@ -256,12 +264,13 @@ async function pick(ask, { name, message, offered, current, none, other }) {
  * or kept from before) marks the entry unverified. Returns the entry to store,
  * or null for none.
  */
-async function askEntry(ask, { key, label, current, offer, none, effortsForModel }) {
+async function askEntry(ask, { key, label, current, recommended, offer, none, effortsForModel }) {
   const model = await pick(ask, {
     name: `${key}-model`,
     message: `${label} · model`,
     offered: offer.models,
     current: current?.model,
+    recommended: recommended?.model,
     none: none.model,
     other: true,
   });
@@ -269,6 +278,7 @@ async function askEntry(ask, { key, label, current, offer, none, effortsForModel
   // Drop a saved effort only when a known list proves it incompatible; with no
   // list (inherited or unlisted model) compatibility is unknown, so keep it.
   const currentEffort = effortsForModel && offeredEfforts.length && !offeredEfforts.includes(current?.effort) ? undefined : current?.effort;
+  const recommendedEffort = offeredEfforts.includes(recommended?.effort) ? recommended.effort : undefined;
   let effort;
   if (offeredEfforts.length) {
     effort = await pick(ask, {
@@ -276,6 +286,7 @@ async function askEntry(ask, { key, label, current, offer, none, effortsForModel
       message: `${label} · effort`,
       offered: offeredEfforts,
       current: currentEffort,
+      recommended: recommendedEffort,
       none: none.effort,
     });
   } else {
@@ -283,7 +294,7 @@ async function askEntry(ask, { key, label, current, offer, none, effortsForModel
       type: "text",
       name: `${key}-effort`,
       message: `${label} · effort (nothing discovered; empty for ${none.effort.title})`,
-      initial: currentEffort ?? "",
+      initial: currentEffort ?? recommendedEffort ?? "",
       validate: (v) => !v.trim() || VALUE.test(v.trim()) || VALUE_HINT,
     })).trim();
     effort = typed || undefined;
@@ -308,7 +319,7 @@ const LEVEL_NOTE = {
  * Nothing is written until that confirmation; Ctrl+C at any point writes
  * nothing. `fromInstall` drops the closing "run install" hint.
  */
-async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask, isTTY = !!(process.stdin.isTTY && process.stdout.isTTY), run, now, home = os.homedir(), cwd = process.cwd(), fromInstall = false } = {}) {
+async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask, isTTY = !!(process.stdin.isTTY && process.stdout.isTTY), run, now, home = os.homedir(), cwd = process.cwd(), fromInstall = false, deferWrite = false } = {}) {
   let file = userConfigPath(home);
   if (project) {
     const root = await projectRoot(cwd, home);
@@ -334,6 +345,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
   try {
     for (const harness of selectable) {
     const record = catalog.harnesses[harness];
+    const recommendation = resolveRecommended(catalog, harness);
     const offer = record.status === "discovered"
       ? { models: record.models.map((m) => m.id), efforts: [...new Set(record.models.flatMap((m) => m.efforts))] }
       : { models: [], efforts: [] };
@@ -343,10 +355,25 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     ctx.log(`${LABEL[harness]} models for ${project ? "this project" : "you"} (${file})`);
     ctx.log("Each agent uses its need level's choice; you can override single agents after.");
     const inherit = { model: { title: "inherit", description: "the session's model" }, effort: { title: "inherit", description: "the session's effort" } };
+    ctx.log(LEGEND);
     for (const need of NEED_ORDER) {
       const users = agents.filter((a) => a.need === need).map((a) => a.name);
       const label = `${need} — ${users.length ? users.join(", ") : `no agent by default; ${LEVEL_NOTE[need]}`}`;
-      setChoice(doc, harness, "levels", need, await askEntry(ask, { key: `${harness === "claude" ? "" : `${harness}-`}${need}`, label, current: doc.harnesses?.[harness]?.levels?.[need], offer, none: inherit, effortsForModel }));
+      const current = doc.harnesses?.[harness]?.levels?.[need];
+      const recommended = recommendation.choices[need];
+      const missing = recommendation.unset.filter((item) => item.level === need);
+      const complete = !!recommended && missing.length === 0;
+      const matches = complete && current?.model === recommended.model && current?.effort === recommended.effort;
+      const marker = !complete ? "!" : !current ? "+" : matches ? "=" : "->";
+      const reason = missing.map((item) => item.reason).join("; ");
+      ctx.log(rowText({
+        label: need,
+        current: current ? `${current.model ?? "inherit"}/${current.effort ?? "inherit"}` : undefined,
+        marker,
+        recommended: recommended ? `${recommended.model}/${recommended.effort ?? "(not set)"}` : undefined,
+        reason: reason || undefined,
+      }));
+      setChoice(doc, harness, "levels", need, await askEntry(ask, { key: `${harness === "claude" ? "" : `${harness}-`}${need}`, label, current, recommended, offer, none: inherit, effortsForModel }));
     }
 
     const levels = doc.harnesses?.[harness]?.levels ?? {};
@@ -390,6 +417,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     for (const [name, entry] of Object.entries(doc.harnesses?.[harness]?.agents ?? {})) ctx.log(`  ${name.padEnd(9)} ${summarize(entry)} (override)`);
     }
     if (!(await ask({ type: "confirm", name: "save", message: `Save to ${file}?`, initial: true }))) {
+      if (deferWrite) return { cancelled: true };
       ctx.log("Not saved; nothing changed.");
       return 0;
     }
@@ -397,11 +425,68 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     if (err instanceof Aborted) throw new Error(`models setup: cancelled; nothing was written to ${file}`);
     throw err;
   }
+  if (deferWrite) return {
+    userChoices: doc,
+    catalog,
+    apply: async () => {
+      await writeCatalog(catalog.pending, catalogPath(home), { now });
+      await writeChoices(file, doc, { project });
+      ctx.log(`Saved ${file}`);
+    },
+  };
   await writeCatalog(catalog.pending, catalogPath(home), { now });
   await writeChoices(file, doc, { project });
   ctx.log(`Saved ${file}`);
   if (!fromInstall) ctx.log(`Run npx canonkit install ${selectable.map((h) => `--${h}`).join(" ")} to write the defaults into your agents; check with npx canonkit models show`);
   return 0;
+}
+
+/** Read-only plan for install's recommended model rows. Discovery is skipped
+ * in dry-run mode: Claude's preset is printable by name, while Codex IDs are
+ * resolved only after an accepted install. */
+async function prepareRecommendedModels(harnesses, { home = os.homedir(), dryRun = false, run, now } = {}) {
+  const selected = harnesses.filter((harness) => harness === "claude" || harness === "codex");
+  const file = userConfigPath(home);
+  const before = await readChoices(file);
+  const document = structuredClone(before);
+  const catalog = !dryRun && selected.length
+    ? await refreshCatalog(selected, { run, now, file: catalogPath(home), home, persist: false })
+    : null;
+  const recommendations = new Map(), rows = [];
+  for (const harness of selected) {
+    const recommendation = dryRun
+      ? { harness, choices: {}, unset: [] }
+      : resolveRecommended(catalog, harness);
+    recommendations.set(harness, recommendation);
+    const current = before.harnesses?.[harness]?.levels ?? {};
+    for (const need of NEEDS) {
+      const existing = current[need], preset = PRESETS[harness][need];
+      const resolved = recommendation.choices[need];
+      const recommended = dryRun
+        ? harness === "claude" ? `${preset.model}/${preset.effort}` : `${preset.tier} (resolved at install)`
+        : resolved ? `${resolved.model}/${resolved.effort ?? "(not set)"}` : undefined;
+      const currentText = existing ? `${existing.model ?? "inherit"}/${existing.effort ?? "inherit"}` : null;
+      const missing = recommendation.unset.filter((item) => item.level === need).map((item) => item.reason).join("; ");
+      rows.push({
+        label: `${LABEL[harness]} ${need}`, current: currentText, recommended,
+        marker: dryRun ? existing ? "->" : "+" : !recommended ? "!" : !existing ? "+" : existing.model === resolved?.model && existing.effort === resolved?.effort ? "=" : "->",
+        reason: missing || (dryRun && harness === "codex" ? "model ID resolved at install" : undefined),
+      });
+    }
+    if (!dryRun) applyRecommendedChoices(document, recommendation);
+  }
+  return {
+    rows, recommendations, file, document, catalog,
+    hasExisting: selected.some((harness) => {
+      const current = before.harnesses?.[harness];
+      return !!current && (!!Object.keys(current.levels ?? {}).length || !!Object.keys(current.agents ?? {}).length);
+    }),
+    apply: async () => {
+      if (dryRun || !selected.length) return;
+      await writeCatalog(catalog.pending, catalogPath(home), { now });
+      await writeChoices(file, document);
+    },
+  };
 }
 
 /**
@@ -561,4 +646,4 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
   return rows;
 }
 
-export { show, refresh, setup, offerModelSetup, effective, loadLayers, modelDiagnosis, STALE_DAYS, SHOW_VERSION };
+export { show, refresh, setup, offerModelSetup, prepareRecommendedModels, effective, loadLayers, modelDiagnosis, STALE_DAYS, SHOW_VERSION };

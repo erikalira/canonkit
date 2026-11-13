@@ -77,8 +77,13 @@ calls still resolve as before.
 > to sandboxed Bash commands when the sandbox denies reading your home directory
 > (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
 > That is a user-side setting: re-allow the folder with `sandbox.filesystem.allowRead`
-> in your user settings, `~/.claude/settings.json`. For the defaults used here (nvm for
-> Node, pipx for graphify), allow only what you use:
+> in your user settings, `~/.claude/settings.json`. `canonkit install` offers this:
+> from a terminal it detects the nvm and pipx folders in use, compares them with your
+> existing `allowRead` entries (equivalent spellings and broader entries count as
+> covering) and asks before appending only the missing ones; declining, or installing
+> without a terminal, prints the snippet instead. See
+> [the install review](install.md#security-review-during-install). To add them by hand,
+> for the defaults used here (nvm for Node, pipx for graphify), allow only what you use:
 >
 > ```json
 > "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] } }
@@ -95,17 +100,19 @@ calls still resolve as before.
 > is hidden from this process"), and, when nothing more specific explains the missing
 > tool, adds one line pointing here (not on native Windows). `tool list` only lists the
 > unreadable links under the table. A folder the sandbox hides outright (`~/.nvm`)
-> leaves no trace, so only the generic line appears. canonkit only prints these hints:
-> it never reads or writes your settings and does not guess the folder to allow.
+> leaves no trace, so only the generic line appears. `tool add` and `tool list` only
+> print these hints: they never read or write your settings. Only `install` writes
+> `allowRead`, and only for the known nvm and pipx locations, after you confirm.
 >
 > Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
 > `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,
 > unless the npm global prefix is inside your home (`npm config get prefix`, for example
-> `~/.npm-global`): then allow that folder, because `openspec` is installed there. A project
-> `.claude/settings.json` is not enough: a repository file cannot re-allow a path that a
-> higher level denies. canonkit never writes it: the path is yours and it is a
-> permission. The setting affects sandboxed Bash only and applies to the next command;
-> see the Claude Code sandboxing docs.
+> `~/.npm-global`): then allow that folder, because `openspec` is installed there. Put the entry in
+> user settings, where canonkit writes it: with `blockReadsOutsideWorkingDirectories` on,
+> an `allowRead` entry in a project's `.claude/settings.json` was ignored when tested on WSL2. canonkit never proposes a folder it does not recognize: for
+> another version manager, `install` reports the location and you add it yourself. The
+> setting affects sandboxed Bash only and applies to the next command; see the Claude
+> Code sandboxing docs.
 
 With the binary present, `tool add`:
 
