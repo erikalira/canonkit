@@ -518,7 +518,8 @@ for (const failure of ["repository-edit", "distribution-failure"]) test(`post-pr
   const fixtureCli = path.join(pkg, "bin", "cli.js"), source = await readFile(fixtureCli, "utf8"), checkpoint = "await applyClaudeUserPlan(configured);";
   assert.equal(source.split(checkpoint).length, 2);
   const barrier = "if (completed.length) throw new Error('Synthetic distribution interruption');";
-  const distribution = "await installDistribution(configured, { ...options, userModelChoices });";
+  const distribution = "await installDistribution(configured, { ...options, userModelChoices, userModelCatalog });";
+  assert.equal(source.split(distribution).length, 2, "distribution checkpoint must match exactly once");
   await writeFile(fixtureCli, source.replace(checkpoint, `${checkpoint}\nawait writeFile(${JSON.stringify(ready)}, 'ready');\nwhile (!existsSync(${JSON.stringify(release)})) await new Promise(resolve => setTimeout(resolve, 20));`).replace(distribution, `${failure === "distribution-failure" ? barrier : ""}\n${distribution}`));
   const child = f.start(["install", "--claude", "--no-reference"], fixtureCli);
   t.after(() => { if (child.exitCode === null) child.kill(); });
