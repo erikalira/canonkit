@@ -30,6 +30,13 @@ a handoff keep their details there; items without one carry them inline.
 - [ ] **User/project terminology** in `doctor`, `uninstall`, `models` and
   security diagnostics ([note](docs/plans/install-follow-up-renames.md)).
   MEDIUM; Pixie for the wording.
+- [ ] **User/project terminology in the docs prose**: the "Terms used by install"
+  glossary in `docs/install.md` (L18-26) still defines "Repository"; the prose
+  there (~L109-146, 194-207, 914, 1268-1283, heading "Native security, per
+  repository", which other docs link to) and `README.md` (L17, 67-71, 128-136,
+  402, 449-451) still say "repository"/"global". Also the reason texts in
+  `bin/security.js` SECURITY_SETTINGS, which the README table repeats. LOW–MEDIUM;
+  Spencer for the prose.
 - [ ] **Install guidance for a selected tool that is not installed**: in the
   guided `install`, Graphify and OpenSpec come preselected without checking the
   binary. If one is missing, the user only finds out at the end:

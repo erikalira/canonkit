@@ -101,14 +101,19 @@ test("project-only reversal preserves global settings, later user edits and othe
   await put(f.local, current);
   const result = f.run(["uninstall", "--project"]);
   assert.equal(result.status, 0, result.out);
+  assert.match(result.out, /^Project \(.+\): reversing tracked project security and Codex core shadows$/m);
+  assert.match(result.out, /Kept: backups and everything at user level \(canonkit uninstall removes it\)\./);
   const restored = await json(f.local);
   assert.equal(restored.sandbox.autoAllowBashIfSandboxed, undefined);
   assert.deepEqual(restored, { sandbox: { excludedCommands: ["fixture"] }, custom: "before", permissions: { blockWritesOutsideWorkingDirectories: false }, theme: "later" });
   assert.equal(await readFile(f.global, "utf8"), userBefore);
   assert.ok(existsSync(path.join(f.home, ".claude", "agents", "bob.md")));
-  assert.equal(f.run(["uninstall", "--project"]).status, 0);
+  const again = f.run(["uninstall", "--project"]);
+  assert.equal(again.status, 0);
   assert.equal(f.run(["uninstall", "--project", "--claude"]).status, 1);
-  assert.equal(f.run(["uninstall", "--project"], f.home).status, 1);
+  const outside = f.run(["uninstall", "--project"], f.home);
+  assert.equal(outside.status, 1);
+  assert.match(outside.out, /uninstall --project: no project here; run it inside the project \(a Git repository\) you want to undo/);
 });
 
 test("project removal keeps sensitive backups in the private receipt store", async (t) => {
@@ -174,7 +179,7 @@ test("no-repository installation adds no project fallback and dry run writes not
   else assert.doesNotMatch(dry.out, /would apply project security: sandbox\.autoAllowBashIfSandboxed/);
   const global = f.run(["install", "--claude", "--no-reference", "--verbose"], f.home);
   assert.equal(global.status, 0, global.out);
-  assert.match(global.out, /no validated repository/);
+  assert.match(global.out, /WARN security project: no project here; project security not set up, and user settings do not cover it/);
   assert.equal(existsSync(f.local), false);
   assert.deepEqual(await json(f.global), { sandbox: { network: { strictAllowlist: true } } });
 });
@@ -186,11 +191,11 @@ test("explicit false is recommended during install and doctor without doctor wri
   await put(f.local, { sandbox: { autoAllowBashIfSandboxed: false } });
   const installed = f.run(["install", "--claude", "--no-reference"]);
   assert.equal(installed.status, 0, installed.out);
-  assert.match(installed.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this repository's \.claude\/settings\.json/);
+  assert.match(installed.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this project's \.claude\/settings\.json/);
   assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, false);
   const beforeDoctor = await readFile(f.local);
   const diagnosis = f.run(["doctor"]);
-  assert.match(diagnosis.out, /security claude approval-recommendation.*this repository's \.claude\/settings\.json/);
+  assert.match(diagnosis.out, /security claude approval-recommendation.*this project's \.claude\/settings\.json/);
   assert.deepEqual(await readFile(f.local), beforeDoctor);
 
   const personal = await fixture(t, "2.1.314", { sandbox: true });
@@ -285,7 +290,7 @@ test("diagnosis is read-only, target-aware and does not treat native configurati
   assert.match(result.out, /security opencode/);
   assert.match(result.out, /security claude desired-profile/);
   assert.match(result.out, /security claude desired-controls/);
-  assert.match(result.out, /project security not configured for this project.*install --claude/);
+  assert.match(result.out, /security project: not configured for this project; user settings do not cover it.*install --claude from this project/);
   assert.match(result.out, /security remediation.*install --claude.*Optional WSL2/);
   assert.deepEqual(await bytes(f.root), before);
 });
@@ -294,7 +299,7 @@ test("doctor reports absent strict project keys as distinct actionable gaps", as
   const f = await fixture(t, "2.1.314", { sandbox: true });
   if (!await capable(t, f)) return;
   const diagnosis = f.run(["doctor"]);
-  assert.match(diagnosis.out, /sandbox\.enabled is not set in effective repository settings.*install --recommended/);
+  assert.match(diagnosis.out, /sandbox\.enabled is not set in effective project settings.*install --recommended/);
 });
 
 test("doctor reports project security as unconfigured after install --no-project", async (t) => {
@@ -313,7 +318,7 @@ test("doctor reports project security as unconfigured after install --no-project
   assert.deepEqual(questions, ["install-confirmation"]);
   assert.equal(existsSync(f.local), false);
   const diagnosis = f.run(["doctor"]);
-  assert.match(diagnosis.out, /project security not configured for this project.*install --claude/);
+  assert.match(diagnosis.out, /security project: not configured for this project; user settings do not cover it.*install --claude from this project/);
 });
 
 test("default instructions report governance rather than active gates, including after reference refresh", async (t) => {
@@ -701,7 +706,7 @@ test("interactive install: keep leaves repository settings byte-identical and de
   assert.match(result.out, /RECOMMENDATION security settings \(not written; apply with canonkit install --recommended\):/);
   assert.match(result.out, /sandbox\.allowUnsandboxedCommands  true  ->  false/);
   assert.match(result.out, /RECOMMENDATION security runtime-reads: kept current.*\n\s*"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm"\] \} \}/);
-  assert.match(result.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this repository's \.claude\/settings\.json/);
+  assert.match(result.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this project's \.claude\/settings\.json/);
 });
 
 test("guided install offers keep current for security changes without saved model choices", async (t) => {
@@ -782,8 +787,8 @@ test("interactive install never writes or asks about settings.local.json values"
   assert.equal(result.status, 0, result.out);
   assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", "install-confirmation"]);
   assert.deepEqual(await fileBytes(localFile), before);
-  assert.match(result.out, /WARN security local: sandbox\.enabled is false in this repository's \.claude\/settings\.local\.json; set it to true there/);
-  assert.match(result.out, /WARN security local: sandbox\.allowUnsandboxedCommands is true/);
+  assert.match(result.out, /WARN security project-local: sandbox\.enabled is false in this project's \.claude\/settings\.local\.json; set it to true there/);
+  assert.match(result.out, /WARN security project-local: sandbox\.allowUnsandboxedCommands is true/);
   assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, undefined);
 });
 
@@ -958,7 +963,7 @@ test("keep reports legacy hook handlers as preserved instead of claiming they we
   assert.equal(kept.status, 0, kept.out);
   assert.doesNotMatch(kept.out, /Unregistering \d+ canonical canonkit hook handlers/);
   assert.match(kept.out, /WARN migration user: \d+ canonical canonkit hook handler\(s\) remain in user settings/);
-  assert.match(kept.out, /WARN migration repository: \d+ canonical canonkit hook handler\(s\) remain in repository settings/);
+  assert.match(kept.out, /WARN migration project: \d+ canonical canonkit hook handler\(s\) remain in project settings/);
   assert.deepEqual(await fileBytes(f.global), beforeUser);
   assert.deepEqual(await fileBytes(f.local), beforeProject);
 });
@@ -1025,7 +1030,7 @@ test("security plan refuses to overwrite project settings edited before apply", 
       return {};
     },
   });
-  await assert.rejects(applying, /Concurrent edit of repository settings/);
+  await assert.rejects(applying, /Concurrent edit of project settings/);
   assert.deepEqual(await json(f.local), { sandbox: { enabled: false }, concurrentEdit: true });
 });
 

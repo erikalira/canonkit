@@ -152,7 +152,7 @@ test("project-local sandbox placeholder is unknown and cannot authorize the defa
 
 test("automatic approval warns only when one strict sandbox requirement is missing", () => {
   const strict = { sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true } };
-  const warnings = (data) => assessClaude([{ label: "repository", data }], env("linux"))
+  const warnings = (data) => assessClaude([{ label: "project", data }], env("linux"))
     .filter(row => row.control === "approval-mode" && row.detail.includes("sandbox automatic approval"));
   assert.deepEqual(warnings(strict), []);
   for (const [key, value] of [["enabled", false], ["failIfUnavailable", false], ["allowUnsandboxedCommands", true]]) {
@@ -236,13 +236,13 @@ test("diagnosis separates configuration, native Windows limits and unknown harne
 });
 
 test("diagnosis merges observed strict requirements across scopes and respects explicit overrides", () => {
-  const sources = [{ label: "user", data: { sandbox: { enabled: true } } }, { label: "repository", data: { sandbox: { failIfUnavailable: true } } }];
+  const sources = [{ label: "user", data: { sandbox: { enabled: true } } }, { label: "project", data: { sandbox: { failIfUnavailable: true } } }];
   const reports = assessClaude(sources, env());
   assert.ok(reports.some(row => row.control === "shell" && row.status === "FAIL"));
-  const overridden = assessClaude([...sources, { label: "repository-local", data: { sandbox: { enabled: false } } }], env());
+  const overridden = assessClaude([...sources, { label: "project-local", data: { sandbox: { enabled: false } } }], env());
   assert.ok(overridden.some(row => row.control === "scope-conflict" && row.status === "WARN"));
   assert.ok(overridden.some(row => row.control === "shell" && row.status === "WARN"));
-  const blocked = assessClaude([{ label: "user", data: { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } } }, { label: "repository", data: { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false } } }], env());
+  const blocked = assessClaude([{ label: "user", data: { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } } }, { label: "project", data: { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false } } }], env());
   assert.ok(blocked.some(row => row.control === "file-reads" && row.status === "OK"));
   assert.ok(blocked.some(row => row.control === "file-writes" && row.status === "OK"));
 });
@@ -490,7 +490,7 @@ test("assessClaude skips allowRead items canonkit appended but warns for user-ad
   assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"] } } }, []).length, 1);
   assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"], allowWrite: ["~/w"] } } }, ["~/.nvm"]).length, 1);
   // Repository entries are never kit-owned.
-  assert.equal(assessClaude([{ label: "repository", data: { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } } }], env("linux"), { ownedAllowRead: ["~/.nvm"] }).filter((row) => row.control === "filesystem-exceptions").length, 1);
+  assert.equal(assessClaude([{ label: "project", data: { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } } }], env("linux"), { ownedAllowRead: ["~/.nvm"] }).filter((row) => row.control === "filesystem-exceptions").length, 1);
 });
 
 test("owned allowRead from a receipt is trusted only when the runtime table can produce it", () => {

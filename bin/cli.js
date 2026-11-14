@@ -611,7 +611,7 @@ async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope
     await safePath(file);
     if (projectInScope) await safePath(projectStateDir(os.homedir(), root));
     const before = await optionalBytes(file);
-    const settings = parseSecuritySettings(before, "repository Claude settings");
+    const settings = parseSecuritySettings(before, "project Claude settings");
     const migration = wireHooks ? null : migrateClaudeHooks(settings, claudeHome());
     if (projectInScope) {
       const local = await readProjectLocalSandbox(localFile);
@@ -738,7 +738,7 @@ async function reviewSecurity(ctx, security, { interactive = false, securityAnsw
   const runtime = security.global.runtimeReads;
   for (const item of runtime?.unhandled ?? []) ctx.log(`WARN security runtime-reads: ${item.item} (${item.label}) is not a known runtime location; no read exception was proposed for it`);
   for (const entry of (security.project?.weaker ?? []).filter((item) => item.source === "local" && item.path !== AUTO_APPROVAL)) {
-    ctx.log(`WARN security local: ${entry.path} is ${entry.current} in this repository's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
+    ctx.log(`WARN security project-local: ${entry.path} is ${entry.current} in this project's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
   }
   const proposed = runtime?.proposed ?? [];
   if (!interactive && !securityAnswer) {
@@ -857,7 +857,7 @@ async function planInstall(ctx, options = {}) {
     await projectManifest?.start();
     const configured = { ...ctx, networkSecurityPlan: security?.global, hookWiringRequested: options.wireHooks === true, recommendedSetup: !!userModelChoices };
     if (security && !options.wireHooks) {
-      for (const [label, plan] of [["user", security.global], ["repository", security.project]]) {
+      for (const [label, plan] of [["user", security.global], ["project", security.project]]) {
         if (!plan?.migration) continue;
         if (plan.migration.removed.length) {
           if (securityDecision.securityAnswer === "keep") {
@@ -878,13 +878,13 @@ async function planInstall(ctx, options = {}) {
     if (security) {
       for (const gap of security.global.gaps) ctx.log(`WARN security network: ${gap}`);
       const project = security.project;
-      if (!project) ctx.log("WARN security repository: no validated repository; project policy pending, no global fallback");
+      if (!project) ctx.log("WARN security project: no project here; project security not set up, and user settings do not cover it");
       else if (project.notConfigured) {
-        ctx.log(`WARN security repository: project security not configured for this project (${project.root}); install again with project setup selected to apply it`);
-        if (project.legacyLeft?.length) ctx.log(`WARN migration project: repository still has ${project.legacyLeft.length} legacy canonkit hook handler(s); setting up this project during install removes them`);
+        ctx.log(`WARN security project: not configured for this project (${project.root}); install again with project setup selected to apply it`);
+        if (project.legacyLeft?.length) ctx.log(`WARN migration project: this project still has ${project.legacyLeft.length} legacy canonkit hook handler(s); setting up this project during install removes them`);
       }
       else {
-        ctx.log(`Security repository: ${project.root}`);
+        ctx.log(`Project security (${project.root}):`);
         for (const key of project.changes) {
           if (userModelChoices) {
             const row = project.rows.find((item) => item.path === key);
@@ -917,14 +917,14 @@ async function planInstall(ctx, options = {}) {
           ctx.log(wrapText(`  (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox} and OS sandbox support; version not probed in dry run)`));
         }
         if (project.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
-          const target = project.localSettings.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
-            : project.data.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.json" : "user Claude settings";
+          const target = project.localSettings.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.local.json"
+            : project.data.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.json" : "user Claude settings";
           ctx.log(`RECOMMENDATION security approval: set sandbox.autoAllowBashIfSandboxed to true in ${target} for the strict sandbox profile; the explicit false was preserved.`);
         }
         await safePath(project.file);
-        if (securityDigest(await optionalBytes(project.file)) !== securityDigest(project.before)) throw new Error("Concurrent edit of repository settings; security configuration was preserved");
+        if (securityDigest(await optionalBytes(project.file)) !== securityDigest(project.before)) throw new Error("Concurrent edit of project settings; security configuration was preserved");
         if (project.changes.length) await projectManifest.write(project.file, serializeSecurity(project.data, project.before?.toString("utf8")));
-        if (!ctx.dryRun && project.changes.length) completed.push("repository Claude settings");
+        if (!ctx.dryRun && project.changes.length) completed.push("project Claude settings");
         for (const gap of project.gaps) {
           if (gap === "sandbox-autoapproval-requires-full-sandbox-profile") ctx.log("WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile");
           else ctx.log(`WARN security coverage: ${gap}`);
@@ -2619,21 +2619,21 @@ async function securityDiagnosis() {
   const rows = [], add = (status, check, detail) => rows.push({ status, check, detail, more: [] });
   let root = null;
   try { root = await repositoryRoot(); }
-  catch { add("FAIL", "security repository", "unknown: unsafe or invalid current repository boundary"); }
+  catch { add("FAIL", "security project", "unknown: unsafe or invalid project root"); }
   const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() });
   add("OK", "security environment", `detected ${evidence.platform}, WSL ${evidence.wsl}, container ${evidence.container}; sandbox capability ${evidence.sandboxCapability}; runtime unknown`);
   const sources = [];
   for (const [label, file] of [
     ["user", settingsPath()], ["user-local", path.join(claudeHome(), "settings.local.json")],
-    ...(root ? [["repository", path.join(root, ".claude", "settings.json")], ["repository-local", path.join(root, ".claude", "settings.local.json")]] : []),
+    ...(root ? [["project", path.join(root, ".claude", "settings.json")], ["project-local", path.join(root, ".claude", "settings.local.json")]] : []),
   ]) {
     try {
       // Doctor only: inside the sandbox the placeholder is /dev/null (char device 1:3) over the real 0-byte file.
-      const devNull = label === "repository-local" && await isSandboxNullPlaceholder(file);
+      const devNull = label === "project-local" && await isSandboxNullPlaceholder(file);
       if (!devNull) await safePath(file);
       const bytes = devNull ? Buffer.alloc(0) : await optionalBytes(file);
       // Doctor only: the sandbox's 0-byte placeholder for settings.local.json is not a broken config.
-      if (label === "repository-local" && bytes !== null && bytes.length === 0) {
+      if (label === "project-local" && bytes !== null && bytes.length === 0) {
         add("OK", "security claude placeholder", `${label}: empty file, probably a sandbox placeholder; ignored`);
         sources.push({ label, data: null });
         continue;
@@ -2655,21 +2655,21 @@ async function securityDiagnosis() {
   const profile = evidence.platform === "win32" ? "native-windows-partial" : evidence.sandboxCapability === "available-unverified" ? "sandbox-configured-runtime-unverified" : "available-file-controls-partial";
   add("WARN", "security claude desired-profile", `partial: ${profile}; configured keys do not establish effective session containment`);
   const user = sources.find((source) => source.label === "user");
-  const repository = sources.find((source) => source.label === "repository");
-  if (root && !repository?.error && !user?.error) {
-    const repositoryLocal = sources.find((source) => source.label === "repository-local");
-    const desired = compileSecurity(repository?.data ?? {}, evidence, {
+  const project = sources.find((source) => source.label === "project");
+  if (root && !project?.error && !user?.error) {
+    const projectLocal = sources.find((source) => source.label === "project-local");
+    const desired = compileSecurity(project?.data ?? {}, evidence, {
       userSettings: user?.data ?? {},
-      projectLocalSettings: repositoryLocal?.data ?? {},
-      projectLocalSettingsKnown: !repositoryLocal?.error,
+      projectLocalSettings: projectLocal?.data ?? {},
+      projectLocalSettingsKnown: !projectLocal?.error,
     });
     for (const row of desired.rows.filter((item) => item.current === null && item.marker === "+")) {
-      add("WARN", "security claude desired-controls", `partial: ${row.path} is not set in effective repository settings; ${row.reason}. Apply with canonkit install --recommended`);
+      add("WARN", "security claude desired-controls", `partial: ${row.path} is not set in effective project settings; ${row.reason}. Apply with canonkit install --recommended`);
     }
-    if (desired.changes.length) add("WARN", "security claude desired-controls", `partial: supported repository controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this repository`);
+    if (desired.changes.length) add("WARN", "security claude desired-controls", `partial: supported project controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this project`);
     if (desired.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
-      const target = repositoryLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.local.json"
-        : repository?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this repository's .claude/settings.json" : "user Claude settings";
+      const target = projectLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.local.json"
+        : project?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.json" : "user Claude settings";
       add("WARN", "security claude approval-recommendation", `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired; canonkit install offers this change from a terminal. Doctor did not edit settings`);
     }
   }
@@ -2683,7 +2683,7 @@ async function securityDiagnosis() {
     if (runtime.covered.length && !runtime.proposed.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
   }
   if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
-  add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the repository; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
+  add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the project; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
   const checkTracked = async (receipt, id, label) => {
     try {
       if (!await receipt.load()) return;
@@ -2706,21 +2706,21 @@ async function securityDiagnosis() {
           continue;
         }
         if (get(installed, keys) !== record.afterValue) throw new Error("Ownership evidence does not match");
-        if (get(source?.data, keys) !== record.afterValue) add("FAIL", "security claude tracked-policy", `partial: tracked ${label} ${key} is missing or changed; re-run canonkit install in this repository`);
+        if (get(source?.data, keys) !== record.afterValue) add("FAIL", "security claude tracked-policy", `partial: tracked ${label} setting ${key} is missing or changed; re-run canonkit install${label === "project" ? " from this project" : ""}`);
       }
     } catch { add("FAIL", "security receipt", `unknown: ${label} receipt or private evidence cannot be validated; no repair performed`); }
   };
   const globalCatalog = await installCatalog(await readAgents());
   await checkTracked(new InstallManifest({ home: os.homedir(), ...globalCatalog, targets: ["claude"], dryRun: true }), "claude:json:settings.json", "user");
-  if (!root) add("WARN", "security repository", "unavailable: no validated repository target; run install from the intended repository");
+  if (!root) add("WARN", "security project", "unavailable: not inside a project (Git repository); run canonkit install from the project you want to set up. User settings are checked separately");
   else {
     // Read provenance without starting/recovering a store or creating locks.
     const receipt = scopedSecurityManifest({ dryRun: true, log: () => {} }, root);
     const hasReceipt = await receipt.load();
     if (!hasReceipt || !receipt.data?.entries["project:json:.claude/settings.json"]) {
-      add("WARN", "security repository", `project security not configured for this project (${root}); run canonkit install --claude from this repository to set it up`);
+      add("WARN", "security project", `not configured for this project; user settings do not cover it (${root}). Run canonkit install --claude from this project to set it up`);
     }
-    await checkTracked(receipt, "project:json:.claude/settings.json", "repository");
+    await checkTracked(receipt, "project:json:.claude/settings.json", "project");
   }
   const readConfig = async (file) => { try { await safePath(file); const bytes = await optionalBytes(file); return bytes?.toString("utf8") ?? null; } catch { return undefined; } };
   const codex = await readConfig(path.join(codexHome(), "config.toml"));
@@ -4260,6 +4260,8 @@ async function uninstallGlobal(ctx, flags) {
   await manifest.load();
   const selected = TARGETS.filter((target) => flags.includes(`--${target}`));
   manifest.targets = selected.length ? selected : [...new Set(Object.values(manifest.data.entries).flatMap((entry) => entry.owners))];
+  const harnessNames = manifest.targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target] ?? target);
+  ctx.log(`User level: ${ctx.dryRun ? "would remove" : "removing"} tracked entries${harnessNames.length ? ` for ${harnessNames.join(", ")}` : ""}`);
   const referenceFiles = {
     claude: [settingsPath(), path.join(claudeHome(), "settings.local.json"),
       path.join(process.cwd(), ".claude", "settings.json"), path.join(process.cwd(), ".claude", "settings.local.json"),
@@ -4268,7 +4270,10 @@ async function uninstallGlobal(ctx, flags) {
     opencode: [opencodeConfigPath(), path.join(opencodeDir(), "opencode.jsonc"), path.join(process.cwd(), "opencode.json"), path.join(process.cwd(), "opencode.jsonc")],
   };
   try {
-    return await manifest.uninstall({ references: async (harness, projected) => {
+    return await manifest.uninstall({ messages: {
+      missing: "No user-level install manifest: nothing was removed. Follow docs/install.md#uninstalling for pre-manifest installations.",
+      kept: "Kept: backups, activity history, legacy ~/.agents/<core>.md, and everything at project level (canonkit uninstall --project removes project security). Other projects are not scanned for references.",
+    }, references: async (harness, projected) => {
       const residual = [];
       for (const file of new Set(referenceFiles[harness])) {
         let text;
@@ -4304,11 +4309,17 @@ async function uninstallGlobal(ctx, flags) {
 
 async function uninstallProject(ctx) {
   const root = await repositoryRoot();
-  if (!root) throw new Error("uninstall --project requires the current validated repository");
+  if (!root) throw new Error("uninstall --project: no project here; run it inside the project (a Git repository) you want to undo");
   await safePath(path.join(root, ".claude", "settings.json"));
   for (const name of PROJECT_CORE_NAMES) await safePath(path.join(root, ".codex", "agents", `${name}.toml`));
   const manifest = scopedSecurityManifest(ctx, root);
-  try { return await manifest.uninstall(); }
+  ctx.log(`Project (${root}): reversing tracked project security and Codex core shadows`);
+  try {
+    return await manifest.uninstall({ messages: {
+      missing: "No project install manifest for this project: nothing was removed.",
+      kept: "Kept: backups and everything at user level (canonkit uninstall removes it).",
+    } });
+  }
   finally { await manifest.close(); }
 }
 
@@ -4349,7 +4360,7 @@ Options:
   --dry-run       report what would change without writing (or running) anything
   --recommended  install: apply recommended model and security settings without a setup question
   --no-project   install: apply user-level setup only; do not write project files or settings
-  --project       uninstall: reverse tracked security settings and Codex core shadows in this repository;
+  --project       uninstall: reverse tracked security settings and Codex core shadows in this project;
                   models setup: write this project's .canonkit/models.json
   --json          models show: machine-readable output
   --claude        install, reference, uninstall, models: select Claude Code

@@ -480,7 +480,7 @@ policy remains unknown where managed, CLI or runtime evidence is unavailable.
 Configuration is not runtime verification. Correct native Windows partial
 coverage is a warning; malformed observed settings or an observable unmet existing
 isolation requirement can fail. Observable settings come from user, user-local,
-repository and repository-local files, with scope conflicts reported separately.
+project and project-local files, with scope conflicts reported separately.
 This bounded inspection does not resolve the harness's complete effective policy.
 A hidden CLI/managed override or an unsupported
 TOML/JSONC shape stays unknown, not permissive by assumption.
@@ -502,11 +502,11 @@ WARN security claude effective-policy: unknown: managed, CLI, plugin and runtime
 ```
 
 `doctor` also checks every receipt-owned security key against its installed
-boolean, including `false`, in its original user or repository file. Changing
+boolean, including `false`, in its original user or project file. Changing
 or deleting a key, or deleting that settings file, produces `FAIL`, for example:
 
 ```text
-FAIL security claude tracked-policy: partial: tracked repository permissions.blockReadsOutsideWorkingDirectories is missing or changed; re-run canonkit install in this repository
+FAIL security claude tracked-policy: partial: tracked project setting permissions.blockReadsOutsideWorkingDirectories is missing or changed; re-run canonkit install from this project
 ```
 
 Review any deliberate edit before reapplying `npx canonkit install --claude`;

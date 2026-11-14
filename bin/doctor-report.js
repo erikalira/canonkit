@@ -64,7 +64,7 @@ export function renderDoctorReport(rows) {
     }
     const w = Math.max(...[...groups.keys()].map((k) => k.length));
     for (const [group, items] of groups) out.push(...wrap(items.join(" · "), `      ${" ".repeat(w + 2)}`, `    ${group.padEnd(w)}  `));
-    if (remediation) out.push("", ...wrap("Fix what Claude Code supports: npx canonkit install --claude (run from the repository). Stronger shell isolation needs WSL2 or a container.", "    ", "  → "));
+    if (remediation) out.push("", ...wrap("Fix what Claude Code supports: npx canonkit install --claude (run from the project). Stronger shell isolation needs WSL2 or a container.", "    ", "  → "));
   }
 
   out.push("");

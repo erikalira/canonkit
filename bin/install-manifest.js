@@ -436,9 +436,13 @@ export class InstallManifest {
   }
 
   /** Preflight each harness, then detach its configuration before its files. */
-  async uninstall({ references = async () => [] } = {}) {
+  async uninstall({ references = async () => [], messages = {} } = {}) {
+    const {
+      missing = "No user-level install manifest: nothing was removed. Follow docs/install.md#uninstalling for pre-manifest installations.",
+      kept = "Kept: backups, activity history, legacy ~/.agents/<core>.md, and everything at project level (canonkit uninstall --project removes project security). Other projects are not scanned for references.",
+    } = messages;
     const exists = await this.load();
-    if (!exists) { this.log("No install manifest: nothing was removed. Follow docs/install.md#uninstalling for pre-manifest installations."); return 1; }
+    if (!exists) { this.log(missing); return 1; }
     await this.start();
     const selected = new Set(this.targets);
     const blocked = new Set();
@@ -522,7 +526,7 @@ export class InstallManifest {
         }
       }
     }
-    this.log("Backups, activity history, project specialists/tools and legacy ~/.agents/<core>.md were preserved. References in other projects are not scanned.");
+    this.log(kept);
     return blocked.size ? 1 : 0;
   }
 }

@@ -183,11 +183,14 @@ test("dry runs write nothing and an untracked uninstall only reports manual clea
   assert.deepEqual(await snapshot(home), empty);
   const missing = run(home, ["uninstall"]);
   assert.equal(missing.status, 1);
-  assert.match(missing.out, /No install manifest/);
+  assert.match(missing.out, /No user-level install manifest/);
   assert.deepEqual(await snapshot(home), empty);
   ok(run(home, ["install", "--codex", "--wire-hooks"]));
   const installed = await snapshot(home);
-  ok(run(home, ["uninstall", "--dry-run"]));
+  const dry = run(home, ["uninstall", "--dry-run"]);
+  ok(dry);
+  assert.match(dry.out, /User level: would remove tracked entries for Codex$/m);
+  assert.match(dry.out, /Kept: backups, activity history, legacy ~\/\.agents\/<core>\.md, and everything at project level/);
   assert.deepEqual(await snapshot(home), installed);
 });
 
