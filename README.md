@@ -4,20 +4,19 @@
 [![CI](https://github.com/erikalira/canonkit/actions/workflows/ci.yml/badge.svg)](https://github.com/erikalira/canonkit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/npm/l/canonkit)](LICENSE)
 
-A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and **GitHub Copilot**.
-Each agent owns one domain: product, architecture, security, quality, UX,
-performance, operations or docs. Before it recommends anything, it rates the risk
-of the change. Small, reversible work stays with your main agent. Changes to auth,
-secrets, migrations or public contracts go to the agent that owns them. Claude
-Code keeps its native permission modes; installation configures supported access
-restrictions in the current repository's `.claude/settings.json`. Optional hooks
-add specific gates when you explicitly wire them. Codex and OpenCode have their
-own controls and can opt into the git-bypass and secret-write tripwires.
+A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and
+**GitHub Copilot**. Each agent owns a domain—product, architecture, security,
+quality, UX, performance, operations or docs—and rates the risk before making a
+recommendation. Routine, reversible work stays with your main agent; changes
+that put auth, secrets, migrations or public contracts at risk go to the agent
+that owns them.
 
-Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
-Claude Code reads. Installing generates Claude Code frontmatter while preserving
-the agent body. Codex, OpenCode and Copilot get native profiles generated from
-that same body. There is one source per agent, and nothing to reconcile by hand.
+Define each agent once in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents);
+canonkit generates native profiles for all four runtimes from the same Markdown
+source. For Claude Code, installation preserves your permission mode and
+configures supported repository restrictions; Codex and OpenCode keep their own
+controls. Optional hooks add extra gates—including git-bypass and secret-write
+tripwires for Codex and OpenCode—only when you explicitly enable them.
 
 > **canonkit 1.x is not canonkit 0.x.** Versions up to `0.2.0` were a different
 > tool. It generated Spec-Kit-style governance templates (`.specify/`, a
