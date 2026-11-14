@@ -14,10 +14,9 @@ section; this list only orders them.
 
 ### P1 — high gain, low cost
 
-- [ ] **Review brief with the diff scope resolved**: `base..head`, diff command
-  and changed files in the reviewer's brief
-  ([handoff](docs/plans/review-speed-handoff.md), proposal 1). MEDIUM; Quinn
-  reviews.
+- [x] **Review brief with the diff scope resolved**: done in 3.2.1 (OpenSpec
+  `review-brief-diff-scope`, archived; Quinn approved). New `## Briefing a
+  review` in `skills/orchestrate/SKILL.md`.
 - [ ] **Broken links** to `plans/learning-loop-design.md` in `docs/evals.md:298`
   and `docs/learning-loop.md:155`; the file does not exist
   ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 1). LOW.

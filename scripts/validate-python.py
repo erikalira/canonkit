@@ -164,7 +164,11 @@ def validate_skills():
             if needle not in block:
                 print(f"FAIL\treference/agents-block.md no longer carries {what}")
         skill = pathlib.Path("skills/orchestrate/SKILL.md").read_text(encoding="utf-8")
-        for heading in ("## Naming the model and effort", "## Integration Review"):
+        for heading in (
+            "## Naming the model and effort",
+            "## Integration Review",
+            "## Briefing a review",
+        ):
             if heading not in skill:
                 print(f"FAIL\tskills/orchestrate/SKILL.md lost '{heading}'")
 

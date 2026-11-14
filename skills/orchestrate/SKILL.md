@@ -129,6 +129,24 @@ the work state they ran on. The subagent runs only what checks a claim it doubts
 or a gap that evidence leaves, and reports what it ran. A reviewer does not
 repeat the full suite to confirm a fresh result that matches the state under review.
 
+## Briefing a review
+
+A review brief carries the diff scope the lead already resolved, so the reviewer
+starts from the diff instead of rediscovering it. Name the range and the work
+state it was resolved on: `<base>..<head>`, with the base as the merge base with
+the target branch resolved to a revision, or "working tree against HEAD". When
+the branch has commits and uncommitted edits, review the working tree against
+the base, so no edit is hidden. Give the exact command
+(`git diff <base>..<head>`, `git diff HEAD` or `git diff <base>`) and the
+changed files with line counts from `git diff --numstat` on the same range.
+List untracked files separately (`git ls-files --others --exclude-standard`):
+no git diff shows them. For a large diff (a few hundred changed lines, as a guide),
+name per-file commands (`git diff <range> -- <file>`) so the reviewer reads it
+in parts. Save a copy in the scratch folder only for a state git cannot show,
+following the block's "Temporary work outside the repository" rule, and put its
+path in the brief. Write no new file in the repository. For a tiny change, one
+line with the range and the command is enough.
+
 ## Relayed claims
 
 A claim relayed by another agent (an orchestrator's brief, a subagent's report:
