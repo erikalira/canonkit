@@ -20,13 +20,10 @@ a handoff keep their details there; items without one carry them inline.
 - [x] **Broken links** to `plans/learning-loop-design.md` (removed in `d1cf49d`):
   done in 3.2.1. `docs/evals.md` now points to the skill's "Evaluate and
   decide" section; the design-note clause in `docs/learning-loop.md` was dropped.
-- [ ] **Housekeeping**:
-  - delete `docs/plans/release-3.1.0-handoff.md` (3.1.0 and 3.2.0 are tagged);
-  - archive OpenSpec `install-guided-setup` (only open task is the branch
-    rename, superseded by the 3.2.0 merge);
-  - drop the `~/.agents` removal item from the
-    [improvements handoff](docs/plans/canonkit-improvements-handoff.md) (install
-    and doctor already handle it).
+- [x] **Housekeeping**: done in 3.2.1. Deleted
+  `docs/plans/release-3.1.0-handoff.md`; OpenSpec `install-guided-setup` was
+  already archived (`2026-11-14-install-guided-setup`); dropped the `~/.agents`
+  item from the [improvements handoff](docs/plans/canonkit-improvements-handoff.md).
 
 ### P2 — consistency and pending decisions
 
@@ -103,7 +100,7 @@ a handoff keep their details there; items without one carry them inline.
   ADR 0001 stability window ([handoff](docs/plans/tool-pins-update-handoff.md)).
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
   migrations, as its own change with Gard and Pipe
-  ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 5).
+  ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 2).
 
 ### P4 — evaluations, user actions and cosmetics
 
@@ -111,12 +108,12 @@ a handoff keep their details there; items without one carry them inline.
   - full quality corpus baseline and learning loop / stack pack effectiveness
     ([handoff](docs/plans/canonkit-improvements-handoff.md));
   - `eval:quality --runs 3` for the ECC-changed agents
-    ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 2);
+    ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md));
   - Laya version check and eval rerun
     ([handoff](docs/plans/laya-eval-rerun-handoff.md)).
 - [ ] **User actions**: `node bin/cli.js install` to update `~/.claude`; review
   the pending `permissions.allow` lines
-  ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), items 3–4).
+  ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 1).
 - [ ] **Rubric E1/E3/E4**: only with a new versioned rubric revision.
 - [ ] **Doctor reads the install receipt twice**: `securityDiagnosis` in
   `bin/cli.js` builds a separate dry-run `InstallManifest` only to read the

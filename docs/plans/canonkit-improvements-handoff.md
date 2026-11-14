@@ -4,7 +4,6 @@ Atualizado em 2026-11-12. Itens 1–9 do plano original foram implementados; est
 
 ## Pendências
 
-- **Remoção na versão 3.x:** remover de `~/.agents/` as cópias idênticas de agentes core, conforme planejamento da migração universal. A versão 3.0 foi o destino previsto, mas a remoção não está registrada como concluída. Conferir comportamento e notas de release antes de fechar este item.
 - **Eficácia comportamental:** medir learning loop e stack packs; a implementação existe, mas os resultados não foram avaliados. Definir corpus e executar avaliação autorizada antes de afirmar eficácia.
 - **Avaliação do corpus de qualidade:** reexecutar o corpus completo atualizado e registrar baseline. Há histórico anterior, mas não substitui uma medição atual.
 - **Escopo do `context-tune`:** decidir se `skills/context-tune` permanece no core.
