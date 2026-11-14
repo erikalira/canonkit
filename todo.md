@@ -8,15 +8,9 @@ section; this list only orders them.
 
 ### P0 — security
 
-- [ ] **Issue #36: WSL security follow-ups** ([handoff](docs/plans/wsl-resolvers-handoff.md)).
-  - Route the direct git calls in `bin/cli.js` (~L3290 `.gitignore` ls-files,
-    ~L3314 `gitHooksPreflight`) through `sandboxGit`: a repository's
-    `core.fsmonitor` runs its own code today.
-  - Use `readRegularSync` for the remaining project reads (~L1526, L1661, L3262,
-    L3370, L3406): a FIFO hangs the CLI.
-  - Make `unsafeWriteRoot` check every path segment, not only the first: a
-    symlinked `.claude/skills` inside a real `.claude` passes today.
-  - MEDIUM; Gard reviews.
+- [x] **Issue #36: WSL security follow-ups**: done in 3.2.1 (OpenSpec
+  `wsl-security-follow-ups`, archived; Gard approved). Two pre-existing gaps
+  Gard noted went to P3 below.
 
 ### P1 — high gain, low cost
 
@@ -55,6 +49,7 @@ section; this list only orders them.
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
   migrations, as its own change with Gard and Pipe
   ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 5).
+- [ ] **`tool add` leftovers from the issue #36 review** (below).
 
 ### P4 — evaluations, user actions and cosmetics
 
@@ -76,6 +71,20 @@ section; this list only orders them.
 
 Out-of-scope findings collected during the 3.1.1 change
 `security-settings-scope-and-confirmation` (2026-11-13). None blocks 3.1.1.
+
+### `tool add` leftovers from the issue #36 review (Gard, 2026-11-14)
+
+Both predate 3.2.1; Gard rated them P3 and neither blocks it.
+
+- **Raw `core.hooksPath` in output:** `gitHooksPreflight` in `bin/cli.js`
+  prints the repository's `core.hooksPath` unfiltered in "core.hooksPath is
+  set (…)"; a hostile value could carry terminal escape sequences. Fix: pass
+  it through `plain()`. Confidence: medium.
+- **Top-level file targets not walked:** `unsafeWriteRoot` only checks touch
+  paths that contain a `/`, so a literal top-level target (e.g. `AGENTS.md`)
+  that is a symlink is not refused. Today `AGENTS.md` is written through on
+  purpose (see the cli-tools test), so decide first whether any such target
+  should be refused. Confidence: medium.
 
 ### Empty-file rule in other JSON readers
 

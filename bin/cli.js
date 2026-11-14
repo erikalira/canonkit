@@ -1523,7 +1523,7 @@ async function mergeLegacyLog(ctx, oldLog, newLog) {
   }
   const live = path.join(newLog, "events.jsonl");
   const rotated = `${live}.1`;
-  const text = (f) => { try { return readFileSync(f, "utf8"); } catch { return ""; } };
+  const text = (f) => { try { return readRegularText(f); } catch { return ""; } };
   const hadRotated = existsSync(rotated);
   const prevRotated = text(rotated);
   try {
@@ -1594,6 +1594,8 @@ function readRegularSync(file) {
   return readFileSync(file);
 }
 
+const readRegularText = (file) => readRegularSync(file).toString("utf8");
+
 function legacyRunners(claudeDir, override = {}) {
   const dirs = [claudeDir, ...[process.cwd(), process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.join(d, ".claude"))];
   const seen = new Set();
@@ -1658,7 +1660,7 @@ function retireForwarder(ctx, claudeDir, file, content, planned) {
 // Raw text, not parsed: a settings file that is not valid JSON can still run the hook.
 function settingsMention(claudeDir, name) {
   return ["settings.json", "settings.local.json"].some((f) => {
-    try { return readFileSync(path.join(claudeDir, f), "utf8").includes(name); } catch { return false; }
+    try { return readRegularText(path.join(claudeDir, f)).includes(name); } catch { return false; }
   });
 }
 
@@ -3259,7 +3261,15 @@ const gitignoreRoot = (p) => p.replace(/^!?\/?/, "").split("/")[0];
 function gitignorePlan(project, tool) {
   if (!tool.gitignore.length) return null;
   const target = path.join(project, ".gitignore");
-  const raw = existsSync(target) ? readFileSync(target, "utf8") : "";
+  let raw = "";
+  try {
+    raw = readRegularText(target);
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      const why = err.code === "ENOTREG" ? ".gitignore is not a regular file" : `.gitignore is not a regular file or cannot be read (${err.code ?? "unknown"})`;
+      throw Object.assign(new Error(`${why}; canonkit did not touch it.`), { code: "ENOTREG" });
+    }
+  }
   const markers = gitignoreMarkers(tool.name);
   const roots = [...new Set(tool.gitignore.map(gitignoreRoot))];
   const outside = toLf(raw).replace(new RegExp(`${esc(markers[0])}[\\s\\S]*?${esc(markers[1])}`), "");
@@ -3287,9 +3297,9 @@ async function writeGitignore(ctx, project, tool) {
   }
   // Ignoring does not untrack: files committed before stay versioned. Printed,
   // never run — git rm touches the index the person is about to commit from.
-  const git = resolveBin("git", { cwd: project });
+  const git = sandboxGit(project);
   if (!git) return;
-  const r = runBin(git, ["ls-files", "-c", "-i", "--exclude-standard", "--", ...plan.roots], { cwd: project, capture: true, timeout: 30 * 1000 });
+  const r = git(["ls-files", "-c", "-i", "--exclude-standard", "--", ...plan.roots]);
   const tracked = r.status === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
   if (!tracked.length) return;
   const shown = tracked.slice(0, 5).join(", ") + (tracked.length > 5 ? `, … (${tracked.length} in all)` : "");
@@ -3311,9 +3321,9 @@ const GRAPHIFY_HOOKS = { "post-commit": "# graphify-hook-start", "post-checkout"
 
 function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   const fail = (lines) => ({ ok: false, message: lines.join("\n") });
-  const git = resolveBin("git", { cwd: project });
-  if (!git) return fail(["graphify needs git, and git is not on PATH."]);
-  const out = (args) => runBin(git, args, { cwd: project, capture: true, timeout: 30 * 1000 });
+  // keepHooksPath: this preflight must read the repository's real core.hooksPath.
+  const out = sandboxGit(project, { keepHooksPath: true });
+  if (!out) return fail(["graphify needs git, and git is not on PATH."]);
 
   const top = out(["rev-parse", "--show-toplevel"]);
   if (top.status !== 0) return fail([`Not a git repository: ${project}`, "Run git init first."]);
@@ -3367,11 +3377,16 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
 
   for (const [hook, marker] of withGitHooks ? Object.entries(GRAPHIFY_HOOKS) : []) {
     const file = path.join(hooksDir, hook);
-    if (existsSync(file) && !readFileSync(file, "utf8").includes(marker)) {
+    if (existsSync(file) && !hookHasMarker(file, marker)) {
       return fail([`${path.relative(project, file)} already exists and is not graphify's; canonkit never overwrites a git hook.`, ...chain]);
     }
   }
   return { ok: true, hooksDir, before, automatic };
+}
+
+/** Whether a hook file is a regular file carrying the marker; absent or any other kind (a FIFO) is false. */
+function hookHasMarker(file, marker) {
+  try { return readRegularText(file).includes(marker); } catch { return false; }
 }
 
 /** A hook's text without graphify's marked block, whitespace folded. */
@@ -3403,7 +3418,7 @@ function graphifyHooksProblems(check) {
   }
   for (const [hook, marker] of Object.entries(GRAPHIFY_HOOKS)) {
     const file = path.join(check.hooksDir, hook);
-    if (!existsSync(file) || !readFileSync(file, "utf8").includes(marker)) problems.push(`${hook} does not carry graphify's hook block`);
+    if (!hookHasMarker(file, marker)) problems.push(`${hook} does not carry graphify's hook block`);
   }
   return problems;
 }
@@ -3518,20 +3533,38 @@ const harnessStaticTouches = () => ["adds to the harnesses configured earlier; r
 /**
  * The top-level directories the chosen harnesses (and the tool's shared
  * touches) write into must be real directories, or absent: a symlink there
- * would send the tool's writes wherever it points. Returns the first offender.
+ * would send the tool's writes wherever it points. Every literal segment of a
+ * touch path is checked, up to its first glob segment and the first absent one:
+ * a directory segment (or one followed by "/") must be a real directory, a
+ * literal final file must not be a symlink. Returns the first offender's
+ * relative path ("/" separators), or null.
  */
 function unsafeWriteRoot(tool, project, keys) {
   const texts = [...tool.touches, ...keys.map((k) => tool.harness.touches[k])];
-  const roots = new Set(texts.flatMap((t) => t.replace(/\s+\(.*$/, "").split(/,\s*/)).map((p) => /^(\.?[A-Za-z0-9_-]+)\//.exec(p)?.[1]).filter(Boolean));
-  for (const dir of roots) {
-    let st;
-    try {
-      st = lstatSync(path.join(project, dir));
-    } catch (err) {
-      if (err.code === "ENOENT") continue;
-      throw err;
+  const paths = new Set(texts.flatMap((t) => t.replace(/\s+\(.*$/, "").split(/,\s*/)).filter((p) => /^\.?[A-Za-z0-9_-]+\//.test(p)));
+  for (const p of paths) {
+    const segs = p.split("/");
+    const trailing = segs[segs.length - 1] === "";
+    if (trailing) segs.pop();
+    const literal = [];
+    for (const s of segs) {
+      if (/[*?[{]/.test(s)) break;
+      literal.push(s);
     }
-    if (st.isSymbolicLink() || !st.isDirectory()) return dir;
+    if (literal.includes("..")) return p;
+    const cut = literal.length < segs.length || trailing; // the last literal segment is a directory
+    for (let i = 0; i < literal.length; i++) {
+      const rel = literal.slice(0, i + 1).join("/");
+      let st;
+      try {
+        st = lstatSync(path.join(project, ...literal.slice(0, i + 1)));
+      } catch (err) {
+        if (err.code === "ENOENT") break;
+        throw err;
+      }
+      const mustBeDir = i < literal.length - 1 || cut;
+      if (st.isSymbolicLink() || (mustBeDir && !st.isDirectory())) return rel;
+    }
   }
   return null;
 }
@@ -3608,6 +3641,14 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
       console.error(`Refusing: ${plain(bad)} in this project is a symlink or not a directory, and ${tool.name} would write through it. Nothing was run.`);
       return 1;
     }
+  }
+  // Before setup runs: a .gitignore that cannot be read is found now, not after the tool wrote.
+  try {
+    gitignorePlan(project, tool);
+  } catch (err) {
+    if (err.code !== "ENOTREG") throw err;
+    console.error(`${err.message} Nothing was run.`);
+    return 1;
   }
   const base = choice ? composeSetup(tool.setupTemplate, choice.keys) : tool.setup;
   const setup = withGitHooks ? [["hook", "install"], ...base] : base;
@@ -3865,12 +3906,16 @@ const SANDBOX_PLACEHOLDERS = [
  * dropped (any case: Windows has `Git_Dir`), and a repository-local
  * core.fsmonitor / hooksPath is switched off on every call: ls-files and
  * check-ignore would otherwise run code the repository's own config names.
+ * `keepHooksPath` omits only the hooksPath override, for the caller that must
+ * read the repository's real core.hooksPath (the graphify hooks preflight);
+ * fsmonitor stays off and the environment stays filtered.
  */
-function sandboxGit(project) {
+function sandboxGit(project, { keepHooksPath = false } = {}) {
   const git = resolveBin("git", { cwd: project });
   if (!git) return null;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith("GIT_")));
-  return (args) => runBin(git, ["-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null", ...args], { cwd: project, capture: true, timeout: 30 * 1000, env });
+  const config = ["-c", "core.fsmonitor=false", ...(keepHooksPath ? [] : ["-c", "core.hooksPath=/dev/null"])];
+  return (args) => runBin(git, [...config, ...args], { cwd: project, capture: true, timeout: 30 * 1000, env });
 }
 
 /**
