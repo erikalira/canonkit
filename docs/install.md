@@ -25,7 +25,7 @@ plain. The final review groups model and security status under user and project.
 - **Repository** refers only to the Git repository. It does not mean the user's
   home or all projects on the machine.
 
-Without cloning anything:
+### 1. Install at user level
 
 ```bash
 npx canonkit install
@@ -68,8 +68,7 @@ before applying them. `--recommended` applies the recommendations without the
 interactive screens; `--no-project` selects user-level-only scope. These flags
 are useful for scripts and screen readers.
 
-Preview the interactive defaults without writing, or preview the unattended
-recommended path from a Git project:
+### 1. Preview install choices
 
 ```bash
 cd my-project
@@ -77,6 +76,8 @@ npx canonkit install --dry-run
 npx canonkit install --recommended --dry-run
 npx canonkit install --recommended --no-project --dry-run
 ```
+
+These commands preview without writing; the recommended previews require a Git project.
 
 The menu collects its selections before installation begins. Cancelling or
 closing input before final confirmation leaves user and project files unchanged
@@ -88,11 +89,13 @@ failures and actionable tool notes remain visible. `--verbose` shows the
 detailed plan and full tool output. `--dry-run` previews the global and selected
 project steps without writing files or running tool setup.
 
-For scripts or CI, select project items explicitly; these flags can be repeated:
+### 2. Install selected project items
 
 ```bash
 npx canonkit install --specialist maya --stack typescript --tool openspec
 ```
+
+For scripts or CI, select project items explicitly; these flags can be repeated.
 
 They are validated against the catalog before installation writes anything and
 are only valid with `install`. Without a TTY and without these flags, `install`
@@ -152,13 +155,19 @@ quote, or an OpenCode older than 2. Project security is preflighted before the
 selected installation writes too. `doctor` checks selected/installed targets;
 an absent unselected runtime does not create false Claude-specific failures.
 
-From a clone, the scripts still work — they are wrappers around the same
-`bin/cli.js`:
+### 3. Install from a clone
 
 ```bash
-./scripts/install.sh          # Linux and macOS
-.\scripts\install.ps1         # Windows
+./scripts/install.sh
 ```
+
+### Windows wrapper
+
+```powershell
+.\scripts\install.ps1
+```
+
+These wrappers invoke the same `bin/cli.js`.
 
 For Claude Code it copies the 10 core agents to `~/.claude/agents`, the only
 path Claude Code reads them from. Copilot's 10 core profiles go to
@@ -197,7 +206,7 @@ no allow entry or approval mode. Separately, plain installation removes
 attributable older Claude hook registrations as described below. This user-level lock can also
 be applied outside a repository while project setup remains pending.
 
-Preview from the repository, then apply and diagnose:
+### 1. Preview, install and diagnose security settings
 
 ```bash
 cd my-project
@@ -248,7 +257,9 @@ configured for the current project; it writes nothing.
 ### Returning existing Claude installations to native approvals
 
 This migration runs automatically on `install` when Claude is selected and
-`--wire-hooks` is absent, including with `--no-reference`. To inspect it first:
+`--wire-hooks` is absent, including with `--no-reference`.
+
+#### 1. Preview, apply and diagnose the migration
 
 ```bash
 npx canonkit install --claude --dry-run
@@ -329,7 +340,7 @@ silently: an interactive install asks whether to keep a `false` or change it to
 `true` (see [Security review during install](#security-review-during-install)),
 and without a terminal it is preserved and the recommendation is printed.
 
-If you want confirmation before publishing, add content-scoped `ask` rules for
+To request confirmation before publishing, add content-scoped `ask` rules for
 Git commit and push commands. Claude Code documents that these rules still
 apply to sandbox auto-approval:
 
@@ -522,8 +533,7 @@ The native setting scopes and version requirements are tracked against
 2026-11-08. A supported key or static version check is still not a recorded
 runtime boundary test.
 
-To preview and reverse canonkit-attributable security changes and Codex core
-agent overrides in the current validated repository:
+### Preview or reverse repository security changes
 
 ```bash
 npx canonkit uninstall --project --dry-run
@@ -590,14 +600,26 @@ harness is asked instead.
 This version applies choices to **Claude Code and Codex**. OpenCode and GitHub
 Copilot agents inherit the session model.
 
+### 1. Refresh the model catalog
+
 ```bash
-npx canonkit models refresh            # ask each harness what it offers
-npx canonkit models setup              # choose per need level, then optional per-agent overrides
-npx canonkit models setup --project    # the same, for this project only
-npx canonkit models show               # what each agent resolves to, and from where
-npx canonkit models show --json        # the same, for tools and the orchestrate skill
-npx canonkit install --claude          # write the user-level defaults into ~/.claude/agents
-npx canonkit install --codex           # write Codex agents, including project core overrides
+npx canonkit models refresh
+```
+
+### 2. Configure and inspect model choices
+
+```bash
+npx canonkit models setup
+npx canonkit models setup --project
+npx canonkit models show
+npx canonkit models show --json
+```
+
+### 3. Install the selected model choices
+
+```bash
+npx canonkit install --claude
+npx canonkit install --codex
 ```
 
 **Discovery.** `models refresh` runs the harness's own read-only commands and
@@ -919,17 +941,17 @@ empty file, but a directory is needed there" and to delete it and run the comman
 again; inside the sandbox the path is write-protected, so run it from your own
 terminal.
 
-From the repository root, in a terminal **outside** the sandbox. Run inside it,
-once the usual refusals (see exit codes) have passed, add/reconcile changes
-nothing, leaves an existing block as it is and exits 0, with a notice on stderr
-(the placeholders look like devices there): "Inside the Claude Code sandbox,
-git-ignore-sandbox-files changed nothing and left any existing block as it is. Run
-it from your own terminal; --remove still works here." `--remove` still works there:
+Run from the repository root outside the sandbox; inside it, add/reconcile is a no-op, while `--remove` works if no refusal applies.
+
+### 1. Preview, add or remove the ignore block
 
 ```bash
+# Expected after the usual refusals pass inside the sandbox: add/reconcile exits 0 without changes, leaves an existing block as-is, and writes this notice to stderr:
+# "Inside the Claude Code sandbox, git-ignore-sandbox-files changed nothing and left any existing block as it is. Run it from your own terminal; --remove still works here."
+# The placeholders in the notice may look like devices.
 npx canonkit git-ignore-sandbox-files --dry-run   # prints the names and "Would write"; not the block lines
 npx canonkit git-ignore-sandbox-files             # writes it to .git/info/exclude
-npx canonkit git-ignore-sandbox-files --remove    # removes only the managed block
+npx canonkit git-ignore-sandbox-files --remove    # removes only the managed block; the sandbox permits removal
 ```
 
 Exit codes: 0 when it skips (no git, bare repo, not the repo root) or finishes,
@@ -973,7 +995,9 @@ It reduces noise in `git status`; it protects nothing. Reasoning:
 
 ## Specialists, per project
 
-Run **from inside the project** that will receive the agents:
+Run **from inside the project** that will receive the agents.
+
+### 1. Add specialists
 
 ```bash
 cd ~/my-project
@@ -995,6 +1019,8 @@ the failure this command prevents:
 All four native profiles and the `AGENTS.md` block are written in one step. The
 block is rebuilt from what is actually on disk, so it reflects reality rather
 than command history.
+
+### 2. List or remove specialists
 
 ```bash
 npx canonkit list            # what this project has installed
@@ -1020,11 +1046,13 @@ The [stack-pack table in the README](../README.md#stack-packs-per-project) lists
 all available packs, their guidance and individual install commands. Install only
 the ones wanted, from the consuming project's directory:
 
+### 1. Add or remove stack packs
+
 ```bash
 npx canonkit add typescript react
 npx canonkit add cpp csharp java python rust
 npx canonkit add go kotlin swift
-npx canonkit add ui-design ui-review game-art-direction  # only if wanted
+npx canonkit add ui-design ui-review game-art-direction
 npx canonkit list
 npx canonkit remove react
 ```
@@ -1095,12 +1123,13 @@ promised for a mixed request that fails during execution.
 
 ## Global reference blocks and skills
 
-They already run as part of `install`. Standalone, for when you edited a block
-without touching any agent:
+### 1. Sync global reference blocks and skills
 
 ```bash
 npx canonkit reference
 ```
+
+`install` also syncs these blocks. Use `reference` when a block changed without an agent change.
 
 It syncs the shared roster and one block for each selected runtime: **three
 blocks** for the default Claude Code and Codex install, four with OpenCode too.
@@ -1133,11 +1162,13 @@ signal. Direct inspection can suffice, and advice can be reused while task conte
 and evidence are unchanged. Selected consultations record actual results and
 failures; the procedure does not install an MCP server or enforce a hook gate.
 Existing review requirements still apply.
-To test source changes locally before an npm release, run from this checkout:
+### 2. Sync from the checkout
 
 ```bash
 node bin/cli.js reference --claude --codex
 ```
+
+Run from this checkout to test source changes locally before an npm release.
 
 This syncs the global reference blocks and skills from the checkout without a
 full core installation. Start a fresh session so the runtime loads the updated
@@ -1225,8 +1256,10 @@ To remove a kept copy you no longer want, delete it yourself.
 Delete by hand one file at a time. The 10 core names are `scott`, `archie`, `bob`,
 `quinn`, `gard`, `pixie`, `perry`, `pipe`, `spencer` and `virgo`:
 
+### 1. Remove an individual leftover agent file
+
 ```bash
-rm ~/.agents/scott.md        # repeat for each of the 10 names
+rm ~/.agents/scott.md
 ```
 
 Do not glob (`~/.agents/*.md`): the folder may hold files of your own, and only
@@ -1234,6 +1267,8 @@ those 10 names are canonkit's. Do not touch `~/.agents/skills`: it is where
 canonkit installs skills now.
 
 ## Uninstalling
+
+### 1. Preview or uninstall tracked files
 
 ```bash
 npx canonkit uninstall --dry-run       # preview all recorded harnesses
@@ -1341,3 +1376,14 @@ installed:
   you created one. `tool remove` only takes the tool out of `AGENTS.md`; what the
   tool's own setup wrote (`openspec/`, `graphify-out/`, its skills and git hooks)
   stays — see [tools.md](tools.md) for how to undo each.
+
+## Verificar
+
+```bash
+npx canonkit doctor
+npx canonkit list
+```
+
+## Problemas conocidos
+
+`install` reports `EPERM`, `EACCES` or `EBUSY` while replacing a tracked file → close the application holding the file, then run `npx canonkit install` with the original options.

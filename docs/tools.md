@@ -2,20 +2,49 @@
 
 Two third-party tools complement the team: **graphify** (a graph of the code,
 updated on demand by default) and **openspec** (specs and acceptance criteria in
-`openspec/`). Run **from inside the project**. You can integrate either tool
-through the guided `npx canonkit install` flow, or select one explicitly with
-`--tool`:
+`openspec/`). Run **from inside the project**.
+
+### 1. Select OpenSpec in the install flow
 
 ```bash
-npx canonkit install --tool openspec  # still asks before running the setup
-npx canonkit tool add openspec      # or graphify
-npx canonkit tool add openspec --harness claude,opencode  # which harnesses; see below
-npx canonkit tool add graphify --with-git-hooks  # opt-in: trust every branch
+npx canonkit install --tool openspec
+```
+
+### 2. Add a project tool
+
+```bash
+npx canonkit tool add openspec
+npx canonkit tool add graphify
+```
+
+### 3. Choose OpenSpec harnesses
+
+```bash
+npx canonkit tool add openspec --harness claude,opencode
+```
+
+### 4. Explicitly enable Graphify Git hooks
+
+```bash
+# Warning: Enabling hooks opts in to trusting every branch.
+npx canonkit tool add graphify --with-git-hooks
+```
+
+### 5. Preview setup without running it
+
+```bash
 npx canonkit tool add graphify --dry-run
 npx canonkit install --tool graphify --dry-run
+```
+
+### 6. Remove or inspect project tools
+
+```bash
 npx canonkit tool remove graphify
 npx canonkit tool list
 ```
+
+The commands run the selected tool's setup only after confirmation.
 
 The install menu also offers project specialists and stack packs after the tool
 list. Its repeatable `--specialist`, `--stack` and `--tool` flags select those
@@ -29,16 +58,26 @@ intentional. See [project items in the install flow](install.md#project-items-in
 If the binary is not on `PATH`, canonkit prints the install command with the exact
 version and exits with 1, writing nothing. Install it yourself, at these versions:
 
+### Install OpenSpec
+
 ```bash
 npm install --global --ignore-scripts @fission-ai/openspec@1.14.0
-# Windows, macOS
+```
+
+### Install Graphify on Windows or macOS
+
+```bash
 python -I -m pip install --user --only-binary :all: graphifyy==0.9.76
-# Linux and WSL (Debian/Ubuntu): there is no `python`, and PEP 668 makes pip refuse
-# --user. The `cd ~` keeps a project folder off Python's import path (pipx has no -I);
-# the parentheses run it in a subshell, so your terminal stays in the project.
+```
+
+### Install Graphify on Debian or Ubuntu in Linux or WSL
+
+```bash
 sudo apt install pipx && pipx ensurepath
 (cd ~ && pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:")
 ```
+
+The subshell keeps the terminal in the project; `cd ~` keeps the project folder off Python's import path. Debian and Ubuntu may lack `python`, and PEP 668 makes pip refuse `--user`.
 
 > **graphifyy has two y's.** `graphify` with one y on PyPI is a different package.
 
@@ -354,3 +393,9 @@ confidence ranges were 0.0444–0.0524 before and 0.0026–0.0051 after. Disposi
 manual check; the synthetic return lacked validation and required review.
 This verifies tool invocation/schema compatibility, not automatic agent
 compliance or classifier usefulness on real HIGH delegations.
+
+## Verificar
+
+```bash
+npx canonkit tool list
+```
