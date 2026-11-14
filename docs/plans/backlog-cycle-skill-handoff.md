@@ -19,7 +19,9 @@ Um item por sessão, na ordem de prioridade do `todo.md`:
    decisões. Enquanto ele trabalha, o lead prepara as notas da release e a
    subida de versão, sem tocar nos arquivos do Bob.
 5. **Conferir**: o lead lê o diff e faz um teste "vermelho" barato (o teste novo
-   falharia sem a correção?).
+   falharia sem a correção?). Depois roda os testes da área tocada e dos seus
+   consumidores (por alcance, como no `orchestrate`), **antes** de chamar o
+   revisor, para que a revisão não gaste uma rodada com algo que um teste pegaria.
 6. **Revisar** com o dono certo, depois da última edição. Uma regressão que a
    change introduziu é corrigida na própria change, e o dono confirma de novo.
    Um problema que já existia antes vira achado no `todo.md`.
@@ -39,15 +41,36 @@ Um item por sessão, na ordem de prioridade do `todo.md`:
 10. **Próxima sessão**: entregar o prompt pronto para colar, com o próximo item,
     o handoff dele, a release em curso e o mesmo fluxo.
 
+## Quando o ciclo não fecha
+
+O fluxo acima cobre só o caminho feliz. A skill precisa de uma saída para estes
+três casos:
+
+- **O dono veta** e a correção não cabe nesta sessão;
+- **o item é maior do que parecia** (o plano ou a implementação mostra que são
+  vários itens);
+- **o item já não faz sentido** (resolvido por outra change, obsoleto, ou o
+  disco não bate com o handoff).
+
+A saída é a mesma nos três: parar, dividir ou descartar o item, atualizar o
+`todo.md` (com o motivo), escrever ou atualizar o handoff com o estado real, e
+entregar o prompt da próxima sessão. Nada de deixar a change pela metade sem
+registro.
+
 ## Decisões em aberto (resolver antes de escrever a skill)
 
 - **Escopo:** skill do core do canonkit (`skills/`, instalada para todos) ou
   local deste repositório? O fluxo depende de `todo.md` + OpenSpec + release
   notes, convenções deste projeto. Um core genérico precisaria descobrir o
   backlog e o destino da release, ou recebê-los como parâmetro.
-- **Itens LOW:** passam pelo OpenSpec ou ficam inline? O `orchestrate` diz que
-  LOW fica inline. Proposta: LOW sem change no OpenSpec, só com o fechamento
-  (passos 7, 9 e 10).
+- **Cerimônia pelo tamanho do item:** o OpenSpec completo (proposal, spec delta,
+  design, tasks) é demais para itens pequenos. Proposta:
+  - LOW: inline, sem change no OpenSpec, só com o fechamento (passos 7, 9 e 10),
+    como o `orchestrate` já diz;
+  - MEDIUM pequeno: change só com proposal + tasks;
+  - MEDIUM grande e HIGH: o pacote completo.
+
+  Falta definir o critério objetivo entre "MEDIUM pequeno" e "MEDIUM grande".
 - **Sobreposição com `orchestrate`:** a skill deve apontar para o ciclo de vida
   OpenSpec e a Integration Review do `orchestrate`
   (`skills/orchestrate/SKILL.md`, "OpenSpec change lifecycle"), sem copiar.
@@ -59,6 +82,24 @@ Um item por sessão, na ordem de prioridade do `todo.md`:
   `CANONKIT_ROADMAP.md`, que tem fases próprias, além do `todo.md`. Decidir se a
   skill lê só o `todo.md` (e o roadmap fica de fora) ou se os dois são
   reconciliados.
+- **Achados fora do escopo vão para o backlog, não para issues:** hoje o core
+  manda oferecer issues no GitHub. `skills/orchestrate/out-of-scope-issues.md`
+  diz que "project issues hold the incidental backlog" e descreve rascunho,
+  aprovação e publicação via `gh`. O `## Incidental findings` do
+  `AGENTS.md` gerenciado (`reference/agents-block.md`) diz "before offering
+  issues", e `docs/out-of-scope-issues.md` documenta o mesmo. Na prática, o
+  `todo.md` funcionou melhor: o achado entra na lista de prioridades que o
+  próprio ciclo consome, sem uma rodada de publicação. Decidir entre:
+  - a skill do ciclo registra os achados no arquivo de backlog do projeto e não
+    oferece issues (vale só onde a skill roda);
+  - mudar o core: o destino passa a ser o backlog que o projeto já usa (arquivo
+    como `todo.md` ou o tracker), com issues no GitHub só quando é esse o
+    backlog do projeto. Isso mexe no bloco gerenciado e no procedimento do
+    `orchestrate`, então afeta todos os projetos: é uma change à parte, com
+    Virgo, e Spencer para `docs/out-of-scope-issues.md`.
+
+  Em ambos os casos, o canal privado para vulnerabilidades e segredos expostos
+  continua como está: isso nunca vai para o `todo.md` de um repositório público.
 - **Nome:** por exemplo `backlog-cycle` ou `next-task`.
 
 ## Como fazer
