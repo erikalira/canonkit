@@ -27,9 +27,11 @@ a handoff keep their details there; items without one carry them inline.
 
 ### P2 — consistency and pending decisions
 
-- [ ] **User/project terminology** in `doctor`, `uninstall`, `models` and
-  security diagnostics ([note](docs/plans/install-follow-up-renames.md)).
-  MEDIUM; Pixie for the wording.
+- [x] **User/project terminology** in `doctor`, `uninstall`, `models` and
+  security diagnostics: done in 3.2.1 (Pixie approved). Wording in `41968ef`;
+  the short `doctor` report now groups general checks under "User level" and
+  "This project" (rows carry an optional `scope`; `--verbose` unchanged). The
+  follow-up note was deleted.
 - [ ] **User/project terminology in the docs prose**: the "Terms used by install"
   glossary in `docs/install.md` (L18-26) still defines "Repository"; the prose
   there (~L109-146, 194-207, 914, 1268-1283, heading "Native security, per

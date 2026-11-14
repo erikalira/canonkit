@@ -1202,7 +1202,7 @@ async function installDistribution(ctx, options = {}) {
     for (const agent of specialists(agents)) {
       const stray = path.join(dest, `${agent.name}.md`);
       if (existsSync(stray)) {
-        if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
+        if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
         await ctx.remove(stray);
         ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
       }
@@ -1277,7 +1277,7 @@ async function installCodex(ctx, agents, dest, { userChoices, record } = {}) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.toml`);
     if (existsSync(stray)) {
-      if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.toml`);
     }
@@ -1358,7 +1358,7 @@ async function installOpencode(ctx, agents, dest) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.md`);
     if (existsSync(stray)) {
-      if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
     }
@@ -1384,7 +1384,7 @@ async function installCopilot(ctx, agents, dest) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.agent.md`);
     if (existsSync(stray)) {
-      if (ctx.manifest) { ctx.log(`  preserved untracked global specialist: ${stray}`); continue; }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.agent.md`);
     }
@@ -2763,7 +2763,8 @@ async function doctor({ verbose = false } = {}) {
   const home = os.homedir();
   const claudeDir = claudeHome();
   const results = [];
-  const add = (status, check, detail, more = []) => results.push({ status, check, detail, more });
+  // `scope: "project"` marks a row about the current project; no scope means user level.
+  const add = (status, check, detail, more = [], scope) => results.push({ status, check, detail, more, ...(scope ? { scope } : {}) });
   const text = (p) => { try { return toLf(readRegularSync(p).toString("utf8")); } catch { return null; } };
 
   // agents: every core agent in ~/.claude/agents, matching what install would
@@ -2989,12 +2990,15 @@ async function doctor({ verbose = false } = {}) {
   const { running, unreadable } = legacyRunners(claudeDir);
   const runBy = running.map(slash).join(", ");
   const unread = unreadable.length ? `; could not read ${unreadable.map(slash).join(", ")}` : "";
+  // The file in ~/.claude/hooks is user level; a row is project scope only when every
+  // settings file it names (running it or unreadable) sits in the project, not in ~/.claude.
+  const projectOnly = [...running, ...unreadable].every((f) => pathKey(path.dirname(f)) !== pathKey(claudeDir));
   if (existsSync(forwarder)) {
     add("WARN", "forwarder", `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json; check other projects, then remove the forwarder manually`);
   } else if (running.length) {
-    add("FAIL", "forwarder", `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`);
+    add("FAIL", "forwarder", `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`, [], projectOnly ? "project" : undefined);
   } else if (unreadable.length) {
-    add("WARN", "forwarder", `no ${LEGACY.hook} left${unread}`);
+    add("WARN", "forwarder", `no ${LEGACY.hook} left${unread}`, [], projectOnly ? "project" : undefined);
   } else {
     add("OK", "forwarder", `no ${LEGACY.hook} left, and no settings in sight run it`);
   }
@@ -3012,10 +3016,10 @@ async function doctor({ verbose = false } = {}) {
     ...cfg.ignored.map((i) => `ignored ${i.where}: ${i.why}`),
     ...(cfg.project?.ignored ?? []).map((i) => `ignored in the project file ${i.where}: ${i.why}`),
   ];
-  add(ignored.length ? "WARN" : "OK", "config", parts.join(", "), ignored);
+  add(ignored.length ? "WARN" : "OK", "config", parts.join(", "), ignored, "project");
 
   // models: stored choices against the stored discovery; never starts a harness.
-  for (const row of await modelDiagnosis(await readAgents(), { home, cwd: process.cwd() })) add(row.status, row.check, row.detail);
+  for (const row of await modelDiagnosis(await readAgents(), { home, cwd: process.cwd() })) add(row.status, row.check, row.detail, [], row.scope);
 
   const claudeInstalled = agents.some((agent) => existsSync(path.join(claudeDir, "agents", `${agent.name}.md`)));
   const otherInstalled = agents.some((agent) => existsSync(path.join(codexHome(), "agents", `${agent.name}.toml`)) || existsSync(path.join(opencodeAgentsDir(), `${agent.name}.md`)));
@@ -4113,7 +4117,7 @@ async function sandboxPlaceholderDiagnosis() {
       const ignored = gitRun(["check-ignore", "--", ...observed.map((c) => c.name)]);
       const hidden = new Set(ignored.status === 0 ? ignored.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : []);
       const open = observed.filter((c) => !hidden.has(c.name)).map((c) => c.name);
-      if (open.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `0-byte untracked files the Claude Code sandbox leaves show in git status and can be committed by accident (${open.join(", ")}); to hide them from git status here, run: canonkit git-ignore-sandbox-files`, more: [] });
+      if (open.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `0-byte untracked files the Claude Code sandbox leaves show in git status and can be committed by accident (${open.join(", ")}); to hide them from git status here, run: canonkit git-ignore-sandbox-files`, more: [], scope: "project" });
     }
     const { block } = splitSandboxBlock(await readExclude(target.file));
     if (block) {
@@ -4128,7 +4132,7 @@ async function sandboxPlaceholderDiagnosis() {
         const placeholder = (st.isFile() && st.size === 0) || (c.dir && st.isDirectory());
         if (st.isSymbolicLink() || !placeholder) withContent.push(c.name);
       }
-      if (withContent.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `hidden from git status by canonkit's block in ${plain(target.file)} but now have content or are no longer an empty file: ${withContent.join(", ")}; re-run canonkit git-ignore-sandbox-files to reconcile, or canonkit git-ignore-sandbox-files --remove`, more: [] });
+      if (withContent.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `hidden from git status by canonkit's block in ${plain(target.file)} but now have content or are no longer an empty file: ${withContent.join(", ")}; re-run canonkit git-ignore-sandbox-files to reconcile, or canonkit git-ignore-sandbox-files --remove`, more: [], scope: "project" });
     }
   } catch { /* a read-only check never fails doctor */ }
   return rows;

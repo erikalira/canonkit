@@ -56,6 +56,43 @@ test("security gaps distinguish absent strict keys from projects not configured 
   assert.match(out, /2 warnings/);
 });
 
+const scoped = [
+  { status: "OK", check: "agents", detail: "ok", more: [] },
+  { status: "WARN", check: "agents leftovers", detail: "user leftovers", more: [] },
+  { status: "OK", check: "config", detail: "file none", more: [], scope: "project" },
+  { status: "FAIL", check: "forwarder", detail: "project settings run it", more: ["fix it"], scope: "project" },
+];
+
+test("general rows split into a user level and a project section", () => {
+  const { lines, failed } = renderDoctorReport(scoped);
+  const out = lines.join("\n");
+  const user = lines.indexOf("  User level");
+  const project = lines.indexOf("  This project");
+  assert.ok(user >= 0 && project > user);
+  const userPart = lines.slice(user, project).join("\n");
+  const projectPart = lines.slice(project).join("\n");
+  assert.match(userPart, /✓ 1 check passed\n\s+agents/);
+  assert.match(userPart, /! agents leftovers/);
+  assert.doesNotMatch(userPart, /config|forwarder/);
+  assert.match(projectPart, /✓ 1 check passed\n\s+config/);
+  assert.match(projectPart, /✗ forwarder +project settings run it/);
+  assert.doesNotMatch(projectPart, /agents leftovers/);
+  assert.equal(failed, 1);
+  assert.match(out, /1 check failed\. 1 warning;/);
+});
+
+test("a project-only report shows only the project section", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "config", detail: "x", more: [], scope: "project" }]);
+  assert.ok(lines.includes("  This project"));
+  assert.ok(!lines.includes("  User level"));
+});
+
+test("rows without a scope default to user level", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "agents", detail: "ok", more: [] }]);
+  assert.ok(lines.includes("  User level"));
+  assert.ok(!lines.includes("  This project"));
+});
+
 test("a FAIL is marked and counted", () => {
   const { lines, failed } = renderDoctorReport([{ status: "FAIL", check: "agents", detail: "missing", more: ["fix it"] }]);
   assert.equal(failed, 1);

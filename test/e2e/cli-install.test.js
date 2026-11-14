@@ -489,7 +489,7 @@ describe("install", () => {
     const result = run(["install"], { home });
     assert.equal(result.status, 0, result.out);
     assert.equal(await read(path.join(dest, "maya.md")), "stale copy");
-    assert.match(result.out, /preserved untracked global specialist/);
+    assert.match(result.out, /preserved untracked user-level specialist/);
     // Anything this repo does not own is left alone.
     assert.ok(existsSync(path.join(dest, "unrelated.md")));
   });
