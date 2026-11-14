@@ -2,7 +2,7 @@
 
 ## 1. Release bookkeeping (3.1.1 -> 3.2.0)
 
-- [ ] 1.1 Rename the local branch `release/3.1.1-security-settings` to `release/3.2.0` (`git branch -m`), unset the old upstream, and, after asking before each push, push `release/3.2.0` with its own upstream (never `origin/main`) and delete `origin/release/3.1.1-security-settings`; if a PR was open from the old branch, open one from `release/3.2.0`; verify `git status -sb` shows `release/3.2.0...origin/release/3.2.0` and `git ls-remote --heads origin` no longer lists the old branch
+- [x] 1.1 Rename the local branch `release/3.1.1-security-settings` to `release/3.2.0` (`git branch -m`), unset the old upstream, and, after asking before each push, push `release/3.2.0` with its own upstream (never `origin/main`) and delete `origin/release/3.1.1-security-settings`; if a PR was open from the old branch, open one from `release/3.2.0`; verify `git status -sb` shows `release/3.2.0...origin/release/3.2.0` and `git ls-remote --heads origin` no longer lists the old branch
 - [x] 1.2 Bump `package.json` and `package-lock.json` to 3.2.0 and rename `docs/release-notes/3.1.1.md` to `3.2.0.md` with its title, install command and "prepared" line updated; verify `grep -rn "3\.1\.1" package.json package-lock.json docs/release-notes/3.2.0.md` returns no stale reference
 
 ## 2. Shared row renderer and recommended model presets
@@ -39,8 +39,8 @@
 
 ## 5. Terminology and docs
 
-- [x] 5.1 Add a glossary to `docs/install.md` defining *user level* and *project* (ADR 0006 item 4) and stating that "repository" names only the Git repository; verify the section is linked from the README install section
-- [x] 5.2 Reword install output that names a level "global", "machine" or "repository control" to *user* / *project*, updating the matching test assertions; verify `grep -n -i "global\|machine" bin/cli.js` shows no remaining install-output use as a level name, and `npm test` passes
+- [x] 5.1 Add a glossary to `docs/install.md` defining _user level_ and _project_ (ADR 0006 item 4) and stating that "repository" names only the Git repository; verify the section is linked from the README install section
+- [x] 5.2 Reword install output that names a level "global", "machine" or "repository control" to _user_ / _project_, updating the matching test assertions; verify `grep -n -i "global\|machine" bin/cli.js` shows no remaining install-output use as a level name, and `npm test` passes
 - [x] 5.3 Update `README.md` and `docs/install.md` for the new flow (harness menu, project question, recommended screen and markers, keep/customize, `--recommended` and `--no-project` as the no-redraw path for screen readers) and record the follow-up rename for doctor, uninstall, models and security diagnostics in `docs/plans/`; verify the documented commands run as written with `--dry-run`
 - [x] 5.4 Add the install changes to `docs/release-notes/3.2.0.md`; verify it mentions the project question, the recommended setup, `--recommended`, `--no-project`, the Codex tier rule, absent strict keys now governed by the interactive answer, and the unchanged non-terminal behavior
 
