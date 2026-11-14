@@ -39,6 +39,10 @@ section; this list only orders them.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 
+- [ ] **Skill for the one-backlog-item-per-session cycle**
+  ([handoff](docs/plans/backlog-cycle-skill-handoff.md)). Virgo writes it;
+  decide scope (core or project) first.
+
 ### P3 — improvements without urgency
 
 - [ ] **Empty-file rule in other JSON readers** (below).
