@@ -17,9 +17,9 @@ a handoff keep their details there; items without one carry them inline.
 - [x] **Review brief with the diff scope resolved**: done in 3.2.1 (OpenSpec
   `review-brief-diff-scope`, archived; Quinn approved). New `## Briefing a
   review` in `skills/orchestrate/SKILL.md`.
-- [ ] **Broken links** to `plans/learning-loop-design.md` in `docs/evals.md:298`
-  and `docs/learning-loop.md:155`; the file does not exist
-  ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 1). LOW.
+- [x] **Broken links** to `plans/learning-loop-design.md` (removed in `d1cf49d`):
+  done in 3.2.1. `docs/evals.md` now points to the skill's "Evaluate and
+  decide" section; the design-note clause in `docs/learning-loop.md` was dropped.
 - [ ] **Housekeeping**:
   - delete `docs/plans/release-3.1.0-handoff.md` (3.1.0 and 3.2.0 are tagged);
   - archive OpenSpec `install-guided-setup` (only open task is the branch
