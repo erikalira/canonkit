@@ -89,17 +89,16 @@ registro.
   `AGENTS.md` gerenciado (`reference/agents-block.md`) diz "before offering
   issues", e `docs/out-of-scope-issues.md` documenta o mesmo. Na prática, o
   `todo.md` funcionou melhor: o achado entra na lista de prioridades que o
-  próprio ciclo consome, sem uma rodada de publicação. Decidir entre:
-  - a skill do ciclo registra os achados no arquivo de backlog do projeto e não
-    oferece issues (vale só onde a skill roda);
-  - mudar o core: o destino passa a ser o backlog que o projeto já usa (arquivo
-    como `todo.md` ou o tracker), com issues no GitHub só quando é esse o
-    backlog do projeto. Isso mexe no bloco gerenciado e no procedimento do
-    `orchestrate`, então afeta todos os projetos: é uma change à parte, com
-    Virgo, e Spencer para `docs/out-of-scope-issues.md`.
-
-  Em ambos os casos, o canal privado para vulnerabilidades e segredos expostos
-  continua como está: isso nunca vai para o `todo.md` de um repositório público.
+  próprio ciclo consome, sem uma rodada de publicação.
+  **Decidido (2026-11-14): mudar o core.** O destino passa a ser o backlog que
+  o projeto já usa (arquivo como `todo.md` ou o tracker), com issues no GitHub
+  só quando é esse o backlog do projeto. Isso mexe no bloco gerenciado e no
+  procedimento do `orchestrate` e afeta todos os projetos, então é uma change
+  à parte (item próprio no `todo.md`), com Virgo, e Spencer para
+  `docs/out-of-scope-issues.md`. A skill do ciclo só aponta para esse
+  procedimento, sem repetir a regra. O canal privado para vulnerabilidades e
+  segredos expostos continua como está: isso nunca vai para o `todo.md` de um
+  repositório público.
 - **Nome:** por exemplo `backlog-cycle` ou `next-task`.
 
 ## Como fazer
