@@ -50,8 +50,13 @@ larger than that.
 After choosing runtimes, an interactive install asks whether to set up the
 current project when it is a valid Git project outside the canonkit source and
 your home directory. Choosing Yes opens the optional tools, specialists and
-stack packs menus. Graphify and OpenSpec are preselected as recommended tools;
-specialists and stacks start unselected. Choosing No keeps the install at user
+stack packs menus. Graphify and OpenSpec are preselected as recommended tools
+when their binary is found; specialists and stacks start unselected. A tool
+whose binary is missing starts unselected and shows
+`(recommended, not installed)`. Selecting it anyway prints how to install it
+before anything is written and skips it without failing the install; the
+review screen lists it as skipped and the final report as not installed.
+Install the tool, then run `npx canonkit tool add <tool>`. Choosing No keeps the install at user
 level and skips project security and legacy-hook migration. Without a valid
 project target, the project question and menus are skipped. Explicit project
 item flags without a valid target fail before any writes.

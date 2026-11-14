@@ -489,9 +489,11 @@ async function chooseProjectItems(catalog, project, {
     specialists: [...new Set(explicit.specialists)],
     stacks: [...new Set(explicit.stacks)],
     toolHarnesses: {},
+    skippedTools: [],
   };
   if (interactive && !selected.tools.length && !selected.specialists.length && !selected.stacks.length) {
     const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
+    const recommended = (category, item) => category === "tools" && ["graphify", "openspec"].includes(item.name);
     for (const [category, label, rows] of [
       ["tools", "Optional tools", catalog.tools],
       ["specialists", "Domain specialists", catalog.specialists],
@@ -501,13 +503,24 @@ async function chooseProjectItems(catalog, project, {
         type: "multiselect",
         name: category,
         message: `${label} for ${projectMenuName(project)}`,
-        choices: rows.map((item) => ({
-          title: fitMenuLine(`${item.name}${category === "tools" && ["graphify", "openspec"].includes(item.name) ? " (recommended)" : ""}`),
-          value: item.name,
-          selected: category === "tools" && ["graphify", "openspec"].includes(item.name),
-          description: fitMenuLine([item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "), 74),
-        })),
-        hint: "space toggles, enter confirms; none selected skips this category",
+        choices: rows.map((item) => {
+          const tags = [
+            ...(recommended(category, item) ? ["recommended"] : []),
+            ...(category === "tools" && item.missing ? ["not installed"] : []),
+          ];
+          return {
+            title: fitMenuLine(`${item.name}${tags.length ? ` (${tags.join(", ")})` : ""}`),
+            value: item.name,
+            // A recommended tool whose binary is missing starts unselected: selecting it
+            // would only fail after everything else was applied.
+            selected: recommended(category, item) && !item.missing,
+            description: fitMenuLine([item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "), 74),
+          };
+        }),
+        // Both variants must fit fitMenuLine's 78 columns.
+        hint: category === "tools" && rows.some((item) => item.missing)
+          ? "space toggles, enter confirms; none selected skips; missing tools are skipped"
+          : "space toggles, enter confirms; none selected skips this category",
         instructions: false,
       });
       if (prompted.cancelled) return null;
@@ -516,6 +529,18 @@ async function chooseProjectItems(catalog, project, {
         return null;
       }
       selected[category] = prompted.value;
+      if (category === "tools") {
+        // Guidance before anything is written; the tool is skipped, not failed,
+        // and stays in the report's remaining items.
+        const missing = rows.filter((item) => item.missing && prompted.value.includes(item.name));
+        for (const item of missing) {
+          console.error(`\n${item.name} is not installed, so it was skipped; the rest of the install continues.`);
+          printMissing(item.tool, project, toolExec());
+          console.error("");
+        }
+        selected.skippedTools = missing.map((item) => item.name);
+        selected.tools = prompted.value.filter((name) => !selected.skippedTools.includes(name));
+      }
     }
   }
   const selectedHarnesses = targets && new Set(targets.map((target) => target === "copilot" ? "github-copilot" : target));
@@ -1083,6 +1108,7 @@ function printInstallSummary(ctx, { targets, projectItems, projectInScope, model
     const itemNames = [...(projectItems?.tools ?? []), ...(projectItems?.specialists ?? []), ...(projectItems?.stacks ?? [])];
     if (itemNames.length) ctx.log(fitMenuLine(`  Items: ${itemNames.join(", ")}`));
     else ctx.log("  No project items selected");
+    if (projectItems?.skippedTools?.length) ctx.log(fitMenuLine(`  Skipped (not installed): ${projectItems.skippedTools.join(", ")}`));
     const projectSecurity = security?.project?.rows ?? [];
     const visibleProjectSecurity = setupAnswer === "keep" ? [] : projectSecurity.filter((row) =>
       setupAnswer === "recommended" || setupAnswer === "default" || selected.has(row.answerKey) || selected.has(row.path));
@@ -2556,7 +2582,7 @@ async function readInstallCatalog({ project = realpathSync.native(process.cwd())
     const state = !abs ? "not on PATH"
       : checkToolVersions && !dryRun ? `installed ${binVersion(abs, { project, env: toolEnv(tool), ...toolExecOptions }) ?? "?"}`
         : dryRun && checkToolVersions ? "not checked" : "installed (version not checked)";
-    return { name: tool.name, description: tool.rules[0] ?? "", state, active: active.has(tool.name), tool };
+    return { name: tool.name, description: tool.rules[0] ?? "", state, missing: !abs, active: active.has(tool.name), tool };
   });
   const specialistRows = specialists(agents).map((agent) => {
     const present = [
@@ -4889,6 +4915,7 @@ export {
   readInstallCatalog,
   resolveInstallProjectTarget,
   chooseProjectItems,
+  printInstallSummary,
   parseTool,
   chooseHarness,
   toolAdd,

@@ -37,20 +37,11 @@ a handoff keep their details there; items without one carry them inline.
   402, 449-451) still say "repository"/"global". Also the reason texts in
   `bin/security.js` SECURITY_SETTINGS, which the README table repeats. LOW–MEDIUM;
   Spencer for the prose.
-- [ ] **Install guidance for a selected tool that is not installed**: in the
-  guided `install`, Graphify and OpenSpec come preselected without checking the
-  binary. If one is missing, the user only finds out at the end:
-  - `toolAdd` → `printMissing` (`bin/cli.js` ~L3580, ~L4751) prints the pinned
-    install command after the other choices are already applied;
-  - the install then ends as failed.
-
-  Wanted: check the binary when the menu is built, mark the missing tool
-  ("not installed") and show how to install it (the pinned command from
-  `docs/tools.md`) before applying anything. Then the user either skips the
-  tool or installs it and re-runs `npx canonkit tool add <tool>`. Decide
-  whether a skipped missing tool still counts as a failure. MEDIUM; Pixie for
-  the flow and wording, Quinn for tests. Seen 2026-11-14 when `~/.local/bin`
-  left the PATH and graphify looked uninstalled.
+- [x] **Install guidance for a selected tool that is not installed**: done in
+  3.2.1 (Pixie approved). A missing recommended tool starts unselected as
+  `(recommended, not installed)`; selecting it prints the guidance before any
+  write and skips it, which does not count as a failure. The review screen lists
+  it as skipped. Explicit `--tool` flags are unchanged.
 - [ ] **Economical reading for reviewer agents** and before/after measurement
   via telemetry ([handoff](docs/plans/review-speed-handoff.md), proposals 2–3).
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
