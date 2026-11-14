@@ -30,7 +30,12 @@ Um item por sessão, na ordem de prioridade do `todo.md`:
    - rodar `graphify update .`.
 8. **Arquivar** com `openspec-archive-change` (sync da spec e validação das specs)
    e rodar `npm run validate`.
-9. **Commit/push**: perguntar com `AskUserQuestion`, sem assumir.
+9. **Commit/push**: ao terminar a implementação, perguntar com `AskUserQuestion`,
+   sem assumir, qual destas três o usuário quer:
+   - o lead faz o commit (e pergunta o push à parte);
+   - o lead entrega só a mensagem de commit;
+   - o lead entrega o comando de commit pronto (`git add …` + `git commit -m …`)
+     para o usuário rodar.
 10. **Próxima sessão**: entregar o prompt pronto para colar, com o próximo item,
     o handoff dele, a release em curso e o mesmo fluxo.
 
@@ -50,6 +55,10 @@ Um item por sessão, na ordem de prioridade do `todo.md`:
   fechamento e o prompt da próxima sessão.
 - **Release:** como a skill sabe a versão em curso (branch `release/X.Y.Z`,
   `package.json`) e quando subir a versão (só no primeiro item da release).
+- **Fonte do backlog:** a branch `feat/live-development-observatory` traz
+  `CANONKIT_ROADMAP.md`, que tem fases próprias, além do `todo.md`. Decidir se a
+  skill lê só o `todo.md` (e o roadmap fica de fora) ou se os dois são
+  reconciliados.
 - **Nome:** por exemplo `backlog-cycle` ou `next-task`.
 
 ## Como fazer
