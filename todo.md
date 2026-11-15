@@ -32,13 +32,15 @@ a handoff keep their details there; items without one carry them inline.
   the short `doctor` report now groups general checks under "User level" and
   "This project" (rows carry an optional `scope`; `--verbose` unchanged). The
   follow-up note was deleted.
-- [ ] **User/project terminology in the docs prose**: the "Terms used by install"
-  glossary in `docs/install.md` (L18-26) still defines "Repository"; the prose
-  there (~L109-146, 194-207, 914, 1268-1283, heading "Native security, per
-  repository", which other docs link to) and `README.md` (L17, 67-71, 128-136,
-  402, 449-451) still say "repository"/"global". Also the reason texts in
-  `bin/security.js` SECURITY_SETTINGS, which the README table repeats. LOW–MEDIUM;
-  Spencer for the prose.
+- [x] **User/project terminology in the docs prose**: done in 3.2.1 (Spencer
+  approved). README, `docs/install.md` and `docs/hooks.md` say "user level" /
+  "project"; "Git repository" stays only for the validation precondition.
+  `SECURITY_SETTINGS` uses `scope: "project"` and project wording in its
+  reasons. The section is "Native security, per project"; the old
+  `#native-security-per-repository` anchor is kept. Remaining "global" uses in
+  `docs/install.md` (e.g. heading "Global reference blocks and skills", L95,
+  183, 906-907, 1132-1134, 1181, 1301, 1316) were left: low priority, and the
+  heading may be a link target.
 - [x] **Install guidance for a selected tool that is not installed**: done in
   3.2.1 (Pixie approved). A missing recommended tool starts unselected as
   `(recommended, not installed)`; selecting it prints the guidance before any

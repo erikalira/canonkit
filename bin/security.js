@@ -221,16 +221,16 @@ export function parseProjectLocalSandboxSettings(bytes, { placeholder = false } 
  * cannot diverge. `scope` says which settings file holds the key.
  */
 export const SECURITY_SETTINGS = Object.freeze([
-  { key: "permissions.blockReadsOutsideWorkingDirectories", scope: "repository", value: true, reason: "file tools cannot read your other projects or home data; without it a prompt injection can read them" },
-  { key: "permissions.blockWritesOutsideWorkingDirectories", scope: "repository", value: true, reason: "file tools cannot write outside this repository; without it they can change files anywhere you can" },
-  { key: "sandbox.enabled", scope: "repository", value: true, reason: "shell commands run in an OS sandbox; without it they run with all your user rights" },
-  { key: "sandbox.failIfUnavailable", scope: "repository", value: true, reason: "a missing sandbox stops commands; without it they silently run unsandboxed" },
-  { key: "sandbox.allowUnsandboxedCommands", scope: "repository", value: false, reason: "no command can escape the sandbox; without it a failed command may be retried outside it" },
-  { key: "sandbox.autoAllowBashIfSandboxed", scope: "repository", value: true, reason: "sandboxed commands run without a prompt each, so repository scripts run unprompted: use only with repositories you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules" },
-  { key: "sandbox.network.strictAllowlist", scope: "user", value: true, reason: "sandboxed commands reach only domains you allowed, and repositories cannot widen it (from Claude 2.1.285)" },
+  { key: "permissions.blockReadsOutsideWorkingDirectories", scope: "project", value: true, reason: "file tools cannot read your other projects or home data; without it a prompt injection can read them" },
+  { key: "permissions.blockWritesOutsideWorkingDirectories", scope: "project", value: true, reason: "file tools cannot write outside this project; without it they can change files anywhere you can" },
+  { key: "sandbox.enabled", scope: "project", value: true, reason: "shell commands run in an OS sandbox; without it they run with all your user rights" },
+  { key: "sandbox.failIfUnavailable", scope: "project", value: true, reason: "a missing sandbox stops commands; without it they silently run unsandboxed" },
+  { key: "sandbox.allowUnsandboxedCommands", scope: "project", value: false, reason: "no command can escape the sandbox; without it a failed command may be retried outside it" },
+  { key: "sandbox.autoAllowBashIfSandboxed", scope: "project", value: true, reason: "sandboxed commands run without a prompt each, so project scripts run unprompted: use only with projects you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules" },
+  { key: "sandbox.network.strictAllowlist", scope: "user", value: true, reason: "sandboxed commands reach only domains you allowed, and project settings cannot widen it (from Claude 2.1.285)" },
   { key: "sandbox.filesystem.allowRead", scope: "user", value: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"], reason: "sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine" },
 ]);
-const REPOSITORY_RECOMMENDED = Object.fromEntries(SECURITY_SETTINGS.filter((row) => row.scope === "repository").map((row) => [row.key, row.value]));
+const REPOSITORY_RECOMMENDED = Object.fromEntries(SECURITY_SETTINGS.filter((row) => row.scope === "project").map((row) => [row.key, row.value]));
 
 const dottedGet = (data, key) => key.split(".").reduce((value, part) => value?.[part], data);
 const dottedSetSecurity = (data, key, value) => {

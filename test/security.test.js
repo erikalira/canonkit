@@ -334,12 +334,12 @@ test("the recommended-settings table has exactly one row for every key the compi
   assert.deepEqual([...rows].sort(), managed);
   assert.equal(new Set(rows).size, rows.length);
   for (const row of SECURITY_SETTINGS) {
-    assert.ok(["repository", "user"].includes(row.scope), row.key);
+    assert.ok(["project", "user"].includes(row.scope), row.key);
     assert.ok(typeof row.reason === "string" && row.reason.length > 10 && !row.reason.includes("\n"), row.key);
   }
-  // Each repository row carries the value the compiler writes.
+  // Each project row carries the value the compiler writes.
   const written = compileSecurity({}, e).data;
-  for (const row of SECURITY_SETTINGS.filter((item) => item.scope === "repository")) assert.equal(row.key.split(".").reduce((value, key) => value[key], written), row.value, row.key);
+  for (const row of SECURITY_SETTINGS.filter((item) => item.scope === "project")) assert.equal(row.key.split(".").reduce((value, key) => value[key], written), row.value, row.key);
 });
 
 test("read-exception coverage is path based: spellings match, an ancestor covers, home or above is broad", () => {
