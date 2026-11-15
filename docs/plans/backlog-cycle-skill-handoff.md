@@ -99,6 +99,8 @@ registro.
   procedimento, sem repetir a regra. O canal privado para vulnerabilidades e
   segredos expostos continua como está: isso nunca vai para o `todo.md` de um
   repositório público.
+  **Feito na 3.2.1:** procedimento, bloco gerenciado e
+  `docs/out-of-scope-issues.md` já descrevem o backlog do projeto como destino.
 - **Nome:** por exemplo `backlog-cycle` ou `next-task`.
 
 ## Como fazer

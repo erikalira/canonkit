@@ -59,16 +59,15 @@ a handoff keep their details there; items without one carry them inline.
 - [ ] **Skill for the one-backlog-item-per-session cycle**
   ([handoff](docs/plans/backlog-cycle-skill-handoff.md)). Virgo writes it;
   decide scope (core or project) first.
-- [ ] **Incidental findings go to the project's backlog, not GitHub issues by
-  default** ([handoff](docs/plans/backlog-cycle-skill-handoff.md), "Achados fora
-  do escopo"). Decided 2026-11-14: change the core. The destination becomes the
-  backlog the project already uses (a file such as `todo.md`, or its tracker);
-  GitHub issues only when that is the project's backlog. Touches
-  `skills/orchestrate/out-of-scope-issues.md`, `## Incidental findings` in
-  `reference/agents-block.md` and `docs/out-of-scope-issues.md`; keep the
-  private channel for vulnerabilities and secrets. MEDIUM (changes agent
-  behavior in every project); Virgo writes it, Spencer for the docs. Do it
-  before the backlog-cycle skill, which only points to it.
+- [x] **Incidental findings go to the project's backlog, not GitHub issues by
+  default**: done in 3.2.1 ([handoff](docs/plans/backlog-cycle-skill-handoff.md),
+  "Achados fora do escopo"). The destination is the backlog the project already
+  uses (a file such as `todo.md`, or its tracker); GitHub issues only when that
+  is the project's backlog; no backlog means the notes stay in the report.
+  Changed `skills/orchestrate/out-of-scope-issues.md`, `SKILL.md`,
+  `## Incidental findings` in `reference/agents-block.md` and
+  `docs/out-of-scope-issues.md`; vulnerabilities and secrets keep the private
+  channel. The backlog-cycle skill can now point to it.
 
 ### P3 — improvements without urgency
 

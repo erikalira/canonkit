@@ -12,9 +12,9 @@ Orchestration rules whose short form lives in `~/AGENTS.md` and the project's to
 On any task, including LOW without delegation, when normal work reveals a
 concrete out-of-scope problem, use
 [the incidental-findings procedure](out-of-scope-issues.md) to preserve it and
-offer authorized project issues at natural closure. This also applies to LOW
-tasks without delegation, OpenSpec or Learning Loop. Do not load the procedure
-or run discovery tools when there are no findings.
+offer it, with authorization, for the project's backlog at natural closure.
+This also applies to LOW tasks without delegation, OpenSpec or Learning Loop.
+Do not load the procedure or run discovery tools when there are no findings.
 
 ## Naming the model and effort
 

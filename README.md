@@ -429,11 +429,16 @@ markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 `~/.claude/canonkit-activity/`; new records omit task descriptions and command
 fragments, but still include paths and identifiers alongside counts and timing.
 Older records can retain those texts until rotation. Both
-[incidental project issues](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
+[incidental findings for the project's backlog](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
 and the optional
 [Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)
-supply sanitized drafts; publication requires your review and explicit authorization. Raw logs
-and personal memories do not belong in a contribution.
+supply sanitized drafts; writing or publishing them requires your review and
+explicit authorization. CanonKit itself sends nothing. A finding leaves your
+machine only when you publish it: through a tracker such as GitHub issues, or
+in a contribution. A backlog file such as `todo.md` is edited locally, but if
+your repository tracks it, the entry is published with your next push. That is
+why entries are sanitized, and why vulnerabilities and secrets are never
+written there. Raw logs and personal memories do not belong in a contribution.
 [Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
 **A gate fired on a change I'm sure is LOW.** Confirm it and say why. If the same
@@ -466,7 +471,7 @@ forwarder for the old hook name. See
 | [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
 | [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
 | [docs/learning-loop.md](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md) | investigate mistakes and propose evaluated instruction changes |
-| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental project findings and approve issue drafts in a batch |
+| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental findings and approve their entries for the project's backlog in a batch |
 | [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License

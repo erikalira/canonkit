@@ -154,9 +154,12 @@ On any task, including LOW, preserve concrete out-of-scope findings as a short
 note (title, location, observation, confidence); continue the task. Subagents
 include it in their normal report; the parent consolidates relevant findings at
 natural closure. Use the `orchestrate` skill's incidental-findings procedure
-before offering issues. Never defer delivery defects or blocked validation as
-incidental; alert urgent security risks promptly. Without findings, do nothing
-extra; do not search, delegate or create artifacts just for capture.
+before adding them to the project's backlog. Never defer delivery defects or
+blocked validation as incidental; alert urgent security risks promptly. A
+vulnerability, exposed secret or sensitive incident never goes into a backlog
+file or public issue, only to the user for the private channel. Without
+findings, do nothing extra; do not search, delegate or create artifacts just
+for capture.
 
 ## Durable preferences
 
