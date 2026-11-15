@@ -56,9 +56,12 @@ a handoff keep their details there; items without one carry them inline.
   effect of proposals 1 and 2 is UNMEASURED.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
-- [ ] **Skill for the one-backlog-item-per-session cycle**
-  ([handoff](docs/plans/backlog-cycle-skill-handoff.md)). Virgo writes it;
-  decide scope (core or project) first.
+- [x] **Skill for the one-backlog-item-per-session cycle**: done in 3.2.1
+  (OpenSpec `backlog-cycle-skill`, archived). Core skill
+  `skills/backlog-cycle/`, user-invoked only (`disable-model-invocation`,
+  Codex `allow_implicit_invocation: false`), reads the backlog the project
+  already uses. The [handoff](docs/plans/backlog-cycle-skill-handoff.md) stays
+  until a real cycle uses the skill.
 - [x] **Incidental findings go to the project's backlog, not GitHub issues by
   default**: done in 3.2.1 ([handoff](docs/plans/backlog-cycle-skill-handoff.md),
   "Achados fora do escopo"). The destination is the backlog the project already
@@ -70,6 +73,13 @@ a handoff keep their details there; items without one carry them inline.
   channel. The backlog-cycle skill can now point to it.
 
 ### P3 — improvements without urgency
+
+- [ ] **`docs/install.md` names only `orchestrate` among the shipped skills**
+  (Spencer, 2026-11-15). The paragraph "Alongside the blocks goes the
+  `orchestrate` skill" (~L1153) gives only orchestrate's install paths;
+  `context-tune`, `learning-loop` and `backlog-cycle` are described later
+  (~L1186–1218). Fix: one sentence there pointing to them. Confidence: medium;
+  impact low.
 
 - [ ] **Keep the reviewers' `## Reading code and diffs` copies in sync** (Quinn,
   2026-11-15). The section is identical in `agents/quinn.md`, `gard.md`,

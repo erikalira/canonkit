@@ -4,6 +4,13 @@ Criado em 2026-11-14, depois de fechar o P0 do `todo.md` (issue #36) com este fl
 (change arquivada em `openspec/changes/archive/2026-11-14-wsl-security-follow-ups/`,
 commits `35831af` e `87348dd`). A ideia é transformar o fluxo numa skill reutilizável.
 
+**Estado (2026-11-15):** skill escrita na 3.2.1 (`skills/backlog-cycle/`, change
+OpenSpec `backlog-cycle-skill` arquivada). Decisões resolvidas: core genérica,
+nome `backlog-cycle`, só manual (sem eval de roteamento), backlog = o que o
+projeto já usa (aqui o `todo.md`; o roadmap fica de fora), cerimônia: MEDIUM sem
+escolha estrutural dispensa `design.md`. Falta só a condição de fechamento
+abaixo: remover este handoff quando um ciclo real usar a skill.
+
 ## O fluxo que funcionou
 
 Um item por sessão, na ordem de prioridade do `todo.md`:

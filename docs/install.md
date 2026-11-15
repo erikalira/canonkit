@@ -1206,6 +1206,17 @@ automatically; see [learning from mistakes](learning-loop.md) for contribution,
 update and review steps. Reinstall the relevant source/package version to update
 shipped instructions; local `canonkit.json` tuning needs no reinstall.
 
+The `backlog-cycle` skill also **only runs when you call it** (`/backlog-cycle` in
+Claude Code, `$backlog-cycle` in Codex), for the same reason as `context-tune`:
+`disable-model-invocation: true` and `allow_implicit_invocation: false`. It runs
+one item of the backlog your project already uses per session: pick it, confirm
+it on disk, classify the risk, stop for your approval before any edit,
+implement, verify, review, close out, ask how you want to commit, and hand over a
+prompt for the next session. If the item does not close (a veto, an item that is
+really several, an obsolete one), it stops and records the state instead.
+It assumes no backlog file, planning tool or release scheme, and does not commit
+or push before you answer. It is installed with the other user-level skills.
+
 `AGENTS.md` is runtime-neutral and is the only definition of the team. The
 routing block keeps only what is Claude Code mechanics (hooks and what they
 enforce) and only points to `~/AGENTS.md`, without `@`: projects live under a
@@ -1361,7 +1372,7 @@ installed:
   [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
   `~/.claude/CLAUDE.md`, `$CODEX_HOME/AGENTS.md` and `~/.config/opencode/AGENTS.md`;
-- the `orchestrate`, `context-tune` and `learning-loop` folders in `~/.claude/skills`,
+- the `orchestrate`, `context-tune`, `learning-loop` and `backlog-cycle` folders in `~/.claude/skills`,
   `~/.agents/skills` (Codex and OpenCode) and `~/.copilot/skills`;
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
   `meu-time-hook.js` forwarder next to it, after checking and updating references
