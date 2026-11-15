@@ -46,11 +46,14 @@ a handoff keep their details there; items without one carry them inline.
   `(recommended, not installed)`; selecting it prints the guidance before any
   write and skips it, which does not count as a failure. The review screen lists
   it as skipped. Explicit `--tool` flags are unchanged.
+- [x] **Economical reading for reviewer agents**: done in 3.2.1 (`697ef43`;
+  Quinn approved). Quinn, Gard, Archie and Perry have a `## Reading code and
+  diffs` section before the Pre-report gate. No baseline was taken (user's
+  choice); the measurement is the item below.
 - [ ] **Measure review speed before/after via telemetry**
   ([handoff](docs/plans/review-speed-handoff.md), proposal 3, "Medição
-  antes/depois"). Economical reading (proposal 2) shipped in 3.2.1; no baseline
-  was taken, so the effect is UNMEASURED until enough post-3.2.1 review
-  dispatches exist to compare.
+  antes/depois"). Waits for enough post-3.2.1 review dispatches; until then the
+  effect of proposals 1 and 2 is UNMEASURED.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 - [ ] **Skill for the one-backlog-item-per-session cycle**
@@ -68,6 +71,12 @@ a handoff keep their details there; items without one carry them inline.
   before the backlog-cycle skill, which only points to it.
 
 ### P3 — improvements without urgency
+
+- [ ] **Keep the reviewers' `## Reading code and diffs` copies in sync** (Quinn,
+  2026-11-15). The section is identical in `agents/quinn.md`, `gard.md`,
+  `archie.md` and `perry.md`, but no check asserts that, so the four can drift
+  silently. Fix: a check in `scripts/validate-python.py`. Confidence: medium;
+  impact low.
 
 - [ ] **`tool add` leftovers from the issue #36 review** (Gard, 2026-11-14).
   Both predate 3.2.1 and neither blocks it.
