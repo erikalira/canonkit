@@ -1,6 +1,8 @@
 # Handoff — velocidade das revisões por subagente (lições do pitakus)
 
-Criado em 2026-11-14. Nada foi implementado. Não fazer commit sem autorização.
+Criado em 2026-11-14. Não fazer commit sem autorização.
+
+**Estado (2026-11-15):** proposta 1 entregue no commit 60243b8 (`skills/orchestrate/SKILL.md` › "Briefing a review"). Proposta 2 entregue na 3.2.1: um parágrafo de leitura econômica antes do "Pre-report gate" de Quinn, Gard, Archie e Perry. Proposta 3: a usuária optou por não tirar a linha de base, e o efeito continua **UNMEASURED**. O procedimento para a medição futura está em "Medição antes/depois", abaixo.
 
 ## Objetivo
 
@@ -36,6 +38,17 @@ São 5 execuções de um único PR. Serve como indício, não como medição.
    - Manter cada saída pequena o bastante para não ser salva em arquivo pelo harness.
    - **Onde colocar**: no corpo dos agentes, que só carrega no dispatch, ou num trecho comum a eles. Evitar `reference/agents-block.md`, que é carregado em todo turno e já tem cerca de 13 KB; a seção FAQ do README trata desse custo.
 3. **Medir antes e depois.** Usar a telemetria e o dashboard (`docs/telemetry.md`) para comparar a duração, os tokens e o tamanho do relatório de dispatches de revisão parecidos, antes e depois da mudança. Sem isso, a eficácia continua **UNMEASURED** (ver "Evidence-based completion" em `skills/orchestrate/SKILL.md`).
+
+## Medição antes/depois
+
+Não existe linha de base anterior à mudança. Use como corte a data de instalação da 3.2.1 (`ts` em ms) e compare as revisões feitas antes dela com as feitas depois. As propostas 1 e 2 saem juntas na 3.2.1, então a comparação mostra o efeito das duas somadas, sem separar uma da outra. Em cada lado, juntar pelo menos 5 dispatches de revisão de diffs com tamanho parecido.
+
+- **Fonte:** `~/.claude/canonkit-activity/events.jsonl` (`agent_start`/`agent_end`, ligados por `id`) e `tool-results.jsonl` (`thread: "subagent"`, ligado por `agent_id`). Campos em `docs/telemetry.md`.
+- **Filtro:** agentes `quinn`, `gard`, `archie` e `perry`.
+- **Deduplicação:** guardar só o último `agent_end` de cada `id`, porque os valores são cumulativos.
+- **Métricas por dispatch, em mediana e máximo** (com poucos dispatches, o p90 não diz nada): `duration_ms`, total de `tokens`, `tool_uses`, `report_chars`, e a soma de `chars` e o maior `chars` de tool_result do subagente. O maior valor mostra se alguma saída ainda passa do ponto em que o harness a salva em arquivo.
+- **Leitura do resultado:** com menos de 5 dispatches por lado, ou com diffs muito diferentes, o resultado é indício, não medição. Também conferir se a qualidade se manteve: o mesmo tipo de achado continua aparecendo e o veredito é o mesmo.
+- **Acesso:** por padrão, a sessão do Claude Code não lê `~/.claude/canonkit-activity/`. O script roda fora da sessão, ou a pasta é liberada com `/add-dir`. O script fica no scratch e só imprime agregados.
 
 ## O que não copiar do pitakus
 

@@ -46,8 +46,11 @@ a handoff keep their details there; items without one carry them inline.
   `(recommended, not installed)`; selecting it prints the guidance before any
   write and skips it, which does not count as a failure. The review screen lists
   it as skipped. Explicit `--tool` flags are unchanged.
-- [ ] **Economical reading for reviewer agents** and before/after measurement
-  via telemetry ([handoff](docs/plans/review-speed-handoff.md), proposals 2–3).
+- [ ] **Measure review speed before/after via telemetry**
+  ([handoff](docs/plans/review-speed-handoff.md), proposal 3, "Medição
+  antes/depois"). Economical reading (proposal 2) shipped in 3.2.1; no baseline
+  was taken, so the effect is UNMEASURED until enough post-3.2.1 review
+  dispatches exist to compare.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 - [ ] **Skill for the one-backlog-item-per-session cycle**
