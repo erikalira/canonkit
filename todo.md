@@ -110,6 +110,34 @@ a handoff keep their details there; items without one carry them inline.
     that is a symlink is not refused. Today `AGENTS.md` is written through on
     purpose (see the cli-tools test), so decide first whether any such target
     should be refused. Confidence: medium.
+- [ ] **Issue #36 leftovers** (checked 2026-11-16 against 3.2.1). The
+  issue is still open on GitHub; the 3.2.1 change closed its three main gaps
+  (fsmonitor/`GIT_*` in `tool add` git calls, FIFO reads in `tool add` and the
+  legacy-hook migration, nested write roots). Close the issue once these are
+  done or moved here for good. Still open:
+  - **`sandboxGit` without the WSL filter:** `resolveBin("git", { cwd })` in
+    `bin/cli.js` (`sandboxGit`) passes no `windowsRoots`, so on WSL it may pick
+    an extensionless Windows `git` and run it through interop. Fix: spread
+    `toolExec()`. Confidence: suspected reachability, confirmed from the code.
+  - **FIFO reads outside the 3.2.1 scope:** `readFile` of `AGENTS.md` in
+    `tool add` (dry run and after setup) and `tool remove`, and the doctor's
+    Codex/OpenCode hook `readFileSync` checks, still skip `readRegularSync`.
+    Confidence: confirmed from the code; the doctor reads are under the user's
+    own folders.
+  - **Misleading label for a project-local `claude`:** `collectEnvironment` in
+    `bin/security.js` sets it to null, so a Windows copy on PATH yields
+    `windows-binary-ignored` although the project-local copy is the cause. Same
+    result (version unknown); only the message is wrong.
+  - **`plain()` keeps bidi and line separators:** U+202A–202E, U+2066–2069,
+    U+2028/2029 pass through into reported paths. Cosmetic.
+  - **`windowsOnlyHits` not injectable** in `collectEnvironment`, unlike
+    `resolve` and `version`. Harmless while the default roots are `[]`.
+  - **No `~` in the install summary's Windows-copy warning**
+    (`bin/install-report.js`); the generic branch replaces only the first
+    occurrence, case-sensitively. Cosmetic.
+  - **Misleading test name:** "an injected run bypasses the Windows filter
+    entirely" in `test/model-discovery.test.js` only shows the injected run is
+    used.
 - [ ] **Empty-file rule in other JSON readers**: `bin/model-discovery.js`
   (~L299) and `bin/model-config.js` (L141) parse JSON files and may not apply
   the 3.1.1 rule that an empty, whitespace-only or BOM-only file reads as `{}`
@@ -173,6 +201,14 @@ a handoff keep their details there; items without one carry them inline.
   the pending `permissions.allow` lines
   ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 1).
 - [ ] **Rubric E1/E3/E4**: only with a new versioned rubric revision.
+- [ ] **Batch the Windows ACL spawns** (open GitHub issue). `restrictWindows`
+  in `bin/install-manifest.js` spawns one `powershell.exe` per private
+  directory, plus `whoami.exe` and one `icacls.exe` per private file. With
+  them stubbed, a fresh `install --claude` went from ~1.1 s to ~0.85 s (test
+  runs, not real use). Suggestion: one PowerShell call per process with the
+  same DACL; `test/e2e/acl-windows.test.js` already reads the result back.
+  Touches a security control: Gard reviews. Confidence: cost confirmed,
+  batching not investigated.
 - [ ] **Doctor reads the install receipt twice**: `securityDiagnosis` in
   `bin/cli.js` builds a separate dry-run `InstallManifest` only to read the
   receipt's owned `allowRead` items, which duplicates the later `checkTracked`

@@ -1,17 +1,17 @@
 # Graph Report - canonkit  (2026-11-16)
 
 ## Corpus Check
-- 291 files · ~534,704 words
+- 291 files · ~535,034 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 6, .jsonc 1)
 
 ## Summary
-- 3528 nodes · 5918 edges · 239 communities (223 shown, 16 thin omitted)
-- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 510 edges (avg confidence: 0.93)
+- 3528 nodes · 5926 edges · 238 communities (222 shown, 16 thin omitted)
+- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 518 edges (avg confidence: 0.93)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `04ad0669`
+- Built from commit: `f1d65a3b`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -170,7 +170,6 @@
 - Requirement: Native configuration is not shell authorization
 - Requirement: No implicit machine provisioning
 - Ordem sugerida
-- planInstall
 - Requirement: User-invoked backlog-item session cycle
 - Proposal
 - ADR 0005 — Contexto inflado se resolve com handoff manual
@@ -284,7 +283,7 @@
 - **Smallest-sufficient-solution doctrine across domains** — agents_archie_smallest_sufficient_architecture, agents_bob_smallest_correct_change, agents_scott_mvp, agents_gard_mitigation_priority, agents_dana_governing_principle, agents_spencer_minimum_structures [INFERRED 0.85]
 - **Shared LOW/MEDIUM/HIGH risk triage protocol** — agents_archie_risk_classification, agents_bob_implementation_protocol, agents_gard_mitigation_priority, agents_quinn_test_strategy, agents_pipe_rollback_plan, agents_dana_experiment_protocol, agents_maya_core_loop, agents_nova_visual_language, agents_echo_mix_hierarchy, agents_pixie_interface_states [INFERRED 0.95]
 
-## Communities (239 total, 16 thin omitted)
+## Communities (238 total, 16 thin omitted)
 
 ### Community 0 - "model-discovery.js"
 Cohesion: 0.11
@@ -296,7 +295,7 @@ Nodes (35): author, bin, canonkit, bugs, url, dependencies, prompts, description
 
 ### Community 2 - "cli.js"
 Cohesion: 0.05
-Nodes (66): activeTools(), addressedNames(), AGENTS_DIR, AUTHORITIES, chooseHarness(), CLAUDE_MD, CODEX, composeSetup() (+58 more)
+Nodes (69): activeTools(), addressedNames(), AGENTS_DIR, applyBlockLf(), AUTHORITIES, chooseHarness(), CLAUDE_MD, CODEX (+61 more)
 
 ### Community 3 - "Subagents"
 Cohesion: 0.12
@@ -379,8 +378,8 @@ Cohesion: 0.11
 Nodes (14): OPENCODE_PLUGIN, adapter, call(), coreModule, denied(), FIXTURES, FIXTURES_DIR, HOOKS_DIR (+6 more)
 
 ### Community 29 - "syncClaudeRouting"
-Cohesion: 0.12
-Nodes (31): applyBlock(), applyBlockLf(), claudeHome(), codexHome(), codexHooksPath(), configuration(), copilotAgentsDir(), copilotHome() (+23 more)
+Cohesion: 0.13
+Nodes (28): applyBlock(), claudeHome(), codexHome(), codexHooksPath(), configuration(), copilotAgentsDir(), copilotHome(), copyKeepingLocal() (+20 more)
 
 ### Community 30 - "ADDED Requirements"
 Cohesion: 0.09
@@ -811,8 +810,8 @@ Cohesion: 0.40
 Nodes (5): Requirement: The approved strict network setting has trusted global scope, Scenario: Existing strict network setting, Scenario: Other harnesses selected, Scenario: Strict network configuration without hook wiring, Scenario: Unsupported or unknown version
 
 ### Community 140 - "doctor"
-Cohesion: 0.09
-Nodes (43): asksByHand(), asksNotInEffect(), decidesShell(), deniesShell(), doctor(), installOpencodeHooks(), isDeny(), isObject() (+35 more)
+Cohesion: 0.07
+Nodes (63): asksByHand(), asksNotInEffect(), codexCommand(), codexHooksDir(), decidesShell(), deniesShell(), doctor(), installCodexHooks() (+55 more)
 
 ### Community 141 - "Tasks"
 Cohesion: 0.40
@@ -874,10 +873,6 @@ Nodes (3): Requirement: No implicit machine provisioning, Scenario: Stronger env
 Cohesion: 0.29
 Nodes (7): Bob, Ordem sugerida, Perry, Pipe, Scott, Spencer, Virgo
 
-### Community 156 - "planInstall"
-Cohesion: 0.15
-Nodes (23): actionRowText(), applyClaudeUserPlan(), codexCommand(), codexHooksDir(), copyKeepingLocal(), installCodexHooks(), installDashboard(), installHooks() (+15 more)
-
 ### Community 157 - "Requirement: User-invoked backlog-item session cycle"
 Cohesion: 0.18
 Nodes (10): ADDED Requirements, Requirement: User-invoked backlog-item session cycle, Scenario: Ambiguous backlog, Scenario: Approval before editing, Scenario: Ceremony sized by risk, Scenario: Commit decision, Scenario: Cycle does not close, Scenario: Next item selected (+2 more)
@@ -923,8 +918,8 @@ Cohesion: 0.40
 Nodes (4): Context, Design, Goals / Non-Goals, Risks / Trade-offs
 
 ### Community 169 - "gitignorePlan"
-Cohesion: 0.15
-Nodes (23): forwarderFor(), gitHooksPreflight(), gitignoreMarkers(), gitignorePlan(), gitignoreRoot(), graphifyHooksProblems(), hookHasMarker(), hookSnapshot() (+15 more)
+Cohesion: 0.16
+Nodes (22): forwarderFor(), gitHooksPreflight(), gitignoreMarkers(), gitignorePlan(), gitignoreRoot(), graphifyHooksProblems(), hookHasMarker(), hookSnapshot() (+14 more)
 
 ### Community 170 - "Requirement: Codex discovery reports models and their own efforts"
 Cohesion: 0.50
@@ -1044,7 +1039,7 @@ Nodes (3): Requirement: Discovery degrades to unknown, never to failure, Scenari
 
 ### Community 207 - "security.js"
 Cohesion: 0.09
-Nodes (59): applySecurityAnswer(), optionalBytes(), prepareSecurity(), readHooksFileForWiring(), readProjectLocalSandbox(), scopedSecurityManifest(), securityDiagnosis(), uninstallProject() (+51 more)
+Nodes (61): actionRowText(), applyClaudeUserPlan(), applySecurityAnswer(), optionalBytes(), planInstall(), prepareSecurity(), readProjectLocalSandbox(), scopedSecurityManifest() (+53 more)
 
 ### Community 208 - "Per-project configuration: `.claude/canonkit.json`"
 Cohesion: 0.29
@@ -1175,8 +1170,8 @@ Cohesion: 0.33
 Nodes (5): Establish the project, Implementation and diagnosis, Team boundary, TypeScript, Verify the changed boundary
 
 ### Community 250 - "installDistribution"
-Cohesion: 0.21
-Nodes (23): addSpecialists(), changeProject(), choiceFor(), codexAgent(), codexChoiceFor(), copilotAgent(), core(), discoverModels() (+15 more)
+Cohesion: 0.19
+Nodes (25): addSpecialists(), changeProject(), choiceFor(), codexAgent(), codexChoiceFor(), copilotAgent(), core(), discoverModels() (+17 more)
 
 ## Knowledge Gaps
 - **1592 isolated node(s):** `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT`, `AGENTS_DIR`, `REFERENCE_DIR` (+1587 more)
@@ -1192,16 +1187,16 @@ Nodes (23): addSpecialists(), changeProject(), choiceFor(), codexAgent(), codexC
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `doctor()` connect `doctor` to `cli.js`, `releasing.md`, `openspec-explore/SKILL.md`, `InstallManifest`, `Tasks`, `main`, `models-command.js`, `planInstall`, `syncClaudeRouting`, `ADDED Requirements`, `renderDoctorReport`, `install`, `cli-install.test.js`, `gitignorePlan`, `Decisions`, `canonkit`, `CANONKIT_ROADMAP.md`, `Native security, per project`, `Requirements`, `ADDED Requirements`, `Hooks and gates`, `Proposal`, `Requirement: Runtime read coverage is diagnosed`, `Design`, `Tasks`, `model`, `Requirement: Codex project choices reach project dispatches`, `security.js`, `validate.mjs`, `Requirement: Codex project choices reach project dispatches`, `install.md`, `Decisions`, `Requirement: Absent strict keys and unconfigured projects are diagnosed`, `Decisions`, `Requirements`, `P5 — evidência de resultado: do sinal à correção`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `Proposal`, `installDistribution`?**
-  _High betweenness centrality (0.125) - this node is a cross-community bridge._
+- **Why does `doctor()` connect `doctor` to `cli.js`, `releasing.md`, `openspec-explore/SKILL.md`, `InstallManifest`, `Tasks`, `main`, `models-command.js`, `syncClaudeRouting`, `ADDED Requirements`, `renderDoctorReport`, `install`, `cli-install.test.js`, `Decisions`, `canonkit`, `CANONKIT_ROADMAP.md`, `Native security, per project`, `Requirements`, `ADDED Requirements`, `Hooks and gates`, `Proposal`, `Requirement: Runtime read coverage is diagnosed`, `Design`, `Tasks`, `model`, `Requirement: Codex project choices reach project dispatches`, `security.js`, `validate.mjs`, `Requirement: Codex project choices reach project dispatches`, `install.md`, `Decisions`, `Requirement: Absent strict keys and unconfigured projects are diagnosed`, `Decisions`, `Requirements`, `P5 — evidência de resultado: do sinal à correção`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `Proposal`, `installDistribution`?**
+  _High betweenness centrality (0.124) - this node is a cross-community bridge._
 - **Are the 83 inferred relationships involving `doctor()` (e.g. with `mentionsHook()` and `ruleText()`) actually correct?**
   _`doctor()` has 83 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT` to the rest of the system?**
   _1592 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `model-discovery.js` be split into smaller, more focused modules?**
   _Cohesion score 0.1103448275862069 - nodes in this community are weakly interconnected._
-- **Why does `install()` connect `install` to `cli.js`, `releasing.md`, `Requirements`, `InstallManifest`, `Proposal`, `doctor`, `main`, `models-command.js`, `ADDED Requirements`, `planInstall`, `env`, `cli-install.test.js`, `canonkit`, `2.3.0.md`, `Native security, per project`, `Context contributors`, `ADDED Requirements`, `ADR 0008 — `tool add openspec --harness`: o usuário escolhe para quais harnesses o openspec é configurado`, `Editing an agent`, `ADDED Requirements`, `Requirement: Install applies resolved choices where verified`, `Requirements`, `Project tools: graphify and openspec`, `Design`, `Tasks`, `Requirement: Person chooses from the discovered list`, `model`, `Requirement: Person chooses from the discovered list`, `security.js`, `Design`, `Tasks`, `install.md`, `Decisions`, `Tasks`, `Decisions`, `Decisions`, `ADR 0001 — `canonkit tool`: um namespace próprio, que só integra`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `installDistribution`?**
-  _High betweenness centrality (0.107) - this node is a cross-community bridge._
+- **Why does `install()` connect `install` to `cli.js`, `releasing.md`, `Requirements`, `InstallManifest`, `Proposal`, `doctor`, `main`, `models-command.js`, `ADDED Requirements`, `env`, `cli-install.test.js`, `canonkit`, `2.3.0.md`, `Native security, per project`, `Context contributors`, `ADDED Requirements`, `ADR 0008 — `tool add openspec --harness`: o usuário escolhe para quais harnesses o openspec é configurado`, `Editing an agent`, `ADDED Requirements`, `Requirement: Install applies resolved choices where verified`, `Requirements`, `Project tools: graphify and openspec`, `Design`, `Tasks`, `Requirement: Person chooses from the discovered list`, `model`, `Requirement: Person chooses from the discovered list`, `security.js`, `Design`, `Tasks`, `install.md`, `Decisions`, `Tasks`, `Decisions`, `Decisions`, `ADR 0001 — `canonkit tool`: um namespace próprio, que só integra`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `installDistribution`?**
+  _High betweenness centrality (0.105) - this node is a cross-community bridge._
 - **Are the 61 inferred relationships involving `install()` (e.g. with `Emenda 2026-11-12 (2) — o mesmo filtro em mais três resolvedores` and `Publisher e pin — o que foi verificado (2026-10-19)`) actually correct?**
   _`install()` has 61 INFERRED edges - model-reasoned connections that need verification._
 - **Should `package.json` be split into smaller, more focused modules?**
