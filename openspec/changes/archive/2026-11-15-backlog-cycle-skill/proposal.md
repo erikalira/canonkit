@@ -4,10 +4,10 @@
 
 Several 3.2.1 items were closed with the same session flow: pick one backlog
 item, classify it, plan, stop for approval, implement, verify, review, close and
-hand the next session a ready prompt (`docs/plans/backlog-cycle-skill-handoff.md`).
-The flow lives only in that handoff and in each session's prompt, so every
-session re-derives it, and the cases where the cycle does not close (veto,
-item larger than it looked, item obsolete) have no defined exit.
+hand the next session a ready prompt. Before the skill, that flow was documented
+only in a handoff (removed after the first real cycle) and in session prompts.
+Each session had to re-derive it, and the cases where the cycle did not close
+(veto, item larger than it looked, item obsolete) had no defined exit.
 
 ## What Changes
 

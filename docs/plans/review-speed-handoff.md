@@ -69,4 +69,4 @@ Não existe linha de base anterior à mudança. Use como corte a data de instala
 
 ## Próximo passo
 
-Confirmar o escopo. A sugestão é começar pela proposta 1, a de menor custo e maior ganho. Depois, ler `docs/maintaining.md` (seção de validação) antes de editar os agentes.
+Retomar a proposta 3 quando os arquivos de telemetria estiverem disponíveis e houver pelo menos cinco dispatches de revisão comparáveis de cada lado do corte. Até lá, manter a eficácia **UNMEASURED**; as propostas 1 e 2 já foram entregues.

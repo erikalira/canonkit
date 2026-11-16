@@ -67,11 +67,9 @@ a handoff keep their details there; items without one carry them inline.
   (OpenSpec `backlog-cycle-skill`, archived). Core skill
   `skills/backlog-cycle/`, user-invoked only (`disable-model-invocation`,
   Codex `allow_implicit_invocation: false`), reads the backlog the project
-  already uses. The [handoff](docs/plans/backlog-cycle-skill-handoff.md) stays
-  until a real cycle uses the skill.
+  already uses. Its handoff was removed after the first real cycle.
 - [x] **Incidental findings go to the project's backlog, not GitHub issues by
-  default**: done in 3.2.1 ([handoff](docs/plans/backlog-cycle-skill-handoff.md),
-  "Achados fora do escopo"). The destination is the backlog the project already
+  default**: done in 3.2.1. The destination is the backlog the project already
   uses (a file such as `todo.md`, or its tracker); GitHub issues only when that
   is the project's backlog; no backlog means the notes stay in the report.
   Changed `skills/orchestrate/out-of-scope-issues.md`, `SKILL.md`,

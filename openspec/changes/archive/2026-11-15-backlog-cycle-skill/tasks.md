@@ -17,5 +17,5 @@
 ## 4. Close-out
 
 - [x] 4.1 Run `npm test` after the last edit, `git diff --check` and `graphify update .`; verify they pass
-- [x] 4.2 Tick the P2 item in `todo.md`; keep `docs/plans/backlog-cycle-skill-handoff.md` until a real cycle uses the skill, as it says, and mark there that the open decisions are resolved
+- [x] 4.2 Tick the P2 item in `todo.md`; keep the original handoff until a real cycle uses the skill, as it says, and mark there that the open decisions are resolved (the handoff was removed after that cycle)
 - [x] 4.3 Archive with `openspec-archive-change` and run `npm run validate`
