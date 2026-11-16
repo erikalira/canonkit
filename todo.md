@@ -46,6 +46,12 @@ a handoff keep their details there; items without one carry them inline.
   `(recommended, not installed)`; selecting it prints the guidance before any
   write and skips it, which does not count as a failure. The review screen lists
   it as skipped. Explicit `--tool` flags are unchanged.
+- [ ] **Alternative Canonkit installation channels** (target a near-term
+  release). Alongside the documented `npx canonkit install`, document global
+  npm installation and evaluate Homebrew, WinGet and a standalone installer
+  script. Keep every channel on the same CLI implementation and version/update
+  path; account for platform and runtime requirements and ongoing manifest
+  maintenance.
 - [x] **Economical reading for reviewer agents**: done in 3.2.1 (`697ef43`;
   Quinn approved). Quinn, Gard, Archie and Perry have a `## Reading code and
   diffs` section before the Pre-report gate. No baseline was taken (user's
