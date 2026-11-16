@@ -2704,11 +2704,12 @@ async function securityDiagnosis() {
     const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
     const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
     const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
-    // Without this grant the sandbox hides the file and `models show` reports "inherit" for every agent.
+    // This warning is a hint when any loaded scope enables sandboxing; settings precedence is left to the install flow.
     if (runtime.proposed.some((entry) => entry.item === MODELS_READ_ITEM) && sources.some((source) => source.data?.sandbox?.enabled === true)) add("WARN", "security claude models-file", `partial: ${MODELS_READ_ITEM} is not in sandbox.filesystem.allowRead of user settings; sandboxed canonkit models show would report "inherit" for every agent instead of your choices. Re-run canonkit install from a terminal. Doctor did not edit settings`);
     for (const item of runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM)) add("WARN", "security claude runtime-reads", `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`);
     for (const entry of runtime.broad) add("WARN", "security claude runtime-reads", `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`);
-    if (runtime.covered.length && !runtime.proposed.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
+    const uncoveredRuntime = runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM);
+    if (runtime.covered.length && !uncoveredRuntime.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
   }
   if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
   add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the project; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
@@ -4302,10 +4303,7 @@ async function uninstallGlobal(ctx, flags) {
     opencode: [opencodeConfigPath(), path.join(opencodeDir(), "opencode.jsonc"), path.join(process.cwd(), "opencode.json"), path.join(process.cwd(), "opencode.jsonc")],
   };
   try {
-    return await manifest.uninstall({ messages: {
-      missing: "No user-level install manifest: nothing was removed. Follow docs/install.md#uninstalling for pre-manifest installations.",
-      kept: "Kept: backups, activity history, legacy ~/.agents/<core>.md, and everything at project level (canonkit uninstall --project removes project security). Other projects are not scanned for references.",
-    }, references: async (harness, projected) => {
+    return await manifest.uninstall({ references: async (harness, projected) => {
       const residual = [];
       for (const file of new Set(referenceFiles[harness])) {
         let text;

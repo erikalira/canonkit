@@ -1120,6 +1120,13 @@ test("doctor warns when the strict sandbox cannot read the models file", async (
   const covered = f.run(["doctor"]).out;
   assert.doesNotMatch(covered, /models-file/);
   assert.match(covered, /OK +security claude runtime-reads: configured: ~\/\.canonkit\/models\.json/);
+  // Runtime roots stay covered when models.json is the only missing entry, even without sandbox.enabled.
+  await put(f.local, {});
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } });
+  const PATH = await nvmNode(f);
+  const modelsOnlyMissing = f.run(["doctor"], f.project, { PATH }).out;
+  assert.doesNotMatch(modelsOnlyMissing, /models-file/);
+  assert.match(modelsOnlyMissing, /OK +security claude runtime-reads: configured: ~\/\.nvm/);
   // Without the sandbox enabled in any scope there is nothing to warn about.
   await put(f.local, {});
   await put(f.global, {});

@@ -1,17 +1,17 @@
 # Graph Report - canonkit  (2026-11-16)
 
 ## Corpus Check
-- 291 files · ~534,442 words
+- 291 files · ~534,642 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 6, .jsonc 1)
 
 ## Summary
-- 3527 nodes · 5917 edges · 251 communities (233 shown, 18 thin omitted)
+- 3528 nodes · 5918 edges · 239 communities (223 shown, 16 thin omitted)
 - Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS · INFERRED: 510 edges (avg confidence: 0.93)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `ab0d0a04`
+- Built from commit: `688bbeff`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,7 +22,7 @@
 - Subagents
 - with
 - Requirements
-- ref_node_path
+- security-cli.test.js
 - canonkit-hook.js
 - serve.js
 - InstallManifest
@@ -45,7 +45,7 @@
 - Q: Como avaliar de 0 a 10 a qualidade e o ROI das instrucoes instaladas pelo canonkit?
 - hook-core.test.js
 - hook-opencode.test.js
-- readAgents
+- syncClaudeRouting
 - ADDED Requirements
 - Requirement: Native approval modes remain authoritative
 - P0 — fechar os maiores gaps de evidência
@@ -57,7 +57,7 @@
 - Tasks
 - updates
 - Requirements
-- check-enforced.mjs
+- ref_node_fs
 - Requirements
 - canonkit
 - ADDED Requirements
@@ -66,9 +66,9 @@
 - Requirements
 - Evals
 - ADDED Requirements
-- allow
+- Hooks and gates
 - Fase 4 — OpenSpec como artefato durável do change lifecycle
-- cli-tools.test.js
+- git-ignore-sandbox-files.test.js
 - configFor
 - Proposal
 - ADDED Requirements
@@ -80,33 +80,33 @@
 - Learning loop
 - ADDED Requirements
 - Requirements
-- Design
+- uninstall.test.js
 - Requirement: Weaker repository values require confirmation
-- toolAdd
+- exec.js
 - Requirements
 - Design
 - 2026-11-12-sandbox-auto-approval-default/proposal.md
 - Requirements
 - Tasks
-- git-ignore-sandbox-files.test.js
+- dashboard.test.js
 - install-report.js
 - Swift
 - canonkit-hook.test.js
 - Requirement: Person chooses from the discovered list
-- install-manifest.js
+- Requirement: Codex project choices reach project dispatches
 - Game art direction
 - ADDED Requirements
-- recommended-models.test.js
+- Design
 - Requirements
 - validate.mjs
-- ADDED Requirements
+- Requirement: Codex project choices reach project dispatches
 - install.md
 - Q: quais desses ajustes ainda fazem sentido?
 - Q: agora falta o passo 9 do handoff!
 - Requirements
 - Tasks
 - decide
-- ref_node_fs
+- ref_node_path
 - ADDED Requirements
 - Proposal
 - Decisions
@@ -134,7 +134,7 @@
 - Proposal
 - C++
 - Proposal
-- model-config.js
+- Tasks
 - ADDED Requirements
 - Rendered interface review
 - 2026-11-11-ui-focused-visual-workflow/design.md
@@ -143,7 +143,7 @@
 - Requirement: Restrictive and reversible installation lifecycle
 - Learning from mistakes
 - config.yaml
-- For users
+- ADR 0003 — `tool add` escreve um bloco no `.gitignore`
 - Handoff — velocidade das revisões por subagente (lições do pitakus)
 - releasing.md
 - Requirement: Network authorization remains outside repository control
@@ -163,14 +163,14 @@
 - Requirement: Native approval modes remain authoritative
 - Requirement: Reinstallation migrates attributable legacy Claude hooks
 - Requirement: Strict sandbox configuration preserves explicit requirements
-- Design
+- tier
 - Requirement: Native approval modes remain authoritative
 - Requirement: Reinstallation migrates attributable legacy Claude hooks
 - Requirement: Strict sandbox configuration preserves explicit requirements
 - Requirement: Native configuration is not shell authorization
 - Requirement: No implicit machine provisioning
 - Ordem sugerida
-- installDistribution
+- planInstall
 - Requirement: User-invoked backlog-item session cycle
 - Proposal
 - ADR 0005 — Contexto inflado se resolve com handoff manual
@@ -181,23 +181,22 @@
 - Go
 - React
 - React
-- tier
+- Design
 - validate.sh script
 - gitignorePlan
 - Requirement: Codex discovery reports models and their own efforts
 - Decisions
 - Rust
-- Decisions
+- 2.3.0.md
 - Requirement: Review brief with resolved diff scope
 - Native security, per project
 - run-laya-cases.py
-- Stable fields
+- Context contributors
 - Requirement: Vendor-neutral agent need level
 - 2026-11-12-install-unified-catalog/proposal.md
 - Kotlin
 - contextReminder
 - ADR 0008 — `tool add openspec --harness`: o usuário escolhe para quais harnesses o openspec é configurado
-- .uninstall
 - opencode-plugin.mjs
 - Fase 8 — Gate quantitativo para Caveman / Shunt
 - Requirement: The interactive install offers every installable category
@@ -209,7 +208,6 @@
 - PROVENANCE.md
 - Project tools: graphify and openspec
 - models-command.test.js
-- Tasks
 - Requirement: Codex generated agents apply resolved choices
 - Requirement: Codex setup ties effort to the chosen model
 - Requirement: Person chooses from the discovered list
@@ -219,25 +217,21 @@
 - Proposal
 - React
 - Requirement: Discovery degrades to unknown, never to failure
-- Requirement: No shipped cross-vendor equivalence
 - security.js
-- Hooks and gates
+- Per-project configuration: `.claude/canonkit.json`
 - Tasks
 - Requirement: Detected runtime read exceptions in user settings
 - Requirement: Motion preserves purpose access and stability
 - Design
 - Requirement: Weaker repository values require confirmation
-- unknown
+- Decisions
 - Requirement: Claude Code dispatches carry the effective choice
 - One-time setup (account owner)
 - Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob
-- Incidental findings and the project backlog
-- Quickstart
 - Keeping findings outside the current task
 - Requirement: Absent strict keys and unconfigured projects are diagnosed
 - Proposal
 - Requirement: Review preserves evidence limits and freshness
-- canonkit 3.2.0
 - Maintaining canonkit
 - C# / .NET
 - Tasks
@@ -249,20 +243,14 @@
 - Requirement: Native configuration is not shell authorization
 - Requirement: Sandbox auto-approval requires the full effective sandbox profile
 - Backlog cycle
-- Tasks
-- Codex and OpenCode
-- ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa
 - Core, at user level
-- rowText
 - migrateClaudeHooks
 - canonkit 3.0.0
 - Fase 12 — Capturar feedback real e vinculá-lo à hipótese de produto
 - Proposal
 - Fase 15 — Medir latência da interação e custo por tarefa concluída
 - TypeScript
-- Priorities
-- canonkit 2.5.0
-- addSpecialists
+- installDistribution
 
 ## God Nodes (most connected - your core abstractions)
 1. `doctor()` - 121 edges
@@ -283,10 +271,10 @@
   docs/adr/0001-tool-namespace-integrate-only.md → bin/cli.js
 - `Adendo: recomendações por harness (2026-11-13)` --references--> `install()`  [INFERRED]
   docs/adr/0006-runtime-model-discovery.md → bin/cli.js
-- `Environment and version coverage` --references--> `install()`  [INFERRED]
+- `Alternativas consideradas` --references--> `install()`  [INFERRED]
+  docs/adr/0007-sandbox-placeholder-exclude.md → bin/cli.js
+- `1. Sync global reference blocks and skills` --references--> `install()`  [INFERRED]
   docs/install.md → bin/cli.js
-- `1. Edit the canonical source` --references--> `install()`  [INFERRED]
-  docs/maintaining.md → bin/cli.js
 
 ## Import Cycles
 - None detected.
@@ -296,11 +284,11 @@
 - **Smallest-sufficient-solution doctrine across domains** — agents_archie_smallest_sufficient_architecture, agents_bob_smallest_correct_change, agents_scott_mvp, agents_gard_mitigation_priority, agents_dana_governing_principle, agents_spencer_minimum_structures [INFERRED 0.85]
 - **Shared LOW/MEDIUM/HIGH risk triage protocol** — agents_archie_risk_classification, agents_bob_implementation_protocol, agents_gard_mitigation_priority, agents_quinn_test_strategy, agents_pipe_rollback_plan, agents_dana_experiment_protocol, agents_maya_core_loop, agents_nova_visual_language, agents_echo_mix_hierarchy, agents_pixie_interface_states [INFERRED 0.95]
 
-## Communities (251 total, 18 thin omitted)
+## Communities (239 total, 16 thin omitted)
 
 ### Community 0 - "model-discovery.js"
 Cohesion: 0.11
-Nodes (21): ADAPTERS, applyClaudePolicy(), availableModelsIn(), CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy(), HARNESSES, inside(), optionText() (+13 more)
+Nodes (24): ADAPTERS, applyClaudePolicy(), availableModelsIn(), CLAUDE_DOCUMENTED_ALIASES, claudeModelPolicy(), discover(), HARNESSES, inside() (+16 more)
 
 ### Community 1 - "package.json"
 Cohesion: 0.06
@@ -308,7 +296,7 @@ Nodes (35): author, bin, canonkit, bugs, url, dependencies, prompts, description
 
 ### Community 2 - "cli.js"
 Cohesion: 0.05
-Nodes (84): activeTools(), addressedNames(), AGENTS_DIR, applyBlock(), applyBlockLf(), asksNotInEffect(), AUTHORITIES, CLAUDE_MD (+76 more)
+Nodes (66): activeTools(), addressedNames(), AGENTS_DIR, AUTHORITIES, chooseHarness(), CLAUDE_MD, CODEX, composeSetup() (+58 more)
 
 ### Community 3 - "Subagents"
 Cohesion: 0.12
@@ -322,9 +310,9 @@ Nodes (40): concurrency, cancel-in-progress, group, run, SHA256, VERSION, jobs, 
 Cohesion: 0.06
 Nodes (30): install-unified-catalog Specification, Purpose, Requirement: Dry run previews the whole flow, Requirement: Install output makes tool actions and outcomes clear, Requirement: Non-interactive install is unchanged unless asked, Requirement: Project items are offered only against a valid project, Requirement: Selection happens before any write, and cancelling writes nothing, Requirement: Selections reuse the existing installers (+22 more)
 
-### Community 6 - "ref_node_path"
-Cohesion: 0.08
-Nodes (18): answerModelPrompt(), capable(), INSTALL, interactive(), MODEL_SETUP_PROMPTS, STRICT_PROJECT, WEAKER, installedWithRuntimeReads() (+10 more)
+### Community 6 - "security-cli.test.js"
+Cohesion: 0.12
+Nodes (9): answerModelPrompt(), capable(), INSTALL, interactive(), MODEL_SETUP_PROMPTS, never(), STRICT_PROJECT, WEAKER (+1 more)
 
 ### Community 7 - "canonkit-hook.js"
 Cohesion: 0.08
@@ -334,21 +322,25 @@ Nodes (30): CATCH_ALL_SAMPLES, CLAUDE_GATE_MODES, CMD_PREFIX, CMD_PREFIX_VALUE, 
 Cohesion: 0.06
 Nodes (52): addTo(), agentStatus(), contextContributors(), dispatches(), fs, HTML, http, json() (+44 more)
 
+### Community 9 - "InstallManifest"
+Cohesion: 0.06
+Nodes (50): absent(), atomic(), digest(), exclusivePrivate(), InstallManifest, read(), regularPath(), removeManagedBlock() (+42 more)
+
 ### Community 10 - "eval-quality.mjs"
-Cohesion: 0.07
-Nodes (48): absent(), bytes(), catalog(), digest(), exists(), object(), PACKAGE_ROOT, readStackPack() (+40 more)
+Cohesion: 0.08
+Nodes (43): absent(), bytes(), catalog(), digest(), exists(), object(), PACKAGE_ROOT, readStackPack() (+35 more)
 
 ### Community 11 - "publish"
 Cohesion: 0.07
 Nodes (27): concurrency, cancel-in-progress, group, jobs, publish, test, name, on (+19 more)
 
 ### Community 12 - "main"
-Cohesion: 0.11
-Nodes (31): allSecurityRows(), askInstallChoice(), chooseProjectItems(), chooseProjectScope(), chooseTargets(), fitMenuLine(), interactiveHeading(), liftHarness() (+23 more)
+Cohesion: 0.17
+Nodes (23): allSecurityRows(), askInstallChoice(), chooseProjectItems(), chooseProjectScope(), chooseTargets(), fitMenuLine(), interactiveHeading(), liftHarness() (+15 more)
 
 ### Community 13 - "models-command.js"
-Cohesion: 0.15
-Nodes (20): discoverModels(), projectConfigPath(), projectRoot(), resolve(), catalogPath(), Aborted, day(), inspectCodexProjectFiles() (+12 more)
+Cohesion: 0.05
+Nodes (74): cell(), MARKERS, paddedRows(), renderChangeBlocks(), renderChangeRows(), rowText(), shorten(), APPLIED (+66 more)
 
 ### Community 14 - "eval-laya.mjs"
 Cohesion: 0.13
@@ -379,16 +371,16 @@ Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: Como avaliar de 0 a 10 a qualidade e o ROI das instrucoes instaladas pelo canonkit?, Source Nodes
 
 ### Community 27 - "hook-core.test.js"
-Cohesion: 0.08
-Nodes (17): Decisão, ADAPTER_KINDS, ADAPTERS, ENV_KEYS, { evaluate, GATE_KINDS, RECORD_KINDS }, FS_CALLBACK_WRITES, FS_PROMISE_WRITES, FS_WRITES (+9 more)
+Cohesion: 0.09
+Nodes (15): ADAPTER_KINDS, ADAPTERS, ENV_KEYS, { evaluate, GATE_KINDS, RECORD_KINDS }, FS_CALLBACK_WRITES, FS_PROMISE_WRITES, FS_WRITES, fx (+7 more)
 
 ### Community 28 - "hook-opencode.test.js"
 Cohesion: 0.11
 Nodes (14): OPENCODE_PLUGIN, adapter, call(), coreModule, denied(), FIXTURES, FIXTURES_DIR, HOOKS_DIR (+6 more)
 
-### Community 29 - "readAgents"
-Cohesion: 0.23
-Nodes (14): ACCESS_LEVELS, accessProblem(), claudeRestriction(), describeRestriction(), READ_TOOLS, RESERVED_KEYS, reservedKeyOf(), claudeAgent() (+6 more)
+### Community 29 - "syncClaudeRouting"
+Cohesion: 0.12
+Nodes (31): applyBlock(), applyBlockLf(), claudeHome(), codexHome(), codexHooksPath(), configuration(), copilotAgentsDir(), copilotHome() (+23 more)
 
 ### Community 30 - "ADDED Requirements"
 Cohesion: 0.09
@@ -407,8 +399,8 @@ Cohesion: 0.09
 Nodes (22): ADDED Requirements, Purpose, Requirement: HIGH handoff signals identify missing details for manual inspection, Requirement: Large candidate sets do not automate owner assignment, Requirement: Laya cannot replace Canonkit governance or direct evidence, Requirement: Laya receives only minimized task-relevant content, Requirement: Long-text assessment preserves uncertainty and attribution, Requirement: Practical adoption prioritizes quality without additional benchmark campaigns (+14 more)
 
 ### Community 34 - "install"
-Cohesion: 0.07
-Nodes (35): install(), Alternativas consideradas, 1. Add or remove stack packs, 1. Add specialists, 1. Preview, add or remove the ignore block, 1. Refresh the model catalog, 1. Remove an individual leftover agent file, 1. Sync global reference blocks and skills (+27 more)
+Cohesion: 0.09
+Nodes (29): install(), 1. Add or remove stack packs, 1. Add specialists, 1. Preview, add or remove the ignore block, 1. Refresh the model catalog, 1. Remove an individual leftover agent file, 2. Configure and inspect model choices, 2. List or remove specialists (+21 more)
 
 ### Community 35 - "hook-codex.test.js"
 Cohesion: 0.13
@@ -419,8 +411,8 @@ Cohesion: 0.09
 Nodes (22): laya-advisory-assessment Specification, Purpose, Requirement: HIGH handoff signals identify missing details for manual inspection, Requirement: Large candidate sets do not automate owner assignment, Requirement: Laya cannot replace Canonkit governance or direct evidence, Requirement: Laya receives only minimized task-relevant content, Requirement: Long-text assessment preserves uncertainty and attribution, Requirement: Practical adoption prioritizes quality without additional benchmark campaigns (+14 more)
 
 ### Community 37 - "cli-install.test.js"
-Cohesion: 0.18
-Nodes (24): copilotAgent(), HOOK_FILES, FAKE_MOUNTS, wsl(), backups(), claudeDir(), codexCommand(), commandsIn() (+16 more)
+Cohesion: 0.26
+Nodes (19): HOOK_FILES, backups(), claudeDir(), codexCommand(), commandsIn(), CORE, FORWARDER(), legacyEntry() (+11 more)
 
 ### Community 38 - "Tasks"
 Cohesion: 0.14
@@ -434,8 +426,8 @@ Nodes (13): patterns, prefix, default-days, actions, interval, updates, commit-m
 Cohesion: 0.05
 Nodes (41): interface-design-workflow Specification, Purpose, Requirement: Composite-control inspection follows a reported risk, Requirement: Content states and flow outcomes are explicit, Requirement: Design decisions follow the product and existing direction, Requirement: Design handoffs are implementable and proportionate, Requirement: Interface skills are independently opt-in, Requirement: Motion preserves purpose access and stability (+33 more)
 
-### Community 41 - "check-enforced.mjs"
-Cohesion: 0.10
+### Community 41 - "ref_node_fs"
+Cohesion: 0.11
 Nodes (12): adapters, BLOCKS, { GATE_KINDS, RECORD_KINDS }, known, listed, out, REPO, requireCjs (+4 more)
 
 ### Community 42 - "Requirements"
@@ -443,8 +435,8 @@ Cohesion: 0.04
 Nodes (44): install-guided-setup Specification, Purpose, Requirement: Current and recommended values share one format, Requirement: Declining the project limits writes to the user level, Requirement: Every interactive install question uses one menu pattern, Requirement: Install output names the level of every write, Requirement: Keep current and customize preserve today's choices, Requirement: The answer governs every listed security change (+36 more)
 
 ### Community 43 - "canonkit"
-Cohesion: 0.12
-Nodes (16): Add, inspect and remove packs, Add project specialists, canonkit, Commands, Documentation, FAQ, How it decides: LOW vs HIGH, If no gate ever fires (+8 more)
+Cohesion: 0.08
+Nodes (25): Add, inspect and remove packs, Add project specialists, canonkit, Check Claude Code, Choose models, Commands, Documentation, FAQ (+17 more)
 
 ### Community 44 - "ADDED Requirements"
 Cohesion: 0.09
@@ -470,17 +462,17 @@ Nodes (12): Always-loaded cost, Case format, Engineering protocol fixtures, Eval
 Cohesion: 0.05
 Nodes (37): ADDED Requirements, Purpose, Requirement: Claude Code dispatches carry the effective choice, Requirement: Discovery degrades to unknown, never to failure, Requirement: Discovery is explicit and contained, Requirement: Doctor reports drift without failing, Requirement: Inspect effective choices, Requirement: Install applies resolved choices where verified (+29 more)
 
-### Community 50 - "allow"
-Cohesion: 0.14
-Nodes (18): Native controls and optional hooks, Returning to native approvals, The core: `evaluate(evt, env)`, canonkit 2.1.0, For users, Internal, Next, allow() (+10 more)
+### Community 50 - "Hooks and gates"
+Cohesion: 0.11
+Nodes (23): Events it must be registered for, Hooks and gates, It fails open, Native controls and optional hooks, Returning to native approvals, Shell write targets, The core: `evaluate(evt, env)`, What the gates prove (+15 more)
 
 ### Community 51 - "Fase 4 — OpenSpec como artefato durável do change lifecycle"
 Cohesion: 0.18
 Nodes (11): Caminho sugerido, Critério de aceite, Critério de aceite, Fase 4 — OpenSpec como artefato durável do change lifecycle, Fase 6 — Reavaliar o trust boundary dos hooks do Graphify, Fluxo desejado, Implementação provável, Objetivo (+3 more)
 
-### Community 52 - "cli-tools.test.js"
-Cohesion: 0.10
-Nodes (25): 3. Run tests, home, accessOf(), assertPrivate(), fixture(), POWERSHELL, SYSTEM, win32Only (+17 more)
+### Community 52 - "git-ignore-sandbox-files.test.js"
+Cohesion: 0.09
+Nodes (28): 3. Run tests, home, dangling(), setup(), wsl(), FAKE_MOUNTS, wsl(), CATALOG (+20 more)
 
 ### Community 53 - "configFor"
 Cohesion: 0.27
@@ -526,17 +518,17 @@ Nodes (25): ADDED Requirements, Purpose, Requirement: ACL stubbing is test-only 
 Cohesion: 0.08
 Nodes (25): Purpose, Requirement: ACL stubbing is test-only and absent from shipped code, Requirement: CLI spawns go through the shared harness, Requirement: Deterministic runtime discovery in CLI tests, Requirement: Fast tier for the inner loop, Requirement: Full suite remains the publish gate, Requirement: No wall-clock test budget, Requirement: Real ACL coverage is retained on Windows (+17 more)
 
-### Community 64 - "Design"
-Cohesion: 0.17
-Nodes (11): After groups 2 and 3 (same machine, files run one at a time), After splitting cli.test.js (task 4.2), Baseline (2026-11-11, idle machine, commit 36a553c, files run one at a time), Context, Decisions, Design, Goals / Non-Goals, Open Questions (+3 more)
+### Community 64 - "uninstall.test.js"
+Cohesion: 0.11
+Nodes (18): accessOf(), assertPrivate(), fixture(), POWERSHELL, SYSTEM, win32Only, stubClaude(), stubCodex() (+10 more)
 
 ### Community 65 - "Requirement: Weaker repository values require confirmation"
 Cohesion: 0.06
 Nodes (33): ADDED Requirements, MODIFIED Requirements, Requirement: Automatic installation of supported restrictions, Requirement: Recommended runtime reads stay narrow, Requirement: Reinstallation migrates attributable legacy Claude hooks, Requirement: Sandbox auto-approval requires the full effective sandbox profile, Requirement: Security changes follow the install's recommended-setup answer, Requirement: Unapplied strict keys are reported, never claimed (+25 more)
 
-### Community 66 - "toolAdd"
-Cohesion: 0.10
-Nodes (43): chooseHarness(), composeSetup(), confirm(), forbiddenStep(), harnessFlag(), harnessName(), harnessStaticTouches(), loud() (+35 more)
+### Community 66 - "exec.js"
+Cohesion: 0.21
+Nodes (24): printMissing(), readInstallCatalog(), refuseOpencodeBelow2(), toolExec(), toolList(), binVersion(), childEnv(), commandFor() (+16 more)
 
 ### Community 67 - "Requirements"
 Cohesion: 0.12
@@ -558,9 +550,9 @@ Nodes (22): Purpose, Requirement: Composite controls preserve one interaction ta
 Cohesion: 0.29
 Nodes (6): 1. Security review before code, 2. Default value, 3. Diagnostics, 4. Documentation, 5. Closure, Tasks
 
-### Community 72 - "git-ignore-sandbox-files.test.js"
-Cohesion: 0.20
-Nodes (9): CATALOG, FAKE_NULLDEV, git(), gitDir, homeFor(), HOMES, PATH, repo() (+1 more)
+### Community 72 - "dashboard.test.js"
+Cohesion: 0.15
+Nodes (3): { contextContributors, retainedTotals }, HOOK, SERVER
 
 ### Community 73 - "install-report.js"
 Cohesion: 0.26
@@ -571,16 +563,16 @@ Cohesion: 0.29
 Nodes (6): Establish the project, Implementation and diagnosis, Security when relevant, Swift, Team boundary, Verify the changed boundary
 
 ### Community 75 - "canonkit-hook.test.js"
-Cohesion: 0.21
-Nodes (12): User and project wording in maintenance commands, activity(), decide(), HOOK, hookEnv(), inProject(), logged(), pre() (+4 more)
+Cohesion: 0.20
+Nodes (13): Stable fields, activity(), decide(), HOOK, hookEnv(), inProject(), logged(), pre() (+5 more)
 
 ### Community 76 - "Requirement: Person chooses from the discovered list"
 Cohesion: 0.11
 Nodes (18): ADDED Requirements, MODIFIED Requirements, Requirement: Codex recommended models follow the tier naming rule, Requirement: Person chooses from the discovered list, Requirement: Recommended per-harness model setup, Scenario: Assign a level for Claude Code, Scenario: Choices are menus of what was discovered, Scenario: Effort not reported (+10 more)
 
-### Community 77 - "install-manifest.js"
-Cohesion: 0.36
-Nodes (7): absent(), atomic(), exclusivePrivate(), regularPath(), removeManagedBlock(), restrictWindows(), Review outcomes
+### Community 77 - "Requirement: Codex project choices reach project dispatches"
+Cohesion: 0.29
+Nodes (7): Requirement: Codex project choices reach project dispatches, Scenario: Project agent already belongs to someone else, Scenario: Project choice is cleared before reinstall, Scenario: Project core file is missing or diverges, Scenario: Project destination is linked, Scenario: Project overrides a core agent, Scenario: Show and doctor are read-only
 
 ### Community 78 - "Game art direction"
 Cohesion: 0.33
@@ -590,25 +582,25 @@ Nodes (5): Authority and scope, Establish the direction and viewing context, Fin
 Cohesion: 0.10
 Nodes (20): ADDED Requirements, Requirement: Composite controls preserve one interaction target, Requirement: Interface and gameplay states remain distinct, Requirement: LOW changes remain proportionate, Requirement: Nova provides UI-first visual direction, Requirement: Pixie owns UX and accessibility, Requirement: Shared decisions have distinct owners, Requirement: Skills do not create authority or mandatory dependencies (+12 more)
 
-### Community 80 - "recommended-models.test.js"
-Cohesion: 0.36
-Nodes (7): applyRecommendedChoices(), applyRecommendedForHarness(), codexTiers(), compareVersions(), NEEDS, PRESETS, resolveRecommended()
+### Community 80 - "Design"
+Cohesion: 0.33
+Nodes (5): Decisions, Design, Goals / Non-Goals, Migration Plan, Risks / Trade-offs
 
 ### Community 81 - "Requirements"
 Cohesion: 0.12
 Nodes (16): game-art-direction Specification, Purpose, Requirement: Game-art knowledge is an optional project skill, Requirement: Game-art procedures load only for relevant surfaces, Requirement: Game-art procedures preserve domain boundaries, Requirement: Game-art review uses surface-specific visual criteria, Requirement: Knowledge availability does not fabricate a specialist, Requirements (+8 more)
 
 ### Community 82 - "validate.mjs"
-Cohesion: 0.17
-Nodes (30): checkBashScript(), filesIn(), findBash(), findPython(), frontmatterField(), frontmatterLines(), gitResult(), main() (+22 more)
+Cohesion: 0.08
+Nodes (49): ACCESS_LEVELS, accessProblem(), claudeRestriction(), describeRestriction(), READ_TOOLS, RESERVED_KEYS, reservedKeyOf(), claudeAgent() (+41 more)
 
-### Community 83 - "ADDED Requirements"
-Cohesion: 0.13
-Nodes (15): ADDED Requirements, Purpose, Requirement: Codex discovery reports models and their own efforts, Requirement: Codex generated agents apply resolved choices, Requirement: Codex setup ties effort to the chosen model, Scenario: Catalog is available without login, Scenario: Choice is cleared, Scenario: Codex reports a catalog (+7 more)
+### Community 83 - "Requirement: Codex project choices reach project dispatches"
+Cohesion: 0.09
+Nodes (22): ADDED Requirements, Purpose, Requirement: Codex discovery reports models and their own efforts, Requirement: Codex generated agents apply resolved choices, Requirement: Codex project choices reach project dispatches, Requirement: Codex setup ties effort to the chosen model, Scenario: Catalog is available without login, Scenario: Choice is cleared (+14 more)
 
 ### Community 84 - "install.md"
-Cohesion: 0.19
-Nodes (4): Handoff — pendências das melhorias CanonKit, Limites, Pendências, Learning proposal
+Cohesion: 0.10
+Nodes (14): Handoff — pendências das melhorias CanonKit, Limites, Pendências, canonkit 2.2.0, Internal, Next, canonkit 2.4.0, For users (+6 more)
 
 ### Community 85 - "Q: quais desses ajustes ainda fazem sentido?"
 Cohesion: 0.40
@@ -630,9 +622,9 @@ Nodes (8): 2. Weaker-value detection in the compiler, 3. Runtime read exceptions
 Cohesion: 0.14
 Nodes (15): askFor(), cap(), decide(), denyFor(), gitBypass(), gitCalls(), includedPathReason(), readEvents() (+7 more)
 
-### Community 90 - "ref_node_fs"
-Cohesion: 0.06
-Nodes (14): REPO, SCRIPT, repo, { contextContributors, retainedTotals }, HOOK, SERVER, roots, setup() (+6 more)
+### Community 90 - "ref_node_path"
+Cohesion: 0.08
+Nodes (15): parseAgent(), agent(), src(), REPO, SCRIPT, repo, roots, setup() (+7 more)
 
 ### Community 91 - "ADDED Requirements"
 Cohesion: 0.14
@@ -655,8 +647,8 @@ Cohesion: 0.33
 Nodes (5): Establish the project, Implementation and diagnosis, Python, Team boundary, Verify the changed boundary
 
 ### Community 97 - "tools.md"
-Cohesion: 0.13
-Nodes (10): ADR 0002 — Hooks Git do Graphify por opt-in, Compatibilidade e migração, Decisão, Evidência upstream, Validação e limites, ADR 0003 — `tool add` escreve um bloco no `.gitignore`, Alternativas consideradas, Consequências aceitas (+2 more)
+Cohesion: 0.10
+Nodes (15): ADR 0002 — Hooks Git do Graphify por opt-in, Compatibilidade e migração, Decisão, Evidência upstream, Validação e limites, Before dispatch and after return, Invocation evidence and learning from use, Laya advice in practical HIGH handoffs (+7 more)
 
 ### Community 100 - "copilot-setup-steps"
 Cohesion: 0.11
@@ -679,8 +671,8 @@ Cohesion: 0.12
 Nodes (15): Context, D1. `need: light|standard|deep` replaces `model:`, D2. Adapter interface, Claude adapter first, D3. Catalog separate from choices, D4. Field-wise resolution, D6. Project override reach, D7. When discovery runs, D8. Commands (+7 more)
 
 ### Community 105 - "Requirements"
-Cohesion: 0.12
-Nodes (15): model-selection Specification, Purpose, Requirement: Discovery is explicit and contained, Requirement: Doctor reports drift without failing, Requirement: Inspect effective choices, Requirement: Need levels are the recommended path, Requirement: Project configuration stays inside the project, Requirement: Runtime discovery per harness (+7 more)
+Cohesion: 0.11
+Nodes (17): model-selection Specification, Purpose, Requirement: Discovery is explicit and contained, Requirement: Doctor reports drift without failing, Requirement: Inspect effective choices, Requirement: Need levels are the recommended path, Requirement: No shipped cross-vendor equivalence, Requirement: Project configuration stays inside the project (+9 more)
 
 ### Community 106 - "Design"
 Cohesion: 0.18
@@ -688,7 +680,7 @@ Nodes (10): Choose tools for the real input, Context, Decisions, Design, Goals /
 
 ### Community 107 - "ADR 0001 — `canonkit tool`: um namespace próprio, que só integra"
 Cohesion: 0.25
-Nodes (8): ADR 0001 — `canonkit tool`: um namespace próprio, que só integra, Alternativas consideradas, Consequências aceitas, Contexto, Emenda 2026-11-12 (2) — o mesmo filtro em mais três resolvedores, Emenda 2026-11-12 — WSL: o resolvedor ignora binários do lado Windows, Publisher e pin — o que foi verificado (2026-10-19), Revisar quando
+Nodes (8): ADR 0001 — `canonkit tool`: um namespace próprio, que só integra, Alternativas consideradas, Consequências aceitas, Contexto, Decisão, Emenda 2026-11-12 — WSL: o resolvedor ignora binários do lado Windows, Publisher e pin — o que foi verificado (2026-10-19), Revisar quando
 
 ### Community 108 - "P5 — evidência de resultado: do sinal à correção"
 Cohesion: 0.18
@@ -738,9 +730,9 @@ Nodes (5): C++, Establish the project, Implementation and diagnosis, Team bounda
 Cohesion: 0.25
 Nodes (7): Capabilities, Impact, Modified Capabilities, New Capabilities, Proposal, What Changes, Why
 
-### Community 120 - "model-config.js"
-Cohesion: 0.19
-Nodes (21): installProjectCodex(), APPLIED, checkEntry(), empty(), FIELDS, HONORED_FIELDS, readChoices(), refuseProjectLinks() (+13 more)
+### Community 120 - "Tasks"
+Cohesion: 0.33
+Nodes (5): 1. Release bookkeeping (3.1.1 -> 3.2.0), 2. Shared row renderer and recommended model presets, 5. Terminology and docs, 6. Integration and review, Tasks
 
 ### Community 121 - "ADDED Requirements"
 Cohesion: 0.29
@@ -774,17 +766,17 @@ Nodes (6): Contributing a general improvement, Evidence, privacy and authorizati
 Cohesion: 0.50
 Nodes (3): githubCopilot, cloudAgent, schema
 
-### Community 129 - "For users"
-Cohesion: 0.20
-Nodes (9): canonkit 3.2.1, Faster reviewer briefs, For users, Guided install flags a tool that is not installed, Incidental findings go to the project's backlog, Model choices are readable inside the sandbox, New `backlog-cycle` skill, Safer `tool add` in repositories you do not trust (+1 more)
+### Community 129 - "ADR 0003 — `tool add` escreve um bloco no `.gitignore`"
+Cohesion: 0.40
+Nodes (5): ADR 0003 — `tool add` escreve um bloco no `.gitignore`, Alternativas consideradas, Consequências aceitas, Contexto, Decisão
 
 ### Community 130 - "Handoff — velocidade das revisões por subagente (lições do pitakus)"
 Cohesion: 0.07
 Nodes (22): Ainda falta, Handoff — pendências da revisão de skills do ECC, Restrições, CanonKit rules to respect, First steps for the new session, Goal, Handoff: Laya version check, eval rerun, and new-resource exploration, New resources to try (verify exposure in 0.4.30 MCP) (+14 more)
 
 ### Community 131 - "releasing.md"
-Cohesion: 0.12
-Nodes (12): Capabilities, Modified Capabilities, New Capabilities, Proposal, What Changes, Why, In scope, Out of scope (+4 more)
+Cohesion: 0.10
+Nodes (17): canonkit 3.2.0, For users, Guided install, Not in this release, Verification and limits, Capabilities, Modified Capabilities, New Capabilities (+9 more)
 
 ### Community 132 - "Requirement: Network authorization remains outside repository control"
 Cohesion: 0.40
@@ -820,7 +812,7 @@ Nodes (5): Requirement: The approved strict network setting has trusted global s
 
 ### Community 140 - "doctor"
 Cohesion: 0.09
-Nodes (33): doctor(), Critério de aceite, Fase 14 — Explicitar a cobertura técnica por harness, Implementação provável, Problema, Achado incidental (não tratado aqui), ADR 0007 — `git-ignore-sandbox-files`: esconder os placeholders do sandbox em `.git/info/exclude`, Consequências aceitas (+25 more)
+Nodes (43): asksByHand(), asksNotInEffect(), decidesShell(), deniesShell(), doctor(), installOpencodeHooks(), isDeny(), isObject() (+35 more)
 
 ### Community 141 - "Tasks"
 Cohesion: 0.40
@@ -854,9 +846,9 @@ Nodes (4): Requirement: Reinstallation migrates attributable legacy Claude hooks
 Cohesion: 0.50
 Nodes (4): Requirement: Strict sandbox configuration preserves explicit requirements, Scenario: Existing strict policy on native Windows, Scenario: Missing dependency or unknown effective override, Scenario: Sandbox-capable platform
 
-### Community 149 - "Design"
-Cohesion: 0.29
-Nodes (6): Decisions, Design, Goals / Non-Goals, Open Questions, Resolved, Risks / Trade-offs
+### Community 149 - "tier"
+Cohesion: 0.15
+Nodes (11): Windows wrapper, File format, Context, Decisions, Design, Goals / Non-Goals, Open Questions, Resolved (+3 more)
 
 ### Community 150 - "Requirement: Native approval modes remain authoritative"
 Cohesion: 0.22
@@ -882,9 +874,9 @@ Nodes (3): Requirement: No implicit machine provisioning, Scenario: Stronger env
 Cohesion: 0.29
 Nodes (7): Bob, Ordem sugerida, Perry, Pipe, Scott, Spencer, Virgo
 
-### Community 156 - "installDistribution"
-Cohesion: 0.09
-Nodes (53): actionRowText(), applyClaudeUserPlan(), asksByHand(), changeProject(), claudeHome(), codexCommand(), codexHome(), codexHooksDir() (+45 more)
+### Community 156 - "planInstall"
+Cohesion: 0.15
+Nodes (23): actionRowText(), applyClaudeUserPlan(), codexCommand(), codexHooksDir(), copyKeepingLocal(), installCodexHooks(), installDashboard(), installHooks() (+15 more)
 
 ### Community 157 - "Requirement: User-invoked backlog-item session cycle"
 Cohesion: 0.18
@@ -899,8 +891,8 @@ Cohesion: 0.14
 Nodes (11): ADR 0004 — Só harnesses que rodam o time em qualidade plena, Alternativas consideradas, Consequências aceitas, Contexto, Decisão, ADR 0005 — Contexto inflado se resolve com handoff manual, Alternativas consideradas, Consequências aceitas (+3 more)
 
 ### Community 160 - "env"
-Cohesion: 0.22
-Nodes (8): Wiring, 1. Measure the baseline, 2. Separate signal from noise, 3. Silence it where the setting stays saved, in this order, 4. What not to do, 5. Measure again and report, Context tune, env()
+Cohesion: 0.17
+Nodes (11): Wiring, 1. Sync global reference blocks and skills, 2. Sync from the checkout, Global reference blocks and skills, 1. Measure the baseline, 2. Separate signal from noise, 3. Silence it where the setting stays saved, in this order, 4. What not to do (+3 more)
 
 ### Community 161 - "renderDoctorReport"
 Cohesion: 0.39
@@ -926,13 +918,13 @@ Nodes (5): Establish the project, Implementation and diagnosis, React, Team boun
 Cohesion: 0.33
 Nodes (5): Establish the project, Implementation and diagnosis, React, Team boundary, Verify the changed boundary
 
-### Community 167 - "tier"
-Cohesion: 0.20
-Nodes (8): Windows wrapper, File format, Context, Claude Code agent frontmatter: `model` and `effort` (task 6.2, part of 9.2), Evidence, Real dispatch with the value from `models show` (task 9.2), agent_text(), tier()
+### Community 167 - "Design"
+Cohesion: 0.40
+Nodes (4): Context, Design, Goals / Non-Goals, Risks / Trade-offs
 
 ### Community 169 - "gitignorePlan"
-Cohesion: 0.11
-Nodes (28): forwarderFor(), gitHooksPreflight(), gitignoreMarkers(), gitignorePlan(), gitignoreRoot(), graphifyHooksProblems(), hookHasMarker(), hookSnapshot() (+20 more)
+Cohesion: 0.15
+Nodes (23): forwarderFor(), gitHooksPreflight(), gitignoreMarkers(), gitignorePlan(), gitignoreRoot(), graphifyHooksProblems(), hookHasMarker(), hookSnapshot() (+15 more)
 
 ### Community 170 - "Requirement: Codex discovery reports models and their own efforts"
 Cohesion: 0.50
@@ -946,21 +938,17 @@ Nodes (13): D1. Runtime detection is a fixed table of known roots, D2. Coverage 
 Cohesion: 0.33
 Nodes (5): Establish the project, Implementation and diagnosis, Rust, Team boundary, Verify the changed boundary
 
-### Community 173 - "Decisions"
-Cohesion: 0.09
-Nodes (21): askEntry(), pick(), D2. Make the Codex effort menu dependent on the selected model, Approved interactive presentation, D1. Split install into a read-only plan and an apply phase, D2. Project scope is a boolean threaded through the plan, D3. Recommended presets live in one module, not in agent sources, D4. Codex tier matching by pattern and numeric version (+13 more)
-
 ### Community 174 - "Requirement: Review brief with resolved diff scope"
 Cohesion: 0.22
 Nodes (8): ADDED Requirements, Requirement: Review brief with resolved diff scope, Scenario: Commits plus uncommitted edits, Scenario: Large diff, Scenario: Review of uncommitted work, Scenario: Reviewer dispatched on a committed branch, Scenario: State not reproducible by git, Spec Delta
 
 ### Community 175 - "Native security, per project"
-Cohesion: 0.18
-Nodes (11): 1. Preview, apply and diagnose the migration, 1. Preview, install and diagnose security settings, Allowing a destination, Diagnosis and conservative reversal, Environment and version coverage, Native approval modes stay native, Native security, per project, Network and separate tools (+3 more)
+Cohesion: 0.20
+Nodes (10): 1. Preview, apply and diagnose the migration, 1. Preview, install and diagnose security settings, Allowing a destination, Diagnosis and conservative reversal, Environment and version coverage, Native security, per project, Network and separate tools, Preview or reverse project security changes (+2 more)
 
-### Community 177 - "Stable fields"
-Cohesion: 0.18
-Nodes (11): Collecting on an existing installation, Context contributors, Dashboard, Dispatch metrics, Dispatch metrics, context contributors and the dashboard, Engineering baseline coverage, In the dashboard, One dispatch can have more than one `agent_end` (+3 more)
+### Community 177 - "Context contributors"
+Cohesion: 0.20
+Nodes (10): Collecting on an existing installation, Context contributors, Dashboard, Dispatch metrics, Dispatch metrics, context contributors and the dashboard, Engineering baseline coverage, In the dashboard, One dispatch can have more than one `agent_end` (+2 more)
 
 ### Community 178 - "Requirement: Vendor-neutral agent need level"
 Cohesion: 0.67
@@ -1015,12 +1003,8 @@ Cohesion: 0.10
 Nodes (20): 1. Select OpenSpec in the install flow, 2. Add a project tool, 3. Choose OpenSpec harnesses, 4. Explicitly enable Graphify Git hooks, 5. Preview setup without running it, 6. Remove or inspect project tools, Before enabling the git hooks, canonkit integrates, it never installs (+12 more)
 
 ### Community 194 - "models-command.test.js"
-Cohesion: 0.24
-Nodes (7): claudeRunner(), codexRunner(), HELP, NOW, ok(), recordingClaude(), scratch()
-
-### Community 195 - "Tasks"
-Cohesion: 0.25
-Nodes (7): 1. Measure before building, 2. Source format and validation, 3. Claude Code translation, 5. Show and re-measurement recipe, 6. Integration and review, Tasks, Workflow follow-up
+Cohesion: 0.28
+Nodes (6): claudeRunner(), codexRunner(), HELP, NOW, ok(), scratch()
 
 ### Community 196 - "Requirement: Codex generated agents apply resolved choices"
 Cohesion: 0.50
@@ -1039,8 +1023,8 @@ Cohesion: 0.50
 Nodes (4): Requirement: User and project configuration with override, Scenario: Nothing configured, Scenario: Project overrides a level, Scenario: Project raises only effort
 
 ### Community 201 - "model"
-Cohesion: 0.10
-Nodes (25): codexAgent(), opencodeAgent(), tomlString(), GitHub Copilot, OpenCode, OpenCode plugin (`--wire-hooks`), Context, D3. Apply choices in agent files and treat known conflicts as inherit (+17 more)
+Cohesion: 0.08
+Nodes (26): Adendo: Codex (2026-11-10), Adendo: recomendações por harness (2026-11-13), ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa, Alternativas consideradas, Consequências aceitas, Contexto, Decisão, Quando reavaliar (+18 more)
 
 ### Community 202 - "Proposal"
 Cohesion: 0.25
@@ -1062,9 +1046,9 @@ Nodes (3): Requirement: Discovery degrades to unknown, never to failure, Scenari
 Cohesion: 0.09
 Nodes (59): applySecurityAnswer(), optionalBytes(), prepareSecurity(), readHooksFileForWiring(), readProjectLocalSandbox(), scopedSecurityManifest(), securityDiagnosis(), uninstallProject() (+51 more)
 
-### Community 208 - "Hooks and gates"
-Cohesion: 0.14
-Nodes (14): Events it must be registered for, Glob dialect: gitignore-like, not gitignore, Hooks and gates, It fails open, Optional editor schema, Per-project configuration: `.claude/canonkit.json`, `perfBudgets`, Protecting lint and test configuration (+6 more)
+### Community 208 - "Per-project configuration: `.claude/canonkit.json`"
+Cohesion: 0.29
+Nodes (7): Glob dialect: gitignore-like, not gitignore, Optional editor schema, Per-project configuration: `.claude/canonkit.json`, `perfBudgets`, Protecting lint and test configuration, What `exclude` cannot reach, Where it is read
 
 ### Community 209 - "Tasks"
 Cohesion: 0.29
@@ -1086,9 +1070,9 @@ Nodes (5): Context, Decisions, Design, Goals / Non-Goals, Risks / Trade-offs
 Cohesion: 0.29
 Nodes (7): Requirement: Weaker repository values require confirmation, Scenario: Closed input or interrupt, Scenario: Enter accepts the recommended answer, Scenario: Nothing weaker, Scenario: Weaker value in local settings, Scenario: Weaker values in the repository settings, Scenario: Weaker values without a terminal
 
-### Community 214 - "unknown"
-Cohesion: 0.22
-Nodes (10): discover(), parseCodexModels(), unknown(), D1. Use the default debug command as a low-confidence discovery source, D4. Materialize project overrides in project-scoped files, Decisions, Design, Goals / Non-Goals (+2 more)
+### Community 214 - "Decisions"
+Cohesion: 0.20
+Nodes (10): Context, D1. Use the default debug command as a low-confidence discovery source, D3. Apply choices in agent files and treat known conflicts as inherit, D4. Materialize project overrides in project-scoped files, D5. Keep the trust and read-only boundaries, Decisions, Design, Goals / Non-Goals (+2 more)
 
 ### Community 216 - "Requirement: Claude Code dispatches carry the effective choice"
 Cohesion: 0.67
@@ -1101,14 +1085,6 @@ Nodes (21): 1. npm and GitHub account security, 1. Prepare and merge a stable ve
 ### Community 218 - "Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob"
 Cohesion: 0.40
 Nodes (5): Critério de aceite, Fase 7 — Testar a “solution ladder” antes de adicioná-la ao Bob, Importante, P2 — melhorias condicionais, Resultado medido
-
-### Community 219 - "Incidental findings and the project backlog"
-Cohesion: 0.40
-Nodes (5): Choose the destination, Incidental findings and the project backlog, Obtain authorization and write, Prepare entries, Preserve and continue
-
-### Community 220 - "Quickstart"
-Cohesion: 0.22
-Nodes (9): Check Claude Code, Choose models, Install, Install without the runtime menu, Quickstart, Start the optional dashboard in Windows PowerShell, Start the optional dashboard on Linux, macOS or Git Bash, Verify installation (+1 more)
 
 ### Community 221 - "Keeping findings outside the current task"
 Cohesion: 0.40
@@ -1125,10 +1101,6 @@ Nodes (6): Capabilities, Modified Capabilities, New Capabilities, Proposal, What
 ### Community 224 - "Requirement: Review preserves evidence limits and freshness"
 Cohesion: 0.50
 Nodes (4): Requirement: Review preserves evidence limits and freshness, Scenario: A correction changes the layout, Scenario: Browser access is unavailable, Scenario: Component tests pass without rendered motion evidence
-
-### Community 225 - "canonkit 3.2.0"
-Cohesion: 0.40
-Nodes (5): canonkit 3.2.0, For users, Guided install, Not in this release, Verification and limits
 
 ### Community 226 - "Maintaining canonkit"
 Cohesion: 0.22
@@ -1174,25 +1146,9 @@ Nodes (3): Requirement: Sandbox auto-approval requires the full effective sandbo
 Cohesion: 0.17
 Nodes (11): 1. Pick and confirm, 2. Classify and size the ceremony, 3. Stop for approval, 4. Implement, 5. Verify before review, 6. Review, 7. Close out, 8. Commit decision (+3 more)
 
-### Community 237 - "Tasks"
-Cohesion: 0.25
-Nodes (7): 1. Green baseline and measurement, 2. Shared harness and discovery isolation (D1, D4 helpers), 3. ACL stub and real ACL coverage (D2, D3), 4. Re-measure and split, 5. Tiers and close-out, Tasks, Workflow follow-up
-
-### Community 238 - "Codex and OpenCode"
-Cohesion: 0.29
-Nodes (6): Codex, Codex and OpenCode, Known gaps, OpenCode, canonkit — OpenCode specifics, edit()
-
-### Community 239 - "ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa"
-Cohesion: 0.25
-Nodes (8): Adendo: Codex (2026-11-10), Adendo: recomendações por harness (2026-11-13), ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa, Alternativas consideradas, Consequências aceitas, Contexto, Decisão, Quando reavaliar
-
 ### Community 240 - "Core, at user level"
 Cohesion: 0.29
 Nodes (7): 1. Install at user level, 1. Preview install choices, 2. Install selected project items, 3. Install from a clone, Core, at user level, Guided install flow, Terms used by install
-
-### Community 241 - "rowText"
-Cohesion: 0.50
-Nodes (7): cell(), MARKERS, paddedRows(), renderChangeBlocks(), renderChangeRows(), rowText(), shorten()
 
 ### Community 242 - "migrateClaudeHooks"
 Cohesion: 0.57
@@ -1218,22 +1174,14 @@ Nodes (5): Critério de aceite, Fase 15 — Medir latência da interação e cus
 Cohesion: 0.33
 Nodes (5): Establish the project, Implementation and diagnosis, Team boundary, TypeScript, Verify the changed boundary
 
-### Community 248 - "Priorities"
-Cohesion: 0.40
-Nodes (5): P0 — security, P1 — high gain, low cost, P2 — consistency and pending decisions, P4 — evaluations, user actions and cosmetics, Priorities
-
-### Community 249 - "canonkit 2.5.0"
-Cohesion: 0.67
-Nodes (3): canonkit 2.5.0, For users, Verification and limits
-
-### Community 250 - "addSpecialists"
-Cohesion: 0.67
-Nodes (4): addSpecialists(), choiceFor(), codexChoiceFor(), warnIgnoredCodexModel()
+### Community 250 - "installDistribution"
+Cohesion: 0.21
+Nodes (23): addSpecialists(), changeProject(), choiceFor(), codexAgent(), codexChoiceFor(), copilotAgent(), core(), discoverModels() (+15 more)
 
 ## Knowledge Gaps
-- **1591 isolated node(s):** `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT`, `AGENTS_DIR`, `REFERENCE_DIR` (+1586 more)
+- **1592 isolated node(s):** `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT`, `AGENTS_DIR`, `REFERENCE_DIR` (+1587 more)
   These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1801 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **18 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **16 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Work-memory lessons
 
@@ -1244,16 +1192,16 @@ Nodes (4): addSpecialists(), choiceFor(), codexChoiceFor(), warnIgnoredCodexMode
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `doctor()` connect `doctor` to `cli.js`, `releasing.md`, `openspec-explore/SKILL.md`, `Tasks`, `main`, `models-command.js`, `installDistribution`, `readAgents`, `ADDED Requirements`, `renderDoctorReport`, `install`, `cli-install.test.js`, `gitignorePlan`, `Decisions`, `canonkit`, `CANONKIT_ROADMAP.md`, `Native security, per project`, `Requirements`, `ADDED Requirements`, `Proposal`, `Requirement: Runtime read coverage is diagnosed`, `Design`, `Tasks`, `model`, `canonkit-hook.test.js`, `security.js`, `Hooks and gates`, `unknown`, `Quickstart`, `Requirement: Absent strict keys and unconfigured projects are diagnosed`, `Priorities`, `canonkit 3.2.0`, `Decisions`, `Requirements`, `ADR 0001 — `canonkit tool`: um namespace próprio, que só integra`, `P5 — evidência de resultado: do sinal à correção`, `Codex and OpenCode`, `ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `Proposal`, `model-config.js`, `addSpecialists`?**
-  _High betweenness centrality (0.132) - this node is a cross-community bridge._
+- **Why does `doctor()` connect `doctor` to `cli.js`, `releasing.md`, `openspec-explore/SKILL.md`, `InstallManifest`, `Tasks`, `main`, `models-command.js`, `planInstall`, `syncClaudeRouting`, `ADDED Requirements`, `renderDoctorReport`, `install`, `cli-install.test.js`, `gitignorePlan`, `Decisions`, `canonkit`, `CANONKIT_ROADMAP.md`, `Native security, per project`, `Requirements`, `ADDED Requirements`, `Hooks and gates`, `Proposal`, `Requirement: Runtime read coverage is diagnosed`, `Design`, `Tasks`, `model`, `Requirement: Codex project choices reach project dispatches`, `security.js`, `validate.mjs`, `Requirement: Codex project choices reach project dispatches`, `install.md`, `Decisions`, `Requirement: Absent strict keys and unconfigured projects are diagnosed`, `Decisions`, `Requirements`, `P5 — evidência de resultado: do sinal à correção`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `Proposal`, `installDistribution`?**
+  _High betweenness centrality (0.124) - this node is a cross-community bridge._
 - **Are the 83 inferred relationships involving `doctor()` (e.g. with `mentionsHook()` and `ruleText()`) actually correct?**
   _`doctor()` has 83 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT` to the rest of the system?**
-  _1591 weakly-connected nodes found - possible documentation gaps or missing edges._
+  _1592 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `model-discovery.js` be split into smaller, more focused modules?**
-  _Cohesion score 0.11396011396011396 - nodes in this community are weakly interconnected._
-- **Why does `install()` connect `install` to `For users`, `cli.js`, `Requirements`, `Proposal`, `main`, `models-command.js`, `ADDED Requirements`, `installDistribution`, `env`, `cli-install.test.js`, `canonkit`, `Decisions`, `Native security, per project`, `Stable fields`, `allow`, `ADDED Requirements`, `ADR 0008 — `tool add openspec --harness`: o usuário escolhe para quais harnesses o openspec é configurado`, `Editing an agent`, `ADDED Requirements`, `Requirement: Install applies resolved choices where verified`, `Requirements`, `Project tools: graphify and openspec`, `toolAdd`, `Design`, `Tasks`, `Requirement: Person chooses from the discovered list`, `model`, `Requirement: Person chooses from the discovered list`, `security.js`, `Tasks`, `Tasks`, `Decisions`, `canonkit 3.2.0`, `Decisions`, `ADR 0001 — `canonkit tool`: um namespace próprio, que só integra`, `ADR 0006 — Modelo e effort escolhidos pela pessoa, a partir do que o harness informa`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `model-config.js`?**
-  _High betweenness centrality (0.116) - this node is a cross-community bridge._
+  _Cohesion score 0.1103448275862069 - nodes in this community are weakly interconnected._
+- **Why does `install()` connect `install` to `cli.js`, `releasing.md`, `Requirements`, `InstallManifest`, `Proposal`, `doctor`, `main`, `models-command.js`, `ADDED Requirements`, `planInstall`, `env`, `cli-install.test.js`, `canonkit`, `2.3.0.md`, `Native security, per project`, `Context contributors`, `ADDED Requirements`, `ADR 0008 — `tool add openspec --harness`: o usuário escolhe para quais harnesses o openspec é configurado`, `Editing an agent`, `ADDED Requirements`, `Requirement: Install applies resolved choices where verified`, `Requirements`, `Project tools: graphify and openspec`, `Design`, `Tasks`, `Requirement: Person chooses from the discovered list`, `model`, `Requirement: Person chooses from the discovered list`, `security.js`, `Design`, `Tasks`, `install.md`, `Decisions`, `Tasks`, `Decisions`, `Decisions`, `ADR 0001 — `canonkit tool`: um namespace próprio, que só integra`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `installDistribution`?**
+  _High betweenness centrality (0.107) - this node is a cross-community bridge._
 - **Are the 61 inferred relationships involving `install()` (e.g. with `Emenda 2026-11-12 (2) — o mesmo filtro em mais três resolvedores` and `Publisher e pin — o que foi verificado (2026-10-19)`) actually correct?**
   _`install()` has 61 INFERRED edges - model-reasoned connections that need verification._
 - **Should `package.json` be split into smaller, more focused modules?**
