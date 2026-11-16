@@ -71,6 +71,20 @@ a handoff keep their details there; items without one carry them inline.
   `## Incidental findings` in `reference/agents-block.md` and
   `docs/out-of-scope-issues.md`; vulnerabilities and secrets keep the private
   channel. The backlog-cycle skill can now point to it.
+- [ ] **`npx canonkit models show` fails inside the Claude Code sandbox**
+  (seen 2026-11-16 in another project under WSL). `npx` returned `E403 host is
+  not on the allow list` for `registry.npmjs.org`, and `command -v canonkit`
+  found nothing, so the session dispatched Bob with default model/effort,
+  against the routing rule. Likely cause (confidence: medium): canonkit is not
+  installed globally in any nvm Node (checked v16–v26), so `npx` tries to
+  download it and the sandbox proxy denies the registry. It looks like a
+  missing install, not WSL itself; inside the canonkit repo
+  `node bin/cli.js models show` works. To decide: (a) install it globally
+  (`npm i -g` from the source or `npm link`) and say so in `docs/install.md`;
+  (b) add `registry.npmjs.org` to the sandbox's allowed domains (user
+  setting, weaker); (c) have `orchestrate` and the blocks give a fallback when
+  `npx` fails (local path, or stop and ask instead of using defaults);
+  (d) have `doctor` warn when `canonkit` is not on `PATH`.
 
 ### P3 — improvements without urgency
 
@@ -134,6 +148,19 @@ a handoff keep their details there; items without one carry them inline.
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
   migrations, as its own change with Gard and Pipe
   ([handoff](docs/plans/ecc-skills-knowledge-groups-handoff.md), item 2).
+
+- [ ] **Allow rules for the OpenSpec skills** (decided 2026-11-16, target the
+  next release, not 3.2.1). When `canonkit tool add openspec` sets up Claude,
+  write `Skill(<name>)` allow rules with exact names for the five skills
+  (`openspec-propose`, `-apply-change`, `-archive-change`, `-explore`,
+  `-sync-specs`) in the project's `.claude/settings.json`. Such a rule skips
+  only the prompt to invoke the skill; its edits and commands still ask. This
+  changes the install contract: it is the first `allow` rule canonkit writes
+  (README.md:67 says it adds none). To do: confirm the native `Skill(...)`
+  rule syntax (is `Skill(name:*)` valid?); record ownership in the install
+  receipt so `uninstall` removes the rules and `doctor` does not count them as
+  `saved-approvals` (bin/security.js:617); update the README and
+  `docs/install.md`. MEDIUM: implementation by Bob, review by Gard.
 
 ### P4 — evaluations, user actions and cosmetics
 
