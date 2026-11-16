@@ -112,7 +112,7 @@ remain available in each category and points to `canonkit list`.
 
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current project's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders appended to `sandbox.filesystem.allowRead` in user settings |
+| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current project's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders and `~/.canonkit/models.json` appended to `sandbox.filesystem.allowRead` in user settings |
 | Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | GitHub Copilot | `~/.copilot/agents/*.agent.md`, `~/.copilot/skills` |
@@ -257,9 +257,14 @@ ambiguous settings stop preflight before writes.
 Only detected known runtime locations are proposed. Install resolves `node` and
 `graphify`, maps supported paths such as nvm and pipx to narrow `allowRead`
 entries, and skips locations already covered by existing entries. Other custom
-locations are reported rather than guessed. Confirmed additions are tracked so
+locations are reported rather than guessed. Install also appends
+`~/.canonkit/models.json`, the file that holds your model choices (not the
+`~/.canonkit` folder, which also holds install receipts): without it,
+`canonkit models show` inside the sandbox sees no choices and reports every
+agent as "inherit". Confirmed additions are tracked so
 `uninstall` removes only entries still present exactly once and unchanged.
-`canonkit doctor` reports runtime-read coverage and whether project security is
+`canonkit doctor` reports runtime-read coverage, warns when the strict sandbox is
+on and the models file is not readable, and reports whether project security is
 configured for the current project; it writes nothing.
 
 ### Returning existing Claude installations to native approvals
@@ -425,7 +430,7 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
 | `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written (or when you confirm the change from an explicit `false`) | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
-| `sandbox.filesystem.allowRead` items for detected runtimes, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
+| `sandbox.filesystem.allowRead` items for detected runtimes and the model choices file, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
 
 The four shell switches additionally require an available, unverified sandbox
 capability. The 2.1.302 floors are canonkit's supported baseline, not claims

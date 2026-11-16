@@ -162,15 +162,17 @@ User, `~/.claude/settings.json`:
       "allowRead": [
         "~/.nvm",
         "~/.local/bin",
-        "~/.local/share/pipx"
+        "~/.local/share/pipx",
+        "~/.canonkit/models.json"
       ]
     }
   }
 }
 ```
 
-The `allowRead` list above is an example for nvm and pipx. The real list is
-detected per machine, and an interactive install asks before adding it.
+The `allowRead` list above is an example for nvm and pipx plus the model choices
+file (never the `~/.canonkit` folder, which holds install receipts). The runtime
+entries are detected per machine, and an interactive install asks before adding them.
 
 | Key | File | Why it exists, and what breaks without it |
 | --- | --- | --- |
@@ -181,7 +183,7 @@ detected per machine, and an interactive install asks before adding it.
 | `sandbox.allowUnsandboxedCommands` | project | no command can escape the sandbox; without it a failed command may be retried outside it |
 | `sandbox.autoAllowBashIfSandboxed` | project | sandboxed commands run without a prompt each, so project scripts run unprompted: use only with projects you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules |
 | `sandbox.network.strictAllowlist` | user | sandboxed commands reach only domains you allowed, and project settings cannot widen it (from Claude 2.1.285) |
-| `sandbox.filesystem.allowRead` | user | sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine |
+| `sandbox.filesystem.allowRead` | user | sandboxed commands can still read the runtimes they need (node, pipx tools) and your model choices file (~/.canonkit/models.json, the file only) while the rest of home stays closed; detected per machine |
 <!-- canonkit:security-settings:end -->
 
 ## How it decides: LOW vs HIGH

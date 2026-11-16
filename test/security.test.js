@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { trustedOwnedAllowRead, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
+import { trustedOwnedAllowRead, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-")));
@@ -512,4 +512,25 @@ test("allowRead ownership metadata is validated and refused when malformed", () 
   // The project store has no array ownership.
   assert.throws(() => projectSecurityOwnership.validate({ [key]: good }), /Invalid security ownership/);
   assert.throws(() => networkSecurityOwnership.validate({ "sandbox.filesystem.denyRead": good }), /Invalid security ownership/);
+});
+
+test("the models file is always a read root, is owned by the receipt and is removed by undo", () => {
+  const options = { home: "/home/u", platform: "linux" };
+  const base = { roots: [{ item: "~/.nvm", label: "node (nvm)" }], unhandled: [] };
+  assert.equal(withModelsRead(undefined), undefined);
+  const detected = withModelsRead(base);
+  assert.deepEqual(detected.roots.map((r) => r.item), ["~/.nvm", "~/.canonkit/models.json"]);
+  assert.equal(MODELS_READ_ITEM, "~/.canonkit/models.json");
+  // Proposed unless the file itself (or a folder above it) is already covered.
+  const missing = compileRuntimeReads({}, env("linux"), { detected, ...options });
+  assert.deepEqual(missing.proposed.map((r) => r.item), ["~/.nvm", "~/.canonkit/models.json"]);
+  const bytes = (value) => Buffer.from(JSON.stringify(value));
+  const before = { sandbox: { filesystem: { allowRead: ["~/keep"] } } };
+  const installed = applyRuntimeReads(before, ["~/.canonkit/models.json"]);
+  const meta = networkSecurityOwnership.capture(bytes(before), bytes(installed), {});
+  assert.deepEqual(meta["sandbox.filesystem.allowRead"].appendedItems, ["~/.canonkit/models.json"]);
+  assert.deepEqual(JSON.parse(undoNetworkSecurity(bytes(before), bytes(installed), bytes(installed), { securityChanges: meta })).sandbox.filesystem.allowRead, ["~/keep"]);
+  // The receipt value is trusted for the file only, never its folder, and doctor does not count it as a user exception.
+  assert.deepEqual(trustedOwnedAllowRead(["~/.canonkit/models.json", "~/.canonkit", "~/.canonkit/projects"], { home: "/home/u", env: {}, platform: "linux" }), ["~/.canonkit/models.json"]);
+  assert.equal(assessClaude([{ label: "user", data: installed }], env("linux"), { ownedAllowRead: ["~/keep", "~/.canonkit/models.json"] }).filter((row) => row.control === "filesystem-exceptions").length, 0);
 });

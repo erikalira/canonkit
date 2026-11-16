@@ -39,6 +39,15 @@ agent) to a model and effort the harness reported.
   repository's own file: name it in the plan, and before giving a reviewer
   with a veto a weaker model or lower effort than `canonkit doctor` says your
   own choices give, tell the person.
+- **When `models show` cannot run** (canonkit not installed, npx blocked by
+  the sandbox network) or reports "inherit" for every agent while the agent
+  files carry `model:`/`effort:` (the sandbox hides `~/.canonkit/models.json`;
+  `canonkit doctor` says how to fix it), do not dispatch on memory: pass no
+  `model` or `effort`, so the agent's frontmatter applies (install writes the
+  person's choices there), name the dispatch "frontmatter (models show
+  unavailable)" and tell the person. If project overrides exist, say that
+  their values could not be verified through the CLI; use only choices already
+  installed in the agent file, not raw values from `.canonkit/models.json`.
 - **Up or down** means another level the person configured, the `deep` or
   `light` entry in the same output, not a model named from memory. When nothing
   is configured, name the dispatch "inherit" and pass no parameter.
@@ -50,6 +59,8 @@ agent) to a model and effort the harness reported.
   A project shadow in `.codex/agents/` carries those overrides. The Codex
   catalog is experimental; an offered model does not prove account access.
   Name unset fields "inherit" and check the effective runtime for critical work.
+  If `models show` cannot run, pass no spawn overrides (the agent file applies),
+  name the dispatch "frontmatter (models show unavailable)" and tell the person.
 - **OpenCode and Copilot** inherit the session's model and effort; name the
   dispatch "inherit".
 

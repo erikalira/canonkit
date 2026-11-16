@@ -17,7 +17,9 @@ otherwise, do nothing extra.
   custom agent file carries configured `model` and `model_reasoning_effort`;
   project core overrides require `npx canonkit install --codex` in that project.
   Its file wins over spawn parameters. Name "inherit" for unset fields and
-  verify the effective runtime when it matters.
+  verify the effective runtime when it matters. If `models show` cannot run,
+  pass no spawn overrides (the agent file applies), name the dispatch
+  "frontmatter (models show unavailable)" and tell the user.
 - **Structured questions use `request_user_input`.** For a decision that is the
   user's, with 2–4 real options, ask with it: recommended option first, pending
   questions together. It may be rejected as unavailable in the current mode

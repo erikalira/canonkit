@@ -678,7 +678,7 @@ test("interactive install: customize writes selected values and detected runtime
   assert.deepEqual(project, { custom: "keep", ...withProject({}) });
   const user = await json(f.global);
   assert.equal(user.custom, "user");
-  assert.deepEqual(user.sandbox.filesystem.allowRead, ["~/mine", "~/.nvm"]);
+  assert.deepEqual(user.sandbox.filesystem.allowRead, ["~/mine", "~/.nvm", "~/.canonkit/models.json"]);
   assert.equal(user.sandbox.network.strictAllowlist, true);
 
   // Idempotent and quiet once everything is recommended and covered; doctor accepts the receipt.
@@ -705,7 +705,7 @@ test("interactive install: keep leaves repository settings byte-identical and de
   assert.deepEqual(await fileBytes(f.global), beforeGlobal);
   assert.match(result.out, /RECOMMENDATION security settings \(not written; apply with canonkit install --recommended\):/);
   assert.match(result.out, /sandbox\.allowUnsandboxedCommands  true  ->  false/);
-  assert.match(result.out, /RECOMMENDATION security runtime-reads: kept current.*\n\s*"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm"\] \} \}/);
+  assert.match(result.out, /RECOMMENDATION security runtime-reads: kept current.*\n\s*"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm","~\/\.canonkit\/models\.json"\] \} \}/);
   assert.match(result.out, /RECOMMENDATION security approval: set sandbox\.autoAllowBashIfSandboxed to true in this project's \.claude\/settings\.json/);
 });
 
@@ -740,7 +740,7 @@ test("interactive install: choose per key writes only the chosen keys", async (t
   await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true } }));
   const result = await interactive(f, { choose: async () => "choose", confirm: async (question) => !/allowUnsandboxedCommands/.test(question) });
   assert.equal(result.status, 0, result.out);
-  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-choices", "install-confirmation"]);
+  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-choices", "install-confirmation"]);
   assert.ok(result.questions.find((question) => question.name === "security-choices").choices.some((choice) => choice.value === "project:sandbox.autoAllowBashIfSandboxed"));
   assert.ok(result.questions.find((question) => question.name === "security-choices").choices.some((choice) => choice.value === "project:sandbox.allowUnsandboxedCommands"));
   assert.deepEqual(await json(f.local), withProject({ sandbox: { allowUnsandboxedCommands: true, autoAllowBashIfSandboxed: false } }));
@@ -843,7 +843,7 @@ test("without a terminal, --yes or --dry-run each weaker key behaves exactly as 
     else {
       assert.equal((await json(f.local)).sandbox.allowUnsandboxedCommands, false);
       assert.equal((await json(f.local)).sandbox.autoAllowBashIfSandboxed, true);
-      assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, ["~/.nvm"]);
+      assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, ["~/.nvm", "~/.canonkit/models.json"]);
     }
   }
 });
@@ -855,7 +855,7 @@ test("without a terminal runtime reads are printed as a snippet and never writte
   const result = f.run([...INSTALL, "--verbose"], f.project, { PATH });
   assert.equal(result.status, 0, result.out);
   assert.match(result.out, /RECOMMENDATION security runtime-reads: add these to sandbox\.filesystem\.allowRead in user Claude settings/);
-  assert.match(result.out, /"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm"\] \} \}/);
+  assert.match(result.out, /"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.nvm","~\/\.canonkit\/models\.json"\] \} \}/);
   assert.equal((await json(f.global)).sandbox.filesystem, undefined);
 
   const dry = await fixture(t, "2.1.314", { sandbox: true });
@@ -864,7 +864,7 @@ test("without a terminal runtime reads are printed as a snippet and never writte
   const preview = dry.run([...INSTALL, "--dry-run", "--verbose"], dry.project, { PATH: dryPath });
   assert.equal(preview.status, 0, preview.out);
   assert.match(preview.out, /dry run: not written.*conditional on Claude >= 2\.1\.302, version not probed\s+in dry run/);
-  assert.match(preview.out, /\["~\/\.nvm"\]/);
+  assert.match(preview.out, /\["~\/\.nvm","~\/\.canonkit\/models\.json"\]/);
   assert.deepEqual(await bytes(dry.root), before);
 
   const volta = await fixture(t, "2.1.314", { sandbox: true });
@@ -872,7 +872,9 @@ test("without a terminal runtime reads are printed as a snippet and never writte
   const unknown = volta.run([...INSTALL, "--verbose"], volta.project, { PATH: voltaPath });
   assert.equal(unknown.status, 0, unknown.out);
   assert.match(unknown.out, /WARN security runtime-reads: ~\/\.volta\/bin\/node \(node\) is not a known runtime location/);
-  assert.doesNotMatch(unknown.out, /RECOMMENDATION security runtime-reads/);
+  // The unknown manager gets no grant; only the models file is recommended.
+  assert.match(unknown.out, /"sandbox": \{ "filesystem": \{ "allowRead": \["~\/\.canonkit\/models\.json"\] \} \}/);
+  assert.doesNotMatch(unknown.out, /volta"/);
   assert.equal((await json(volta.global)).sandbox.filesystem, undefined);
 });
 
@@ -884,7 +886,7 @@ test("covered runtime reads in any spelling, or nothing weaker, ask nothing and 
     sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true },
     permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true },
   });
-  const spelled = [`${f.home}/.nvm/`];
+  const spelled = [`${f.home}/.nvm/`, `${f.home}/.canonkit/models.json`];
   await put(f.global, { sandbox: { network: { strictAllowlist: true }, filesystem: { allowRead: spelled } } });
   const first = await interactive(f, { env: { PATH }, confirm: never, securityAnswer: "keep" });
   assert.equal(first.status, 0, first.out);
@@ -913,7 +915,7 @@ test("doctor reports missing and over-broad runtime read exceptions as WARN, cov
   const check = () => { const before = f.run(["doctor"], f.project, { PATH }); return before; };
   const missing = check();
   assert.match(missing.out, /WARN +security claude runtime-reads: partial: ~\/\.nvm \(node \(nvm\)\) is not covered by sandbox\.filesystem\.allowRead.*canonkit install/);
-  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } });
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/.nvm", "~/.canonkit/models.json"] } } });
   const covered = check();
   assert.match(covered.out, /OK +security claude runtime-reads: configured: ~\/\.nvm/);
   assert.doesNotMatch(covered.out, /WARN +security claude runtime-reads/);
@@ -1080,7 +1082,7 @@ test("doctor does not trust a tampered receipt to silence warnings, and never cr
     assert.ok(result.out.includes("security claude filesystem-exceptions"), JSON.stringify(bad));
     assert.doesNotMatch(result.out, /TypeError|at .*\.js:\d+/, JSON.stringify(bad));
   }
-  assert.deepEqual(original.appendedItems, ["~/.nvm"]);
+  assert.deepEqual(original.appendedItems, ["~/.nvm", "~/.canonkit/models.json"]);
 });
 
 test("doctor accepts a receipt after the user removed an appended allowRead item, and does not warn about kit-owned items", async (t) => {
@@ -1090,14 +1092,14 @@ test("doctor accepts a receipt after the user removed an appended allowRead item
   await put(f.global, { sandbox: { filesystem: { allowRead: ["~/mine"] } } });
   const installed = await interactive(f, { env: { PATH } });
   assert.equal(installed.status, 0, installed.out);
-  assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, ["~/mine", "~/.nvm"]);
+  assert.deepEqual((await json(f.global)).sandbox.filesystem.allowRead, ["~/mine", "~/.nvm", "~/.canonkit/models.json"]);
   const owned = f.run(["doctor"], f.project, { PATH });
   // Only the user's own entry is an exception to review.
   assert.match(owned.out, /WARN +security claude filesystem-exceptions/);
   assert.doesNotMatch(owned.out, /FAIL +security/);
 
   const settings = await json(f.global);
-  settings.sandbox.filesystem.allowRead = ["~/.nvm"];
+  settings.sandbox.filesystem.allowRead = ["~/.nvm", "~/.canonkit/models.json"];
   await put(f.global, settings);
   assert.doesNotMatch(f.run(["doctor"], f.project, { PATH }).out, /filesystem-exceptions/);
 
@@ -1106,4 +1108,20 @@ test("doctor accepts a receipt after the user removed an appended allowRead item
   const removed = f.run(["doctor"], f.project, { PATH });
   assert.doesNotMatch(removed.out, /FAIL +security/);
   assert.match(removed.out, /WARN +security claude runtime-reads: partial: ~\/\.nvm/);
+});
+
+test("doctor warns when the strict sandbox cannot read the models file", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  if (!await capable(t, f)) return;
+  await put(f.local, STRICT_PROJECT);
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/other"] } } });
+  assert.match(f.run(["doctor"]).out, /WARN +security claude models-file: partial: ~\/\.canonkit\/models\.json is not in sandbox\.filesystem\.allowRead.*"inherit".*canonkit install/);
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/.canonkit/models.json"] } } });
+  const covered = f.run(["doctor"]).out;
+  assert.doesNotMatch(covered, /models-file/);
+  assert.match(covered, /OK +security claude runtime-reads: configured: ~\/\.canonkit\/models\.json/);
+  // Without the sandbox enabled in any scope there is nothing to warn about.
+  await put(f.local, {});
+  await put(f.global, {});
+  assert.doesNotMatch(f.run(["doctor"]).out, /models-file/);
 });

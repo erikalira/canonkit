@@ -71,20 +71,13 @@ a handoff keep their details there; items without one carry them inline.
   `## Incidental findings` in `reference/agents-block.md` and
   `docs/out-of-scope-issues.md`; vulnerabilities and secrets keep the private
   channel. The backlog-cycle skill can now point to it.
-- [ ] **`npx canonkit models show` fails inside the Claude Code sandbox**
-  (seen 2026-11-16 in another project under WSL). `npx` returned `E403 host is
-  not on the allow list` for `registry.npmjs.org`, and `command -v canonkit`
-  found nothing, so the session dispatched Bob with default model/effort,
-  against the routing rule. Likely cause (confidence: medium): canonkit is not
-  installed globally in any nvm Node (checked v16–v26), so `npx` tries to
-  download it and the sandbox proxy denies the registry. It looks like a
-  missing install, not WSL itself; inside the canonkit repo
-  `node bin/cli.js models show` works. To decide: (a) install it globally
-  (`npm i -g` from the source or `npm link`) and say so in `docs/install.md`;
-  (b) add `registry.npmjs.org` to the sandbox's allowed domains (user
-  setting, weaker); (c) have `orchestrate` and the blocks give a fallback when
-  `npx` fails (local path, or stop and ask instead of using defaults);
-  (d) have `doctor` warn when `canonkit` is not on `PATH`.
+- [x] **`npx canonkit models show` fails inside the Claude Code sandbox**:
+  addressed in 3.2.1. Install offers a narrow read grant for
+  `~/.canonkit/models.json`, so the sandbox can see user model choices. When
+  `npx` cannot run, the managed blocks and `orchestrate` use the installed agent
+  file's model and effort without guessing. The agent reports project overrides
+  it cannot verify through the CLI. No global install or wider network grant is
+  required.
 
 ### P3 — improvements without urgency
 

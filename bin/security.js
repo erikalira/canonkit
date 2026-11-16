@@ -228,7 +228,7 @@ export const SECURITY_SETTINGS = Object.freeze([
   { key: "sandbox.allowUnsandboxedCommands", scope: "project", value: false, reason: "no command can escape the sandbox; without it a failed command may be retried outside it" },
   { key: "sandbox.autoAllowBashIfSandboxed", scope: "project", value: true, reason: "sandboxed commands run without a prompt each, so project scripts run unprompted: use only with projects you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules" },
   { key: "sandbox.network.strictAllowlist", scope: "user", value: true, reason: "sandboxed commands reach only domains you allowed, and project settings cannot widen it (from Claude 2.1.285)" },
-  { key: "sandbox.filesystem.allowRead", scope: "user", value: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"], reason: "sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine" },
+  { key: "sandbox.filesystem.allowRead", scope: "user", value: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"], reason: "sandboxed commands can still read the runtimes they need (node, pipx tools) and your model choices file (~/.canonkit/models.json, the file only) while the rest of home stays closed; detected per machine" },
 ]);
 const REPOSITORY_RECOMMENDED = Object.fromEntries(SECURITY_SETTINGS.filter((row) => row.scope === "project").map((row) => [row.key, row.value]));
 
@@ -448,6 +448,20 @@ export function detectRuntimeRoots({ cwd = process.cwd(), env = process.env, pla
   return { roots, unhandled };
 }
 
+/** The user's model choices: install grants read on this one file (never its folder, which holds install receipts). */
+export const MODELS_READ_ITEM = "~/.canonkit/models.json";
+
+/**
+ * Adds the model-choices file to the detected read locations, so sandboxed
+ * `models show` does not silently see no file and report "inherit". Granted
+ * even before the file exists: install writes it after this plan is made, and
+ * `models setup` may create it later.
+ */
+export function withModelsRead(detected) {
+  if (!detected) return detected;
+  return { ...detected, roots: [...detected.roots, { item: MODELS_READ_ITEM, label: "canonkit model choices" }] };
+}
+
 /**
  * Compares detected runtime locations with the user's existing allowRead
  * entries, item by item. Pure: it never changes `data`; applyRuntimeReads does,
@@ -583,7 +597,7 @@ export function serializeSecurity(data, original = "") {
  */
 export function trustedOwnedAllowRead(items, { home = os.homedir(), env = process.env, platform = process.platform } = {}) {
   if (!Array.isArray(items) || items.some((item) => typeof item !== "string")) return [];
-  const producible = new Set(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx"]);
+  const producible = new Set(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx", MODELS_READ_ITEM]);
   if (env.NVM_DIR) {
     const rel = path.relative(home, path.resolve(env.NVM_DIR));
     if (rel && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) producible.add(`~/${rel.split(path.sep).join("/")}`);

@@ -38,7 +38,7 @@ import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-dis
 import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
-import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
+import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -622,7 +622,7 @@ async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope
   });
   if (migration?.removed.length) globalPlan.rows.push({ path: "hooks.legacyCanonkit", scope: "user", current: `${migration.removed.length} handlers`, recommended: "unregistered", marker: "->", reason: "legacy canonkit hook handlers are removed during native security setup", answerKey: "user:hooks.legacyCanonkit", selectable: true });
   // Runtime read exceptions are only proposed here; the review step decides whether they are written.
-  const detected = evidence.sandboxCapability === "available-unverified" ? detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() }) : undefined;
+  const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
   globalPlan.runtimeReads = compileRuntimeReads(migration?.data ?? userSettings, evidence, { detected });
   for (const root of globalPlan.runtimeReads.proposed) globalPlan.rows.push({
     path: `sandbox.filesystem.allowRead:${root.item}`, scope: "user", current: null, recommended: root.item,
@@ -2702,9 +2702,11 @@ async function securityDiagnosis() {
   const userSources = sources.filter((source) => ["user", "user-local"].includes(source.label));
   if (userSources.length && !userSources.some((source) => source.error)) {
     const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
-    const detected = evidence.sandboxCapability === "available-unverified" ? detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() }) : undefined;
+    const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
     const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
-    for (const item of runtime.proposed) add("WARN", "security claude runtime-reads", `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`);
+    // Without this grant the sandbox hides the file and `models show` reports "inherit" for every agent.
+    if (runtime.proposed.some((entry) => entry.item === MODELS_READ_ITEM) && sources.some((source) => source.data?.sandbox?.enabled === true)) add("WARN", "security claude models-file", `partial: ${MODELS_READ_ITEM} is not in sandbox.filesystem.allowRead of user settings; sandboxed canonkit models show would report "inherit" for every agent instead of your choices. Re-run canonkit install from a terminal. Doctor did not edit settings`);
+    for (const item of runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM)) add("WARN", "security claude runtime-reads", `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`);
     for (const entry of runtime.broad) add("WARN", "security claude runtime-reads", `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`);
     if (runtime.covered.length && !runtime.proposed.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
   }
