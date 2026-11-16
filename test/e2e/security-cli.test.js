@@ -5,7 +5,8 @@ import { existsSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import os from "node:os";
-import { projectStateDir, collectEnvironment } from "../../bin/security.js";
+import { projectStateDir, collectEnvironment, classifyEnvironment, TELEMETRY_READ_ITEM, TELEMETRY_EXPOSURE } from "../../bin/security.js";
+import { applySecurityAnswer } from "../../bin/cli.js";
 import { CLI, runCli, startCli, writeCommand } from "../helpers/cli-harness.js";
 import { runMain } from "../helpers/interactive-install.js";
 
@@ -670,7 +671,7 @@ test("interactive install: customize writes selected values and detected runtime
   await put(f.global, { custom: "user", sandbox: { filesystem: { allowRead: ["~/mine"] } } });
   const first = await interactive(f, { env: { PATH }, choose: async () => "customize" });
   assert.equal(first.status, 0, first.out);
-  assert.deepEqual(first.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-choices", "install-confirmation"]);
+  assert.deepEqual(first.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-telemetry-read", "security-choices", "install-confirmation"]);
   assert.equal(first.questions[0].type, "select");
   assert.match(first.questions[0].hint, /user-level setup only/);
   const runtimeQuestion = first.questions.find((question) => question.name === "security-runtime-reads");
@@ -747,7 +748,7 @@ test("interactive install: choose per key writes only the chosen keys", async (t
   await put(f.local, withProject({ sandbox: { autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: true } }));
   const result = await interactive(f, { choose: async () => "choose", confirm: async (question) => !/allowUnsandboxedCommands/.test(question) });
   assert.equal(result.status, 0, result.out);
-  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-choices", "install-confirmation"]);
+  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-telemetry-read", "security-choices", "install-confirmation"]);
   assert.ok(result.questions.find((question) => question.name === "security-choices").choices.some((choice) => choice.value === "project:sandbox.autoAllowBashIfSandboxed"));
   assert.ok(result.questions.find((question) => question.name === "security-choices").choices.some((choice) => choice.value === "project:sandbox.allowUnsandboxedCommands"));
   assert.deepEqual(await json(f.local), withProject({ sandbox: { allowUnsandboxedCommands: true, autoAllowBashIfSandboxed: false } }));
@@ -1007,9 +1008,9 @@ test("customize uses a runtime select and one prechecked multi-select; unchecked
     ],
   });
   assert.equal(result.status, 0, result.out);
-  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-choices", "install-confirmation"]);
+  assert.deepEqual(result.questions.map((question) => question.name), ["project-scope", ...MODEL_SETUP_PROMPTS, "security-runtime-reads", "security-telemetry-read", "security-choices", "install-confirmation"]);
   const securityQuestions = result.questions.filter((question) => question.name.startsWith("security-"));
-  assert.deepEqual(securityQuestions.map((question) => question.type), ["select", "multiselect"]);
+  assert.deepEqual(securityQuestions.map((question) => question.type), ["select", "select", "multiselect"]);
   assert.match(result.questions.find((question) => question.name === "security-choices").hint, /unchecking any sandbox row keeps auto-approval off/);
   const settings = await json(f.local);
   assert.equal(settings.sandbox.enabled, false);
@@ -1138,4 +1139,240 @@ test("doctor warns when the strict sandbox cannot read the models file", async (
   await put(f.local, {});
   await put(f.global, {});
   assert.doesNotMatch(f.run(["doctor"]).out, /models-file/);
+});
+
+// ---- Telemetry read: opt-in in the customize review, never in the recommended set ----
+
+const TELEMETRY_QUESTION = "security-telemetry-read";
+const TELEMETRY_SNIPPET = `"sandbox": { "filesystem": { "allowRead": ["${TELEMETRY_READ_ITEM}"] } }`;
+const NO_ROW = /telemetry-read: not added \(opt-in, closed to sandboxed commands\)\. To add it, choose "No, customize"/;
+// Customize with every default accepted, except the telemetry question, which `telemetry` answers.
+const customizePrompt = (telemetry) => async (question) => {
+  if (question.name === "project-scope") return { [question.name]: true };
+  const modelAnswer = answerModelPrompt(question);
+  if (modelAnswer !== undefined) return modelAnswer;
+  if (question.name === TELEMETRY_QUESTION) return telemetry(question);
+  if (question.name === "security-choices") return { [question.name]: question.choices.map((choice) => choice.value) };
+  if (question.name === "install-confirmation") return { [question.name]: true };
+  return { [question.name]: question.choices?.[question.initial ?? 0]?.value };
+};
+const customize = (f, telemetry, { args = INSTALL, env = {} } = {}) =>
+  runMain(args, { home: f.home, cwd: f.project, env: { PATH: f.bin, ...env }, securityAnswer: "customize", prompt: customizePrompt(telemetry) });
+const optIn = async (q) => ({ [q.name]: true });
+const allowRead = async (f) => (await json(f.global)).sandbox?.filesystem?.allowRead ?? [];
+const receiptItems = async (f) => JSON.parse(await readFile(path.join(f.home, ".canonkit", "install-manifest.json"), "utf8")).entries["claude:json:settings.json"]?.securityChanges?.["sandbox.filesystem.allowRead"]?.appendedItems ?? [];
+const telemetryFixture = async (t, version = "2.1.314") => {
+  const f = await fixture(t, version, { sandbox: true });
+  return await capable(t, f) ? f : null;
+};
+
+test("telemetry read: customize asks a separate question with Keep closed preselected; opting in appends it, records ownership, and reinstall and uninstall respect it", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  await put(f.global, { sandbox: { filesystem: { allowRead: ["~/mine"] } } });
+  let question;
+  const first = await customize(f, async (q) => { question = q; return { [q.name]: true }; });
+  assert.equal(first.status, 0, first.out);
+  assert.equal(question.type, "select");
+  assert.equal(question.initial, 0);
+  assert.match(question.choices[0].title, /^Keep closed/);
+  assert.equal(question.choices[0].value, false);
+  assert.equal(question.choices[1].value, true);
+  assert.ok(first.out.includes(TELEMETRY_EXPOSURE), "the exact exposure sentence is shown");
+  assert.match(first.out, /run the dashboard from your own terminal/);
+  assert.deepEqual(first.questions.map((q) => q.name).filter((name) => name.startsWith("security-")), ["security-runtime-reads", TELEMETRY_QUESTION, "security-choices"]);
+  // Existing entries and their order are kept; the telemetry item is appended after them.
+  assert.deepEqual(await allowRead(f), ["~/mine", "~/.canonkit/models.json", TELEMETRY_READ_ITEM]);
+  assert.ok((await receiptItems(f)).includes(TELEMETRY_READ_ITEM));
+  assert.match(first.out, /sandbox\.filesystem\.allowRead \+= ~\/\.claude\/canonkit-activity|allowRead: ~\/\.claude\/canonkit-activity/);
+
+  // Re-install: not offered, file untouched, ownership kept.
+  const settled = await fileBytes(f.global);
+  const again = await customize(f, async () => { throw new Error("telemetry question must not be asked again"); });
+  assert.equal(again.status, 0, again.out);
+  assert.ok(!again.questions.some((q) => q.name === TELEMETRY_QUESTION));
+  assert.deepEqual(await fileBytes(f.global), settled);
+  assert.ok((await receiptItems(f)).includes(TELEMETRY_READ_ITEM));
+
+  // Uninstall removes the kit-owned items and keeps what the user added.
+  const removed = f.run(["uninstall", "--claude"]);
+  assert.equal(removed.status, 0, removed.out);
+  assert.deepEqual(await allowRead(f), ["~/mine"]);
+});
+
+test("telemetry read: Enter keeps it closed, closed input declines it, Ctrl-C aborts like the other security menus", async (t) => {
+  const enter = await telemetryFixture(t);
+  if (!enter) return;
+  const kept = await customize(enter, async (q) => ({ [q.name]: q.choices[q.initial].value }));
+  assert.equal(kept.status, 0, kept.out);
+  assert.ok(kept.questions.some((q) => q.name === TELEMETRY_QUESTION));
+  assert.ok(!(await allowRead(enter)).includes(TELEMETRY_READ_ITEM));
+
+  const eof = await telemetryFixture(t);
+  const closed = await customize(eof, async () => ({}));
+  assert.equal(closed.status, 0, closed.out);
+  assert.ok(!(await allowRead(eof)).includes(TELEMETRY_READ_ITEM));
+
+  const abort = await telemetryFixture(t);
+  const before = await bytes(abort.root);
+  await assert.rejects(customize(abort, async (q) => ({ [q.name]: null })), /Cancelled: nothing was installed/);
+  assert.deepEqual(await bytes(abort.root), before);
+});
+
+test("telemetry read: Yes, keep current, --recommended, --yes, no terminal and dry run print the snippet and the customize hint, and write nothing", async (t) => {
+  const check = async (label, run) => {
+    const f = await telemetryFixture(t);
+    if (!f) return;
+    const result = await run(f);
+    assert.equal(result.status, 0, `${label}\n${result.out}`);
+    assert.match(result.out, NO_ROW, label);
+    assert.ok(result.out.includes(TELEMETRY_SNIPPET), label);
+    assert.ok(!(result.questions ?? []).some((q) => q.name === TELEMETRY_QUESTION), label);
+    assert.ok(!(await allowRead(f).catch(() => [])).includes(TELEMETRY_READ_ITEM), label);
+  };
+  const viaMain = (args, securityAnswer) => (f) => runMain(args, { home: f.home, cwd: f.project, env: { PATH: f.bin }, interactive: false, securityAnswer });
+  await check("recommended", viaMain(INSTALL, "recommended"));
+  await check("keep", viaMain(INSTALL, "keep"));
+  await check("--recommended", viaMain([...INSTALL, "--recommended"], "recommended"));
+  await check("no terminal", (f) => f.run(INSTALL));
+  await check("--yes", (f) => f.run([...INSTALL, "--yes"]));
+  await check("dry run", (f) => f.run([...INSTALL, "--dry-run"]));
+  // Yes at the recommended-setup question: no further security question, and the row list never shows the item.
+  const f = await telemetryFixture(t);
+  const yes = await interactive(f);
+  assert.equal(yes.status, 0, yes.out);
+  assert.ok(!yes.questions.some((q) => q.name.startsWith("security-")), JSON.stringify(yes.questions.map((q) => q.name)));
+  assert.match(yes.out, NO_ROW);
+  const rows = yes.out.slice(yes.out.indexOf("Recommended setup"), yes.out.search(/already recommended/));
+  assert.ok(rows.length > 0 && !rows.includes("canonkit-activity"), rows);
+  assert.ok(!(await allowRead(f)).includes(TELEMETRY_READ_ITEM));
+  // A dry run writes nothing at all.
+  const dry = await telemetryFixture(t), before = await bytes(dry.root);
+  assert.equal(dry.run([...INSTALL, "--dry-run"]).status, 0);
+  assert.deepEqual(await bytes(dry.root), before);
+});
+
+test("telemetry read: an entry removed by hand is not added back by Yes or --recommended, even with a receipt from the opt-in", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  assert.equal((await customize(f, optIn)).status, 0);
+  assert.ok((await receiptItems(f)).includes(TELEMETRY_READ_ITEM));
+  const settings = await json(f.global);
+  settings.sandbox.filesystem.allowRead = settings.sandbox.filesystem.allowRead.filter((item) => item !== TELEMETRY_READ_ITEM);
+  await put(f.global, settings);
+  for (const args of [INSTALL, [...INSTALL, "--recommended"]]) {
+    const result = await runMain(args, { home: f.home, cwd: f.project, env: { PATH: f.bin }, interactive: false, securityAnswer: "recommended" });
+    assert.equal(result.status, 0, result.out);
+    assert.ok(!(await allowRead(f)).includes(TELEMETRY_READ_ITEM), args.join(" "));
+    assert.match(result.out, NO_ROW);
+  }
+});
+
+test("telemetry read: applySecurityAnswer writes it only for a customize answer that selected exactly its key", () => {
+  const evidence = { ...classifyEnvironment({ platform: "linux", release: "test", env: {}, bwrap: true, socat: true }), claudeVersion: "2.1.314" };
+  const KEY = `telemetry:${TELEMETRY_READ_ITEM}`;
+  const plan = (proposed = true) => ({ evidence, project: null, global: {
+    rows: [], changes: [], originalData: {}, sourceData: {}, data: {}, migration: null,
+    runtimeReads: { proposed: [], covered: [], unhandled: [], broad: [], gaps: [] }, telemetryRead: { proposed, covered: false, gaps: [] },
+  } });
+  const items = (security) => security.global.data.sandbox?.filesystem?.allowRead ?? [];
+  for (const [answer, rows] of [
+    ["recommended", [KEY]], ["recommended", []], ["keep", [KEY]], ["default", [KEY]],
+    ["customize", []], ["customize", [TELEMETRY_READ_ITEM, `sandbox.filesystem.allowRead:${TELEMETRY_READ_ITEM}`, `runtime:${TELEMETRY_READ_ITEM}`, `${KEY}/`]],
+  ]) {
+    const security = applySecurityAnswer(plan(), { securityAnswer: answer, selectedRows: rows });
+    assert.deepEqual(items(security), [], `${answer} ${JSON.stringify(rows)}`);
+    assert.ok(!security.global.changes.includes("sandbox.filesystem.allowRead"), answer);
+  }
+  assert.deepEqual(items(applySecurityAnswer(plan(false), { securityAnswer: "customize", selectedRows: [KEY] })), [], "not offered");
+  const chosen = applySecurityAnswer(plan(), { securityAnswer: "customize", selectedRows: [KEY] });
+  assert.deepEqual(items(chosen), [TELEMETRY_READ_ITEM]);
+  assert.ok(chosen.global.changes.includes("sandbox.filesystem.allowRead"));
+});
+
+test("telemetry read: covered, unsupported or symlinked folders are not offered, and a symlink says why and prints the snippet", async (t) => {
+  const covered = await telemetryFixture(t);
+  if (!covered) return;
+  await put(covered.global, { sandbox: { filesystem: { allowRead: [`${covered.home}/.claude/canonkit-activity/`] } } });
+  const coveredResult = await customize(covered, never);
+  assert.ok(!coveredResult.questions.some((q) => q.name === TELEMETRY_QUESTION));
+  assert.ok(!coveredResult.out.includes("telemetry-read"));
+  assert.ok((await allowRead(covered)).includes(`${covered.home}/.claude/canonkit-activity/`));
+
+  const old = await telemetryFixture(t, "2.1.301");
+  if (old) {
+    const result = await customize(old, never);
+    assert.ok(!result.questions.some((q) => q.name === TELEMETRY_QUESTION) && !result.out.includes("telemetry-read"));
+  }
+
+  const linked = await telemetryFixture(t);
+  const elsewhere = path.join(linked.root, "elsewhere");
+  await mkdir(elsewhere); await mkdir(path.join(linked.home, ".claude"), { recursive: true });
+  try { await symlink(elsewhere, path.join(linked.home, ".claude", "canonkit-activity"), "dir"); }
+  catch (error) { t.diagnostic(`symlinks unavailable here (${error.code}); skipped`); return; }
+  const result = await customize(linked, never);
+  assert.equal(result.status, 0, result.out);
+  assert.ok(!result.questions.some((q) => q.name === TELEMETRY_QUESTION));
+  assert.match(result.out, /WARN security telemetry-read: not offered: .*symbolic link/);
+  assert.ok(result.out.includes(TELEMETRY_SNIPPET));
+  assert.ok(!(await allowRead(linked)).includes(TELEMETRY_READ_ITEM));
+});
+
+test("telemetry read: an identical entry the user added is not claimed and survives uninstall", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  await put(f.global, { sandbox: { filesystem: { allowRead: [TELEMETRY_READ_ITEM] } } });
+  assert.equal((await customize(f, never)).status, 0);
+  assert.ok(!(await receiptItems(f)).includes(TELEMETRY_READ_ITEM));
+  assert.equal(f.run(["uninstall", "--claude"]).status, 0);
+  assert.deepEqual(await allowRead(f), [TELEMETRY_READ_ITEM]);
+});
+
+test("telemetry read: look-alike entries neither cover the folder nor are trusted from a receipt", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  const lookalikes = ["~/.claude/canonkit-activity2", "~/.claude/canonkit-activity-evil", "~/.claude/canonkit-activity/../x"];
+  await put(f.global, { sandbox: { filesystem: { allowRead: lookalikes } } });
+  const result = await customize(f, optIn);
+  assert.equal(result.status, 0, result.out);
+  assert.ok(result.questions.some((q) => q.name === TELEMETRY_QUESTION), "still offered");
+  assert.deepEqual((await allowRead(f)).slice(0, 3), lookalikes);
+  assert.ok((await allowRead(f)).includes(TELEMETRY_READ_ITEM));
+});
+
+test("doctor: the telemetry-read row is always OK, names the state, and appears only with the sandbox enabled and Claude installed", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  const row = (result) => result.out.split("\n").find((line) => line.includes("security claude telemetry-read")) ?? "";
+  await mkdir(path.join(f.home, ".claude", "canonkit-dashboard"), { recursive: true });
+  // Not applicable: sandbox not enabled in any scope, or no canonkit install for Claude.
+  await put(f.local, {});
+  assert.equal(row(f.run(["doctor"])), "");
+  await put(f.local, STRICT_PROJECT);
+  await rm(path.join(f.home, ".claude", "canonkit-dashboard"), { recursive: true });
+  assert.equal(row(f.run(["doctor"])), "");
+  await mkdir(path.join(f.home, ".claude", "canonkit-dashboard"), { recursive: true });
+
+  const closed = f.run(["doctor"]), closedRow = row(closed);
+  assert.match(closedRow, /^\s*OK +security claude telemetry-read: .*closed to sandboxed commands \(opt-in, by choice\)/);
+  assert.ok(closedRow.includes(TELEMETRY_EXPOSURE));
+  assert.match(closedRow, /customize review of canonkit install offers it/);
+  assert.doesNotMatch(closed.out, /(WARN|FAIL) +security claude telemetry-read/);
+
+  await put(f.global, { sandbox: { filesystem: { allowRead: [TELEMETRY_READ_ITEM] } } });
+  const before = await bytes(f.root);
+  const open = f.run(["doctor"]), openRow = row(open);
+  assert.deepEqual(await bytes(f.root), before, "doctor wrote nothing");
+  assert.match(openRow, /^\s*OK +security claude telemetry-read: .*readable by sandboxed commands.*session IDs, project names, agent names.*paths of files that gates flagged/);
+  assert.doesNotMatch(open.out, /(WARN|FAIL) +security claude telemetry-read/);
+  assert.equal(open.status, closed.status, "exit status is not affected by the row");
+
+  // A receipt-owned item alone is not a filesystem-exceptions warning (a user-added one still is).
+  assert.match(open.out, /WARN +security claude filesystem-exceptions/);
+  const owned = await telemetryFixture(t);
+  assert.equal((await customize(owned, optIn)).status, 0);
+  const ownedDoctor = owned.run(["doctor"]);
+  assert.match(ownedDoctor.out, /OK +security claude telemetry-read: .*readable by sandboxed commands/);
+  assert.doesNotMatch(ownedDoctor.out, /WARN +security claude filesystem-exceptions/);
+  assert.doesNotMatch(ownedDoctor.out, /FAIL +security/);
 });

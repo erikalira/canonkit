@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { trustedOwnedAllowRead, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
+import { TELEMETRY_READ_ITEM, TELEMETRY_EXPOSURE, compileTelemetryRead, telemetryReadSymlink, trustedOwnedAllowRead, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-")));
@@ -533,4 +533,83 @@ test("the models file is always a read root, is owned by the receipt and is remo
   // The receipt value is trusted for the file only, never its folder, and doctor does not count it as a user exception.
   assert.deepEqual(trustedOwnedAllowRead(["~/.canonkit/models.json", "~/.canonkit", "~/.canonkit/projects"], { home: "/home/u", env: {}, platform: "linux" }), ["~/.canonkit/models.json"]);
   assert.equal(assessClaude([{ label: "user", data: installed }], env("linux"), { ownedAllowRead: ["~/keep", "~/.canonkit/models.json"] }).filter((row) => row.control === "filesystem-exceptions").length, 0);
+});
+
+// ---- telemetry read (opt-in; never part of the runtime reads) ----
+
+test("telemetry read is offered only when uncovered, supported and Claude is installed", () => {
+  const e = env("linux"), options = { home: "/home/u", claudeInstalled: true };
+  const allow = (...entries) => ({ sandbox: { filesystem: { allowRead: entries } } });
+  assert.equal(TELEMETRY_READ_ITEM, "~/.claude/canonkit-activity");
+  assert.deepEqual(compileTelemetryRead({}, e, options), { proposed: true, covered: false, gaps: [], conditional: false });
+  assert.equal(compileTelemetryRead(allow("~/keep"), e, options).proposed, true);
+  // Covered by an equivalent spelling, the folder, or a folder above it.
+  for (const entry of ["~/.claude/canonkit-activity", "/home/u/.claude/canonkit-activity/", "~/.claude", "~/.claude/./canonkit-activity"]) {
+    const result = compileTelemetryRead(allow(entry), e, options);
+    assert.deepEqual([result.proposed, result.covered], [false, true], entry);
+  }
+  // Ambiguous settings: nothing is offered.
+  for (const bad of [allow(42), allow("relative/path"), { sandbox: { filesystem: { allowRead: "~/x" } } }]) {
+    const result = compileTelemetryRead(bad, e, options);
+    assert.deepEqual([result.proposed, result.covered, result.gaps], [false, false, ["runtime-reads-user-settings-ambiguous"]], JSON.stringify(bad));
+  }
+  // Unsupported environments and a missing Claude install.
+  for (const unsupported of [env("win32"), env("linux", "2.1.301"), env("linux", null), { ...env("linux"), sandboxCapability: "unavailable" }]) {
+    assert.equal(compileTelemetryRead({}, unsupported, options).proposed, false, JSON.stringify([unsupported.platform, unsupported.claudeVersion]));
+  }
+  assert.equal(compileTelemetryRead({}, e, { ...options, claudeInstalled: false }).proposed, false);
+  assert.equal(compileTelemetryRead({}, e, { home: "/home/u" }).proposed, false);
+  // A symbolic link is reported, not offered; a covered entry still reads as covered.
+  assert.deepEqual(compileTelemetryRead({}, e, { ...options, symlinked: true }), { proposed: false, covered: false, gaps: ["telemetry-read-symlink"], conditional: false });
+  // The input is never changed.
+  const data = allow("~/keep");
+  compileTelemetryRead(data, e, options);
+  assert.deepEqual(data, allow("~/keep"));
+});
+
+test("look-alike paths neither cover the telemetry folder nor count as kit-owned", () => {
+  const e = env("linux"), options = { home: "/home/u", claudeInstalled: true };
+  for (const lookalike of ["~/.claude/canonkit-activity2", "~/.claude/canonkit-activity-evil", "~/.claude/canonkit-activity/../x"]) {
+    const result = compileTelemetryRead({ sandbox: { filesystem: { allowRead: [lookalike] } } }, e, options);
+    assert.deepEqual([result.proposed, result.covered], [true, false], lookalike);
+  }
+  const trust = (items) => trustedOwnedAllowRead(items, { home: "/home/u", env: {}, platform: "linux" });
+  assert.deepEqual(trust([TELEMETRY_READ_ITEM]), [TELEMETRY_READ_ITEM]);
+  assert.deepEqual(trust(["~/.claude", "~/.claude/canonkit-activity/..", "~/.claude/canonkit-activity2", "~/.claude/canonkit-activity-evil", "~/.claude/canonkit-activity/../x", "~/.claude/canonkit-activity/"]), []);
+  // A receipt-owned telemetry item is not a filesystem exception worth reviewing; a user-added one is.
+  const data = { sandbox: { filesystem: { allowRead: [TELEMETRY_READ_ITEM] } } };
+  const exceptions = (owned) => assessClaude([{ label: "user", data }], env("linux"), { ownedAllowRead: owned }).filter((row) => row.control === "filesystem-exceptions").length;
+  assert.equal(exceptions(trust([TELEMETRY_READ_ITEM])), 0);
+  assert.equal(exceptions([]), 1);
+});
+
+test("telemetry read ownership: appended and removed like the runtime reads, user-added identical entry is not claimed", () => {
+  const bytes = (value) => Buffer.from(JSON.stringify(value));
+  const before = { sandbox: { filesystem: { allowRead: ["~/keep"] } } }, installed = applyRuntimeReads(before, [TELEMETRY_READ_ITEM]);
+  assert.deepEqual(installed.sandbox.filesystem.allowRead, ["~/keep", TELEMETRY_READ_ITEM]);
+  const meta = networkSecurityOwnership.capture(bytes(before), bytes(installed), {});
+  assert.deepEqual(meta["sandbox.filesystem.allowRead"].appendedItems, [TELEMETRY_READ_ITEM]);
+  assert.deepEqual(JSON.parse(undoNetworkSecurity(bytes(before), bytes(installed), bytes(installed), { securityChanges: meta })).sandbox.filesystem.allowRead, ["~/keep"]);
+  // The user already had the identical entry: install appends nothing, so nothing is recorded and undo keeps it.
+  const own = { sandbox: { filesystem: { allowRead: ["~/keep", TELEMETRY_READ_ITEM] } } };
+  assert.deepEqual(networkSecurityOwnership.capture(bytes(own), bytes(applyRuntimeReads(own, [TELEMETRY_READ_ITEM])), {}), {});
+  assert.deepEqual(JSON.parse(undoNetworkSecurity(bytes(own), bytes(own), bytes(own), { securityChanges: {} })).sandbox.filesystem.allowRead, ["~/keep", TELEMETRY_READ_ITEM]);
+});
+
+test("the exposure sentence names project names and flagged file paths, not only session IDs", () => {
+  for (const word of ["session IDs", "project names", "agent names", "paths of files that gates flagged", "secret-looking files", "first 80 characters", "no prompts and no tool output"]) assert.ok(TELEMETRY_EXPOSURE.includes(word), word);
+});
+
+test("telemetryReadSymlink sees a linked ~/.claude or telemetry folder and ignores absent paths", { skip: process.platform === "win32" && "POSIX symlinks" }, async (t) => {
+  const root = await fixture(t), home = path.join(root, "home"), elsewhere = path.join(root, "elsewhere");
+  await mkdir(home); await mkdir(elsewhere);
+  assert.equal(await telemetryReadSymlink(home), false, "nothing exists");
+  await mkdir(path.join(home, ".claude", "canonkit-activity"), { recursive: true });
+  assert.equal(await telemetryReadSymlink(home), false, "real folders");
+  await rm(path.join(home, ".claude", "canonkit-activity"), { recursive: true });
+  await symlink(elsewhere, path.join(home, ".claude", "canonkit-activity"));
+  assert.equal(await telemetryReadSymlink(home), true, "linked telemetry folder");
+  await rm(path.join(home, ".claude"), { recursive: true });
+  await symlink(elsewhere, path.join(home, ".claude"));
+  assert.equal(await telemetryReadSymlink(home), true, "linked ~/.claude");
 });
