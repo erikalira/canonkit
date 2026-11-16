@@ -26,6 +26,18 @@ and obtain independent review after the final edit of a HIGH-risk change.
 File work uses Read, Edit and Write, so the user's permission rules and diff review
 apply; Bash only runs commands.
 
+A sandbox network denial (`<sandbox_violations>`, "host is not on the allow list") is
+the user's policy, not a fault to route around: do not retry the host through another
+tool unless the user has allowed it for that tool; an unprompted WebFetch fallback
+after a shell denial is a workaround. Report the host and the tool that needed it, and
+say what to change. Do not edit settings files yourself, with any tool; the user makes
+the change. Propose exact hosts only, never wildcards. Under canonkit's `strictAllowlist`
+lock, a project's `sandbox.network.allowedDomains` is ignored. To let WebFetch read a
+site, propose `WebFetch(domain:<host>)` in the project's `permissions.allow`: it allows
+the tool without opening the shell. For a shell command, propose the host in
+`sandbox.network.allowedDomains` in `~/.claude/settings.json`; a `WebFetch(domain:)`
+rule there opens the shell to that host too.
+
 Without optional canonkit hooks, those rules hold by judgment: do not claim automatic
 hook prompts, secret blocks, dispatch logging or a Stop-hook review gate.
 

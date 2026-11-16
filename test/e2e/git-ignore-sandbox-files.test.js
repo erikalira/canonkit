@@ -357,12 +357,12 @@ describe("doctor and the placeholders", () => {
     const { home, project } = await repo("si-doc-settings");
     await empty(project, ".claude/settings.local.json");
     let r = doctor(project, home);
-    assert.match(r.out, /^OK +security claude placeholder: repository-local: empty file, probably a sandbox placeholder; ignored/m);
-    assert.doesNotMatch(r.out, /repository-local: malformed or inaccessible/);
+    assert.match(r.out, /^OK +security claude placeholder: project-local: empty file, probably a sandbox placeholder; ignored/m);
+    assert.doesNotMatch(r.out, /project-local: malformed or inaccessible/);
     // Non-empty invalid JSON is still a failure: the parser was not loosened.
     await writeFile(path.join(project, ".claude", "settings.local.json"), "{nope");
     r = doctor(project, home);
-    assert.match(r.out, /^FAIL +security claude configuration: .*repository-local: malformed or inaccessible/m);
+    assert.match(r.out, /^FAIL +security claude configuration: .*project-local: malformed or inaccessible/m);
   });
 });
 
@@ -412,7 +412,7 @@ describe("the sandbox's /dev/null placeholder (character device 1:3), read-only 
     const { home, project } = await repo("si-dev-dir");
     await mkdir(path.join(project, ".claude", "settings.local.json"), { recursive: true });
     const r = doctor(project, home);
-    assert.match(r.out, /^FAIL +security claude configuration: .*repository-local: malformed or inaccessible/m);
+    assert.match(r.out, /^FAIL +security claude configuration: .*project-local: malformed or inaccessible/m);
     assert.doesNotMatch(r.out, /sandbox placeholder; ignored/);
   });
 

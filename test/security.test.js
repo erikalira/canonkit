@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, realpath } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { trustedOwnedAllowRead, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
+import { trustedOwnedAllowRead, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, readSettingsText, normalizeReadPath, readEntryCovers, isBroadReadEntry, detectRuntimeRoots, compileRuntimeReads, applyRuntimeReads, classifyEnvironment, collectEnvironment, compileSecurity, compileNetworkSecurity, parseSecuritySettings, parseProjectLocalSandboxSettings, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, assessClaude, inspectCodex, inspectOpencode, repositoryRoot, projectStateDir, safePath, readSecurityBytes, MAX_SECURITY_BYTES } from "../bin/security.js";
 
 async function fixture(t) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "canonkit-security-")));
@@ -152,7 +152,7 @@ test("project-local sandbox placeholder is unknown and cannot authorize the defa
 
 test("automatic approval warns only when one strict sandbox requirement is missing", () => {
   const strict = { sandbox: { enabled: true, failIfUnavailable: true, allowUnsandboxedCommands: false, autoAllowBashIfSandboxed: true } };
-  const warnings = (data) => assessClaude([{ label: "repository", data }], env("linux"))
+  const warnings = (data) => assessClaude([{ label: "project", data }], env("linux"))
     .filter(row => row.control === "approval-mode" && row.detail.includes("sandbox automatic approval"));
   assert.deepEqual(warnings(strict), []);
   for (const [key, value] of [["enabled", false], ["failIfUnavailable", false], ["allowUnsandboxedCommands", true]]) {
@@ -236,13 +236,13 @@ test("diagnosis separates configuration, native Windows limits and unknown harne
 });
 
 test("diagnosis merges observed strict requirements across scopes and respects explicit overrides", () => {
-  const sources = [{ label: "user", data: { sandbox: { enabled: true } } }, { label: "repository", data: { sandbox: { failIfUnavailable: true } } }];
+  const sources = [{ label: "user", data: { sandbox: { enabled: true } } }, { label: "project", data: { sandbox: { failIfUnavailable: true } } }];
   const reports = assessClaude(sources, env());
   assert.ok(reports.some(row => row.control === "shell" && row.status === "FAIL"));
-  const overridden = assessClaude([...sources, { label: "repository-local", data: { sandbox: { enabled: false } } }], env());
+  const overridden = assessClaude([...sources, { label: "project-local", data: { sandbox: { enabled: false } } }], env());
   assert.ok(overridden.some(row => row.control === "scope-conflict" && row.status === "WARN"));
   assert.ok(overridden.some(row => row.control === "shell" && row.status === "WARN"));
-  const blocked = assessClaude([{ label: "user", data: { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } } }, { label: "repository", data: { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false } } }], env());
+  const blocked = assessClaude([{ label: "user", data: { permissions: { blockReadsOutsideWorkingDirectories: true, blockWritesOutsideWorkingDirectories: true } } }, { label: "project", data: { permissions: { blockReadsOutsideWorkingDirectories: false, blockWritesOutsideWorkingDirectories: false } } }], env());
   assert.ok(blocked.some(row => row.control === "file-reads" && row.status === "OK"));
   assert.ok(blocked.some(row => row.control === "file-writes" && row.status === "OK"));
 });
@@ -334,12 +334,12 @@ test("the recommended-settings table has exactly one row for every key the compi
   assert.deepEqual([...rows].sort(), managed);
   assert.equal(new Set(rows).size, rows.length);
   for (const row of SECURITY_SETTINGS) {
-    assert.ok(["repository", "user"].includes(row.scope), row.key);
+    assert.ok(["project", "user"].includes(row.scope), row.key);
     assert.ok(typeof row.reason === "string" && row.reason.length > 10 && !row.reason.includes("\n"), row.key);
   }
-  // Each repository row carries the value the compiler writes.
+  // Each project row carries the value the compiler writes.
   const written = compileSecurity({}, e).data;
-  for (const row of SECURITY_SETTINGS.filter((item) => item.scope === "repository")) assert.equal(row.key.split(".").reduce((value, key) => value[key], written), row.value, row.key);
+  for (const row of SECURITY_SETTINGS.filter((item) => item.scope === "project")) assert.equal(row.key.split(".").reduce((value, key) => value[key], written), row.value, row.key);
 });
 
 test("read-exception coverage is path based: spellings match, an ancestor covers, home or above is broad", () => {
@@ -490,7 +490,7 @@ test("assessClaude skips allowRead items canonkit appended but warns for user-ad
   assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"] } } }, []).length, 1);
   assert.equal(warns({ sandbox: { filesystem: { allowRead: ["~/.nvm"], allowWrite: ["~/w"] } } }, ["~/.nvm"]).length, 1);
   // Repository entries are never kit-owned.
-  assert.equal(assessClaude([{ label: "repository", data: { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } } }], env("linux"), { ownedAllowRead: ["~/.nvm"] }).filter((row) => row.control === "filesystem-exceptions").length, 1);
+  assert.equal(assessClaude([{ label: "project", data: { sandbox: { filesystem: { allowRead: ["~/.nvm"] } } } }], env("linux"), { ownedAllowRead: ["~/.nvm"] }).filter((row) => row.control === "filesystem-exceptions").length, 1);
 });
 
 test("owned allowRead from a receipt is trusted only when the runtime table can produce it", () => {
@@ -512,4 +512,25 @@ test("allowRead ownership metadata is validated and refused when malformed", () 
   // The project store has no array ownership.
   assert.throws(() => projectSecurityOwnership.validate({ [key]: good }), /Invalid security ownership/);
   assert.throws(() => networkSecurityOwnership.validate({ "sandbox.filesystem.denyRead": good }), /Invalid security ownership/);
+});
+
+test("the models file is always a read root, is owned by the receipt and is removed by undo", () => {
+  const options = { home: "/home/u", platform: "linux" };
+  const base = { roots: [{ item: "~/.nvm", label: "node (nvm)" }], unhandled: [] };
+  assert.equal(withModelsRead(undefined), undefined);
+  const detected = withModelsRead(base);
+  assert.deepEqual(detected.roots.map((r) => r.item), ["~/.nvm", "~/.canonkit/models.json"]);
+  assert.equal(MODELS_READ_ITEM, "~/.canonkit/models.json");
+  // Proposed unless the file itself (or a folder above it) is already covered.
+  const missing = compileRuntimeReads({}, env("linux"), { detected, ...options });
+  assert.deepEqual(missing.proposed.map((r) => r.item), ["~/.nvm", "~/.canonkit/models.json"]);
+  const bytes = (value) => Buffer.from(JSON.stringify(value));
+  const before = { sandbox: { filesystem: { allowRead: ["~/keep"] } } };
+  const installed = applyRuntimeReads(before, ["~/.canonkit/models.json"]);
+  const meta = networkSecurityOwnership.capture(bytes(before), bytes(installed), {});
+  assert.deepEqual(meta["sandbox.filesystem.allowRead"].appendedItems, ["~/.canonkit/models.json"]);
+  assert.deepEqual(JSON.parse(undoNetworkSecurity(bytes(before), bytes(installed), bytes(installed), { securityChanges: meta })).sandbox.filesystem.allowRead, ["~/keep"]);
+  // The receipt value is trusted for the file only, never its folder, and doctor does not count it as a user exception.
+  assert.deepEqual(trustedOwnedAllowRead(["~/.canonkit/models.json", "~/.canonkit", "~/.canonkit/projects"], { home: "/home/u", env: {}, platform: "linux" }), ["~/.canonkit/models.json"]);
+  assert.equal(assessClaude([{ label: "user", data: installed }], env("linux"), { ownedAllowRead: ["~/keep", "~/.canonkit/models.json"] }).filter((row) => row.control === "filesystem-exceptions").length, 0);
 });

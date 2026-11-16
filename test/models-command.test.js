@@ -484,7 +484,7 @@ describe("models step of the interactive install", () => {
       const { run } = codexRunner();
       const f = fake({ "codex-deep-model": "gpt-6-luna", "codex-deep-effort": "medium" });
       assert.equal(await offerModelSetup(capture().ctx, agents, { ask: f.ask, run, now: NOW, home: s.home, cwd: s.project, harnesses: ["codex"] }), true);
-      assert.match(f.asked[0].message, /Choose models for your Codex agents/);
+      assert.match(f.asked[0].message, /Choose user-level models for Codex agents/);
       assert.equal(JSON.parse(await readFile(userFile(s), "utf8")).harnesses.codex.levels.deep.model, "gpt-6-luna");
     } finally { await s.cleanup(); }
   });
@@ -497,7 +497,7 @@ describe("models step of the interactive install", () => {
       const f = fake({});
       assert.equal(await offerModelSetup(capture().ctx, agents, { ask: f.ask, run, home: s.home, cwd: s.project }), true);
       assert.equal(f.asked.length, 1);
-      assert.match(f.asked[0].message, /^Change the models/);
+      assert.match(f.asked[0].message, /^Change the user-level models/);
       assert.deepEqual(calls, []);
     } finally {
       await s.cleanup();
@@ -559,11 +559,11 @@ describe("doctor model checks", () => {
       await writeJson(path.join(s.home, ".canonkit", "models.json"), { version: 1, harnesses: { claude: { levels: { standard: { model: "opus", effort: "high" } } } } });
       await writeJson(path.join(s.project, ".canonkit", "models.json"), { version: 1, harnesses: { claude: { agents: { gard: { model: "sonnet", effort: "low" } }, levels: { deep: { effort: "high" } } } } });
       const rows = await modelDiagnosis(agents, { home: s.home, cwd: s.project, now: NOW });
-      const warn = rows.find((r) => /override yours/.test(r.detail));
+      const warn = rows.find((r) => /override your user-level choices/.test(r.detail));
       assert.equal(warn?.status, "WARN", at(s, rows));
       assert.match(warn.detail, /gard model opus → sonnet, gard effort high → low/);
       assert.match(warn.detail, /archie effort inherit → high/);
-      assert.match(warn.detail, /check them before trusting a repository you did not write/);
+      assert.match(warn.detail, /check them before trusting a project you did not write/);
       assert.ok(!rows.some((r) => r.status === "OK"), at(s, rows));
     } finally {
       await s.cleanup();

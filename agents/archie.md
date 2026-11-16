@@ -62,6 +62,10 @@ The lead decides. Do not insist or yield silently: record the open risk, the con
 - Single-implementation interfaces with no real volatility, overly thin use cases, ritualistic DTOs/mappers.
 - A technology introduced because it appeared in an example, template, or recent conversation rather than because it fits this repository — or an illustrative example (a cloud provider, a CI system, a folder layout) read as a recommendation.
 
+## Reading code and diffs
+
+Start from the diff and file list the brief gives. Batch independent read-only commands into one shell call. Locate with a search (`grep -n`), then read only that span (`sed -n A,Bp`, or the read tool's offset/limit), never a whole file or a whole diff. Keep each output small enough that the harness does not save it to a file; split a large diff per file. Read more when a finding depends on the surrounding context.
+
 ## Pre-report gate
 
 Before a finding, cite `file:line` (the boundary, contract, or import), name the concrete failure (which consumer, change, or load breaks, and how), and say why the existing boundaries, versioning, or tests do not catch it. A veto needs all three; a coupling no caller feels today is an observation, not a block. Zero findings is a valid review: approve and say what you checked.

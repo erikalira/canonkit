@@ -183,11 +183,15 @@ test("dry runs write nothing and an untracked uninstall only reports manual clea
   assert.deepEqual(await snapshot(home), empty);
   const missing = run(home, ["uninstall"]);
   assert.equal(missing.status, 1);
-  assert.match(missing.out, /No install manifest/);
+  assert.match(missing.out, /No user-level install manifest/);
+  assert.doesNotMatch(missing.out, /User level: (?:removing|would remove)/);
   assert.deepEqual(await snapshot(home), empty);
   ok(run(home, ["install", "--codex", "--wire-hooks"]));
   const installed = await snapshot(home);
-  ok(run(home, ["uninstall", "--dry-run"]));
+  const dry = run(home, ["uninstall", "--dry-run"]);
+  ok(dry);
+  assert.match(dry.out, /User level: would remove tracked entries for Codex$/m);
+  assert.match(dry.out, /Kept: backups, activity history, legacy ~\/\.agents\/<core>\.md, and everything at project level/);
   assert.deepEqual(await snapshot(home), installed);
 });
 
@@ -477,14 +481,14 @@ test("uninstall removes only the allowRead items canonkit appended; --project le
   const s = await installedWithRuntimeReads(t, { custom: 1, sandbox: { filesystem: { allowRead: ["~/keep"] } } });
   if (!s) { t.skip("host has no supported sandbox capability"); return; }
   const installed = await s.read();
-  assert.deepEqual(installed.sandbox.filesystem.allowRead, ["~/keep", "~/.nvm"]);
+  assert.deepEqual(installed.sandbox.filesystem.allowRead, ["~/keep", "~/.nvm", "~/.canonkit/models.json"]);
   assert.deepEqual((await manifest(s.home)).entries["claude:json:settings.json"].securityChanges["sandbox.filesystem.allowRead"],
-    { beforePresent: true, parentPresent: true, appendedItems: ["~/.nvm"] });
+    { beforePresent: true, parentPresent: true, appendedItems: ["~/.nvm", "~/.canonkit/models.json"] });
   installed.sandbox.filesystem.allowRead.push("~/later");
   await writeFile(s.settings, JSON.stringify(installed));
 
   ok(runCli(["uninstall", "--project"], { home: s.home, cwd: s.project, env: s.env }));
-  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/keep", "~/.nvm", "~/later"]);
+  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/keep", "~/.nvm", "~/.canonkit/models.json", "~/later"]);
   ok(runCli(["uninstall", "--claude"], { home: s.home, cwd: s.project, env: s.env }));
   const after = await s.read();
   assert.deepEqual(after, { custom: 1, sandbox: { filesystem: { allowRead: ["~/keep", "~/later"] } } });
@@ -493,7 +497,7 @@ test("uninstall removes only the allowRead items canonkit appended; --project le
 test("uninstall drops the allowRead array and its parents only when canonkit created them", async (t) => {
   const s = await installedWithRuntimeReads(t, null);
   if (!s) { t.skip("host has no supported sandbox capability"); return; }
-  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/.nvm"]);
+  assert.deepEqual((await s.read()).sandbox.filesystem.allowRead, ["~/.nvm", "~/.canonkit/models.json"]);
   ok(runCli(["uninstall", "--claude"], { home: s.home, cwd: s.project, env: s.env }));
   assert.equal(existsSync(s.settings), false);
 

@@ -107,7 +107,7 @@ elsewhere, a separate checkout), never one shared tree. When and how: the `orche
 
 ## Orchestration rules
 
-- Every planned dispatch names its model and effort from `canonkit models show`, never memory (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result); the procedure is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
+- Every planned dispatch names its model and effort from `canonkit models show`, never memory (**up** for a structural or irreversible decision, **down** for a mechanical pass with a verifiable result). If `models show` cannot run (not installed, npx blocked) or reports "inherit" for every agent whose file carries a model, pass no model or effort so the agent's frontmatter applies, name the dispatch "frontmatter (models show unavailable)" and tell the user; the procedure is in the `orchestrate` skill (`~/.claude/skills/orchestrate/SKILL.md`, or `~/.agents/skills/orchestrate/SKILL.md` for Codex).
 - **Optional Laya advice on HIGH handoffs:** consult it when a concrete semantic uncertainty about omissions warrants another signal and the MCP is available. Skip when direct inspection suffices; reuse advice while task context and evidence are unchanged. Follow the `orchestrate` skill's procedure and record actual calls, results and failures. Laya never replaces owners, evidence checks or independent review.
 - MEDIUM/HIGH multi-discipline changes get an Integration Review before the decision is closed: run the `orchestrate` skill.
 
@@ -154,9 +154,12 @@ On any task, including LOW, preserve concrete out-of-scope findings as a short
 note (title, location, observation, confidence); continue the task. Subagents
 include it in their normal report; the parent consolidates relevant findings at
 natural closure. Use the `orchestrate` skill's incidental-findings procedure
-before offering issues. Never defer delivery defects or blocked validation as
-incidental; alert urgent security risks promptly. Without findings, do nothing
-extra; do not search, delegate or create artifacts just for capture.
+before adding them to the project's backlog. Never defer delivery defects or
+blocked validation as incidental; alert urgent security risks promptly. A
+vulnerability, exposed secret or sensitive incident never goes into a backlog
+file or public issue, only to the user for the private channel. Without
+findings, do nothing extra; do not search, delegate or create artifacts just
+for capture.
 
 ## Durable preferences
 

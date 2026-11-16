@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { REPO, runCli, writeCommand } from "../helpers/cli-harness.js";
 import { scratch, snapshot } from "../helpers/cli-fixtures.js";
-import { main, readInstallCatalog, resolveInstallProjectTarget, chooseProjectItems } from "../../bin/cli.js";
+import { main, readInstallCatalog, resolveInstallProjectTarget, chooseProjectItems, printInstallSummary } from "../../bin/cli.js";
 
 async function repository(dir) {
   const result = spawnSync("git", ["init", "-q", dir], { encoding: "utf8" });
@@ -157,14 +157,17 @@ describe("unified install catalog and target", () => {
 
   test("menu selects categories and tool harness, allows empty lists and returns null on cancel", async () => {
     const { project } = await scratch("unified-menu");
-    const catalog = await readInstallCatalog({ project });
+    const found = await readInstallCatalog({ project });
+    // Recommended tools are preselected only when their binary resolves; pin that
+    // here so the test does not depend on this machine's PATH.
+    const catalog = { ...found, tools: found.tools.map((item) => ({ ...item, missing: false })) };
     const asks = [];
     const answers = [
       { tools: ["openspec"] }, { specialists: ["maya"] }, { stacks: [] }, { harness: ["claude"] },
     ];
     const prompt = async (question) => { asks.push(question); return answers.shift(); };
     const selected = await chooseProjectItems(catalog, project, { interactive: true, prompt });
-    assert.deepEqual(selected, { tools: ["openspec"], specialists: ["maya"], stacks: [], toolHarnesses: { openspec: ["claude"] } });
+    assert.deepEqual(selected, { tools: ["openspec"], specialists: ["maya"], stacks: [], toolHarnesses: { openspec: ["claude"] }, skippedTools: [] });
     assert.equal(asks.length, 4);
     assert.match(asks[0].message, /Optional tools for project/);
     assert.ok(asks[0].choices.filter((choice) => ["graphify", "openspec"].includes(choice.value)).every((choice) => choice.selected && /\(recommended\)/.test(choice.title)));
@@ -174,7 +177,7 @@ describe("unified install catalog and target", () => {
       interactive: true,
       prompt: async (question) => ({ [question.name]: [] }),
     });
-    assert.deepEqual(empty, { tools: [], specialists: [], stacks: [], toolHarnesses: {} });
+    assert.deepEqual(empty, { tools: [], specialists: [], stacks: [], toolHarnesses: {}, skippedTools: [] });
     const cancelled = await chooseProjectItems(catalog, project, {
       interactive: true,
       prompt: async (question) => question.name === "stacks" ? undefined : { [question.name]: [] },
@@ -182,9 +185,55 @@ describe("unified install catalog and target", () => {
     assert.equal(cancelled, null);
   });
 
+  test("a missing recommended tool starts unselected, and selecting it prints guidance and skips it", async () => {
+    const { project } = await scratch("unified-menu-missing-tool");
+    const found = await readInstallCatalog({ project });
+    const catalog = { ...found, tools: found.tools.map((item) => ({ ...item, missing: item.name === "graphify" })) };
+    const asks = [];
+    const errors = [];
+    const original = console.error;
+    console.error = (...args) => { errors.push(args.join(" ")); };
+    let selected;
+    try {
+      selected = await chooseProjectItems(catalog, project, {
+        interactive: true,
+        targets: ["claude"],
+        prompt: async (question) => {
+          asks.push(question);
+          return question.name === "tools" ? { tools: ["graphify", "openspec"] } : { [question.name]: [] };
+        },
+      });
+    } finally { console.error = original; }
+    const choice = (name) => asks[0].choices.find((item) => item.value === name);
+    assert.equal(choice("graphify").selected, false);
+    assert.match(choice("graphify").title, /^graphify \(recommended, not installed\)$/);
+    assert.equal(choice("openspec").selected, true);
+    assert.match(choice("openspec").title, /^openspec \(recommended\)$/);
+    assert.equal(asks[0].hint, "space toggles, enter confirms; none selected skips; missing tools are skipped");
+    assert.deepEqual(selected.tools, ["openspec"]);
+    assert.deepEqual(selected.skippedTools, ["graphify"]);
+    assert.deepEqual(Object.keys(selected.toolHarnesses), ["openspec"]);
+    const out = errors.join("\n");
+    const graphify = catalog.tools.find((item) => item.name === "graphify").tool;
+    // The outcome comes first, then how to install.
+    assert.ok(out.indexOf("graphify is not installed, so it was skipped; the rest of the install continues.") < out.indexOf("Install the pinned version"));
+    for (const line of graphify.install) assert.ok(out.includes(line), `missing install line: ${line}`);
+    assert.match(out, /then re-run: npx canonkit tool add graphify/);
+
+    // The review screen, the last one before confirming, names the skipped tool.
+    const summary = [];
+    printInstallSummary({ log: (line) => summary.push(line) }, {
+      targets: ["claude"], projectItems: selected, projectInScope: true, setupAnswer: "keep",
+    });
+    assert.ok(summary.includes("  Items: openspec"));
+    assert.ok(summary.includes("  Skipped (not installed): graphify"));
+  });
+
   test("install targets select OpenSpec integrations in registry order without another prompt", async () => {
     const { project } = await scratch("unified-menu-target-harnesses");
-    const catalog = await readInstallCatalog({ project });
+    const found = await readInstallCatalog({ project });
+    // Exercise target mapping regardless of whether OpenSpec is on this runner's PATH.
+    const catalog = { ...found, tools: found.tools.map((item) => item.name === "openspec" ? { ...item, missing: false } : item) };
     for (const [targets, expected] of [
       [["codex"], ["codex"]],
       [["copilot"], ["github-copilot"]],
@@ -583,7 +632,7 @@ describe("unified install catalog and target", () => {
     await writeFile(path.join(home, ".claude", "settings.json"), JSON.stringify({
       sandbox: {
         network: { strictAllowlist: true },
-        filesystem: { allowRead: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] },
+        filesystem: { allowRead: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.canonkit/models.json"] },
       },
     }));
     await mkdir(path.join(project, ".claude"), { recursive: true });

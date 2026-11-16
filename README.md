@@ -4,20 +4,19 @@
 [![CI](https://github.com/erikalira/canonkit/actions/workflows/ci.yml/badge.svg)](https://github.com/erikalira/canonkit/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/npm/l/canonkit)](LICENSE)
 
-A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and **GitHub Copilot**.
-Each agent owns one domain: product, architecture, security, quality, UX,
-performance, operations or docs. Before it recommends anything, it rates the risk
-of the change. Small, reversible work stays with your main agent. Changes to auth,
-secrets, migrations or public contracts go to the agent that owns them. Claude
-Code keeps its native permission modes; installation configures supported access
-restrictions in the current repository's `.claude/settings.json`. Optional hooks
-add specific gates when you explicitly wire them. Codex and OpenCode have their
-own controls and can opt into the git-bypass and secret-write tripwires.
+A versioned team of AI subagents for **Claude Code**, **Codex**, **OpenCode** and
+**GitHub Copilot**. Each agent owns a domain—product, architecture, security,
+quality, UX, performance, operations or docs—and rates the risk before making a
+recommendation. Routine, reversible work stays with your main agent; changes
+that put auth, secrets, migrations or public contracts at risk go to the agent
+that owns them.
 
-Each agent is one Markdown file in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents), already in the format
-Claude Code reads. Installing generates Claude Code frontmatter while preserving
-the agent body. Codex, OpenCode and Copilot get native profiles generated from
-that same body. There is one source per agent, and nothing to reconcile by hand.
+Define each agent once in [`agents/`](https://github.com/erikalira/canonkit/tree/main/agents);
+canonkit generates native profiles for all four runtimes from the same Markdown
+source. For Claude Code, installation preserves your permission mode and
+configures supported project restrictions; Codex and OpenCode keep their own
+controls. Optional hooks add extra gates—including git-bypass and secret-write
+tripwires for Codex and OpenCode—only when you explicitly enable them.
 
 > **canonkit 1.x is not canonkit 0.x.** Versions up to `0.2.0` were a different
 > tool. It generated Spec-Kit-style governance templates (`.specify/`, a
@@ -40,114 +39,101 @@ canonkit can work alongside [openspec](https://github.com/erikalira/canonkit/blo
 
 ## Quickstart
 
-Requires Node 18+. On Linux, macOS and Windows:
+### Install
 
 ```bash
 cd my-project
 npx canonkit install
 ```
 
-In a terminal, a menu asks which runtimes to install for. All four start
-unselected; choose at least one. To install only the
-Copilot profile without the menu, run `npx canonkit install --copilot`.
-After the runtime menu, install asks whether to set up the current project. Yes
-opens the tools, specialists and stack menus; Graphify and OpenSpec start
-selected, while specialists and stacks start empty. Install then shows model
-and security recommendations for Claude Code and Codex. You can apply the
-recommendations, keep current settings, or customize. A final USER / PROJECT
-summary asks before any writes. Runtime flags suppress the runtime menu. Use
-repeatable `--tool`, `--specialist` and `--stack` flags to select project items
-in scripts. `--recommended` applies recommended models and security without the
-interactive review, and `--no-project` limits an install to user-level changes.
-A selected tool still asks before setup runs; the menu does
-not imply `--yes` or turn on Git hooks. Its prompt names the tool and project;
-the default report summarizes successful tool output and retains warnings and
-actionable tool notes, while `--verbose` shows the full output. Without a
-terminal and without project-item flags, install keeps its existing target
-defaults and does not set up a project. See [the install flow](docs/install.md#guided-install-flow)
-and [scope terminology](docs/install.md#terms-used-by-install).
-When Claude Code is selected and the
-current repository can be validated, installation automatically merges supported
-security restrictions into `<repo>/.claude/settings.json`. It does not set
-`defaultMode`, change your Auto policy, add broad `allow` rules or wire decision
-hooks by default. Outside a repository it still distributes the global team and
-reports project security setup as pending; it does not put a project policy in
-your global settings. The sole global access-policy key it adds is the supported native
-`sandbox.network.strictAllowlist: true` lock, whose scope must be user or
-managed settings. It adds no destinations and changes no approval mode.
-A plain Claude install also unregisters attributable older canonkit hooks from
-user settings and the validated current repository. [What each choice writes](docs/install.md#core-at-user-level).
+Requires Node 18+ on Linux, macOS and Windows; in a terminal, all four runtimes start unselected and you must choose at least one. The runtime menu is followed by project setup: Yes opens the tools, specialists and stack menus (Graphify and OpenSpec start selected; specialists and stacks start empty); Claude Code and Codex then show model and security recommendations, which you can apply, keep current or customize, before a final USER / PROJECT summary asks before any writes.
 
-User-level Claude paths shown as `~/.claude` follow `CLAUDE_CONFIG_DIR` when
-set to an absolute directory; repository settings keep their project scope.
+### Install without the runtime menu
 
-**This changes the install contract:** a plain Claude installation now writes
-supported project security settings and removes canonical older Claude hook
-registrations unless you pass `--wire-hooks`. Preview with `npx canonkit install --dry-run`.
-Other global settings, saved permissions and unrelated integrations are preserved.
-Ambiguous commands, local/managed settings and other repositories are left for
-manual review. [Migration and recovery](docs/install.md#returning-existing-claude-installations-to-native-approvals).
-Native Windows remains supported with partial protection: Claude's shell
-commands there have no OS sandbox. [Environment coverage](docs/install.md#native-security-per-repository).
+```bash
+npx canonkit install --copilot
+```
 
-Agents run on your session's model until you choose otherwise. To pick the model
-and effort per need level from what your harness actually offers, answer Yes when
-the interactive `npx canonkit install` asks, or run `npx canonkit models setup`,
-then reinstall with `npx canonkit install --claude --codex`. Claude Code and
-Codex apply these choices; OpenCode and Copilot inherit the session model.
-See [Choosing models](docs/install.md#choosing-models).
+Runtime flags suppress the menu and can be combined; repeatable `--tool`, `--specialist` and `--stack` flags select project items in scripts. `--recommended` applies recommended models and security without the interactive review, and `--no-project` limits an install to user-level changes; a selected tool still asks before setup runs, the menu does not imply `--yes` or turn on Git hooks, its prompt names the tool and project, the default report summarizes successful tool output and retains warnings and actionable tool notes, and `--verbose` shows the full output. Without a terminal and without project-item flags, install keeps its existing target defaults and does not set up a project. See [the install flow](docs/install.md#guided-install-flow) and [scope terminology](docs/install.md#terms-used-by-install).
 
-**Check that it worked:**
+### Preview an install
+
+```bash
+npx canonkit install --dry-run
+```
+
+Preview before writing; [the install guide](docs/install.md#guided-install-flow) describes the project-item and tool-setup preview behavior.
+
+When Claude Code is selected and the current Git repository can be validated, installation automatically merges supported security restrictions into the project's `<project>/.claude/settings.json`. It does not set `defaultMode`, change your Auto policy, add broad `allow` rules or wire decision hooks by default. Outside a Git repository it still installs the team at user level and reports project security setup as pending; it does not put a project policy in your user settings. The sole user-level access-policy key it adds is the supported native `sandbox.network.strictAllowlist: true` lock, whose scope must be user or managed settings. It adds no destinations and changes no approval mode. A plain Claude install also unregisters attributable older canonkit hooks from user settings and the validated current project. [What each choice writes](docs/install.md#core-at-user-level).
+
+User-level Claude paths shown as `~/.claude` follow `CLAUDE_CONFIG_DIR` when set to an absolute directory; project settings stay in the project.
+
+**This changes the install contract:** a plain Claude installation now writes supported project security settings and removes canonical older Claude hook registrations unless you pass `--wire-hooks`. Other user settings, saved permissions and unrelated integrations are preserved. Ambiguous commands, local/managed settings and other projects are left for manual review. [Migration and recovery](docs/install.md#returning-existing-claude-installations-to-native-approvals). Native Windows remains supported with partial protection: Claude's shell commands there have no OS sandbox. [Environment coverage](docs/install.md#native-security-per-project).
+
+### Choose models
+
+```bash
+npx canonkit models setup
+npx canonkit install --claude --codex
+```
+
+Agents use your session's model until you choose otherwise; to pick model and effort per need level from what your harness offers, answer Yes during interactive `npx canonkit install` instead, or run the commands above. Claude Code and Codex apply these choices; OpenCode and Copilot inherit the session model. See [Choosing models](docs/install.md#choosing-models).
+
+### Verify installation
 
 ```bash
 npx canonkit doctor
+# Expected: checks report OK, WARN or FAIL; doctor exits with 1 if any check fails.
+# Warning: the security report distinguishes configured settings from runtime evidence and does not prove a verified boundary.
 ```
 
-`doctor` only reads. It prints checks as `OK`, `WARN` or `FAIL` and exits with 1
-if any check fails. Its security report distinguishes configured settings from
-runtime evidence. Coverage has separate partial, unavailable and unknown
-results; this implementation does not collect proof for a verified boundary.
-Correct native Windows configuration can be partial
-without being a failed installation. Missing runtimes that you did not install
-for are not Claude-specific installation failures.
+`doctor` only reads; coverage has separate partial, unavailable and unknown results, correct native Windows configuration can be partial without being a failed installation, and missing runtimes you did not install for are not Claude-specific installation failures.
 
-Then open a new Claude Code session in any project:
+### Check Claude Code
 
-1. `/agents` should list the ten core agents (`scott`, `archie`, `bob`, ...).
-2. Inspect `<repo>/.claude/settings.json` and the security report. Your selected
-   Manual, Auto, Edit automatically or Plan mode still controls ordinary approvals.
+```text
+/agents
+# Expected: the ten core agents (scott, archie, bob, ...) are listed.
+```
 
-**Optional decision hooks:** run `npx canonkit install --wire-hooks` to wire only
-the runtimes selected for that install. Claude uses `~/.claude/settings.json`,
-Codex uses `$CODEX_HOME/hooks.json` (review `/hooks` once to trust it), and
-OpenCode uses its plugin. Hook `ask` decisions can force prompts even in Auto;
-choose this only when you want those additional gates. [Hook behavior](docs/hooks.md#native-controls-and-optional-hooks).
+Open a new Claude Code session in any project, then inspect `<repo>/.claude/settings.json` and the security report; your selected Manual, Auto, Edit automatically or Plan mode still controls ordinary approvals.
 
-**Optional: the dashboard.** It runs locally and shows dispatches, tokens and
-gates recorded by the optional hooks. Without those registrations, it does not
-create new dispatch telemetry:
+### Wire optional decision hooks
 
 ```bash
-node ~/.claude/canonkit-dashboard/serve.js          # Linux, macOS, Git Bash
-node $HOME\.claude\canonkit-dashboard\serve.js      # Windows PowerShell
+npx canonkit install --wire-hooks
 ```
 
-Then open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
+This wires only runtimes selected for that install: Claude uses `~/.claude/settings.json`, Codex uses `$CODEX_HOME/hooks.json` (review `/hooks` once to trust it), and OpenCode uses its plugin. Hook `ask` decisions can force prompts even in Auto; choose this only when you want those additional gates. [Hook behavior](docs/hooks.md#native-controls-and-optional-hooks).
+
+### Start the optional dashboard on Linux, macOS or Git Bash
+
+```bash
+node ~/.claude/canonkit-dashboard/serve.js
+```
+
+### Start the optional dashboard in Windows PowerShell
+
+```powershell
+node $HOME\.claude\canonkit-dashboard\serve.js
+```
+
+The dashboard runs locally and shows dispatches, tokens and gates recorded by the optional hooks; without those registrations, it does not create new dispatch telemetry. Open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
 
 <!-- canonkit:security-settings:start -->
 ## Recommended security settings
 
 This is the configuration `npx canonkit install --claude` aims for on macOS, or on
 Linux/WSL2 with `bwrap` and `socat`, with Claude Code 2.1.314 or later (older
-versions get fewer keys; `npx canonkit doctor` shows which). Repository policy
-lives in the repository's `.claude/settings.json`; machine-specific policy lives
+versions get fewer keys; `npx canonkit doctor` shows which). Project policy
+lives in the project's `.claude/settings.json`; machine-specific policy lives
 in your user settings. `a.b.c` below means key `c` inside `b` inside `a`. A
 `settings.local.json` or managed policy can override these values, and `doctor`
 flags conflicts. `npx canonkit doctor` shows what is missing. Per-version and per-platform detail,
 the install review prompt and the non-interactive behavior are in
 [docs/install.md](docs/install.md#security-review-during-install).
 
-Repository, `<repo>/.claude/settings.json`:
+Project, `<project>/.claude/settings.json`:
 
 ```json
 {
@@ -176,26 +162,28 @@ User, `~/.claude/settings.json`:
       "allowRead": [
         "~/.nvm",
         "~/.local/bin",
-        "~/.local/share/pipx"
+        "~/.local/share/pipx",
+        "~/.canonkit/models.json"
       ]
     }
   }
 }
 ```
 
-The `allowRead` list above is an example for nvm and pipx. The real list is
-detected per machine, and an interactive install asks before adding it.
+The `allowRead` list above is an example for nvm and pipx plus the model choices
+file (never the `~/.canonkit` folder, which holds install receipts). The runtime
+entries are detected per machine, and an interactive install asks before adding them.
 
 | Key | File | Why it exists, and what breaks without it |
 | --- | --- | --- |
-| `permissions.blockReadsOutsideWorkingDirectories` | repository | file tools cannot read your other projects or home data; without it a prompt injection can read them |
-| `permissions.blockWritesOutsideWorkingDirectories` | repository | file tools cannot write outside this repository; without it they can change files anywhere you can |
-| `sandbox.enabled` | repository | shell commands run in an OS sandbox; without it they run with all your user rights |
-| `sandbox.failIfUnavailable` | repository | a missing sandbox stops commands; without it they silently run unsandboxed |
-| `sandbox.allowUnsandboxedCommands` | repository | no command can escape the sandbox; without it a failed command may be retried outside it |
-| `sandbox.autoAllowBashIfSandboxed` | repository | sandboxed commands run without a prompt each, so repository scripts run unprompted: use only with repositories you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules |
-| `sandbox.network.strictAllowlist` | user | sandboxed commands reach only domains you allowed, and repositories cannot widen it (from Claude 2.1.285) |
-| `sandbox.filesystem.allowRead` | user | sandboxed commands can still read the runtimes they need (node, pipx tools) while the rest of home stays closed; detected per machine |
+| `permissions.blockReadsOutsideWorkingDirectories` | project | file tools cannot read your other projects or home data; without it a prompt injection can read them |
+| `permissions.blockWritesOutsideWorkingDirectories` | project | file tools cannot write outside this project; without it they can change files anywhere you can |
+| `sandbox.enabled` | project | shell commands run in an OS sandbox; without it they run with all your user rights |
+| `sandbox.failIfUnavailable` | project | a missing sandbox stops commands; without it they silently run unsandboxed |
+| `sandbox.allowUnsandboxedCommands` | project | no command can escape the sandbox; without it a failed command may be retried outside it |
+| `sandbox.autoAllowBashIfSandboxed` | project | sandboxed commands run without a prompt each, so project scripts run unprompted: use only with projects you trust (see docs/install.md); without it every command prompts and approvals pile up as permissions.allow rules |
+| `sandbox.network.strictAllowlist` | user | sandboxed commands reach only domains you allowed, and project settings cannot widen it (from Claude 2.1.285) |
+| `sandbox.filesystem.allowRead` | user | sandboxed commands can still read the runtimes they need (node, pipx tools) and your model choices file (~/.canonkit/models.json, the file only) while the rest of home stays closed; detected per machine |
 <!-- canonkit:security-settings:end -->
 
 ## How it decides: LOW vs HIGH
@@ -283,9 +271,12 @@ just to round out the list:
 | **dana** | real users and data: telemetry, funnels, A/B tests |
 | **iris** | ML or computer vision: extraction, datasets, model evaluation |
 
+### Add project specialists
+
 ```bash
 cd my-project
-npx canonkit add maya nova      # writes native agent profiles + the project's AGENTS.md
+npx canonkit add maya nova
+# Expected: writes native agent profiles and the project's AGENTS.md.
 ```
 
 **A veto is narrow.** An agent can use its veto only inside its own domain, on a
@@ -299,24 +290,23 @@ Review are in [docs/team.md](https://github.com/erikalira/canonkit/blob/main/doc
 **Optional skills** add language, framework and design-practice guidance to the existing team.
 Choose the packs your project uses; each is installed separately from the core.
 
-| Pack | Guidance | Install in your project |
-| --- | --- | --- |
-| [TypeScript](stack-packs/typescript/SKILL.md) | Type safety, async boundaries and module/build diagnostics | `npx canonkit add typescript` |
-| [C++](stack-packs/cpp/SKILL.md) | Resource ownership, lifetimes, concurrency and compiler/linker diagnostics | `npx canonkit add cpp` |
-| [C# / .NET](stack-packs/csharp/SKILL.md) | Nullability, async/resource lifetimes and solution/project builds | `npx canonkit add csharp` |
-| [Java](stack-packs/java/SKILL.md) | Resources, concurrency and Maven/Gradle diagnostics | `npx canonkit add java` |
-| [Python](stack-packs/python/SKILL.md) | Runtime data, mutable state, resources, async and environments | `npx canonkit add python` |
-| [React](stack-packs/react/SKILL.md) | Hooks, state/effects, hydration and configured framework boundaries | `npx canonkit add react` |
-| [Rust](stack-packs/rust/SKILL.md) | Ownership, lifetimes, async/unsafe invariants and Cargo diagnostics | `npx canonkit add rust` |
-| [Go](stack-packs/go/SKILL.md) | Errors, goroutines/channels and module/workspace builds | `npx canonkit add go` |
-| [Kotlin](stack-packs/kotlin/SKILL.md) | Nullability, coroutines/Flow and JVM/Android/multiplatform builds | `npx canonkit add kotlin` |
-| [Swift](stack-packs/swift/SKILL.md) | ARC, actors/concurrency and SwiftPM/Xcode diagnostics | `npx canonkit add swift` |
-| [UI design](stack-packs/ui-design/SKILL.md) | Identity-preserving direction, representative screen and visual handoff | `npx canonkit add ui-design` |
-| [UI review](stack-packs/ui-review/SKILL.md) | Rendered finish, accessible interaction, states and motion evidence | `npx canonkit add ui-review` |
-| [Game art direction](stack-packs/game-art-direction/SKILL.md) | Character, environment and VFX coherence at intended scale | `npx canonkit add game-art-direction` |
+| Pack | Guidance |
+| --- | --- |
+| [TypeScript](stack-packs/typescript/SKILL.md) | Type safety, async boundaries and module/build diagnostics |
+| [C++](stack-packs/cpp/SKILL.md) | Resource ownership, lifetimes, concurrency and compiler/linker diagnostics |
+| [C# / .NET](stack-packs/csharp/SKILL.md) | Nullability, async/resource lifetimes and solution/project builds |
+| [Java](stack-packs/java/SKILL.md) | Resources, concurrency and Maven/Gradle diagnostics |
+| [Python](stack-packs/python/SKILL.md) | Runtime data, mutable state, resources, async and environments |
+| [React](stack-packs/react/SKILL.md) | Hooks, state/effects, hydration and configured framework boundaries |
+| [Rust](stack-packs/rust/SKILL.md) | Ownership, lifetimes, async/unsafe invariants and Cargo diagnostics |
+| [Go](stack-packs/go/SKILL.md) | Errors, goroutines/channels and module/workspace builds |
+| [Kotlin](stack-packs/kotlin/SKILL.md) | Nullability, coroutines/Flow and JVM/Android/multiplatform builds |
+| [Swift](stack-packs/swift/SKILL.md) | ARC, actors/concurrency and SwiftPM/Xcode diagnostics |
+| [UI design](stack-packs/ui-design/SKILL.md) | Identity-preserving direction, representative screen and visual handoff |
+| [UI review](stack-packs/ui-review/SKILL.md) | Rendered finish, accessible interaction, states and motion evidence |
+| [Game art direction](stack-packs/game-art-direction/SKILL.md) | Character, environment and VFX coherence at intended scale |
 
-Run these commands from your project. You can add several packs at once, inspect
-what is installed and remove a pack when you stop using it:
+### Add, inspect and remove packs
 
 ```bash
 cd my-project
@@ -405,13 +395,13 @@ Which gate does what in each runtime:
 
 | Command | What it does |
 | --- | --- |
-| `install` | global core distribution; interactive project menus for tools, specialists and stack packs; repeatable `--tool`, `--specialist`, `--stack` selectors; supported native Claude security and user-scoped strict-network lock (`--claude` / `--codex` / `--opencode` / `--copilot` skip the runtime menu) |
+| `install` | core distribution at user level; interactive project menus for tools, specialists and stack packs; repeatable `--tool`, `--specialist`, `--stack` selectors; supported native Claude security and user-scoped strict-network lock (`--claude` / `--codex` / `--opencode` / `--copilot` skip the runtime menu) |
 | `install --verbose` | prints every step and full selected-tool output; the default names tool actions before confirmation and summarizes successful output |
 | `install --wire-hooks` | distribution and native security; skips Claude hook cleanup and wires supported hooks (Claude Code, Codex, OpenCode) |
 | `doctor` | read-only installation and security diagnosis; exits 1 on `FAIL` |
-| `reference` | only the global blocks and skills |
-| `uninstall [--claude] [--codex] [--opencode] [--copilot]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `uninstall --project` | reverse attributable security changes only in the validated current repository |
+| `reference` | only the user-level blocks and skills |
+| `uninstall [--claude] [--codex] [--opencode] [--copilot]` | remove tracked user-level artifacts; without flags, all recorded harnesses |
+| `uninstall --project` | reverse attributable security changes only in the validated current project |
 | `add <name>...` / `remove <name>...` | specialists or stack-pack skills in the current project |
 | `list` | the roster and what is installed where |
 | `tool add\|remove\|list` | integrate [graphify or openspec](https://github.com/erikalira/canonkit/blob/main/docs/tools.md) in the current project |
@@ -422,7 +412,7 @@ writes nothing.
 ## FAQ
 
 **What does it cost per turn?** Claude Code lists every installed agent's
-description on every turn. That list plus the two global blocks comes to about
+description on every turn. That list plus the two user-level blocks comes to about
 3k tokens. An agent's full body (~1–2k tokens) loads only when the agent is
 dispatched. [Measurements](https://github.com/erikalira/canonkit/blob/main/docs/evals.md#always-loaded-cost).
 
@@ -441,11 +431,16 @@ markers in `~/AGENTS.md` and `~/.claude/CLAUDE.md` is yours and is preserved.
 `~/.claude/canonkit-activity/`; new records omit task descriptions and command
 fragments, but still include paths and identifiers alongside counts and timing.
 Older records can retain those texts until rotation. Both
-[incidental project issues](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
+[incidental findings for the project's backlog](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md)
 and the optional
 [Learning Loop contribution](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md#contributing-a-general-improvement)
-supply sanitized drafts; publication requires your review and explicit authorization. Raw logs
-and personal memories do not belong in a contribution.
+supply sanitized drafts; writing or publishing them requires your review and
+explicit authorization. CanonKit itself sends nothing. A finding leaves your
+machine only when you publish it: through a tracker such as GitHub issues, or
+in a contribution. A backlog file such as `todo.md` is edited locally, but if
+your repository tracks it, the entry is published with your next push. That is
+why entries are sanitized, and why vulnerabilities and secrets are never
+written there. Raw logs and personal memories do not belong in a contribution.
 [Field list](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md#stable-fields).
 
 **A gate fired on a change I'm sure is LOW.** Confirm it and say why. If the same
@@ -458,9 +453,9 @@ manifest, backs up edited owned artifacts, preserves observed artifacts intact
 and keeps content outside managed
 blocks. Pre-manifest installations and ambiguous wiring need manual cleanup; see
 [docs/install.md](https://github.com/erikalira/canonkit/blob/main/docs/install.md#uninstalling).
-Repository security is separate: from that repository, use
+Project security is separate: from that project, use
 `npx canonkit uninstall --project --dry-run`, then `npx canonkit uninstall --project`.
-Global uninstall does not search for or remove repository policies.
+A user-level uninstall does not search for or remove project policies.
 
 **I'm upgrading from `meu-time`.** `install` migrates the log folder and leaves a
 forwarder for the old hook name. See
@@ -478,7 +473,7 @@ forwarder for the old hook name. See
 | [docs/maintaining.md](https://github.com/erikalira/canonkit/blob/main/docs/maintaining.md) | editing an agent, file format, `validate.sh`, tests |
 | [docs/evals.md](https://github.com/erikalira/canonkit/blob/main/docs/evals.md) | routing and quality evals, methodology and results |
 | [docs/learning-loop.md](https://github.com/erikalira/canonkit/blob/main/docs/learning-loop.md) | investigate mistakes and propose evaluated instruction changes |
-| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental project findings and approve issue drafts in a batch |
+| [docs/out-of-scope-issues.md](https://github.com/erikalira/canonkit/blob/main/docs/out-of-scope-issues.md) | preserve incidental findings and approve their entries for the project's backlog in a batch |
 | [docs/adr/](https://github.com/erikalira/canonkit/tree/main/docs/adr) | architecture decisions |
 
 ## License

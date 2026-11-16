@@ -323,7 +323,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
   let file = userConfigPath(home);
   if (project) {
     const root = await projectRoot(cwd, home);
-    if (!root) throw new Error("models setup --project: no project here; run it inside a repository (your home folder holds the user choices)");
+    if (!root) throw new Error("models setup --project: no project here; run it inside a project (a Git repository). For user-level choices run canonkit models setup without --project");
     file = projectConfigPath(root);
   }
   const selectable = harnesses.filter((h) => h === "claude" || h === "codex");
@@ -352,7 +352,7 @@ async function setup(ctx, agents, { project = false, harnesses = ["claude"], ask
     const effortsForModel = harness === "codex" ? (model) => record.status === "discovered"
       ? (record.models.find((m) => m.id === model)?.efforts ?? []) : [] : undefined;
     if (record.status !== "discovered") ctx.log(`${LABEL[harness]} discovery: unknown — ${record.reason}. Anything you choose is recorded as unverified.`);
-    ctx.log(`${LABEL[harness]} models for ${project ? "this project" : "you"} (${file})`);
+    ctx.log(`${LABEL[harness]} models, ${project ? "this project" : "user level"} (${file})`);
     ctx.log("Each agent uses its need level's choice; you can override single agents after.");
     const inherit = { model: { title: "inherit", description: "the session's model" }, effort: { title: "inherit", description: "the session's effort" } };
     ctx.log(LEGEND);
@@ -507,7 +507,7 @@ async function offerModelSetup(ctx, agents, { ask, home = os.homedir(), ...rest 
     const go = await ask({
       type: "confirm",
       name: "models",
-      message: has ? `Change the models your ${names} agents use?` : `Choose models for your ${names} agents? (No: they run on the session's model)`,
+      message: has ? `Change the user-level models for ${names} agents?` : `Choose user-level models for ${names} agents? (No: they run on the session's model)`,
       initial: !has,
     });
     if (!go) return true;
@@ -526,7 +526,8 @@ async function offerModelSetup(ctx, agents, { ask, home = os.homedir(), ...rest 
  */
 async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd(), now = new Date() } = {}) {
   const rows = [];
-  const add = (status, detail) => rows.push({ status, check: "models", detail });
+  // `scope: "project"` marks a row about the project's own choices or files; no scope means user level.
+  const add = (status, detail, scope) => rows.push({ status, check: "models", detail, ...(scope ? { scope } : {}) });
   let layers;
   try {
     layers = await loadLayers({ home, cwd });
@@ -539,7 +540,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
   const codexDocs = docs.filter(([, d]) => d?.harnesses?.codex);
   const shadowWarnings = (states) => {
     const problems = Object.entries(states).filter(([, state]) => state.status !== "current");
-    for (const [name, state] of problems) add("WARN", `Codex project agent ${name}: project file ${state.status}; reinstall with npx canonkit install --codex from this repository and inspect any preserved local file`);
+    for (const [name, state] of problems) add("WARN", `Codex project agent ${name}: project file ${state.status}; reinstall with npx canonkit install --codex from this project and inspect any preserved edited file`, "project");
     return problems.length;
   };
   if (!claudeDocs.length && !codexDocs.length) {
@@ -583,7 +584,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
         if (here[f].source.startsWith("project") && here[f].value !== mine[f].value) changed.push(`${a.name} ${f} ${mine[f].value ?? "inherit"} → ${here[f].value}`);
       }
     }
-    if (changed.length) add("WARN", `project choices in ${projectConfigPath(layers.root)} override yours: ${changed.join(", ")} — check them before trusting a repository you did not write`);
+    if (changed.length) add("WARN", `project choices in ${projectConfigPath(layers.root)} override your user-level choices: ${changed.join(", ")} — check them before trusting a project you did not write`, "project");
   }
   let problems = 0;
   for (const [layer, d] of claudeDocs) {
@@ -598,7 +599,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
         if (efforts && entry.effort !== undefined && !efforts.includes(entry.effort)) issues.push(`effort '${entry.effort}' is not in the latest discovery (${efforts.join(", ")})`);
         if (issues.length) {
           problems++;
-          add("WARN", `Claude Code ${where}: ${issues.join("; ")} — affects ${who}; if Claude Code rejects it they fall back to inherit`);
+          add("WARN", `Claude Code ${where}: ${issues.join("; ")} — affects ${who}; if Claude Code rejects it they fall back to inherit`, layer === "project" ? "project" : undefined);
         }
       }
     }
@@ -626,7 +627,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
         incompatible.push(`${agent.name}: ${here.model.value} / ${here.effort.value}`);
       }
     }
-    if (changed.length) add("WARN", `project Codex choices in ${projectConfigPath(layers.root)} override yours: ${changed.join(", ")} — check them before trusting a repository you did not write`);
+    if (changed.length) add("WARN", `project Codex choices in ${projectConfigPath(layers.root)} override your user-level choices: ${changed.join(", ")} — check them before trusting a project you did not write`, "project");
     if (partial.length) add("WARN", `Codex agents ${partial.join(", ")} set only model or effort; compatibility with an inherited setting is unconfirmed`);
     if (incompatible.length) add("WARN", `Codex model/effort pairs are incompatible: ${incompatible.join(", ")} — affected agents fall back to inherit on reinstall`);
     for (const [layer, doc] of codexDocs) {
@@ -636,7 +637,7 @@ async function modelDiagnosis(agents, { home = os.homedir(), cwd = process.cwd()
           if (entry.unverified) issues.push("is marked unverified (entered by hand)");
           if (known && entry.model && !known.has(entry.model)) issues.push(`model '${entry.model}' is not in the latest discovery`);
           if (known && entry.model && entry.effort && known.has(entry.model) && !known.get(entry.model).efforts.includes(entry.effort)) issues.push(`effort '${entry.effort}' is not supported by '${entry.model}'`);
-          if (issues.length) add("WARN", `Codex ${layer} ${kind === "levels" ? "level" : "agent"} ${name}: ${issues.join("; ")} — affected agents may fall back to inherit`);
+          if (issues.length) add("WARN", `Codex ${layer} ${kind === "levels" ? "level" : "agent"} ${name}: ${issues.join("; ")} — affected agents may fall back to inherit`, layer === "project" ? "project" : undefined);
         }
       }
     }

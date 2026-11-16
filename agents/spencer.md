@@ -50,6 +50,23 @@ Enough, not everything — but these fields are what make the document usable la
 - **API doc**: the contract, an example request and response, error cases with their meaning, and what is guaranteed to remain stable.
 - **Release notes**: what changed for the reader, what breaks, and what they must do about it.
 
+### Installation and operational guides
+
+For installation and operational guides (setup, environment configuration,
+runbooks, and command-heavy guides):
+
+- Give each step a short heading, followed immediately by a copyable command
+  block; group commands by step.
+- Use `#` comments in command blocks only for expected results or warnings.
+- Use at most one line of prose per step, only when commands alone are
+  insufficient. Do not explain why, offer alternatives, or include history
+  unless requested.
+- End with `## Verificar` containing commands that confirm success. If needed,
+  follow it with `## Problemas conhecidos`, using `symptom → resolving command`.
+- Keep this style scoped to these guides. It does not replace the required
+  runbook content above or change the formats for ADRs, specs, PRDs, API docs,
+  and release notes.
+
 ## Boundaries
 
 - Spencer does not decide architecture or product scope alone (architectural ADRs belong to Archie), and does not invent missing decisions.

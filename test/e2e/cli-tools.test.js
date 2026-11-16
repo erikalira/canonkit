@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { rm, mkdir, writeFile, readdir, chmod, symlink, lstat } from "node:fs/promises";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { REPO, runCli, writeCommand } from "../helpers/cli-harness.js";
+import { REPO, CLI, isolatedEnv, runCli, writeCommand } from "../helpers/cli-harness.js";
 import { fileURLToPath } from "node:url";
 import { CORE, scratch, run, read } from "../helpers/cli-fixtures.js";
 import { readAgents, readTools, parseTool, chooseHarness, toolAdd } from "../../bin/cli.js";
@@ -1006,6 +1006,102 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.equal(r.status, 1);
     assert.match(r.out, /core\.hooksPath is set/);
     assert.deepEqual(await calls(), [["graphify", "--version"]]);
+  });
+
+  // A FIFO read with readFileSync blocks forever: the child gets a timeout so a regression fails instead of hanging the suite.
+  const timedTool = (s, args, extra) => spawnSync(process.execPath, [CLI, "tool", ...args], { cwd: s.project, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL", env: isolatedEnv(s.home, s.env(extra)) });
+  const mkfifo = (file) => spawnSync("mkfifo", [file]).status === 0;
+
+  test("a repository-local core.fsmonitor never runs during tool add graphify", { skip: WIN || !gitDir, timeout: 60000 }, async () => {
+    for (const flags of [[], ["--with-git-hooks"]]) {
+      const s = await setup(`graphify-fsmonitor${flags.length}`, { git: true });
+      const marker = path.join(s.root, "FSMONITOR-RAN");
+      const script = path.join(s.root, "fsmonitor.sh");
+      await writeFile(script, `#!/bin/sh\necho ran >> ${marker}\nexit 1\n`);
+      await chmod(script, 0o755);
+      assert.equal(spawnSync("git", ["-C", s.project, "config", "core.fsmonitor", script], { env: s.env() }).status, 0);
+      // A committed file under graphify-out/ makes the post-setup ls-files look at the index.
+      await mkdir(path.join(s.project, "graphify-out"));
+      await writeFile(path.join(s.project, "graphify-out", "graph.json"), "{}");
+      assert.equal(spawnSync("git", ["-C", s.project, "add", "-f", "graphify-out/graph.json"], { env: s.env() }).status, 0);
+      existsSync(marker) && (await rm(marker));
+      const r = timedTool(s, ["add", "graphify", ...flags, "--yes"]);
+      assert.equal(r.status, 0, r.stdout + r.stderr);
+      assert.equal(existsSync(marker), false, `core.fsmonitor ran (${flags})`);
+    }
+  });
+
+  test("an inherited GIT_DIR does not redirect the hooks preflight to another repository", { skip: !gitDir, timeout: 60000 }, async () => {
+    const s = await setup("graphify-gitdir", { git: true });
+    const decoy = path.join(s.root, "decoy");
+    assert.equal(spawnSync("git", ["init", "-q", decoy], { env: s.env() }).status, 0);
+    await writeFile(path.join(s.project, ".git", "hooks", "post-commit"), "#!/bin/sh\necho mine\n");
+    const r = timedTool(s, ["add", "graphify", "--with-git-hooks", "--yes"], { GIT_DIR: path.join(decoy, ".git") });
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout + r.stderr, /never overwrites a git hook/);
+  });
+
+  test("a FIFO .gitignore is refused without hanging, and nothing runs", { skip: WIN || !gitDir, timeout: 60000 }, async (t) => {
+    for (const args of [["add", "graphify", "--yes"], ["add", "graphify", "--dry-run"]]) {
+      const s = await setup(`graphify-fifo-ignore${args.at(-1).slice(2)}`, { git: true });
+      if (!mkfifo(path.join(s.project, ".gitignore"))) return t.skip("mkfifo is not available");
+      const r = timedTool(s, args);
+      assert.equal(r.error, undefined, `did not terminate: ${r.error?.message}`);
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /\.gitignore is not a regular file/);
+      assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
+      assert.deepEqual(await s.calls(), []);
+    }
+  });
+
+  test("a self-referencing .gitignore symlink is refused cleanly, with no stack trace", { skip: WIN || !gitDir, timeout: 60000 }, async () => {
+    const s = await setup("graphify-loop-ignore", { git: true });
+    await symlink(".gitignore", path.join(s.project, ".gitignore"));
+    const r = timedTool(s, ["add", "graphify", "--yes"]);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stderr, /\.gitignore is not a regular file or cannot be read/);
+    assert.doesNotMatch(r.stderr, /    at /, "no stack trace");
+    assert.deepEqual(await s.calls(), []);
+  });
+
+  test("a .gitignore symlinked to a regular file in the project still works", { skip: WIN || !gitDir, timeout: 60000 }, async () => {
+    const s = await setup("graphify-link-ignore", { git: true });
+    await writeFile(path.join(s.project, "real-ignore"), "node_modules\n");
+    await symlink("real-ignore", path.join(s.project, ".gitignore"));
+    const r = timedTool(s, ["add", "graphify", "--yes"]);
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+  });
+
+  test("a FIFO git hook is refused without hanging and is not overwritten", { skip: WIN || !gitDir, timeout: 60000 }, async (t) => {
+    const s = await setup("graphify-fifo-hook", { git: true });
+    const hook = path.join(s.project, ".git", "hooks", "post-commit");
+    if (!mkfifo(hook)) return t.skip("mkfifo is not available");
+    const r = timedTool(s, ["add", "graphify", "--with-git-hooks", "--yes"]);
+    assert.equal(r.error, undefined, `did not terminate: ${r.error?.message}`);
+    assert.equal(r.status, 1, r.stdout + r.stderr);
+    assert.match(r.stdout + r.stderr, /post-commit already exists and is not graphify's; canonkit never overwrites a git hook/);
+    assert.equal((await lstat(hook)).isFIFO(), true);
+    assert.deepEqual(await s.calls(), [["graphify", "--version"]]);
+  });
+
+  test("a symlinked directory below a real write root is refused naming it, with nothing run", { skip: WIN }, async () => {
+    const s = await setup("h-nested-link");
+    await mkdir(path.join(s.project, ".claude"));
+    await mkdir(path.join(s.root, "elsewhere"));
+    await symlink(path.join(s.root, "elsewhere"), path.join(s.project, ".claude", "skills"));
+    const r = s.tool(["add", "openspec", "--harness=claude", "--yes"]);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.stderr, /Refusing: \.claude\/skills in this project is a symlink or not a directory/);
+    assert.deepEqual(await s.calls(), []);
+    assert.deepEqual(await readdir(path.join(s.root, "elsewhere")), []);
+  });
+
+  test("an absent nested directory under a real write root passes", async () => {
+    const s = await setup("h-nested-absent");
+    await mkdir(path.join(s.project, ".claude"));
+    const r = s.tool(["add", "openspec", "--harness=claude", "--yes"]);
+    assert.equal(r.status, 0, r.out);
+    assert.deepEqual((await s.calls()).at(-1), ["openspec", "init", "--tools", "claude"]);
   });
 
   test("a hook graphify did not announce is reported loudly", { skip: !gitDir }, async () => {

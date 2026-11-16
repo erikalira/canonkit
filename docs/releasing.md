@@ -1,105 +1,153 @@
 # Releasing canonkit
 
-canonkit is published only by [`.github/workflows/release.yml`](../.github/workflows/release.yml),
-never from a laptop. The package installs a hook that runs on every tool call;
-publishing from CI attaches npm provenance (which commit and workflow built the
-tarball) and leaves no npm token anywhere to steal. The exceptions are
-`npm deprecate` and `npm dist-tag`: they change no code and need your 2FA, so they
-run from a laptop (see Rollback).
-
-## Release
-
-Releases are stable versions only. The workflow refuses a prerelease version,
-because it would be published as `latest`.
-
-1. Bump the version in a PR: `npm version <patch|minor|major> --no-git-tag-version`.
-   In the same PR, add the release notes at `docs/release-notes/X.Y.Z.md`: what
-   changed, what breaks, and what to do about it (start with the line
-   "Action required", even when it is "none"). Commit it and merge it once CI is
-   green.
-2. Tag what is now on `main` and push the tag:
-   `git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z`.
-3. Wait for the CI matrix and the secret scan. Before approving the `npm`
-   deployment, review `npm pack --dry-run --ignore-scripts` from the exact tagged
-   commit in a clean checkout. Then approve the deployment on the Actions run.
-   The publish job also logs its package file list, but that job starts only
-   after approval, so its log cannot serve as the pre-approval review.
-4. The `github-release` job creates the GitHub release for the tag after the
-   publish succeeds, with `docs/release-notes/X.Y.Z.md` as its notes (generated
-   notes if that file is missing). It runs in its own job because it needs
-   `contents: write`, which the publish job must not hold. If it fails, the
-   package is already on npm: re-run that job, or create the release by hand
-   with `gh release create vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md`.
-   The run page also shows a summary with the npm link.
-5. Check the published release:
-   - `npm view canonkit@X.Y.Z dist.attestations` shows a provenance entry, and
-     the npmjs.com page shows the "Provenance" badge;
-   - in a clean project, `npm i canonkit@X.Y.Z && npm audit signatures` passes.
-
-   For a few minutes after the publish, `npm view canonkit@X.Y.Z` and
-   `npx canonkit@X.Y.Z` can answer 404 (E404): the registry's cache has not caught
-   up yet. That is not a failed publish. The publish step's log on the Actions run
-   is what says whether it went out. Wait and retry; don't re-run the workflow or
-   re-tag, since a version that did publish can't be published again.
-
-The workflow also checks that the tag is on `main` and matches `package.json`.
-That check only catches mistakes: it runs from the tagged commit's own copy of
-the workflow. The tag ruleset and the deployment approval below are what stop
-an unauthorised release.
-
-## When it fails
-
-**Before publishing** (tests, secret scan, tag checks), nothing has reached npm:
-- A transient failure (runner, network): re-run the workflow.
-- A problem in the code: delete the tag (`git push --delete origin vX.Y.Z`,
-  `git tag -d vX.Y.Z`), merge the fix, and tag again. Deleting a tag is safe only
-  while nothing has been published from it.
-
-**After publishing** something wrong, a version number can never be reused, and
-npm's [unpublish policy](https://docs.npmjs.com/policies/unpublish) is narrow.
-Roll back like this:
-1. Point `latest` back at the last good version so `npx canonkit` stops
-   resolving the bad one: `npm dist-tag add canonkit@<last-good> latest`.
-   `npm deprecate` alone does not move `latest`.
-2. `npm deprecate canonkit@X.Y.Z "<reason>"`.
-3. Release a fixed version.
-
-Both commands run from a laptop with 2FA. Running them from CI through trusted
-publishing would need npm ≥ 11.21.0 (or ≥ 12.2.0) and its own opt-in on npmjs.com.
+Publish only through [`.github/workflows/release.yml`](../.github/workflows/release.yml). CI attaches npm provenance identifying the commit and workflow that built the tarball and stores no npm token. The package installs a hook that runs on every tool call. Run `npm deprecate` and `npm dist-tag` from a laptop with 2FA.
 
 ## One-time setup (account owner)
 
-These steps happen outside the repository and can't be done from CI.
+### 1. npm and GitHub account security
 
-1. **2FA** on the npm account and on the GitHub account. Confirm that
-   `npm owner ls canonkit` lists only you.
-2. **Tag ruleset.** Settings → Rules → Rulesets → new tag ruleset targeting
-   `v*`: restrict creation to you, block updates and deletions, and add no
-   bypass for anyone else. Blocking updates also stops a tag from being moved
-   after the deployment was approved. If you ever need to delete a tag (see
-   When it fails), use your own bypass.
-3. **GitHub environment.** Settings → Environments → `npm`:
-   - required reviewer = you;
-   - deployment branches and tags = selected tags `v*`;
-   - leave "Allow administrators to bypass" unchecked.
+```sh
+# Warning: These settings are outside the repository, cannot be configured from CI, and changes to them are not visible in a diff.
+npm owner ls canonkit
+```
 
-   With one maintainer, the approval is a confirmation step, not a second
-   person. Leave "Prevent self-review" off, because with it on no one could
-   approve the run.
-4. **Trusted publisher on npmjs.com.** canonkit → Settings → Trusted publishing →
-   GitHub Actions: user `erikalira`, repository `canonkit`, workflow
-   `release.yml`, environment `npm`. Every field is case-sensitive, and npm only
-   checks them at publish time. A new trusted-publisher config expires unless a
-   publish through it succeeds within 2 days, so set it up right before a release.
-5. **After the first publish with provenance:** Settings → Publishing access →
-   "Require two-factor authentication and disallow tokens", then revoke any npm
-   automation tokens that are left. From then on a leaked token cannot publish.
+Enable 2FA on both accounts; confirm the command lists only you.
 
-These settings live in GitHub and npm, not in the repository, so a change to
-them is invisible in a diff. Re-check steps 2–4 now and then, and turn on
-**Private vulnerability reporting** (Settings → Code security), which
-[SECURITY.md](../SECURITY.md) tells reporters to use.
+### 2. Tag ruleset
 
-Requirements this setup relies on: npm ≥ 11.5.1 and Node ≥ 22.14, and only
-GitHub-hosted runners can publish
-([npm docs](https://docs.npmjs.com/trusted-publishers)).
+```sh
+# Warning: Do not add a bypass for anyone else or allow tag updates after deployment approval.
+```
+
+In Settings → Rules → Rulesets, create a tag ruleset targeting `v*`, restrict creation to you, and block updates and deletions; use your own bypass only if you need to delete a tag.
+
+### 3. GitHub environment
+
+```sh
+# Warning: Leave "Allow administrators to bypass" unchecked and "Prevent self-review" off.
+```
+
+In Settings → Environments → `npm`, set yourself as required reviewer and deployment branches and tags to selected tags `v*`.
+
+### 4. npm trusted publisher
+
+```sh
+# Warning: A new configuration expires unless a publish through it succeeds within 2 days.
+```
+
+In canonkit → Settings → Trusted publishing → GitHub Actions, set user `erikalira`, repository `canonkit`, workflow `release.yml`, and environment `npm`; fields are case-sensitive and checked at publish time, so set this up right before a release.
+
+### 5. After the first publish with provenance
+
+```sh
+# Warning: Revoke any remaining npm automation tokens.
+```
+
+In Settings → Publishing access, select "Require two-factor authentication and disallow tokens"; from then on, a leaked token cannot publish.
+
+### 6. Periodic account checks
+
+```sh
+# Warning: Re-check setup steps 2–4 periodically.
+```
+
+Enable Private vulnerability reporting in Settings → Code security; [SECURITY.md](../SECURITY.md) directs reporters to use it.
+
+Requirements: npm ≥ 11.5.1, Node ≥ 22.14, and GitHub-hosted runners for publishing ([npm trusted publishers](https://docs.npmjs.com/trusted-publishers)).
+
+## Release
+
+### 1. Prepare and merge a stable version
+
+```sh
+# Warning: Stable versions only; the workflow refuses a prerelease because it would be published as latest.
+npm version <patch|minor|major> --no-git-tag-version
+```
+
+In the same PR, add `docs/release-notes/X.Y.Z.md` with what changed, what breaks, and what to do; start with "Action required", even when it is "none", then commit and merge once CI is green.
+
+For test changes, check that fixtures state their environment assumptions. In [CI run 43913435963](https://github.com/erikalira/canonkit/actions/runs/43913435963), all six OS/Node jobs failed because an OpenSpec menu test assumed the binary was on `PATH`; the installer correctly skips a missing tool. macOS also exposed a security fixture that omitted the recommended read access to `~/.canonkit/models.json`. Keep tests for installed and missing tools distinct, and include platform-specific security recommendations in fixture setup. A local pass with different installed tools does not predict the CI matrix result. Review every job's failing test name before changing product code or rerunning a failed workflow.
+
+### 2. Tag `main` and push
+
+```sh
+git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z
+```
+
+### 3. Review and approve the deployment
+
+```sh
+npm pack --dry-run --ignore-scripts
+```
+
+Wait for the CI matrix and secret scan; the workflow checks that the tag is on `main` and matches `package.json`, but this check runs from the tagged commit's own workflow copy and only catches mistakes. From a clean checkout of the exact tagged commit, review the command's output before approving the `npm` deployment on the Actions run; the publish job's package file list is logged only after approval and cannot serve as the pre-approval review.
+
+### 4. Create the GitHub release
+
+```sh
+# Warning: If this job fails, the package is already on npm.
+gh release create vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md
+```
+
+After publish succeeds, the `github-release` job creates the tag's release using `docs/release-notes/X.Y.Z.md`, or generated notes if that file is missing; if the job fails, re-run it or run the command above by hand. This job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
+
+## When it fails
+
+### Before publishing: transient runner or network failure
+
+```sh
+# Warning: Tests, secret scan, and tag checks run before publishing; nothing has reached npm at that point.
+```
+
+Re-run the workflow.
+
+### Before publishing: code problem
+
+```sh
+git push --delete origin vX.Y.Z
+git tag -d vX.Y.Z
+```
+
+Delete the tag only while nothing has been published from it; merge the fix and tag again.
+
+### After publishing: point `latest` to the last good version
+
+```sh
+# Warning: A published version number can never be reused, and npm's unpublish policy is narrow.
+npm dist-tag add canonkit@<last-good> latest
+```
+
+This points `latest` to the last good version so `npx canonkit` stops resolving the bad one; `npm deprecate` alone does not move `latest`.
+
+### Deprecate the bad version
+
+```sh
+npm deprecate canonkit@X.Y.Z "<reason>"
+```
+
+Run both rollback commands from a laptop with 2FA; running them from CI through trusted publishing requires npm ≥ 11.21.0 (or ≥ 12.2.0) and its own opt-in on npmjs.com.
+
+### Release a fixed version
+
+```sh
+npm version <patch|minor|major> --no-git-tag-version
+```
+
+## Verificar
+
+```sh
+npm view canonkit@X.Y.Z dist.attestations
+npm i canonkit@X.Y.Z && npm audit signatures
+```
+
+The first command shows a provenance entry, the npmjs.com page shows the "Provenance" badge, and the second command passes in a clean project.
+
+## Problemas conhecidos
+
+E404 from `npm view canonkit@X.Y.Z` or `npx canonkit@X.Y.Z` for a few minutes after publish →
+
+```sh
+# Warning: Wait for the registry cache to catch up; check the publish step's Actions log and do not re-run the workflow or re-tag.
+npm view canonkit@X.Y.Z
+npx canonkit@X.Y.Z
+```

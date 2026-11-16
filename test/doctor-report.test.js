@@ -45,14 +45,52 @@ test("a covered runtime read row is a pass, not a warning", () => {
 
 test("security gaps distinguish absent strict keys from projects not configured by install", () => {
   const { lines, failed } = renderDoctorReport([
-    { status: "WARN", check: "security claude desired-controls", detail: "partial: sandbox.enabled is not set in effective repository settings; shell runs in a sandbox", more: ["sandbox.enabled is not set; apply with canonkit install --recommended"] },
-    { status: "WARN", check: "security repository", detail: "project security not configured for this project (/work/repo)", more: ["run canonkit install --claude from this repository to set it up"] },
+    { status: "WARN", check: "security claude desired-controls", detail: "partial: sandbox.enabled is not set in effective project settings; shell runs in a sandbox", more: ["sandbox.enabled is not set; apply with canonkit install --recommended"] },
+    { status: "WARN", check: "security project", detail: "not configured for this project; user settings do not cover it (/work/repo). Run canonkit install --claude from this project to set it up", more: [] },
   ]);
   const out = lines.join("\n");
   assert.equal(failed, 0);
   assert.match(out, /desired-controls partial/);
-  assert.match(out, /repository\s+!\s+policy project security not configured/);
+  assert.match(out, /project\s+!\s+policy not configured for this project\s*(?:✓|!|✗|$)/m);
+  assert.doesNotMatch(out, /\/work\/repo/);
   assert.match(out, /2 warnings/);
+});
+
+const scoped = [
+  { status: "OK", check: "agents", detail: "ok", more: [] },
+  { status: "WARN", check: "agents leftovers", detail: "user leftovers", more: [] },
+  { status: "OK", check: "config", detail: "file none", more: [], scope: "project" },
+  { status: "FAIL", check: "forwarder", detail: "project settings run it", more: ["fix it"], scope: "project" },
+];
+
+test("general rows split into a user level and a project section", () => {
+  const { lines, failed } = renderDoctorReport(scoped);
+  const out = lines.join("\n");
+  const user = lines.indexOf("  User level");
+  const project = lines.indexOf("  This project");
+  assert.ok(user >= 0 && project > user);
+  const userPart = lines.slice(user, project).join("\n");
+  const projectPart = lines.slice(project).join("\n");
+  assert.match(userPart, /✓ 1 check passed\n\s+agents/);
+  assert.match(userPart, /! agents leftovers/);
+  assert.doesNotMatch(userPart, /config|forwarder/);
+  assert.match(projectPart, /✓ 1 check passed\n\s+config/);
+  assert.match(projectPart, /✗ forwarder +project settings run it/);
+  assert.doesNotMatch(projectPart, /agents leftovers/);
+  assert.equal(failed, 1);
+  assert.match(out, /1 check failed\. 1 warning;/);
+});
+
+test("a project-only report shows only the project section", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "config", detail: "x", more: [], scope: "project" }]);
+  assert.ok(lines.includes("  This project"));
+  assert.ok(!lines.includes("  User level"));
+});
+
+test("rows without a scope default to user level", () => {
+  const { lines } = renderDoctorReport([{ status: "OK", check: "agents", detail: "ok", more: [] }]);
+  assert.ok(lines.includes("  User level"));
+  assert.ok(!lines.includes("  This project"));
 });
 
 test("a FAIL is marked and counted", () => {

@@ -95,7 +95,7 @@ test("the README recommended security settings match the installer, and a hand e
     ['"strictAllowlist": true', '"strictAllowlist": false', /user settings block differs/],
     ['"autoAllowBashIfSandboxed": true\n  }', '"autoAllowBashIfSandboxed": true,\n    "extra": true\n  }', /repository settings block differs/],
     ["a missing sandbox stops commands;", "a missing sandbox is fine;", /sandbox\.failIfUnavailable.*differs/],
-    ["| `sandbox.enabled` | repository |", "| `sandbox.enabled` | user |", /sandbox\.enabled.*differs/],
+    ["| `sandbox.enabled` | project |", "| `sandbox.enabled` | user |", /sandbox\.enabled.*differs/],
   ];
   for (const broad of ['"~"', '"~/"', '"/home/user"', '"/"', '"~/.local/bin/../.."']) {
     const problems = await readmeSecurityProblems(readme.replace('"~/.local/share/pipx"', broad));
