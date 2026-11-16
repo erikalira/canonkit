@@ -25,7 +25,7 @@ project-policy fallback. The sole added user-level access-policy key is the
 supported `sandbox.network.strictAllowlist: true` lock; it adds no destinations,
 changes no modes and registers no hooks. Separately, a plain Claude install
 removes attributable older canonkit hook registrations from user and validated
-current-repository settings. [Installation and environment coverage](install.md#native-security-per-repository).
+current-project settings. [Installation and environment coverage](install.md#native-security-per-project).
 
 These layers serve different purposes:
 

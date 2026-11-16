@@ -5,6 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { InstallManifest } from "../bin/install-manifest.js";
+import { applyRuntimeReads, networkSecurityOwnership, serializeSecurity, undoNetworkSecurity } from "../bin/security.js";
 
 async function fixture(t) {
   const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "canonkit-atomic-")));
@@ -148,4 +149,41 @@ test("manifest accepts a newly added root when no recorded entry uses it", async
 
   assert.equal(await store.load(), true);
   assert.equal(store.data.roots.copilot, roots.copilot);
+});
+
+test("the receipt records appended allowRead items, uninstall removes only those and forged metadata is refused", async (t) => {
+  const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "canonkit-allowread-")));
+  const file = path.join(home, "settings.json"), receipt = path.join(home, ".canonkit", "install-manifest.json");
+  const make = () => new InstallManifest({ home, roots: { home }, targets: ["claude"], catalog: [{
+    id: "home:json:settings.json", root: "home", relative: "settings.json", kind: "json", owners: ["claude"],
+    undo: undoNetworkSecurity, securityOwnership: networkSecurityOwnership,
+  }] });
+  const stores = [];
+  t.after(async () => {
+    for (const store of stores) await store.close();
+    assert.equal(path.dirname(home), await fs.realpath(os.tmpdir()));
+    await fs.rm(home, { recursive: true, force: true });
+  });
+  const before = { sandbox: { filesystem: { allowRead: ["~/keep"] } } };
+  await fs.writeFile(file, JSON.stringify(before));
+  const store = make(); stores.push(store);
+  await store.start();
+  const installed = applyRuntimeReads(before, ["~/.nvm"]);
+  await store.write(file, serializeSecurity(installed));
+  const recorded = JSON.parse(await fs.readFile(receipt)).entries["home:json:settings.json"];
+  assert.deepEqual(recorded.securityChanges, { "sandbox.filesystem.allowRead": { beforePresent: true, parentPresent: true, appendedItems: ["~/.nvm"] } });
+
+  // A later edit by the user survives uninstall.
+  const edited = structuredClone(installed); edited.sandbox.filesystem.allowRead.push("~/later");
+  await fs.writeFile(file, JSON.stringify(edited));
+  await store.uninstall();
+  assert.deepEqual(JSON.parse(await fs.readFile(file, "utf8")).sandbox.filesystem.allowRead, ["~/keep", "~/later"]);
+
+  // Forged metadata in the receipt refuses to load.
+  await store.close();
+  const data = JSON.parse(await fs.readFile(receipt));
+  data.entries["home:json:settings.json"] = { ...recorded, securityChanges: { "sandbox.filesystem.allowRead": { beforePresent: false, parentPresent: false, appendedItems: [42] } } };
+  await fs.writeFile(receipt, JSON.stringify(data));
+  const forged = make(); stores.push(forged);
+  await assert.rejects(forged.load(), /Invalid security ownership|Cannot read install manifest/);
 });

@@ -21,7 +21,7 @@ The skill and its proposal template are installed with the reference skills;
 
 Concrete problems outside a project's current task use the independent
 [incidental-findings workflow](out-of-scope-issues.md), including LOW work.
-They belong in the project's tracker. The contribution workflow below is for
+They belong in the project's backlog. The contribution workflow below is for
 general improvements to CanonKit's instructions.
 
 Expect a concise explanation of the cause and the smallest useful correction, or
@@ -152,5 +152,4 @@ authorization as other changes.
 The skill runs on demand. There is no SessionStart injection or automatic
 collection, promotion, installation or rollback. Its
 [instructions](../skills/learning-loop/SKILL.md) carry the full workflow and
-privacy rules; the [design note](plans/learning-loop-design.md) records the
-initial investigation and acceptance rationale.
+privacy rules.

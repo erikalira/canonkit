@@ -34,14 +34,16 @@ export const DEFAULT_TEST_PATH = [EMPTY_BIN, ...SYSTEM_DIRS].join(path.delimiter
 /**
  * The environment for a CLI under test: HOME, USERPROFILE and XDG_CONFIG_HOME
  * pinned to `home` (os.homedir() reads USERPROFILE on Windows and HOME elsewhere;
- * OpenCode's folder follows XDG_CONFIG_HOME), the variables above dropped unless
- * the test sets them, and `env` on top. The inherited PATH is always dropped
+ * OpenCode's folder follows XDG_CONFIG_HOME), the variables above and every GIT_*
+ * variable dropped unless the test sets them, and `env` on top. The inherited PATH is always dropped
  * (Windows spells it Path): a test gets DEFAULT_TEST_PATH, or its own in `env`.
  */
 export function isolatedEnv(home, env = {}) {
   const base = { ...process.env };
   for (const k of Object.keys(base)) if (k.toUpperCase() === "PATH") delete base[k];
   for (const k of DROPPED) if (!(k in env)) delete base[k];
+  // A developer's GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE... (a git hook runs with them) must not reach the CLI.
+  for (const k of Object.keys(base)) if (k.toUpperCase().startsWith("GIT_")) delete base[k];
   return { ...base, PATH: DEFAULT_TEST_PATH, HOME: home, USERPROFILE: home, XDG_CONFIG_HOME: path.join(home, ".config"), ...env };
 }
 

@@ -2,31 +2,82 @@
 
 Two third-party tools complement the team: **graphify** (a graph of the code,
 updated on demand by default) and **openspec** (specs and acceptance criteria in
-`openspec/`). Run **from inside the project**:
+`openspec/`). Run **from inside the project**.
+
+### 1. Select OpenSpec in the install flow
 
 ```bash
-npx canonkit tool add openspec      # or graphify
-npx canonkit tool add graphify --with-git-hooks  # opt-in: trust every branch
+npx canonkit install --tool openspec
+```
+
+### 2. Add a project tool
+
+```bash
+npx canonkit tool add openspec
+npx canonkit tool add graphify
+```
+
+### 3. Choose OpenSpec harnesses
+
+```bash
+npx canonkit tool add openspec --harness claude,opencode
+```
+
+### 4. Explicitly enable Graphify Git hooks
+
+```bash
+# Warning: Enabling hooks opts in to trusting every branch.
+npx canonkit tool add graphify --with-git-hooks
+```
+
+### 5. Preview setup without running it
+
+```bash
 npx canonkit tool add graphify --dry-run
+npx canonkit install --tool graphify --dry-run
+```
+
+### 6. Remove or inspect project tools
+
+```bash
 npx canonkit tool remove graphify
 npx canonkit tool list
 ```
+
+The commands run the selected tool's setup only after confirmation.
+
+The install menu also offers project specialists and stack packs after the tool
+list. Its repeatable `--specialist`, `--stack` and `--tool` flags select those
+items without a menu. Tool selections keep the confirmation described below;
+choosing a tool does not imply `--yes` and never enables Git hooks. From CI or
+another non-terminal run, use `--yes` only if skipping the tool confirmation is
+intentional. See [project items in the install flow](install.md#project-items-in-the-install-flow).
 
 ## canonkit integrates, it never installs
 
 If the binary is not on `PATH`, canonkit prints the install command with the exact
 version and exits with 1, writing nothing. Install it yourself, at these versions:
 
+### Install OpenSpec
+
 ```bash
 npm install --global --ignore-scripts @fission-ai/openspec@1.14.0
-# Windows, macOS
+```
+
+### Install Graphify on Windows or macOS
+
+```bash
 python -I -m pip install --user --only-binary :all: graphifyy==0.9.76
-# Linux and WSL (Debian/Ubuntu): there is no `python`, and PEP 668 makes pip refuse
-# --user. The `cd ~` keeps a project folder off Python's import path (pipx has no -I);
-# the parentheses run it in a subshell, so your terminal stays in the project.
+```
+
+### Install Graphify on Debian or Ubuntu in Linux or WSL
+
+```bash
 sudo apt install pipx && pipx ensurepath
 (cd ~ && pipx install graphifyy==0.9.76 --pip-args="--only-binary :all:")
 ```
+
+The subshell keeps the terminal in the project; `cd ~` keeps the project folder off Python's import path. Debian and Ubuntu may lack `python`, and PEP 668 makes pip refuse `--user`.
 
 > **graphifyy has two y's.** `graphify` with one y on PyPI is a different package.
 
@@ -55,15 +106,23 @@ project). If a Windows copy comes earlier in your `PATH` than the Linux one, `to
 prints a non-blocking note: agents and shells that run bare `<bin>` get the Windows
 one. To stop that, set `appendWindowsPath=false` under `[interop]` in
 `/etc/wsl.conf`; canonkit only prints this and never edits `wsl.conf` or your `PATH`.
-This is hygiene, not a defense against hostile binaries (see the ADR). `git`, the
-security checks and model discovery still resolve binaries as before.
+This is hygiene, not a defense against hostile binaries (see the ADR). The same filter
+now also covers the OpenCode version check of `install --wire-hooks`, `models refresh`
+(and the catalog refresh in `install`) and the security probe that reads the `claude`
+version (see [install.md](install.md#choosing-models) and `canonkit doctor`). `git`
+calls still resolve as before.
 
 > **Claude Code sandbox.** A tool installed under `~/.nvm` or `~/.local` can be invisible
 > to sandboxed Bash commands when the sandbox denies reading your home directory
 > (`sandbox.filesystem.denyRead`), and `canonkit tool add` then reports it missing.
 > That is a user-side setting: re-allow the folder with `sandbox.filesystem.allowRead`
-> in your user settings, `~/.claude/settings.json`. For the defaults used here (nvm for
-> Node, pipx for graphify), allow only what you use:
+> in your user settings, `~/.claude/settings.json`. `canonkit install` offers this:
+> from a terminal it detects the nvm and pipx folders in use, compares them with your
+> existing `allowRead` entries (equivalent spellings and broader entries count as
+> covering) and asks before appending only the missing ones; declining, or installing
+> without a terminal, prints the snippet instead. See
+> [the install review](install.md#security-review-during-install). To add them by hand,
+> for the defaults used here (nvm for Node, pipx for graphify), allow only what you use:
 >
 > ```json
 > "sandbox": { "filesystem": { "allowRead": ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] } }
@@ -80,26 +139,28 @@ security checks and model discovery still resolve binaries as before.
 > is hidden from this process"), and, when nothing more specific explains the missing
 > tool, adds one line pointing here (not on native Windows). `tool list` only lists the
 > unreadable links under the table. A folder the sandbox hides outright (`~/.nvm`)
-> leaves no trace, so only the generic line appears. canonkit only prints these hints:
-> it never reads or writes your settings and does not guess the folder to allow.
+> leaves no trace, so only the generic line appears. `tool add` and `tool list` only
+> print these hints: they never read or write your settings. Only `install` writes
+> `allowRead`, and only for the known nvm and pipx locations, after you confirm.
 >
 > Another version manager (fnm, volta, asdf) has its own folder: add that one instead of
 > `~/.nvm`. A Node installed system-wide (apt, NodeSource, `/usr/local`) needs nothing,
 > unless the npm global prefix is inside your home (`npm config get prefix`, for example
-> `~/.npm-global`): then allow that folder, because `openspec` is installed there. A project
-> `.claude/settings.json` is not enough: a repository file cannot re-allow a path that a
-> higher level denies. canonkit never writes it: the path is yours and it is a
-> permission. The setting affects sandboxed Bash only and applies to the next command;
-> see the Claude Code sandboxing docs.
+> `~/.npm-global`): then allow that folder, because `openspec` is installed there. Put the entry in
+> user settings, where canonkit writes it: with `blockReadsOutsideWorkingDirectories` on,
+> an `allowRead` entry in a project's `.claude/settings.json` was ignored when tested on WSL2. canonkit never proposes a folder it does not recognize: for
+> another version manager, `install` reports the location and you add it yourself. The
+> setting affects sandboxed Bash only and applies to the next command; see the Claude
+> Code sandboxing docs.
 
 With the binary present, `tool add`:
 
 1. shows the absolute path, the version (with a warning if it differs from the pin
    — it never upgrades), the exact commands and the files that will be touched;
 2. asks `y/N` (`--yes` skips; with no terminal and no `--yes`, it does not run);
-3. runs the tool's own setup (`openspec init --tools claude,codex`;
-   `graphify update .`; with `--with-git-hooks`, it first runs
-   `graphify hook install`);
+3. runs the tool's own setup (`openspec init --tools <harnesses>`, see
+   [`--harness`](#openspec-harnesses---harness); `graphify update .`; with
+   `--with-git-hooks`, it first runs `graphify hook install`);
 4. only if the setup succeeded, writes the tool's `.gitignore` block, when its
    registry entry has a `gitignore:` list (graphify does; see below);
 5. last, writes the "Project tools" block into the project's `AGENTS.md`
@@ -114,7 +175,9 @@ refused. The reasoning is in
 
 `tool remove` takes the entry out of the block (the last one removes the block)
 and prints how to undo the setup. It does not touch `openspec/`,
-`graphify-out/` or the `.gitignore` block. Running `add` or `remove` twice leaves
+`graphify-out/` or the `.gitignore` block, and it cannot remove openspec's skills
+and commands: it lists the files of every possible harness and you delete them
+yourself. Running `add` or `remove` twice leaves
 `AGENTS.md` and `.gitignore` the same.
 
 Raising a pin is a MEDIUM change, reviewed by Gard. Whoever published the
@@ -123,13 +186,44 @@ repository; what remained open is in the ADR.
 
 ## openspec
 
-The 1.14.0 `init` writes `openspec/`, `.claude/skills/openspec-*`,
-`.claude/commands/opsx/`, `.agents/skills/openspec-*` and openspec's own
-user-level configuration (`openspec/config.json` in `%APPDATA%` or
-`$XDG_CONFIG_HOME`). It sends anonymous telemetry by default: canonkit sets
+The 1.14.0 `init` writes `openspec/` and, for each harness chosen (below), its
+skills and commands. A first `init` writes no user-level configuration; a re-run in
+an already initialized project writes openspec's own
+`$XDG_CONFIG_HOME/openspec/config.json` (`%APPDATA%` on Windows). Both observed in
+scratch runs on 1.14.0, not an openspec guarantee. It sends anonymous telemetry by default: canonkit sets
 `OPENSPEC_TELEMETRY=0` and `DO_NOT_TRACK=1` only on the runs it makes itself; yours
 keep sending unless you set one of those variables. The version matters: an old
 openspec (1.4.1) with `--tools codex` wrote prompts to `~/.codex/prompts`.
+
+### openspec harnesses (`--harness`)
+
+```bash
+npx canonkit tool add openspec --harness claude,codex,opencode
+npx canonkit tool add openspec --harness=github-copilot
+```
+
+- **Values:** exactly `claude`, `codex`, `opencode`, `github-copilot`, comma-separated.
+  They are openspec's own ids, so this is `github-copilot` here while
+  `canonkit install` uses `--copilot`; `copilot` is refused with that hint.
+- **Default:** `claude,codex`. It applies with `--yes`, with no terminal,
+  `TERM=dumb` or `--dry-run`. In a terminal without the flag, a menu asks, with
+  those two checked. A valid flag always wins.
+- **Errors:** exact match only (no trimming, no case folding); an empty element,
+  `all`, `none`, an unknown name or a repeated `--harness` exits 1 before anything
+  runs, `--version` included. Duplicates are dropped.
+- **Files per harness:** `claude` writes `.claude/skills/openspec-*` and
+  `.claude/commands/opsx/`; `codex`, `.agents/skills/openspec-*` and
+  `.agents/skills/.openspec-target`; `opencode`,
+  `.opencode/skills/` and `.opencode/commands/`; `github-copilot`, `.github/skills/`
+  and `.github/prompts/` (observed on 1.14.0; these folders are usually committed
+  and shared with the team, so review before committing). The preview lists only
+  the chosen ones. A symlink at a top-level folder it would write into is refused.
+- **It only adds.** `init` keeps the harnesses configured earlier, and
+  `--tools none` removes nothing, so a second `tool add openspec --harness X` adds
+  X. canonkit does not record the choice in `AGENTS.md` or `tool list`;
+  openspec keeps it on disk. Re-running with no flag adds `claude` and `codex`.
+
+Reasoning: [ADR 0008](adr/0008-openspec-harness-choice.md).
 
 In this repository, the generated skill/command copies and local runtime
 settings are ignored. Keep `openspec/config.yaml` and the canonical change
@@ -299,3 +393,9 @@ confidence ranges were 0.0444–0.0524 before and 0.0026–0.0051 after. Disposi
 manual check; the synthetic return lacked validation and required review.
 This verifies tool invocation/schema compatibility, not automatic agent
 compliance or classifier usefulness on real HIGH delegations.
+
+## Verificar
+
+```bash
+npx canonkit tool list
+```

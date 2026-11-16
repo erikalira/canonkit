@@ -66,6 +66,10 @@ Dismiss what has no plausible impact and say why — the goal is to avoid omissi
 - A flaky test is worse than no test: it teaches the team to ignore a red build.
 - A test that mocks the thing it is meant to verify proves only that the mock was called.
 
+## Reading code and diffs
+
+Start from the diff and file list the brief gives. Batch independent read-only commands into one shell call. Locate with a search (`grep -n`), then read only that span (`sed -n A,Bp`, or the read tool's offset/limit), never a whole file or a whole diff. Keep each output small enough that the harness does not save it to a file; split a large diff per file. Read more when a finding depends on the surrounding context.
+
 ## Pre-report gate
 
 Before a finding or a requested test, cite `file:line`, name the concrete failure (the input or state, and the wrong outcome nobody would see), and say why the existing tests do not catch it. A blocker needs all three; with one missing, demote it to an improvement. A gap an existing test or guard already covers is not a gap. Zero findings is a valid review: approve and say what you checked.

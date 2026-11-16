@@ -12,9 +12,9 @@ Orchestration rules whose short form lives in `~/AGENTS.md` and the project's to
 On any task, including LOW without delegation, when normal work reveals a
 concrete out-of-scope problem, use
 [the incidental-findings procedure](out-of-scope-issues.md) to preserve it and
-offer authorized project issues at natural closure. This also applies to LOW
-tasks without delegation, OpenSpec or Learning Loop. Do not load the procedure
-or run discovery tools when there are no findings.
+offer it, with authorization, for the project's backlog at natural closure.
+This also applies to LOW tasks without delegation, OpenSpec or Learning Loop.
+Do not load the procedure or run discovery tools when there are no findings.
 
 ## Naming the model and effort
 
@@ -39,6 +39,15 @@ agent) to a model and effort the harness reported.
   repository's own file: name it in the plan, and before giving a reviewer
   with a veto a weaker model or lower effort than `canonkit doctor` says your
   own choices give, tell the person.
+- **When `models show` cannot run** (canonkit not installed, npx blocked by
+  the sandbox network) or reports "inherit" for every agent while the agent
+  files carry `model:`/`effort:` (the sandbox hides `~/.canonkit/models.json`;
+  `canonkit doctor` says how to fix it), do not dispatch on memory: pass no
+  `model` or `effort`, so the agent's frontmatter applies (install writes the
+  person's choices there), name the dispatch "frontmatter (models show
+  unavailable)" and tell the person. If project overrides exist, say that
+  their values could not be verified through the CLI; use only choices already
+  installed in the agent file, not raw values from `.canonkit/models.json`.
 - **Up or down** means another level the person configured, the `deep` or
   `light` entry in the same output, not a model named from memory. When nothing
   is configured, name the dispatch "inherit" and pass no parameter.
@@ -50,6 +59,8 @@ agent) to a model and effort the harness reported.
   A project shadow in `.codex/agents/` carries those overrides. The Codex
   catalog is experimental; an offered model does not prove account access.
   Name unset fields "inherit" and check the effective runtime for critical work.
+  If `models show` cannot run, pass no spawn overrides (the agent file applies),
+  name the dispatch "frontmatter (models show unavailable)" and tell the person.
 - **OpenCode and Copilot** inherit the session's model and effort; name the
   dispatch "inherit".
 
@@ -119,7 +130,8 @@ than widening the level on the spot.
 
 A brief that asks for work outside the repository carries the block's rule
 ("Temporary work outside the repository"): the subagent starts cold, and its shell
-writes there land on the user as prompts and false gates.
+writes there land on the user as prompts and false gates. A brief that has the
+subagent change files says: file tools to write, shell only to run programs.
 
 ## Briefing verification
 
@@ -127,6 +139,24 @@ A dispatch brief carries the evidence the lead already has: commands, counts and
 the work state they ran on. The subagent runs only what checks a claim it doubts
 or a gap that evidence leaves, and reports what it ran. A reviewer does not
 repeat the full suite to confirm a fresh result that matches the state under review.
+
+## Briefing a review
+
+A review brief carries the diff scope the lead already resolved, so the reviewer
+starts from the diff instead of rediscovering it. Name the range and the work
+state it was resolved on: `<base>..<head>`, with the base as the merge base with
+the target branch resolved to a revision, or "working tree against HEAD". When
+the branch has commits and uncommitted edits, review the working tree against
+the base, so no edit is hidden. Give the exact command
+(`git diff <base>..<head>`, `git diff HEAD` or `git diff <base>`) and the
+changed files with line counts from `git diff --numstat` on the same range.
+List untracked files separately (`git ls-files --others --exclude-standard`):
+no git diff shows them. For a large diff (a few hundred changed lines, as a guide),
+name per-file commands (`git diff <range> -- <file>`) so the reviewer reads it
+in parts. Save a copy in the scratch folder only for a state git cannot show,
+following the block's "Temporary work outside the repository" rule, and put its
+path in the brief. Write no new file in the repository. For a tiny change, one
+line with the range and the command is enough.
 
 ## Relayed claims
 
@@ -300,3 +330,16 @@ It is a reading step, not an agent and not an artifact. A LOW change skips it.
 
 A contradiction becomes a named escalation to the decision owner, not an average
 of the two recommendations.
+
+## Open decisions for the user
+
+Read-only owners (Scott, Archie, Quinn, Gard) and the other subagents cannot ask
+the user: they return "open questions" in their report. When consolidating
+reports, split those into what the lead can settle from evidence or a sensible
+default (settle it, say so) and what is the user's: scope, a veto to accept or
+overrule, a HIGH-risk choice with no default. Put the user's part in the
+harness's structured question tool, named in its block, in one call (up to 4
+questions, recommended option first), not in a paragraph the user must answer by
+hand. Where the tool is absent or rejected in the current mode, ask in text with
+numbered options and the recommendation first. Ask nothing at LOW or where a
+convention already decides; a question that only seeks reassurance is noise.

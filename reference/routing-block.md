@@ -10,12 +10,33 @@ Before delivery, follow `orchestrate` completion for documentation and release
 impact; LOW stays inline. Preserve incidental findings through its procedure;
 otherwise, do nothing extra.
 
+A decision that is the user's, with 2–4 real options (scope, a veto to accept or overrule,
+a HIGH-risk choice, commit/push variants), is asked with `AskUserQuestion`, not buried in
+prose: recommended option first, marked "(Recommended)", every pending question of the
+turn in one call of up to 4. A subagent's open questions that depend on the user become
+that call. Conventional defaults and LOW work are not asked: pick, and say what you picked.
+
 Claude Code's native permission modes remain authoritative. Do not change the
 user's selected mode, bypass permission checks, or add broad automatic approvals.
 Repository access restrictions live in `.claude/settings.json`; supported user-only
 controls remain in the user's settings. Instructions govern review and authorization:
 ask before git commit or git push, never bypass Git hooks or signing, protect secrets,
 and obtain independent review after the final edit of a HIGH-risk change.
+
+File work uses Read, Edit and Write, so the user's permission rules and diff review
+apply; Bash only runs commands.
+
+A sandbox network denial (`<sandbox_violations>`, "host is not on the allow list") is
+the user's policy, not a fault to route around: do not retry the host through another
+tool unless the user has allowed it for that tool; an unprompted WebFetch fallback
+after a shell denial is a workaround. Report the host and the tool that needed it, and
+say what to change. Do not edit settings files yourself, with any tool; the user makes
+the change. Propose exact hosts only, never wildcards. Under canonkit's `strictAllowlist`
+lock, a project's `sandbox.network.allowedDomains` is ignored. To let WebFetch read a
+site, propose `WebFetch(domain:<host>)` in the project's `permissions.allow`: it allows
+the tool without opening the shell. For a shell command, propose the host in
+`sandbox.network.allowedDomains` in `~/.claude/settings.json`; a `WebFetch(domain:)`
+rule there opens the shell to that host too.
 
 Without optional canonkit hooks, those rules hold by judgment: do not claim automatic
 hook prompts, secret blocks, dispatch logging or a Stop-hook review gate.

@@ -26,7 +26,9 @@ function label(detail) {
 }
 
 /**
- * @param {{status: string, check: string, detail: string, more?: string[]}[]} rows
+ * General rows group by `scope`: "project" for what concerns the current
+ * project, anything else (absent) for user-level files.
+ * @param {{status: string, check: string, detail: string, more?: string[], scope?: "project"}[]} rows
  * @returns {{lines: string[], failed: number}}
  */
 export function renderDoctorReport(rows) {
@@ -36,17 +38,25 @@ export function renderDoctorReport(rows) {
   const security = rows.filter((r) => r.check.startsWith("security "));
   const out = ["canonkit doctor", ""];
 
-  const ok = general.filter((r) => r.status === "OK");
-  const attention = general.filter((r) => r.status !== "OK");
-  if (ok.length) {
-    out.push(`  ✓ ${ok.length} check${ok.length === 1 ? "" : "s"} passed`);
-    out.push(...wrap(ok.map((r) => r.check).join(" · "), "      "));
-  }
-  for (const r of attention) {
-    out.push("");
-    out.push(...wrap(`${clip(r.detail, 220)}`, "      ", `  ${mark(r.status)} ${r.check}  `).map((l, i) => (i === 0 ? l : l)));
-    for (const m of r.more ?? []) out.push(`      ${clip(m, 160)}`);
-  }
+  // A row without a scope is a user-level check; only "project" moves it.
+  const sections = [
+    ["User level", general.filter((r) => r.scope !== "project")],
+    ["This project", general.filter((r) => r.scope === "project")],
+  ].filter(([, list]) => list.length);
+  sections.forEach(([title, list], i) => {
+    if (i) out.push("");
+    out.push(`  ${title}`);
+    const ok = list.filter((r) => r.status === "OK");
+    if (ok.length) {
+      out.push(`    ✓ ${ok.length} check${ok.length === 1 ? "" : "s"} passed`);
+      out.push(...wrap(ok.map((r) => r.check).join(" · "), "        "));
+    }
+    for (const r of list.filter((x) => x.status !== "OK")) {
+      out.push("");
+      out.push(...wrap(`${clip(r.detail, 220)}`, "        ", `    ${mark(r.status)} ${r.check}  `));
+      for (const m of r.more ?? []) out.push(`        ${clip(m, 160)}`);
+    }
+  });
 
   if (security.length) {
     out.push("");
@@ -64,7 +74,7 @@ export function renderDoctorReport(rows) {
     }
     const w = Math.max(...[...groups.keys()].map((k) => k.length));
     for (const [group, items] of groups) out.push(...wrap(items.join(" · "), `      ${" ".repeat(w + 2)}`, `    ${group.padEnd(w)}  `));
-    if (remediation) out.push("", ...wrap("Fix what Claude Code supports: npx canonkit install --claude (run from the repository). Stronger shell isolation needs WSL2 or a container.", "    ", "  → "));
+    if (remediation) out.push("", ...wrap("Fix what Claude Code supports: npx canonkit install --claude (run from the project). Stronger shell isolation needs WSL2 or a container.", "    ", "  → "));
   }
 
   out.push("");

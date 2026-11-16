@@ -28,7 +28,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     # Approval and the tag rule live on the environment, outside this file.
-    environment: npm
+    environment:
+      name: npm
+      # The link the Deployments entry on the repository page opens.
+      url: https://www.npmjs.com/package/canonkit
     permissions:
       contents: read
       id-token: write
@@ -73,8 +76,39 @@ jobs:
       # missing attestation fail the publish instead of passing silently.
       - run: npm publish --provenance --ignore-scripts
 
-      # Link on the run page. Runs after the publish and reads only
-      # package.json, which the tag check above already tied to this tag.
+  # Its own job so that `contents: write` never reaches the job that can mint
+  # the npm publish token. It runs only after the publish succeeded.
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Notes come from docs/release-notes/X.Y.Z.md (docs/releasing.md step 1).
+      # A rerun must not fail because the release already exists.
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists"
+            exit 0
+          fi
+          notes="docs/release-notes/${TAG#v}.md"
+          if [ -f "$notes" ]; then
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file "$notes"
+          else
+            echo "::warning::$notes is missing; using generated notes"
+            gh release create "$TAG" --verify-tag --title "$TAG" --generate-notes
+          fi
+
+      # Link on the run page, written here because this job holds no OIDC
+      # token and the release it points to exists by now.
       - name: Link to the published package
         run: |
           name=$(node -p 'require("./package.json").name')
@@ -83,5 +117,5 @@ jobs:
             echo "### Published \`$name@$v\`"
             echo
             echo "- [npm: $name@$v](https://www.npmjs.com/package/$name/v/$v)"
-            echo "- [Release notes](https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME)"
+            echo "- [GitHub release](https://github.com/$GITHUB_REPOSITORY/releases/tag/$GITHUB_REF_NAME)"
           } >> "$GITHUB_STEP_SUMMARY"

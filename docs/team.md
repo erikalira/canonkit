@@ -30,7 +30,8 @@ Installed at user level (`~/.claude/agents`) by
 ## Domain specialists
 
 **Not installed by default.** They are versioned in this repository and copied
-into the `.claude/agents/` of the project that needs them (see
+into the `.claude/agents/` of the project that needs them when selected in
+`canonkit install` or explicitly added with `canonkit add` (see
 [Specialists, per project](install.md#specialists-per-project)). They do not take
 part in every change, and their absence is not a gap: it is the normal state of a
 project that does not have that domain.

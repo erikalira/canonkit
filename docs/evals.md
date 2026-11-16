@@ -295,7 +295,7 @@ all attempts and errors; never selectively retry or discard valid answers. The
 runner can report a hold with one answered run, so its exit code alone does not
 satisfy the learning-loop requirement. Unavailable or incomplete comparisons
 leave a lesson awaiting evidence. See the [guide](learning-loop.md) and
-[design criteria](plans/learning-loop-design.md#acceptance-and-evaluation).
+[skill's evaluation criteria](../skills/learning-loop/SKILL.md#evaluate-and-decide).
 
 ### Results: lean bodies (2026-10-18)
 

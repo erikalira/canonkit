@@ -5,21 +5,66 @@ Measuring whether the instructions still work is in [evals.md](evals.md).
 
 ## Editing an agent
 
-1. Edit `agents/<name>.md` in this repository.
-2. If it is core, run `npx canonkit install` (or the clone's script).
-3. If it is a specialist, run `npx canonkit add <name>` again in the projects that
-   use it.
-4. Run `npm run validate` and `npm test`.
-5. Commit.
-6. Before a release that changes instructions (blocks, descriptions, an agent
-   body): `node bin/cli.js install` and `npm run eval -- --runs 3`; if the body of
-   an agent with a quality case changed, also `npm run eval:quality -- --runs 3`.
+### 1. Edit the canonical source
+
+```bash
+"${EDITOR:-vi}" agents/NAME.md
+```
+
+Replace `NAME` with the agent's filename; set `EDITOR` to use another editor.
 
 Syncing the global blocks is not a step, because `install` already does it.
 
 Do not edit `~/.claude/agents`, a project's `.claude/agents/`, or the
 managed block in `~/AGENTS.md` — the next install overwrites them. This repository
 is the only source of truth.
+
+### 2. Update a core agent installation
+
+```bash
+npx canonkit install
+```
+
+For a source clone, use its matching installer wrapper.
+
+### 3. Update a specialist installation
+
+```bash
+npx canonkit add NAME
+```
+
+Replace `NAME` with the specialist ID, and re-run the command in each consuming project that uses it.
+
+### 4. Validate the change
+
+```bash
+npm run validate
+npm test
+```
+
+### 5. Run release checks when instructions changed
+
+```bash
+node bin/cli.js install
+npm run eval -- --runs 3
+```
+
+Run these checks before a release that changes blocks, descriptions or an agent body.
+
+#### Quality eval for an agent with a quality case
+
+```bash
+npm run eval:quality -- --runs 3
+```
+
+### 6. Review and commit
+
+```bash
+git diff --check
+git status --short
+```
+
+Commit only after reviewing the changes.
 
 ## File format
 
@@ -66,6 +111,8 @@ installed only where it applies, or in the project's own `AGENTS.md`.
 
 ## Validation
 
+### 1. Run portable validation
+
 ```bash
 npm run validate                # portable checks; reports Bash checks as not run
 npm run validate:portable       # explicit portable mode
@@ -82,14 +129,15 @@ that check as passed. Full validation also requires Bash and checks every
 Set `CANONKIT_PYTHON` or `CANONKIT_BASH` to select an explicit interpreter when
 automatic executable discovery is unsuitable.
 
-In PowerShell, invoke npm through `npm.cmd` if the local execution policy blocks
-`npm.ps1`:
+### 2. Run validation in PowerShell
 
 ```powershell
 npm.cmd run validate
-npm.cmd run validate:full # requires Bash on PATH
+npm.cmd run validate:full
 npm.cmd run validate -- --quiet
 ```
+
+Use `npm.cmd` if the local execution policy blocks `npm.ps1`; `validate:full` requires Bash on PATH.
 
 The legacy `./scripts/validate.sh` entry point remains available in Bash and
 selects full validation. Validation automates Virgo's protocol and checks the
@@ -137,13 +185,16 @@ conventions in [team.md](team.md#conventions):
 It checks the rule, not uniformity: `pipe` uses "Operational authority", `virgo`
 does not classify product risk, and both pass.
 
-The tests are separate and run the real CLI against a real filesystem, in a
-throwaway `HOME`:
+### 3. Run tests
 
 ```bash
-npm run test:fast   # test/*.test.js: unit and light integration, well under a minute
-npm test            # also test/e2e/*.test.js: the full suite, the publish gate
+npm run test:fast
+npm test
 ```
+
+`test:fast` runs unit and light-integration tests in `test/*.test.js`; `npm test`
+also runs `test/e2e/*.test.js` and is the publish gate. Tests use the real CLI in
+a throwaway `HOME`.
 
 `npm test` is what `prepublishOnly` and CI run. Use `test:fast` while editing and
 `npm test` once after your last edit. The end-to-end files live in `test/e2e/`;
@@ -231,4 +282,11 @@ They can contain private configuration and credentials.
 - personal data: anyone can download canonkit, so no local usernames, machine paths or
   names of private projects, in audits and handoffs too. A fact about one machine goes
   in `~/AGENTS.md`, outside the managed markers. The project's public identity (author,
-  repository URLs, trusted publisher) stays
+  repository URLs, trusted publisher) stays.
+
+## Verificar
+
+```bash
+npm run validate
+npm test
+```

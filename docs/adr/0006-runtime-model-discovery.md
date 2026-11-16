@@ -99,3 +99,18 @@ efetiva do projeto difere da escolha do usuário. Elas pertencem a um manifesto
 por projeto; um arquivo preexistente ou editado pela pessoa é preservado. A
 precedência de um agente Codex de projeto sobre o homônimo global foi observada
 no CLI 0.166.0 antes desta implementação.
+
+## Adendo: recomendações por harness (2026-11-13)
+
+`install` e `models setup` podem oferecer uma configuração recomendada por nível,
+sempre nos nomes próprios de cada harness. Para Claude Code, são os aliases
+`opus`, `sonnet` e `haiku`, com efforts `medium`, `medium` e `low`. Para Codex,
+os níveis usam, respectivamente, os tiers `sol`, `luna` e `terra` em IDs
+`gpt-<versão>-<tier>` descobertos pelo catálogo; a maior versão numérica é
+selecionada por tier. O effort recomendado é salvo apenas se o catálogo o
+reportar para aquele modelo. Um valor não descoberto permanece herdado.
+
+Essa recomendação não é uma equivalência entre fornecedores: cada harness é
+resolvido separadamente a partir de seus próprios IDs descobertos. Também não é
+uma escolha automática. A pessoa vê os valores e confirma sua aplicação; acesso,
+cota e custo continuam sendo decisões da pessoa.

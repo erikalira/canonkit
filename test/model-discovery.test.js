@@ -269,6 +269,63 @@ describe("system runner", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("with a Windows root, a Windows-only claude is never run and the reason says so", { skip: process.platform === "win32" && "POSIX stub" }, async () => {
+    const dir = await tempDir();
+    try {
+      const win = path.join(dir, "mnt", "c");
+      const marker = path.join(dir, "WINDOWS_RAN");
+      await fakeClaude(path.join(win, "npm"), marker);
+      const env = onlyPath([path.join(win, "npm")]);
+      const run = systemRunner({ env, root: REPO, windowsRoots: [win] });
+      assert.deepEqual(run("claude", ["--help"]), { status: null, stdout: "", stderr: "", error: "claude found only on the Windows side; not run through WSL interop" });
+      const via = await trustedRunner(REPO, { env, windowsRoots: [win] });
+      const result = ADAPTERS.claude.discover(via);
+      assert.equal(result.status, "unknown");
+      assert.equal(result.reason, "claude --version: claude found only on the Windows side; not run through WSL interop");
+      assert.equal(existsSync(marker), false, "the Windows claude ran");
+      // Control: without roots (non-WSL) the same copy is an ordinary binary.
+      assert.equal(systemRunner({ env, root: REPO })("claude", ["--version"]).status, 0);
+      assert.equal(existsSync(marker), true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the child's PATH loses the Windows directory: a Linux claude cannot reach a Windows helper by name", { skip: process.platform === "win32" && "POSIX stub" }, async () => {
+    const dir = await tempDir();
+    try {
+      const win = path.join(dir, "mnt", "c");
+      const winBin = path.join(win, "npm");
+      const lin = path.join(dir, "lin");
+      const marker = path.join(dir, "HELPER_RAN");
+      await mkdir(winBin, { recursive: true });
+      await mkdir(lin);
+      await writeFile(path.join(winBin, "helper"), `#!/bin/sh\necho ran >> ${JSON.stringify(marker)}\n`, { mode: 0o755 });
+      await writeFile(path.join(lin, "claude"), `#!/bin/sh\nhelper >/dev/null 2>&1\necho 2.1.322\n`, { mode: 0o755 });
+      const env = onlyPath([lin, winBin]);
+      const result = systemRunner({ env, root: REPO, windowsRoots: [win] })("claude", ["--version"]);
+      assert.equal(result.status, 0, JSON.stringify(result));
+      assert.equal(existsSync(marker), false, "the Windows helper ran from the claude child");
+      // Control: without roots (non-WSL) the child keeps the full PATH.
+      assert.equal(systemRunner({ env, root: REPO })("claude", ["--version"]).status, 0);
+      assert.equal(existsSync(marker), true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an injected run bypasses the Windows filter entirely", async () => {
+    const dir = await tempDir();
+    try {
+      const seen = [];
+      const result = await refreshCatalog(["claude"], { run: (name, args) => { seen.push([name, ...args]); return { status: 1, stdout: "", stderr: "" }; }, file: path.join(dir, "catalog.json") });
+      assert.equal(result.harnesses.claude.status, "unknown");
+      assert.ok(seen.length > 0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("claude availableModels", () => {

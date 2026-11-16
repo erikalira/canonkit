@@ -1,27 +1,42 @@
 # Installation reference
 
 The README covers the happy path. This page is the detail: what each choice
-writes, how the Codex, OpenCode and Copilot targets differ, project-level specialists and
-stack packs, global reference blocks and skills, and upgrading from an older name.
+writes, how the Codex, OpenCode and Copilot targets differ, project-level tools,
+specialists and stack packs, model recommendations, security scope, reference
+blocks and skills, and upgrading from an older name.
 
 Hooks and their configuration have their own page: [hooks.md](hooks.md).
 
-Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-09.
+Owner: canonkit maintainers (Spencer). Last reviewed: 2026-11-12.
+
+Interactive install previews use text headings and `=`, `->`, `+` and `!`
+markers so current, recommended, added and unresolved values remain readable
+without color. Headings may be bold in a capable terminal; piped output stays
+plain. The final review groups model and security status under user and project.
 
 ## Core, at user level
 
-Without cloning anything:
+### Terms used by install
+
+- **User level** means configuration in the user's home or configured harness
+  directory. It is available across projects for that user.
+- **Project** means the current validated Git worktree and its project-scoped
+  files. Install asks before writing project items or project security settings.
+  The project's root is the validated root of the current Git worktree; this
+  page says "Git repository" only for that check. A project never means the
+  user's home or all projects on the machine.
+
+### 1. Install at user level
 
 ```bash
 npx canonkit install
 ```
 
-It runs the same on Linux, macOS and Windows. In a terminal, it asks which
-runtimes to install for, as a multiple choice — Claude Code and Codex come
-checked, OpenCode and GitHub Copilot do not; space toggles, Enter confirms, and at least one must
-stay checked. `--claude`, `--codex`, `--opencode` and `--copilot` answer without the menu (they
-combine), and with no terminal (a script, CI) it installs for Claude Code and
-Codex, as it did before the menu existed. OpenCode is opt-in because writing
+It runs the same on Linux, macOS and Windows. In a terminal, choose one or more
+runtimes; all start unselected. Space toggles, Enter confirms, and at least one
+must be selected. `--claude`, `--codex`, `--opencode` and `--copilot` select
+targets without the menu (they combine), and with no terminal and no target
+flags it installs for Claude Code and Codex. OpenCode is opt-in because writing
 `~/.config/opencode/AGENTS.md` ends OpenCode's fallback to `~/.claude/CLAUDE.md`
 — not a change to make for someone who did not ask for OpenCode.
 
@@ -31,9 +46,73 @@ decided by flag or with no terminal runs on plain Node. An installer that runs
 **before** you trust the repository should not ask you to trust a dependency tree
 larger than that.
 
+### Guided install flow
+
+After choosing runtimes, an interactive install asks whether to set up the
+current project when it is a valid Git project outside the canonkit source and
+your home directory. Choosing Yes opens the optional tools, specialists and
+stack packs menus. Graphify and OpenSpec are preselected as recommended tools
+when their binary is found; specialists and stacks start unselected. A tool
+whose binary is missing starts unselected and shows
+`(recommended, not installed)`. Selecting it anyway prints how to install it
+before anything is written and skips it without failing the install; the
+review screen lists it as skipped and the final report as not installed.
+Install the tool, then run `npx canonkit tool add <tool>`. Choosing No keeps the install at user
+level and skips project security and legacy-hook migration. Without a valid
+project target, the project question and menus are skipped. Explicit project
+item flags without a valid target fail before any writes.
+When OpenSpec is selected from the project tool menu, it uses the same harness
+targets selected at the start of install; install does not ask that choice a
+second time. `canonkit tool add openspec` still offers its own harness choice.
+
+For Claude Code and Codex, the next screen shows the recommended model and
+security changes, including `=`, `->`, `+` and `!` markers. Choose the
+recommended setup, keep current settings when available, or customize. The
+customize path lets you choose model levels and answer security changes in one
+multi-select. A final summary groups writes under USER and PROJECT and asks
+before applying them. `--recommended` applies the recommendations without the
+interactive screens; `--no-project` selects user-level-only scope. These flags
+are useful for scripts and screen readers.
+
+### 1. Preview install choices
+
+```bash
+cd my-project
+npx canonkit install --dry-run
+npx canonkit install --recommended --dry-run
+npx canonkit install --recommended --no-project --dry-run
+```
+
+These commands preview without writing; the recommended previews require a Git project.
+
+The menu collects its selections before installation begins. Cancelling or
+closing input before final confirmation leaves user and project files unchanged
+and reports that nothing was installed. Before a selected tool runs, install shows its project,
+command, write locations and any material warning, then asks a confirmation
+that names the tool and project. The menu does not imply `--yes` and never
+enables Git hooks. By default, successful tool output is summarized; warnings,
+failures and actionable tool notes remain visible. `--verbose` shows the
+detailed plan and full tool output. `--dry-run` previews the global and selected
+project steps without writing files or running tool setup.
+
+### 2. Install selected project items
+
+```bash
+npx canonkit install --specialist maya --stack typescript --tool openspec
+```
+
+For scripts or CI, select project items explicitly; these flags can be repeated.
+
+They are validated against the catalog before installation writes anything and
+are only valid with `install`. Without a TTY and without these flags, `install`
+keeps its previous behavior: it installs the selected runtimes at user level and does
+not write project items. A tool's confirmation remains separate; pass `--yes`
+explicitly only when you intend to skip it. The closing report lists items that
+remain available in each category and points to `canonkit list`.
+
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current repository's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings |
+| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current project's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders and `~/.canonkit/models.json` appended to `sandbox.filesystem.allowRead` in user settings |
 | Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | GitHub Copilot | `~/.copilot/agents/*.agent.md`, `~/.copilot/skills` |
@@ -46,17 +125,17 @@ integration; `--wire-hooks` does not write Copilot files.
 
 Claude paths shown as `~/.claude` use `CLAUDE_CONFIG_DIR` instead when set.
 It must be an absolute directory; agents, hooks, dashboard, instructions, skills
-and user settings use that same resolved root. Repository `.claude/settings.json`
-stays under the validated repository. Use the same configuration roots for
+and user settings use that same resolved root. The project's `.claude/settings.json`
+stays under the validated project. Use the same configuration roots for
 install, reference, doctor and uninstall; a changed recorded root is refused.
 
 `install` and `reference` also maintain `~/.canonkit/install-manifest.json`.
-It records global artifacts by stable ID, resolved root, harness owners,
+It records user-level artifacts by stable ID, resolved root, harness owners,
 provenance and installed-byte hash. Private configuration snapshots live under
 `~/.canonkit/backups/`. Project specialists and stack packs, external tool setup and activity
-history are not owned by this global manifest. Repository security has a separate
+history are not owned by this user-level manifest. Project security has a separate
 scoped receipt, described below. `--no-reference` skips block and skill
-distribution and preserves earlier records for them; it does not skip repository
+distribution and preserves earlier records for them; it does not skip project
 security or the Claude hook migration described below. Each native-default
 Claude install reconciles an existing canonkit block in the Claude instruction
 file to retire stale hook claims, without creating a new block or distributing skills.
@@ -70,7 +149,7 @@ run uses them to recover interrupted work. Completed settings writes remain.
 
 Without `--wire-hooks`, a Claude-targeted install also unregisters attributable
 older canonkit command handlers in user settings and the validated current
-repository's `.claude/settings.json`. Outside a repository, only user settings
+project's `.claude/settings.json`. Outside a Git repository, only user settings
 are migrated. Selecting only Codex, OpenCode or Copilot leaves Claude settings alone.
 
 `--wire-hooks` wires hooks for every selected runtime that supports them, and only those:
@@ -82,13 +161,19 @@ quote, or an OpenCode older than 2. Project security is preflighted before the
 selected installation writes too. `doctor` checks selected/installed targets;
 an absent unselected runtime does not create false Claude-specific failures.
 
-From a clone, the scripts still work — they are wrappers around the same
-`bin/cli.js`:
+### 3. Install from a clone
 
 ```bash
-./scripts/install.sh          # Linux and macOS
-.\scripts\install.ps1         # Windows
+./scripts/install.sh
 ```
+
+### Windows wrapper
+
+```powershell
+.\scripts\install.ps1
+```
+
+These wrappers invoke the same `bin/cli.js`.
 
 For Claude Code it copies the 10 core agents to `~/.claude/agents`, the only
 path Claude Code reads them from. Copilot's 10 core profiles go to
@@ -112,22 +197,24 @@ tracked provenance. Such a copy remains available in every project: inspect it
 and remove it yourself if it should be project-only. Its name alone does not
 prove that canonkit owns it.
 
-## Native security, per repository
+<a id="native-security-per-repository"></a>
+
+## Native security, per project
 
 **Install contract change:** a plain installation targeting Claude Code now
-merges supported native restrictions into `<repo>/.claude/settings.json` when
+merges supported native restrictions into `<project>/.claude/settings.json` when
 the current Git repository root can be validated. Both installer wrappers use
 the same behavior. No separate security opt-in is required. Outside a validated
-repository, global team distribution still runs, but project security is
-reported as pending; no project policy fallback or guessed repository is used.
-The sole approved global access-policy key is
+Git repository, the team is still installed at user level, but project security is
+reported as pending; no project policy fallback or guessed project is used.
+The sole approved user-level access-policy key is
 `sandbox.network.strictAllowlist: true`, because Claude does not accept this
 lock from project settings. It is applied only on a supported client and changes
 no allow entry or approval mode. Separately, plain installation removes
 attributable older Claude hook registrations as described below. This user-level lock can also
-be applied outside a repository while project setup remains pending.
+be applied outside a Git repository while project setup remains pending.
 
-Preview from the repository, then apply and diagnose:
+### 1. Preview, install and diagnose security settings
 
 ```bash
 cd my-project
@@ -142,10 +229,50 @@ installation, unsafe paths or malformed settings stop preflight before any
 selected-target writes. Reports name affected keys and controls, never their
 private values. Existing settings and stricter restrictions are preserved.
 
+### Security review during install
+
+Claude's project settings (`<project>/.claude/settings.json`) hold supported
+project restrictions: `permissions.block*OutsideWorkingDirectories` and
+sandbox switches. User settings (`~/.claude/settings.json`) hold the strict
+network lock and detected runtime read exceptions. The [README security
+reference](../README.md#recommended-security-settings) explains each key and
+its scope.
+
+The recommended setup screen includes weaker values, absent strict keys,
+runtime reads and legacy-hook migration from the same install plan. **Yes, use
+recommended** applies all listed changes. **No, keep current** writes none of
+the security changes and prints the relevant manual snippet. **No, customize**
+asks whether to add detected runtime reads (Yes is preselected), then shows the
+other eligible changes as a prechecked multi-select. Unchecking a sandbox
+requirement also leaves automatic bash approval off. Keys controlled by
+`settings.local.json` are not selectable. A final confirmation occurs before
+any plan is applied. EOF, Escape or Ctrl-C cancels before writes.
+
+`--recommended` skips the questions and applies the recommended answers.
+`--recommended --dry-run` prints `would apply` rows and starts no discovery
+processes. With no terminal and without `--recommended`, existing non-terminal
+behavior is preserved. An empty settings file is treated as `{}`; malformed or
+ambiguous settings stop preflight before writes.
+
+Only detected known runtime locations are proposed. Install resolves `node` and
+`graphify`, maps supported paths such as nvm and pipx to narrow `allowRead`
+entries, and skips locations already covered by existing entries. Other custom
+locations are reported rather than guessed. Install also appends
+`~/.canonkit/models.json`, the file that holds your model choices (not the
+`~/.canonkit` folder, which also holds install receipts): without it,
+`canonkit models show` inside the sandbox sees no choices and reports every
+agent as "inherit". Confirmed additions are tracked so
+`uninstall` removes only entries still present exactly once and unchanged.
+`canonkit doctor` reports runtime-read coverage, warns when the strict sandbox is
+on and the models file is not readable, and reports whether project security is
+configured for the current project; it writes nothing.
+
 ### Returning existing Claude installations to native approvals
 
 This migration runs automatically on `install` when Claude is selected and
-`--wire-hooks` is absent, including with `--no-reference`. To inspect it first:
+`--wire-hooks` is absent, including with `--no-reference`.
+
+#### 1. Preview, apply and diagnose the migration
 
 ```bash
 npx canonkit install --claude --dry-run
@@ -168,7 +295,7 @@ mentioning these hook names that cannot be attributed remain with a `WARN`; insp
 `/hooks` view. Unrelated handlers and group metadata are preserved.
 
 Cleanup covers only the active user `settings.json` and the validated current
-repository's `.claude/settings.json`. It never enumerates other repositories
+project's `.claude/settings.json`. It never enumerates other projects
 or removes entries from `settings.local.json` or managed settings. Hook payloads,
 the legacy forwarder and activity logs remain. The migration does not promise
 that all gates disappear: a preserved wrapper, local setting or managed
@@ -187,7 +314,7 @@ endings. A preserved third-party command with the same hook filename does not
 justify active `[ENFORCED]` claims: those require canonical registrations.
 Personal modes and saved permissions remain intact.
 
-The global and project receipt stores are separate, not one transaction. If a
+The user-level and project receipt stores are separate, not one transaction. If a
 later stage fails, already completed settings changes remain; output identifies
 the completed stages. Fix the reported conflict, such as a concurrent settings
 edit, then re-run the same install. Removed gates are not silently restored.
@@ -212,9 +339,34 @@ review remain instruction-based requirements.
 Canonkit does not set `permissions.defaultMode`, change your Auto policy,
 enable bypass, or add broad `allow` entries. Manual, Auto, Edit automatically
 and Plan retain the harness's ordinary approval behavior. When canonkit enables
-a supported shell sandbox, it uses regular permission review rather than
-enabling sandbox command autoapproval. Existing personal choices are preserved
-and their effects reported separately.
+the strict shell sandbox profile (`enabled: true`, `failIfUnavailable: true`,
+and `allowUnsandboxedCommands: false`) and neither project nor user settings
+choose a value, it also sets `sandbox.autoAllowBashIfSandboxed: true`. This
+removes per-command review for Bash commands that actually run inside the
+sandbox. The working directory remains writable, including project files and
+scripts; use this default only with projects you trust. Canonkit reports
+runtime containment as unverified, so it does not promise that sandbox
+protections cover `.git` paths in every supported environment. To keep command
+review, set `sandbox.autoAllowBashIfSandboxed` to `false` in your project or
+user settings. An existing explicit project or user choice is never overwritten
+silently: an interactive install asks whether to keep a `false` or change it to
+`true` (see [Security review during install](#security-review-during-install)),
+and without a terminal it is preserved and the recommendation is printed.
+
+To request confirmation before publishing, add content-scoped `ask` rules for
+Git commit and push commands. Claude Code documents that these rules still
+apply to sandbox auto-approval:
+
+```json
+{
+  "permissions": {
+    "ask": ["Bash(git commit *)", "Bash(git push *)"]
+  }
+}
+```
+
+These settings provide the prompts; canonkit's commit/push instruction remains
+governance only and does not enforce them.
 
 Access restrictions and approval mode are separate. An `allow` rule is a
 preauthorization, not a filesystem or network boundary. Removing one does not
@@ -229,6 +381,17 @@ The detector records OS, WSL generation, container indicators, harness version
 and prerequisites separately. A container inside WSL is not a different,
 mutually exclusive operating system. A marker or a dependency on `PATH` is
 evidence to inspect, not proof of containment.
+
+On WSL, `bwrap`, `socat` and `claude` are looked up on the Linux side only. A
+Windows `claude` (for example `claude.exe` reached through interop) is never run,
+because it reads Windows settings, not the WSL ones. With only that copy, the
+Claude version is unknown, so settings gated by version (file-read and file-write
+blocks, sandbox, network lock) are written less than with a Linux-side Claude.
+`install` says so with a `WARN security claude: a Windows copy at <path> was
+ignored ...` line (a warning-marked line in the short summary; not printed in
+`--dry-run`, which does not probe versions), and `canonkit doctor` shows it in
+`security claude version` ("unknown; a Windows copy at <path> was ignored ...").
+Install Claude Code inside WSL to restore them.
 
 | Environment | Configuration and limits |
 | --- | --- |
@@ -265,8 +428,9 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.enabled: true` | 2.1.302 (conservative) | [Shell sandbox](https://code.claude.com/docs/en/settings-reference#sandbox-enabled) |
 | `sandbox.failIfUnavailable: true` | 2.1.302 (conservative) | [Startup failure policy](https://code.claude.com/docs/en/settings-reference#sandbox-failifunavailable) |
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
-| `sandbox.autoAllowBashIfSandboxed: false` when neither project nor user sets a choice | 2.1.302 (conservative) | [Regular permissions](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
+| `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written (or when you confirm the change from an explicit `false`) | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
+| `sandbox.filesystem.allowRead` items for detected runtimes and the model choices file, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
 
 The four shell switches additionally require an available, unverified sandbox
 capability. The 2.1.302 floors are canonkit's supported baseline, not claims
@@ -296,13 +460,13 @@ documentation or local services automatically. Provider communication belongs
 to the harness; it does not grant project subprocesses permission to contact
 the same endpoint.
 
-Native project settings hold the repository policy, not an immutable ceiling.
+Native project settings hold the project policy, not an immutable ceiling.
 User, managed and command-line inputs can affect the effective boundary. The
 approved `sandbox.network.strictAllowlist: true` lock is written to user settings,
 never as an ignored project key. For the sandbox proxy, it prevents destinations
 outside the approved list from becoming a per-command approval prompt. From
 Claude 2.1.285, its [trusted-scope lock](https://code.claude.com/docs/en/sandboxing#locks-that-apply-without-an-admin-required-sandbox)
-also prevents repository domain lists and proxy ports from widening that native
+also prevents project domain lists and proxy ports from widening that native
 network list; earlier supported versions do not establish that ceiling. Explicit shell
 destination exceptions belong in supported user or managed settings; project
 content and stack packs cannot supply them automatically. Existing explicit
@@ -310,6 +474,32 @@ authorizations are preserved, and proxy/socket exceptions are assessed separatel
 This lock adds no destination, does not enable sandboxing on Windows, and does
 not restrict WebFetch, MCP or hook traffic by itself. A command containing `localhost` or a Playwright
 `baseURL` does not constrain every network request that its code can make.
+
+#### Allowing a destination
+
+With the lock on, a host outside the list fails at once with
+`403 host is not on the allow list` and a `<sandbox_violations>` report; there is
+no approval prompt. The lock ignores a project's `sandbox.network.allowedDomains`,
+so where you allow the host depends on which tool needs it:
+
+| Need | Where | Effect |
+|---|---|---|
+| WebFetch reads a site | `"WebFetch(domain:example.com)"` in the project's `.claude/settings.json` `permissions.allow` | WebFetch reaches the host without a prompt; shell commands stay blocked, because the lock ignores the project's rule for the sandbox |
+| A shell command (`curl`, a package manager) reaches a host | `"example.com"` in `sandbox.network.allowedDomains` in `~/.claude/settings.json` | sandboxed commands in every project reach the host |
+
+A `WebFetch(domain:...)` rule in user settings also adds the host to the sandbox
+list, so it opens shell access as well. List each host name you need: the native
+documentation does not say whether `example.com` also covers `www.example.com`.
+
+Allow exact hosts you trust to receive project data. Avoid wildcards and hosts
+that accept uploads or user content (code hosts, paste sites, object storage):
+an allowed host is a path out for any command or injected prompt, and WebFetch
+can carry data in the URL. A project rule is committed, so it applies to every
+collaborator and every clone. A user-level shell entry applies to every project,
+so prefer the WebFetch-only row when a command does not need the host.
+
+Agents must not edit these files, with Bash or with file tools; they report the
+denied host and the change, and you make it.
 
 Shell restrictions do not cover file tools, web tools, MCP servers, hooks or
 subagents automatically. Those surfaces have separate controls and unknowns.
@@ -329,7 +519,7 @@ policy remains unknown where managed, CLI or runtime evidence is unavailable.
 Configuration is not runtime verification. Correct native Windows partial
 coverage is a warning; malformed observed settings or an observable unmet existing
 isolation requirement can fail. Observable settings come from user, user-local,
-repository and repository-local files, with scope conflicts reported separately.
+project and project-local files, with scope conflicts reported separately.
 This bounded inspection does not resolve the harness's complete effective policy.
 A hidden CLI/managed override or an unsupported
 TOML/JSONC shape stays unknown, not permissive by assumption.
@@ -351,11 +541,11 @@ WARN security claude effective-policy: unknown: managed, CLI, plugin and runtime
 ```
 
 `doctor` also checks every receipt-owned security key against its installed
-boolean, including `false`, in its original user or repository file. Changing
+boolean, including `false`, in its original user or project file. Changing
 or deleting a key, or deleting that settings file, produces `FAIL`, for example:
 
 ```text
-FAIL security claude tracked-policy: partial: tracked repository permissions.blockReadsOutsideWorkingDirectories is missing or changed; re-run canonkit install in this repository
+FAIL security claude tracked-policy: partial: tracked project setting permissions.blockReadsOutsideWorkingDirectories is missing or changed; re-run canonkit install from this project
 ```
 
 Review any deliberate edit before reapplying `npx canonkit install --claude`;
@@ -367,13 +557,13 @@ installation preserves that requirement. For stronger shell isolation, prepare
 WSL2 or a validated container separately and test its actual boundary. These are
 optional operator actions; canonkit does not provision or intercept launches.
 
-Repository security receipts and private snapshots are separated under
+Project security receipts and private snapshots are separated under
 `~/.canonkit/projects/<canonical-root-digest>/`; all project-settings backups
-stay in its `backups/` subdirectory, with no backup copy beside the repository
+stay in its `backups/` subdirectory, with no backup copy beside the project
 settings. The manifest records provenance,
 not permission authority. The root is canonicalized, with case normalized on
 Windows. A saved path never authorizes another target. Working policy remains
-in the repository's `.claude/settings.json`.
+in the project's `.claude/settings.json`.
 
 The native setting scopes and version requirements are tracked against
 [Claude permissions](https://code.claude.com/docs/en/permissions#block-file-tool-reads-and-writes-outside-the-working-directories),
@@ -382,18 +572,17 @@ The native setting scopes and version requirements are tracked against
 2026-11-08. A supported key or static version check is still not a recorded
 runtime boundary test.
 
-To preview and reverse canonkit-attributable security changes and Codex core
-agent overrides in the current validated repository:
+### Preview or reverse project security changes
 
 ```bash
 npx canonkit uninstall --project --dry-run
 npx canonkit uninstall --project
 ```
 
-Project-only removal leaves global distribution, the user-scoped network lock
-and other repositories alone. Edited Codex core files and preexisting
+Project-only removal leaves user-level distribution, the user-scoped network lock
+and other projects alone. Edited Codex core files and preexisting
 same-name agents stay in the project.
-Ordinary global uninstall does not enumerate or modify repository policies.
+A user-level uninstall does not enumerate or modify project policies.
 Undo uses per-key provenance: it reverses an owned scalar only while its current
 value still matches the installed value, restoring the original boolean or
 removing a newly added key. Undo preserves later user edits and unrelated
@@ -402,8 +591,8 @@ file. Refusals name the condition
 to resolve, after which the same scoped command can be retried. Private backups
 can contain secrets and must stay out of version control.
 
-The network lock is tracked with the global Claude settings artifact, alongside
-optional hook wiring. Global removal reverses only an attributable kit change;
+The network lock is tracked with the user-level Claude settings artifact, alongside
+optional hook wiring. User-level removal reverses only an attributable kit change;
 a `true` value that already existed before installation is not adopted as kit
 ownership. Other settings remain intact. Migrated hook removals are not reversed;
 use the selective manual recovery above if a registration must be restored.
@@ -450,14 +639,26 @@ harness is asked instead.
 This version applies choices to **Claude Code and Codex**. OpenCode and GitHub
 Copilot agents inherit the session model.
 
+### 1. Refresh the model catalog
+
 ```bash
-npx canonkit models refresh            # ask each harness what it offers
-npx canonkit models setup              # choose per need level, then optional per-agent overrides
-npx canonkit models setup --project    # the same, for this project only
-npx canonkit models show               # what each agent resolves to, and from where
-npx canonkit models show --json        # the same, for tools and the orchestrate skill
-npx canonkit install --claude          # write the user-level defaults into ~/.claude/agents
-npx canonkit install --codex           # write Codex agents, including project core overrides
+npx canonkit models refresh
+```
+
+### 2. Configure and inspect model choices
+
+```bash
+npx canonkit models setup
+npx canonkit models setup --project
+npx canonkit models show
+npx canonkit models show --json
+```
+
+### 3. Install the selected model choices
+
+```bash
+npx canonkit install --claude
+npx canonkit install --codex
 ```
 
 **Discovery.** `models refresh` runs the harness's own read-only commands and
@@ -474,7 +675,8 @@ can use, so other versions go through `other…`. That text is not a contract, s
 record says `confidence: "help-text"`, and anything it does not recognize becomes
 `unknown` with the reason, never an error. The binary is looked up on PATH outside
 the enclosing repository (a `claude` in its `node_modules/.bin` is never run, from
-any subfolder), with no shell, closed stdin, a 30-second timeout and no
+any subfolder; on WSL a binary found only on the Windows side is reported as "found
+only on the Windows side; not run through WSL interop" and not run), with no shell, closed stdin, a 30-second timeout and no
 `NODE_OPTIONS`-style loader variables. Canonkit reads no credential; Claude's
 help-based probe does not use the network. Codex discovery runs the experimental
 `codex debug models` command. Codex may refresh its catalog over the network,
@@ -680,7 +882,9 @@ since OpenCode reads every `.md` in the folder).
 
 The plugin is an OpenCode 2 plugin, and OpenCode 1 does not run it. Install
 checks `opencode --version` first and refuses if `opencode` is not on PATH, prints
-no version, or is older than 2. With `--wire-hooks`, install writes (all under
+no version, or is older than 2. On WSL only a Linux-side `opencode` counts: a
+Windows copy is ignored (never run through interop), the refusal names it, and the fix is
+to install OpenCode 2 or later inside WSL. With `--wire-hooks`, install writes (all under
 `~/.config/opencode`, or `$XDG_CONFIG_HOME/opencode`):
 
 | What | Where |
@@ -739,27 +943,100 @@ hook files or settings.
 
 | Command | What it does |
 | --- | --- |
-| `install` | core at user level + hook files + dashboard + global reference blocks + core skills; supported strict-network lock and native Claude security; unregisters attributable older Claude hooks in user/current-repository settings |
+| `install` | core at user level + hook files + dashboard + user-level reference blocks + core skills; supported strict-network lock and native Claude security; unregisters attributable older Claude hooks in user/current-project settings |
 | `install --wire-hooks` | distribution and native security; skips Claude hook cleanup and wires selected runtimes that support hooks: `~/.claude/settings.json`, `$CODEX_HOME/hooks.json`, the OpenCode plugin (see [hooks.md](hooks.md)) |
 | `install --no-reference` | agents, hook files, dashboard, native security and Claude hook migration; skips block/skill distribution, but reconciles an existing Claude managed block on each native-default install, including retries |
 | `install --claude` / `--codex` / `--opencode` / `--copilot` | only for those runtimes, without the menu |
 | `doctor` | read-only target-aware installation and security diagnosis; exits 1 if any check is `FAIL` |
-| `reference` | only the global blocks and core skills (`--claude`/`--codex`/`--opencode`/`--copilot` narrow it; no menu; no stack packs) |
-| `uninstall [--claude] [--codex] [--opencode] [--copilot]` | remove tracked global artifacts; without flags, all recorded harnesses |
-| `uninstall --project` | reverse only attributable Claude security settings for the validated current repository; preserves global installation and other repositories |
+| `reference` | only the user-level blocks and core skills (`--claude`/`--codex`/`--opencode`/`--copilot` narrow it; no menu; no stack packs) |
+| `uninstall [--claude] [--codex] [--opencode] [--copilot]` | remove tracked user-level artifacts; without flags, all recorded harnesses |
+| `uninstall --project` | reverse only attributable Claude security settings for the validated current project; preserves the user-level installation and other projects |
 | `add <name>...` | specialists or stack-pack skills in the current project |
 | `remove <name>...` | removes specialists or tracked stack-pack files from the current project |
 | `list` | the roster and what is installed where (and points to `tool list`) |
 | `tool add <graphify\|openspec>` | runs the tool's setup in this project and records it in `AGENTS.md` (see [tools.md](tools.md)) |
 | `tool remove <name>` | removes the tool from `AGENTS.md` |
 | `tool list` | pin, installed version and whether it is active in this project |
+| `git-ignore-sandbox-files [--remove] [--dry-run]` | opt in: make git ignore the Claude Code sandbox's 0-byte placeholder files, in this clone's `.git/info/exclude` (see [below](#sandbox-placeholders-per-clone)) |
 
 `--dry-run` works on all of them: it reports what would change without writing
-anything. `--yes` exists only on `tool add`.
+anything. `--yes` and `--harness` exist only on `tool add` (see [tools.md](tools.md)).
+
+## Sandbox placeholders, per clone
+
+On Linux/WSL (bubblewrap), Claude Code's sandbox leaves real 0-byte files in the
+project root (`.mcp.json`, `.bashrc`, `.claude/settings.local.json`,
+`.claude/agents`, ...) as mount points for paths it write-protects. macOS
+(Seatbelt) behaviour was not verified. Outside the sandbox they show as untracked,
+can be committed by accident, and make `canonkit add` stop. `doctor` warns when it
+sees them and prints the command, `canonkit git-ignore-sandbox-files`.
+
+That command makes git ignore the empty files the Claude Code sandbox leaves in
+the project root; it does not touch the sandbox or any permission.
+
+`canonkit add <specialist>` when such a file sits where a directory is needed
+(exit 1, nothing written): outside the sandbox the message says the path "is an
+empty file, but a directory is needed there" and to delete it and run the command
+again; inside the sandbox the path is write-protected, so run it from your own
+terminal.
+
+Run from the repository root outside the sandbox; inside it, add/reconcile is a no-op, while `--remove` works if no refusal applies.
+
+### 1. Preview, add or remove the ignore block
+
+```bash
+# Expected after the usual refusals pass inside the sandbox: add/reconcile exits 0 without changes, leaves an existing block as-is, and writes this notice to stderr:
+# "Inside the Claude Code sandbox, git-ignore-sandbox-files changed nothing and left any existing block as it is. Run it from your own terminal; --remove still works here."
+# The placeholders in the notice may look like devices.
+npx canonkit git-ignore-sandbox-files --dry-run   # prints the names and "Would write"; not the block lines
+npx canonkit git-ignore-sandbox-files             # writes it to .git/info/exclude
+npx canonkit git-ignore-sandbox-files --remove    # removes only the managed block; the sandbox permits removal
+```
+
+Exit codes: 0 when it skips (no git, bare repo, not the repo root) or finishes,
+and also inside the sandbox, but only after the refusals below have passed; 1 for
+refusals (symlinked or non-regular `info` or `exclude`, altered or duplicated
+markers), which apply inside the sandbox too, and for usage errors.
+
+Only known names that are 0-byte, regular and untracked are listed; a name that
+can be a directory also gets `!/name/`, so a real directory stays visible. Names
+your own exclude lines already cover are skipped. The rule is local to this clone
+(shared by its worktrees), never the committed `.gitignore`, and `install` does not
+run it. It hides by path, not by content: if you later put a real `.mcp.json`
+there, it stays hidden until you re-run the command or `--remove` (`doctor` warns).
+`--remove` deletes only the managed block and never changes your own lines. It is
+not byte-exact: adding the block collapses trailing blank lines and whitespace at
+the end of the file, and turns a mixed-EOL file into all-CRLF when it was CRLF;
+`--remove` also drops the one blank line that adding the block appended.
+
+Honest limits:
+
+- Names are matched literally (`x`, `/x`, `!/x`, `/x/`). A glob line of your own
+  outside the block (for example `.claude/*`) is not recognised as covering a name,
+  so for names that can be directories the block's `!/x/` line can make a real
+  directory you had hidden by glob visible again. The caveat concerns globs in the
+  exclude file itself; a `.gitignore` rule still wins over `info/exclude`.
+- If `.git` is a file whose `gitdir:` points to another valid git directory, the
+  command writes that repository's `info/exclude` (static placeholder names only).
+  A linked worktree uses the main repository's shared exclude, and the command says
+  so; a submodule writes its own `modules/<name>/info/exclude` (not shared); from
+  the main checkout there is no extra notice.
+- Every git call the command makes, and the `doctor` rows, run with
+  `core.fsmonitor=false`, `core.hooksPath=/dev/null` and without any `GIT_*`
+  environment variable, so a repo-local config cannot run code. `doctor` is
+  read-only and runs no repo code.
+- `doctor` also warns when a name in the block stopped being an empty regular file
+  (it gained content or became a symlink), or became a directory where only a file
+  fits (e.g. `.mcp.json`); a real directory under a directory-capable name is quiet.
+
+It reduces noise in `git status`; it protects nothing. Reasoning:
+[ADR 0007](adr/0007-sandbox-placeholder-exclude.md).
 
 ## Specialists, per project
 
-Run **from inside the project** that will receive the agents:
+Run **from inside the project** that will receive the agents.
+
+### 1. Add specialists
 
 ```bash
 cd ~/my-project
@@ -767,7 +1044,7 @@ npx canonkit add maya nova
 ```
 
 Choosing which specialists a project has remains your explicit decision — the
-installer only takes care of what is easy to forget. Four native profiles and
+install menu or `add` command only installs what you choose. Four native profiles and
 the project's `AGENTS.md` need to know about the agent, and forgetting one is
 the failure this command prevents:
 
@@ -781,6 +1058,8 @@ the failure this command prevents:
 All four native profiles and the `AGENTS.md` block are written in one step. The
 block is rebuilt from what is actually on disk, so it reflects reality rather
 than command history.
+
+### 2. List or remove specialists
 
 ```bash
 npx canonkit list            # what this project has installed
@@ -806,11 +1085,13 @@ The [stack-pack table in the README](../README.md#stack-packs-per-project) lists
 all available packs, their guidance and individual install commands. Install only
 the ones wanted, from the consuming project's directory:
 
+### 1. Add or remove stack packs
+
 ```bash
 npx canonkit add typescript react
 npx canonkit add cpp csharp java python rust
 npx canonkit add go kotlin swift
-npx canonkit add ui-design ui-review game-art-direction  # only if wanted
+npx canonkit add ui-design ui-review game-art-direction
 npx canonkit list
 npx canonkit remove react
 ```
@@ -826,7 +1107,7 @@ Each named pack writes three project-local copies of its `SKILL.md`:
 An installed skill is available for selection when relevant; installing it does
 not force a dispatch. React does not implicitly install TypeScript. There is no
 stack detection, download, toolchain/dependency installation or build execution.
-`install`, `reference` and global `uninstall` neither install nor remove project
+`install`, `reference` and user-level `uninstall` neither install nor remove project
 packs. Core skills remain in `skills/`; pack sources ship in `stack-packs/`.
 
 `add` and `remove` also accept mixed lists such as `add maya react`. All names
@@ -881,12 +1162,13 @@ promised for a mixed request that fails during execution.
 
 ## Global reference blocks and skills
 
-They already run as part of `install`. Standalone, for when you edited a block
-without touching any agent:
+### 1. Sync global reference blocks and skills
 
 ```bash
 npx canonkit reference
 ```
+
+`install` also syncs these blocks. Use `reference` when a block changed without an agent change.
 
 It syncs the shared roster and one block for each selected runtime: **three
 blocks** for the default Claude Code and Codex install, four with OpenCode too.
@@ -919,11 +1201,13 @@ signal. Direct inspection can suffice, and advice can be reused while task conte
 and evidence are unchanged. Selected consultations record actual results and
 failures; the procedure does not install an MCP server or enforce a hook gate.
 Existing review requirements still apply.
-To test source changes locally before an npm release, run from this checkout:
+### 2. Sync from the checkout
 
 ```bash
 node bin/cli.js reference --claude --codex
 ```
+
+Run from this checkout to test source changes locally before an npm release.
 
 This syncs the global reference blocks and skills from the checkout without a
 full core installation. Start a fresh session so the runtime loads the updated
@@ -952,6 +1236,17 @@ authorization. It does not inject lessons at session start or apply changes
 automatically; see [learning from mistakes](learning-loop.md) for contribution,
 update and review steps. Reinstall the relevant source/package version to update
 shipped instructions; local `canonkit.json` tuning needs no reinstall.
+
+The `backlog-cycle` skill also **only runs when you call it** (`/backlog-cycle` in
+Claude Code, `$backlog-cycle` in Codex), for the same reason as `context-tune`:
+`disable-model-invocation: true` and `allow_implicit_invocation: false`. It runs
+one item of the backlog your project already uses per session: pick it, confirm
+it on disk, classify the risk, stop for your approval before any edit,
+implement, verify, review, close out, ask how you want to commit, and hand over a
+prompt for the next session. If the item does not close (a veto, an item that is
+really several, an obsolete one), it stops and records the state instead.
+It assumes no backlog file, planning tool or release scheme, and does not commit
+or push before you answer. It is installed with the other user-level skills.
 
 `AGENTS.md` is runtime-neutral and is the only definition of the team. The
 routing block keeps only what is Claude Code mechanics (hooks and what they
@@ -992,7 +1287,7 @@ the forwarder because other projects may still run it and are not enumerated.
 A plain Claude install unregisters attributable handlers in user settings and
 the current repository; inspect remaining sources before deleting the forwarder.
 If retaining optional gates, update intended registrations to `canonkit-hook.js`.
-`--wire-hooks` updates the global settings and keeps the forwarder. Its updates are tracked and its
+`--wire-hooks` updates the user settings and keeps the forwarder. Its updates are tracked and its
 previous bytes are backed up. Uninstall retains Claude's runtime while that
 forwarder remains. Activity history keeps the existing move/merge migration and
 is always preserved by uninstall.
@@ -1011,8 +1306,10 @@ To remove a kept copy you no longer want, delete it yourself.
 Delete by hand one file at a time. The 10 core names are `scott`, `archie`, `bob`,
 `quinn`, `gard`, `pixie`, `perry`, `pipe`, `spencer` and `virgo`:
 
+### 1. Remove an individual leftover agent file
+
 ```bash
-rm ~/.agents/scott.md        # repeat for each of the 10 names
+rm ~/.agents/scott.md
 ```
 
 Do not glob (`~/.agents/*.md`): the folder may hold files of your own, and only
@@ -1021,16 +1318,18 @@ canonkit installs skills now.
 
 ## Uninstalling
 
+### 1. Preview or uninstall tracked files
+
 ```bash
 npx canonkit uninstall --dry-run       # preview all recorded harnesses
 npx canonkit uninstall --codex         # only the recorded Codex installation
 npx canonkit uninstall                # all recorded harnesses; no install defaults/menu
-npx canonkit uninstall --project       # only current-repository security settings
+npx canonkit uninstall --project       # only current-project security settings
 ```
 
-The first three commands operate on global distribution only. `--project` is a
-separate scope with its own validated repository catalog and receipt; it never
-searches global receipts for projects to remove. See
+The first three commands operate on user-level distribution only. `--project` is a
+separate scope with its own validated project catalog and receipt; it never
+searches user-level receipts for projects to remove. See
 [project security reversal](#diagnosis-and-conservative-reversal).
 
 Uninstall uses the manifest, not filenames alone. It detaches owned configuration
@@ -1104,7 +1403,7 @@ installed:
   [Upgrading from 2.0](#upgrading-from-20-leftover-agentsmd); never the folder or a glob;
 - the managed blocks between the `agent-team-config` markers in `~/AGENTS.md`,
   `~/.claude/CLAUDE.md`, `$CODEX_HOME/AGENTS.md` and `~/.config/opencode/AGENTS.md`;
-- the `orchestrate`, `context-tune` and `learning-loop` folders in `~/.claude/skills`,
+- the `orchestrate`, `context-tune`, `learning-loop` and `backlog-cycle` folders in `~/.claude/skills`,
   `~/.agents/skills` (Codex and OpenCode) and `~/.copilot/skills`;
 - `~/.claude/hooks/canonkit-hook.js` and, if you upgraded from `meu-time`, the
   `meu-time-hook.js` forwarder next to it, after checking and updating references
@@ -1127,3 +1426,14 @@ installed:
   you created one. `tool remove` only takes the tool out of `AGENTS.md`; what the
   tool's own setup wrote (`openspec/`, `graphify-out/`, its skills and git hooks)
   stays — see [tools.md](tools.md) for how to undo each.
+
+## Verificar
+
+```bash
+npx canonkit doctor
+npx canonkit list
+```
+
+## Problemas conocidos
+
+`install` reports `EPERM`, `EACCES` or `EBUSY` while replacing a tracked file → close the application holding the file, then run `npx canonkit install` with the original options.

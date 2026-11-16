@@ -316,4 +316,12 @@ export class StackPackStore {
     }
     return rows;
   }
+
+  async catalogItems() {
+    const states = new Map((await this.list()).map(({ pack, state }) => [pack, state]));
+    return Promise.all(STACK_PACK_IDS.map(async (id) => {
+      const { description } = readStackPack(id, this.repo);
+      return { name: id, description, state: states.get(id) ?? "absent" };
+    }));
+  }
 }
