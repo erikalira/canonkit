@@ -979,7 +979,7 @@ Mesmas regras da Fase 1: nenhum prompt, resultado, código ou path completo.
 
 # P6 — Live Development Observatory
 
-**Status em 2026-11-12:** Execution Graph implementado nesta worktree para eventos locais de Claude Code, com build e testes automatizados aprovados. Entrega **parcial** em relação ao pedido completo: identidade confiável de projeto/worktree/branch, integração de artefatos OpenSpec/Graphify, validação visual/acessível em navegador e observação de uma sessão real continuam pendentes. Codex, OpenCode e Copilot ainda não têm adaptadores equivalentes. O Agent Office 2D/3D é roadmap, não implementação.
+**Status em 2026-11-12:** Execution Graph implementado nesta worktree para eventos locais de Claude Code, com build e testes automatizados aprovados. Entrega **parcial** em relação ao pedido completo: identidade confiável de projeto/worktree/branch, e integração de artefatos OpenSpec/Graphify continuam pendentes. A validação em navegador (Chrome, dados de fixture) foi feita em 2026-11-16 e corrigiu problemas de teclado, foco, nomes acessíveis, layout estreito e estabilidade de seleção. No mesmo dia, uma sessão real foi conferida contra seus registros; ela não teve dispatches de subagentes. Codex, OpenCode e Copilot ainda não têm adaptadores equivalentes. O Agent Office 2D/3D é roadmap, não implementação.
 
 ## Princípios e contrato
 
@@ -998,7 +998,7 @@ Mesmas regras da Fase 1: nenhum prompt, resultado, código ou path completo.
 - UI React Flow com canvas, minimap, controles, layout explícito, inspector e timeline filtrável. A navegação temporal foca o nó correlacionável. Grafo observado e rotas de referência LOW/MEDIUM/HIGH ficam em visualizações distintas; rotas de referência não provam caminho executado.
 - `/activity.html` e endpoints legados preservados; stale snapshot informa desconexão e tenta reconectar. A instalação inclui frontend compilado, sem dependências frontend no runtime normal do CLI.
 - Segurança implementada no servidor local: Host/Origin loopback, sem CORS, arquivos estáticos confinados, CSP, `frame-ancestors`, `nosniff` e sem rotas de execução.
-- Evidência registrada no change OpenSpec `openspec/changes/live-development-observatory/`: typecheck/build, suíte completa (1042 total, 1021 passou, 21 ignorados, 0 falhou), package dry-run (71 arquivos), diff check e Graphify update passaram. `npm audit` não foi verificado por DNS `EAI_AGAIN`; navegador, acessibilidade e sessão real não foram verificados.
+- Evidência registrada no change OpenSpec `openspec/changes/live-development-observatory/`: typecheck/build, suíte completa (1042 total, 1021 passou, 21 ignorados, 0 falhou), package dry-run (71 arquivos), diff check e Graphify update passaram. `npm audit` não foi verificado por DNS `EAI_AGAIN`; navegador e acessibilidade foram verificados em 2026-11-16 (tarefas 3.4 e 4.4, sem leitor de tela real); a sessão real foi conferida (tarefa 3.5, sem dispatches de subagentes).
 
 ## Fase P6.1 — Fechar lacunas do Execution Graph
 

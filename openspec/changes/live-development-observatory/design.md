@@ -50,6 +50,6 @@ The `/events.json`, `/dispatches.json` and `/context.json` contracts remain avai
 
 - With no stable project/worktree identity, the UI can select a session but cannot safely group multiple worktrees or distinguish homonymous projects. This is an upstream observability gap, not a UI heuristic to fill.
 - Event lifecycle is not workflow lifecycle. Current data cannot prove classification, code activity, test results, approval, OpenSpec acceptance or Graphify freshness.
-- Some timeline entries intentionally have no graph-node relationship. Browser interaction and accessibility have not been visually verified, even though deterministic tests, TypeScript checking and production build pass.
+- Some timeline entries intentionally have no graph-node relationship. Browser interaction, responsiveness and accessibility-tree semantics were verified in Chrome against fixture logs (tasks 3.4, 4.4); no screen reader session or automated UI-level test exists.
 - The package audit could not be completed because npm registry DNS resolution returned `EAI_AGAIN`; dependency review and bundled notices do not replace that check.
 - Future multi-runtime, replay, 2D/3D and control features could widen privacy, performance and security boundaries. Each requires a separate design/review and must keep one shared observation model.

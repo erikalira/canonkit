@@ -29,4 +29,4 @@ None.
 
 Implementation is in `dashboard/`, the installer/catalog in `bin/cli.js`, package scripts and files, dashboard tests, `README.md`, `docs/telemetry.md` and `CHANGELOG.md`. The frontend uses React, TypeScript, Vite and `@xyflow/react`; compiled assets are shipped, while frontend sources and dependencies are not runtime requirements for the installed CLI. The implementation remains passive and local. No hook event format or CanonKit risk/delegation rule is changed.
 
-Current status: implementation and listed automated checks are present in this worktree. Browser-rendered UX/accessibility and a live user session have not been verified. Criteria and follow-up tasks below remain open where the available evidence is insufficient.
+Current status: implementation and listed automated checks are present in this worktree. Browser-rendered UX/accessibility was verified in Chrome against fixture logs on 2026-11-16, and a live Claude Code session was checked against its retained records the same day (no subagent dispatches occurred in it). Criteria and follow-up tasks below remain open where the available evidence is insufficient.

@@ -31,6 +31,13 @@ const fmtTime = (ts?: number | null) => ts ? new Date(ts).toLocaleTimeString([],
 const fmtDate = (ts?: number | null) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const short = (s: string, n = 8) => s.length > n ? `${s.slice(0, n)}…` : s;
 const human = (s: string) => s.replaceAll('_', ' ').replace(/\b\w/g, (x) => x.toUpperCase());
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+// Programmatic camera moves and scrolling honour the reduced-motion preference;
+// the stylesheet only covers CSS transitions and animations.
+const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const motion = (ms: number) => reducedMotion() ? 0 : ms;
+// Screen readers announce each node by this name instead of its concatenated card text.
+const labelled = (nodes: GraphNode[]) => nodes.map((n) => ({ ...n, ariaLabel: `${human(n.data.kind)}: ${n.data.title}. ${human(n.data.state)}. ${n.data.subtitle}` }));
 
 function StudioNode({ data, selected }: NodeProps<GraphNode>) {
   const icon = data.kind === 'session' ? '◉' : data.kind === 'gate' ? '⚑' : data.kind === 'decision' ? '⌘' : data.kind === 'reference' ? '↳' : '◇';
@@ -47,7 +54,8 @@ const nodeTypes = { studio: StudioNode };
 function graphFor(session: Session | undefined, view: 'observed' | 'reference'): { nodes: GraphNode[]; edges: Edge[] } {
   if (view === 'reference') {
     const reference = referenceGraph();
-    return arrangeGraph(reference.nodes, reference.edges);
+    const arranged = arrangeGraph(reference.nodes, reference.edges);
+    return { nodes: labelled(arranged.nodes), edges: arranged.edges };
   }
   if (!session) return { nodes: [], edges: [] };
   const dispatches = session.dispatches;
@@ -71,9 +79,12 @@ function graphFor(session: Session | undefined, view: 'observed' | 'reference'):
   gates.forEach((g, i) => {
     const id = `gate:${session.sessionId}:${g.timestamp}:${i}`;
     const kind = typeof g.data.kind === 'string' ? g.data.kind : 'gate';
-    const state = g.data.decision === 'blocked' ? 'blocked' : g.data.decision === 'allowed' ? 'completed' : 'unknown';
+    // The pill shows the gate's decision; "completed" or "unknown" would misstate
+    // an allow or a confirmation request.
+    const decision = ['allowed', 'confirmation-requested', 'blocked'].includes(String(g.data.decision)) ? String(g.data.decision) : 'unknown';
+    const state = decision.replaceAll('-', '_');
     nodes.push({ id, type: 'studio', position: { x: 410 + width, y: 40 + i * 130 }, data: {
-      title: human(kind), subtitle: `${fmtDate(g.timestamp)} · ${human(String(g.data.decision || 'unknown'))}`,
+      title: human(kind), subtitle: `${fmtDate(g.timestamp)} · gate decision`,
       state, kind: 'gate', source: 'CanonKit hook',
     } });
     edges.push({ id: `session-gate-${i}`, source: `session:${session.sessionId}`, target: id, type: 'smoothstep', label: 'gate observed' });
@@ -89,7 +100,8 @@ function graphFor(session: Session | undefined, view: 'observed' | 'reference'):
     } });
     edges.push({ id: `session-signal-${index}`, source: `session:${session.sessionId}`, target: id, type: 'smoothstep', label: 'session membership' });
   });
-  return arrangeGraph(nodes, edges);
+  const arranged = arrangeGraph(nodes, edges);
+  return { nodes: labelled(arranged.nodes), edges: arranged.edges };
 }
 
 const observationNodeId = (sessionId: string, event: Observation, index: number) => `observation:${sessionId}:${event.timestamp}:${event.type}:${index}`;
@@ -197,8 +209,18 @@ function App() {
 
   useEffect(() => {
     setNodes((current) => {
-      const positions = new Map(current.map((n) => [n.id, n.position]));
-      return graph.nodes.map((n) => ({ ...n, position: positions.get(n.id) ?? n.position }));
+      // Polling keeps the user's layout and selection. Nodes seen for the first
+      // time take their arranged slot, moved down past any kept node they would cover.
+      const kept = new Map(current.map((n) => [n.id, n]));
+      const placed = graph.nodes.flatMap((n) => kept.has(n.id) ? [kept.get(n.id)!.position] : []);
+      return graph.nodes.map((n) => {
+        const prior = kept.get(n.id);
+        if (prior) return { ...n, position: prior.position, selected: prior.selected };
+        const position = { ...n.position };
+        while (placed.some((p) => Math.abs(p.x - position.x) < 300 && Math.abs(p.y - position.y) < 140)) position.y += 145;
+        placed.push(position);
+        return { ...n, position };
+      });
     });
     setEdges(graph.edges);
   }, [graphSignature, graph.edges.map((e) => e.id).join('|'), setNodes, setEdges]);
@@ -207,12 +229,12 @@ function App() {
     const target = nodes.find((node) => node.id === focusNodeId);
     if (!target) return; // A new observation may render before React Flow has its node store updated.
     setNodes((current) => current.map((node) => ({ ...node, selected: node.id === focusNodeId })));
-    void flow.fitView({ nodes: [target], duration: 260, padding: 0.55 });
+    void flow.fitView({ nodes: [target], duration: motion(260), padding: 0.55 });
     setFocusNodeId(null);
   }, [focusNodeId, nodes, flow, setNodes]);
   useEffect(() => { setSelectedGraphNode(null); setSelected(null); }, [graphView, sessionId]);
 
-  const onNodeClick = useCallback((_event: React.MouseEvent, node: GraphNode) => {
+  const inspectNode = useCallback((node: GraphNode) => {
     const dispatchKey = node.id.startsWith('dispatch:') ? node.id.split(':').slice(2).join(':') : '';
     const gateTime = node.id.startsWith('gate:') ? Number(node.id.split(':').at(-2)) : 0;
     const item = activeSession?.dispatches.find((d) => d.executionId === dispatchKey) ??
@@ -222,6 +244,20 @@ function App() {
     setSelectedGraphNode(node);
     setNodes((current) => current.map((n) => ({ ...n, selected: n.id === node.id })));
   }, [activeSession]);
+  const onNodeClick = useCallback((_event: React.MouseEvent, node: GraphNode) => inspectNode(node), [inspectNode]);
+  // React Flow selects a focused node on Enter/Space but only reports mouse clicks,
+  // so keyboard users would otherwise never reach the inspector.
+  const onGraphKeyDown = useCallback((event: React.KeyboardEvent) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const id = (event.target as HTMLElement).closest?.('.react-flow__node')?.getAttribute('data-id');
+    const node = id ? nodes.find((n) => n.id === id) : undefined;
+    if (node) inspectNode(node);
+  }, [nodes, inspectNode]);
+  // Dispatch details follow the latest snapshot, so an open inspector does not
+  // keep showing a superseded state or measurement.
+  const inspected = selected && !('type' in selected)
+    ? activeSession?.dispatches.find((d) => d.executionId === selected.executionId) ?? selected
+    : selected;
 
   const agents = [...new Set((activeSession?.observations ?? []).map((e) => typeof e.data.agent === 'string' ? e.data.agent : '').filter(Boolean))];
   const timeline = (activeSession?.observations ?? []).filter((e) => (filter === 'all' || e.type === filter) &&
@@ -249,7 +285,7 @@ function App() {
     <nav className="main-nav" aria-label="Dashboard views">
       <a className="nav-item" href="/activity.html">Activity overview <span className="nav-count">↗</span></a>
       <a className="nav-item active" href="/">Execution graph</a>
-      <button className="nav-item" onClick={() => document.getElementById('timeline')?.scrollIntoView({ behavior: 'smooth' })}>Timeline</button>
+      <button className="nav-item" onClick={() => document.getElementById('timeline')?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth' })}>Timeline</button>
       <span className="nav-item future" aria-disabled="true">Agent Office <small>FUTURE</small></span>
       <div className="session-picker"><label htmlFor="session-select">SESSION</label><select id="session-select" value={activeSession?.sessionId ?? ''} onChange={(e) => setSessionId(e.target.value)} disabled={!snapshot.sessions.length}>
         {!snapshot.sessions.length && <option value="">No observed sessions</option>}
@@ -265,18 +301,20 @@ function App() {
     </section>
     <section className="workspace">
       <div className="canvas-column">
-        <div className="section-heading"><div><span className="eyebrow">LIVE EXECUTION</span><h1>{graphView === 'observed' ? 'Observed activity graph' : 'Canonical risk routes'}</h1><p>{graphView === 'observed' ? 'Dispatches and gates from this session. Connections show session membership, not inferred workflow order.' : 'Conditional LOW, MEDIUM and HIGH paths from CanonKit guidance. No route is selected by runtime evidence.'}</p></div><div className="canvas-actions"><button onClick={() => { setNodes(arrangeGraph(graph.nodes, graph.edges).nodes); void flow?.fitView({ duration: 280, padding: 0.22 }); }}>Auto layout</button><button onClick={() => void flow?.fitView({ duration: 280, padding: 0.22 })}>Fit view</button><span className="legend"><i className="legend-dot active-dot" /> Active</span><span className="legend"><i className="legend-dot done-dot" /> End observed</span><span className="legend"><i className="legend-dot unknown-dot" /> Unknown</span></div></div>
-        <div className="graph-tabs" role="group" aria-label="Graph view"><button className={graphView === 'observed' ? 'chosen' : ''} onClick={() => setGraphView('observed')}>Observed execution</button><button className={graphView === 'reference' ? 'chosen' : ''} onClick={() => setGraphView('reference')}>LOW / MEDIUM / HIGH routes</button></div>
+        <div className="section-heading"><div><span className="eyebrow">LIVE EXECUTION</span><h1>{graphView === 'observed' ? 'Observed activity graph' : 'Canonical risk routes'}</h1><p>{graphView === 'observed' ? 'Dispatches and gates from this session. Connections show session membership, not inferred workflow order.' : 'Conditional LOW, MEDIUM and HIGH paths from CanonKit guidance. No route is selected by runtime evidence.'}</p></div><div className="canvas-actions"><button onClick={() => { setNodes((current) => { const chosen = new Set(current.filter((n) => n.selected).map((n) => n.id)); return arrangeGraph(graph.nodes, graph.edges).nodes.map((n) => ({ ...n, selected: chosen.has(n.id) })); }); void flow?.fitView({ duration: motion(280), padding: 0.22 }); }}>Auto layout</button><button onClick={() => void flow?.fitView({ duration: motion(280), padding: 0.22 })}>Fit view</button><span className="legend"><i className="legend-dot active-dot" /> Active</span><span className="legend"><i className="legend-dot done-dot" /> End observed</span><span className="legend"><i className="legend-dot unknown-dot" /> Unknown</span></div></div>
+        <div className="graph-tabs" role="group" aria-label="Graph view"><button className={graphView === 'observed' ? 'chosen' : ''} aria-pressed={graphView === 'observed'} onClick={() => setGraphView('observed')}>Observed execution</button><button className={graphView === 'reference' ? 'chosen' : ''} aria-pressed={graphView === 'reference'} onClick={() => setGraphView('reference')}>LOW / MEDIUM / HIGH routes</button></div>
         <div className="graph-frame">
-          {graph.nodes.length ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onInit={setFlow} fitView fitViewOptions={{ padding: 0.22 }} minZoom={0.2} maxZoom={1.6}>
+          {graph.nodes.length ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onKeyDown={onGraphKeyDown} onInit={setFlow} fitView fitViewOptions={{ padding: 0.22 }} minZoom={0.2} maxZoom={1.6}
+            deleteKeyCode={null} edgesFocusable={false}
+            ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to show this node in the details panel. Arrow keys move the selected node within the layout.' }}>
             <Background color="#26313d" gap={24} size={1} /><MiniMap nodeColor={(node) => node.type === 'studio' ? '#49637b' : '#23303d'} maskColor="rgba(8,12,18,.7)" /><Controls showInteractive={false} />
           </ReactFlow> : <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No execution events observed</h2><p>The dashboard reads existing local CanonKit hook records. It does not start an agent or create a session to collect activity.</p><a href="/activity.html">Open Activity overview <span>↗</span></a></div>}
-          <div className="canvas-foot"><span>SESSION MEMBERSHIP</span><span>{activeSession ? `${activeSession.dispatches.length} dispatches · ${activeSession.observations.filter((e) => e.type === 'gate').length} gates` : 'Waiting for telemetry'}</span></div>
+          <div className="canvas-foot"><span>SESSION MEMBERSHIP</span><span>{activeSession ? `${plural(activeSession.dispatches.length, 'dispatch', 'dispatches')} · ${plural(activeSession.observations.filter((e) => e.type === 'gate').length, 'gate', 'gates')}` : 'Waiting for telemetry'}</span></div>
         </div>
       </div>
       <aside className="detail-panel" aria-label="Selected observation details">
         <div className="panel-heading"><div><span className="eyebrow">INSPECTOR</span><h2>{selected ? 'Observation details' : 'Session details'}</h2></div><span className="panel-menu">···</span></div>
-        {selectedGraphNode?.data.kind === 'reference' || selectedGraphNode?.data.kind === 'decision' ? <ReferenceDetail node={selectedGraphNode} /> : selected ? <Detail item={selected} /> : activeSession ? <>
+        {selectedGraphNode?.data.kind === 'reference' || selectedGraphNode?.data.kind === 'decision' ? <ReferenceDetail node={selectedGraphNode} /> : inspected ? <Detail item={inspected} /> : activeSession ? <>
           <div className="detail-hero"><span className="hero-icon">◉</span><div><strong>Runtime session</strong><span>Claude Code · observed</span></div></div>
           <DetailRow label="Session ID" value={activeSession.sessionId} mono />
           <DetailRow label="Project identity" value="Unknown · basename is not a stable ID" />
