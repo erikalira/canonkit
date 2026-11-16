@@ -4290,11 +4290,12 @@ async function trackedGlobal(ctx, targets, action) {
 
 async function uninstallGlobal(ctx, flags) {
   const manifest = await globalManifest(ctx, []);
-  await manifest.load();
+  const exists = await manifest.load();
   const selected = TARGETS.filter((target) => flags.includes(`--${target}`));
   manifest.targets = selected.length ? selected : [...new Set(Object.values(manifest.data.entries).flatMap((entry) => entry.owners))];
   const harnessNames = manifest.targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target] ?? target);
-  ctx.log(`User level: ${ctx.dryRun ? "would remove" : "removing"} tracked entries${harnessNames.length ? ` for ${harnessNames.join(", ")}` : ""}`);
+  // Header only when a manifest exists; uninstall() reports the missing case itself.
+  if (exists) ctx.log(`User level: ${ctx.dryRun ? "would remove" : "removing"} tracked entries${harnessNames.length ? ` for ${harnessNames.join(", ")}` : ""}`);
   const referenceFiles = {
     claude: [settingsPath(), path.join(claudeHome(), "settings.local.json"),
       path.join(process.cwd(), ".claude", "settings.json"), path.join(process.cwd(), ".claude", "settings.local.json"),
@@ -4343,8 +4344,8 @@ async function uninstallProject(ctx) {
   await safePath(path.join(root, ".claude", "settings.json"));
   for (const name of PROJECT_CORE_NAMES) await safePath(path.join(root, ".codex", "agents", `${name}.toml`));
   const manifest = scopedSecurityManifest(ctx, root);
-  ctx.log(`Project (${root}): reversing tracked project security and Codex core shadows`);
   try {
+    if (await manifest.load()) ctx.log(`Project (${root}): reversing tracked project security and Codex core shadows`);
     return await manifest.uninstall({ messages: {
       missing: "No project install manifest for this project: nothing was removed.",
       kept: "Kept: backups and everything at user level (canonkit uninstall removes it).",

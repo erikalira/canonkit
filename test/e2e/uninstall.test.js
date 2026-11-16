@@ -184,6 +184,7 @@ test("dry runs write nothing and an untracked uninstall only reports manual clea
   const missing = run(home, ["uninstall"]);
   assert.equal(missing.status, 1);
   assert.match(missing.out, /No user-level install manifest/);
+  assert.doesNotMatch(missing.out, /User level: (?:removing|would remove)/);
   assert.deepEqual(await snapshot(home), empty);
   ok(run(home, ["install", "--codex", "--wire-hooks"]));
   const installed = await snapshot(home);

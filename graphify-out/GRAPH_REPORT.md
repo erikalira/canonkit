@@ -1,7 +1,7 @@
 # Graph Report - canonkit  (2026-11-16)
 
 ## Corpus Check
-- 291 files · ~534,642 words
+- 291 files · ~534,704 words
 - Verdict: corpus is large enough that graph structure adds value.
 - Unclassified: 7 file(s) not represented in the graph (top: (none) 6, .jsonc 1)
 
@@ -11,7 +11,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `688bbeff`
+- Built from commit: `04ad0669`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -1193,7 +1193,7 @@ Nodes (23): addSpecialists(), changeProject(), choiceFor(), codexAgent(), codexC
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `doctor()` connect `doctor` to `cli.js`, `releasing.md`, `openspec-explore/SKILL.md`, `InstallManifest`, `Tasks`, `main`, `models-command.js`, `planInstall`, `syncClaudeRouting`, `ADDED Requirements`, `renderDoctorReport`, `install`, `cli-install.test.js`, `gitignorePlan`, `Decisions`, `canonkit`, `CANONKIT_ROADMAP.md`, `Native security, per project`, `Requirements`, `ADDED Requirements`, `Hooks and gates`, `Proposal`, `Requirement: Runtime read coverage is diagnosed`, `Design`, `Tasks`, `model`, `Requirement: Codex project choices reach project dispatches`, `security.js`, `validate.mjs`, `Requirement: Codex project choices reach project dispatches`, `install.md`, `Decisions`, `Requirement: Absent strict keys and unconfigured projects are diagnosed`, `Decisions`, `Requirements`, `P5 — evidência de resultado: do sinal à correção`, `Core, at user level`, `canonkit 3.0.0`, `Proposal`, `Proposal`, `installDistribution`?**
-  _High betweenness centrality (0.124) - this node is a cross-community bridge._
+  _High betweenness centrality (0.125) - this node is a cross-community bridge._
 - **Are the 83 inferred relationships involving `doctor()` (e.g. with `mentionsHook()` and `ruleText()`) actually correct?**
   _`doctor()` has 83 INFERRED edges - model-reasoned connections that need verification._
 - **What connects `READ_TOOLS`, `MARKERS`, `PACKAGE_ROOT` to the rest of the system?**

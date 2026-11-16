@@ -92,6 +92,13 @@ test("global network restriction composes with optional hook wiring and conserva
   assert.equal(await readFile(f.local, "utf8"), localBefore);
 });
 
+test("project uninstall without a manifest reports nothing removed and no reversal header", async (t) => {
+  const f = await fixture(t, "2.1.314", { sandbox: true });
+  const result = f.run(["uninstall", "--project"]);
+  assert.match(result.out, /No project install manifest for this project: nothing was removed\./);
+  assert.doesNotMatch(result.out, /reversing tracked project security/);
+});
+
 test("project-only reversal preserves global settings, later user edits and other repositories", async (t) => {
   const f = await fixture(t, "2.1.314", { sandbox: true });
   await put(f.local, { sandbox: { excludedCommands: ["fixture"] }, custom: "before" });
