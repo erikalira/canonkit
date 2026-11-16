@@ -470,6 +470,32 @@ This lock adds no destination, does not enable sandboxing on Windows, and does
 not restrict WebFetch, MCP or hook traffic by itself. A command containing `localhost` or a Playwright
 `baseURL` does not constrain every network request that its code can make.
 
+#### Allowing a destination
+
+With the lock on, a host outside the list fails at once with
+`403 host is not on the allow list` and a `<sandbox_violations>` report; there is
+no approval prompt. The lock ignores a project's `sandbox.network.allowedDomains`,
+so where you allow the host depends on which tool needs it:
+
+| Need | Where | Effect |
+|---|---|---|
+| WebFetch reads a site | `"WebFetch(domain:example.com)"` in the project's `.claude/settings.json` `permissions.allow` | WebFetch reaches the host without a prompt; shell commands stay blocked, because the lock ignores the project's rule for the sandbox |
+| A shell command (`curl`, a package manager) reaches a host | `"example.com"` in `sandbox.network.allowedDomains` in `~/.claude/settings.json` | sandboxed commands in every project reach the host |
+
+A `WebFetch(domain:...)` rule in user settings also adds the host to the sandbox
+list, so it opens shell access as well. List each host name you need: the native
+documentation does not say whether `example.com` also covers `www.example.com`.
+
+Allow exact hosts you trust to receive project data. Avoid wildcards and hosts
+that accept uploads or user content (code hosts, paste sites, object storage):
+an allowed host is a path out for any command or injected prompt, and WebFetch
+can carry data in the URL. A project rule is committed, so it applies to every
+collaborator and every clone. A user-level shell entry applies to every project,
+so prefer the WebFetch-only row when a command does not need the host.
+
+Agents must not edit these files, with Bash or with file tools; they report the
+denied host and the change, and you make it.
+
 Shell restrictions do not cover file tools, web tools, MCP servers, hooks or
 subagents automatically. Those surfaces have separate controls and unknowns.
 In particular, native Windows shell commands remain outside Claude's OS sandbox.
