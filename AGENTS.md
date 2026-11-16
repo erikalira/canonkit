@@ -11,3 +11,7 @@ Rules:
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
 - A committed graphify-out/graph.json is rewritten whole on every build, so a large diff to it in a pull request is expected. Do not flag it as churn or suggest skipping the graph rebuild or its hooks.
+
+## CI test fixtures
+
+Before treating a local test pass as merge readiness, check whether its fixtures depend on tools installed on `PATH` or on operating-system capabilities. Set those conditions explicitly in the test; keep a separate test for the real missing-tool behavior. The CI matrix runs Node 22 and 24 on Ubuntu, macOS, and Windows. A pass on one developer machine does not establish a pass across that matrix.

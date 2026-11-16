@@ -231,7 +231,9 @@ describe("unified install catalog and target", () => {
 
   test("install targets select OpenSpec integrations in registry order without another prompt", async () => {
     const { project } = await scratch("unified-menu-target-harnesses");
-    const catalog = await readInstallCatalog({ project });
+    const found = await readInstallCatalog({ project });
+    // Exercise target mapping regardless of whether OpenSpec is on this runner's PATH.
+    const catalog = { ...found, tools: found.tools.map((item) => item.name === "openspec" ? { ...item, missing: false } : item) };
     for (const [targets, expected] of [
       [["codex"], ["codex"]],
       [["copilot"], ["github-copilot"]],
@@ -630,7 +632,7 @@ describe("unified install catalog and target", () => {
     await writeFile(path.join(home, ".claude", "settings.json"), JSON.stringify({
       sandbox: {
         network: { strictAllowlist: true },
-        filesystem: { allowRead: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx"] },
+        filesystem: { allowRead: ["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.canonkit/models.json"] },
       },
     }));
     await mkdir(path.join(project, ".claude"), { recursive: true });

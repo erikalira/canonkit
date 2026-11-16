@@ -66,6 +66,8 @@ npm version <patch|minor|major> --no-git-tag-version
 
 In the same PR, add `docs/release-notes/X.Y.Z.md` with what changed, what breaks, and what to do; start with "Action required", even when it is "none", then commit and merge once CI is green.
 
+For test changes, check that fixtures state their environment assumptions. In [CI run 43913435963](https://github.com/erikalira/canonkit/actions/runs/43913435963), all six OS/Node jobs failed because an OpenSpec menu test assumed the binary was on `PATH`; the installer correctly skips a missing tool. macOS also exposed a security fixture that omitted the recommended read access to `~/.canonkit/models.json`. Keep tests for installed and missing tools distinct, and include platform-specific security recommendations in fixture setup. A local pass with different installed tools does not predict the CI matrix result. Review every job's failing test name before changing product code or rerunning a failed workflow.
+
 ### 2. Tag `main` and push
 
 ```sh
