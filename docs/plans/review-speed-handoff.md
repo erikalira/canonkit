@@ -4,6 +4,8 @@ Criado em 2026-11-14. Não fazer commit sem autorização.
 
 **Estado (2026-11-15):** proposta 1 entregue no commit 60243b8 (`skills/orchestrate/SKILL.md` › "Briefing a review"). Proposta 2 entregue na 3.2.1: um parágrafo de leitura econômica antes do "Pre-report gate" de Quinn, Gard, Archie e Perry. Proposta 3: a usuária optou por não tirar a linha de base, e o efeito continua **UNMEASURED**. O procedimento para a medição futura está em "Medição antes/depois", abaixo.
 
+**Checagem (2026-11-16):** neste ambiente, `~/.claude/canonkit-activity/events.jsonl` e `tool-results.jsonl` ainda não existem. Não há amostra disponível para comparar; a proposta 3 permanece aberta e **UNMEASURED**. Retomar quando houver pelo menos cinco dispatches comparáveis de cada lado do corte definido abaixo, com acesso aos arquivos de telemetria.
+
 ## Objetivo
 
 Deixar mais rápidos os dispatches de revisão (Quinn, Gard, Archie e os outros revisores) sem mexer no modo de permissão nem no roteamento por risco.

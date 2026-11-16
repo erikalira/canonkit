@@ -59,7 +59,8 @@ a handoff keep their details there; items without one carry them inline.
 - [ ] **Measure review speed before/after via telemetry**
   ([handoff](docs/plans/review-speed-handoff.md), proposal 3, "Medição
   antes/depois"). Waits for enough post-3.2.1 review dispatches; until then the
-  effect of proposals 1 and 2 is UNMEASURED.
+  effect of proposals 1 and 2 is UNMEASURED. Checked 2026-11-16: the two
+  telemetry files are absent in this environment; keep this item open.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 - [x] **Skill for the one-backlog-item-per-session cycle**: done in 3.2.1
