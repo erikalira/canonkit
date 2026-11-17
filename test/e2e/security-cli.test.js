@@ -1376,3 +1376,18 @@ test("doctor: the telemetry-read row is always OK, names the state, and appears 
   assert.doesNotMatch(ownedDoctor.out, /WARN +security claude filesystem-exceptions/);
   assert.doesNotMatch(ownedDoctor.out, /FAIL +security/);
 });
+
+test("doctor: an ambiguous user allowRead (not an array of strings) leaves the telemetry-read and runtime-reads rows silent", async (t) => {
+  const f = await telemetryFixture(t);
+  if (!f) return;
+  await mkdir(path.join(f.home, ".claude", "canonkit-dashboard"), { recursive: true });
+  await put(f.local, STRICT_PROJECT);
+  const rows = (result) => result.out.split("\n").filter((line) => /security claude (telemetry-read|runtime-reads)/.test(line));
+  // Control: the same fixture with a valid array does print the row, so silence below is the ambiguity rule.
+  await put(f.global, { sandbox: { filesystem: { allowRead: [TELEMETRY_READ_ITEM] } } });
+  assert.equal(rows(f.run(["doctor"])).filter((line) => line.includes("telemetry-read")).length, 1);
+  for (const allowReadValue of [TELEMETRY_READ_ITEM, [TELEMETRY_READ_ITEM, 42]]) {
+    await put(f.global, { sandbox: { filesystem: { allowRead: allowReadValue } } });
+    assert.deepEqual(rows(f.run(["doctor"])), [], JSON.stringify(allowReadValue));
+  }
+});

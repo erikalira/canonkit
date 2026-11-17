@@ -2746,7 +2746,9 @@ async function securityDiagnosis() {
   }
   const userSources = sources.filter((source) => ["user", "user-local"].includes(source.label));
   if (userSources.length && !userSources.some((source) => source.error)) {
-    const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
+    // A non-array value stays raw so compileRuntimeReads flags it ambiguous (flatMap would wrap a string into a valid-looking entry).
+    const rawReads = userSources.map((source) => source.data?.sandbox?.filesystem?.allowRead).filter((value) => value != null);
+    const allowRead = rawReads.find((value) => !Array.isArray(value)) ?? rawReads.flat();
     const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
     const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
     // This warning is a hint when any loaded scope enables sandboxing; settings precedence is left to the install flow.

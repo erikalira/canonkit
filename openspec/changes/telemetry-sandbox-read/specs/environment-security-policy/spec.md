@@ -75,3 +75,27 @@ Installation SHALL propose and write only the exact folder `~/.claude/canonkit-a
 #### Scenario: Look-alike paths
 - **WHEN** user `allowRead` holds `~/.claude/canonkit-activity2`, `~/.claude/canonkit-activity-evil` or `~/.claude/canonkit-activity/../x`
 - **THEN** none of them counts as covering the telemetry folder, and none is trusted as kit-owned
+
+## MODIFIED Requirements
+
+### Requirement: Security changes follow the install's recommended-setup answer
+In an interactive install, the security review SHALL follow the recommended-setup answer: *Yes* applies every listed change (replaced and added) without further security questions, *keep current* writes none of them and keeps weaker values, and *customize* shows a menu for runtime reads, a separate menu for the telemetry read exception when it applies, and one multi-select of the other changes, all checked by default. With `--recommended`, the recommended changes SHALL apply without a terminal, including runtime read exceptions.
+
+#### Scenario: Recommended accepted in a terminal
+- **GIVEN** an uncovered runtime location, a weaker project key and an absent strict key listed in the recommended-setup prompt
+- **WHEN** the person chooses Yes
+- **THEN** the read exception is appended to user settings, the weaker key is set to its strict value and the absent key is added, and no security question is asked
+
+#### Scenario: Keep current leaves absent strict keys unset
+- **GIVEN** an absent strict key listed with `+`
+- **WHEN** the person chooses *No, keep current*
+- **THEN** that key is not written and the output prints the recommended snippet for it
+
+#### Scenario: --recommended without a terminal
+- **WHEN** `canonkit install --claude --recommended` runs without a terminal on a supported environment with an uncovered runtime location
+- **THEN** the missing runtime read items are appended to user settings and the output lists them
+
+#### Scenario: Customize keeps the explicit review
+- **WHEN** the person chooses *No, customize*
+- **THEN** the runtime-read question is a menu with "Yes, add them (recommended)" preselected, the telemetry read, when offered, is its own menu with "Keep closed" preselected, and the other changes are one multi-select with every row checked
+- **AND** an unchecked row keeps the current value, and an empty selection keeps all
