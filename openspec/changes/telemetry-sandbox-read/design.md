@@ -44,8 +44,12 @@ See proposal.md (Why). Relevant current state, verified in code on 2026-11-16:
    `compileTelemetryRead(data, environment, { claudeInstalled })`. It reuses the gating and coverage
    logic of `compileRuntimeReads` (capability, not win32, version floor, ambiguous settings, item
    covered by an equivalent or broader entry) and returns `{ proposed: boolean, covered, gaps }`.
-   Its row uses `answerKey: "telemetry:~/.claude/canonkit-activity"` and `selectable: false` in the
-   recommended-setup list, so it is not rendered among the rows *Yes* applies.
+   The item is not a row. It lives in `plan.global.telemetryRead` (`{ proposed, covered, gaps,
+   conditional }`), off `rows` and off `runtimeReads`, and the customize menu asks about it
+   directly. The answer key `telemetry:~/.claude/canonkit-activity` appears only in `selectedRows`,
+   so no list rendered by *Yes* can contain it. (Amended during implementation: a
+   `selectable: false` row was first planned, but rows also feed the keep-current recommendation
+   list, the change counts and `hasSecurityChanges`, so any row risked leaking the item into them.)
    *Alternative:* a flag on runtime roots (`optIn: true`) filtered by every consumer. Rejected: each
    current and future consumer of `runtimeReads.proposed` would have to remember the filter, and a
    missed filter turns opt-in into default-on.
@@ -53,8 +57,9 @@ See proposal.md (Why). Relevant current state, verified in code on 2026-11-16:
 2. **A dedicated predicate, outside `checked()`.** `checked()` returns true for
    `securityAnswer === "recommended"` and for `selected.has(row.path)`, so either could turn the item
    on by default. `applySecurityAnswer` therefore appends the telemetry item only when
-   `selectedRows.includes("telemetry:~/.claude/canonkit-activity")`. It never routes the item
-   through `checked()` and never matches it by `path`. Tests pin this, including
+   `selectedRows.includes("telemetry:~/.claude/canonkit-activity")`, and only when
+   `securityAnswer === "customize"`. It never routes the item through `checked()`, and the item
+   never has a row `path`. Tests pin this, including
    `securityAnswer: "recommended"` with crafted `selectedRows`, and `--recommended` with a receipt
    from an earlier opt-in.
 
@@ -66,7 +71,8 @@ See proposal.md (Why). Relevant current state, verified in code on 2026-11-16:
 
    **One canonical exposure sentence.** It is used verbatim in the menu, the doctor line,
    `docs/tools.md` and `docs/telemetry.md`. It is verified against `hooks/canonkit-hook.js`, where
-   current `gate` records still carry `file` (secret-block and secret-ask included) and `project`:
+   current `gate` records all carry `project`, and those that name a file (secret-block and
+   secret-ask included) carry that `file`:
    > Every sandboxed command could read your activity history: session IDs, project names, agent
    > names, and the paths of files that gates flagged, including secret-looking files. Older
    > records can also hold the first 80 characters of commands and dispatch descriptions. It holds
@@ -74,12 +80,14 @@ See proposal.md (Why). Relevant current state, verified in code on 2026-11-16:
 
    The menu adds the alternative: run the dashboard from your own terminal.
 
-7. **No offer through a symbolic link.** `normalizeReadPath` is lexical, while the sandbox resolves
+4. **No offer through a symbolic link.** `normalizeReadPath` is lexical, while the sandbox resolves
    links. If `~/.claude/canonkit-activity` or `~/.claude` is a symlink (`lstat`), the entry could
    expose its target, so install does not offer the item. It prints the reason and the snippet
-   instead, and `docs/tools.md` says the entry follows symlinks.
+   instead, and `docs/tools.md` says the entry follows symlinks. Doctor, like install, treats a
+   symlinked `~/.claude` or folder as not proposed, so it says nothing when the folder is also not
+   covered; a covered folder still reads as readable. Doctor has no symlink message of its own.
 
-4. **Folder, not files.** One entry covers `events.jsonl`, `tool-results.jsonl`, their rotated
+5. **Folder, not files.** One entry covers `events.jsonl`, `tool-results.jsonl`, their rotated
    `.1` files and `context-bands.json`. The hook may add files over time. `context-bands.json` holds
    no more than the other files. The exact folder is the narrowest entry that keeps working.
    Accepted cost: the folder also exposes future files, the unpruned `.1` rotations and the
@@ -88,17 +96,19 @@ See proposal.md (Why). Relevant current state, verified in code on 2026-11-16:
    does not widen POSIX access, but other local users may already be able to read the default-mode
    files.
 
-5. **Ownership and undo reuse the existing array record.** The item is appended through
+6. **Ownership and undo reuse the existing array record.** The item is appended through
    `applyRuntimeReads` into the same `sandbox.filesystem.allowRead` record, and `TELEMETRY_READ_ITEM`
    joins the `producible` set of `trustedOwnedAllowRead`. Uninstall then removes it under the existing
    "still present exactly once" rule.
 
-6. **Doctor reports OK, never WARN, and still names the exposure.** The user asked for an informational line. Doctor has no INFO
+7. **Doctor reports OK, never WARN, and still names the exposure.** The user asked for an informational line. Doctor has no INFO
    status, and adding one would change the report's rendering and summary contract. An OK row
    (`security claude telemetry-read`) carries neutral text in both states: "closed to sandboxed
    commands (opt-in) …" or "readable by sandboxed commands …". It appears only when some loaded
-   scope sets `sandbox.enabled: true` and the Claude install is present (the dashboard directory or
-   the hook registration from the receipt).
+   scope sets `sandbox.enabled: true` and the Claude install is present: `~/.claude/canonkit-dashboard`
+   exists, or user settings hold a canonical canonkit hook. The receipt is not consulted, because
+   it carries no hook-registration data. Doctor also says nothing when user `allowRead` is
+   ambiguous or the sandbox version floor is unmet, the same cases in which install offers nothing.
 
 ## Risks / Trade-offs
 

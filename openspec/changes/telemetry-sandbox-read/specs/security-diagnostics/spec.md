@@ -21,5 +21,5 @@ When a loaded Claude settings scope enables the sandbox and the Claude install i
 - **THEN** that item alone does not produce the filesystem-exceptions warning
 
 #### Scenario: Not applicable
-- **WHEN** no loaded scope enables the sandbox, or the Claude install is absent
+- **WHEN** no loaded scope enables the sandbox, the Claude install is absent, user `allowRead` is ambiguous, the Claude version is unknown or below the sandbox floor, or `~/.claude` or the folder is a symbolic link and the folder is not covered
 - **THEN** `doctor` reports nothing about the telemetry read

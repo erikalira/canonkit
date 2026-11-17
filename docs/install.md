@@ -112,7 +112,7 @@ remain available in each category and points to `canonkit list`.
 
 | Choice | Writes |
 | --- | --- |
-| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current project's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders and `~/.canonkit/models.json` appended to `sandbox.filesystem.allowRead` in user settings |
+| Claude Code | `~/.claude/agents`, hook files, dashboard, block in `~/.claude/CLAUDE.md`, `~/.claude/skills`; supported native security settings in the validated current project's `.claude/settings.json`; the supported `sandbox.network.strictAllowlist: true` lock in user settings, and, after you confirm, the detected runtime folders and `~/.canonkit/models.json` appended to `sandbox.filesystem.allowRead` in user settings; `~/.claude/canonkit-activity` only if you opt in during the customize review |
 | Codex | `$CODEX_HOME/agents/*.toml` (`~/.codex` when `CODEX_HOME` is not set), block in `$CODEX_HOME/AGENTS.md`, `~/.agents/skills` |
 | OpenCode | `~/.config/opencode/agents/*.md` (`$XDG_CONFIG_HOME/opencode` if set), block in `~/.config/opencode/AGENTS.md`, `~/.agents/skills` |
 | GitHub Copilot | `~/.copilot/agents/*.agent.md`, `~/.copilot/skills` |
@@ -242,7 +242,9 @@ The recommended setup screen includes weaker values, absent strict keys,
 runtime reads and legacy-hook migration from the same install plan. **Yes, use
 recommended** applies all listed changes. **No, keep current** writes none of
 the security changes and prints the relevant manual snippet. **No, customize**
-asks whether to add detected runtime reads (Yes is preselected), then shows the
+asks whether to add detected runtime reads (Yes is preselected), then, in its
+own question with "Keep closed" preselected, whether sandboxed commands may read
+the telemetry folder (see below), then shows the
 other eligible changes as a prechecked multi-select. Unchecking a sandbox
 requirement also leaves automatic bash approval off. Keys controlled by
 `settings.local.json` are not selectable. A final confirmation occurs before
@@ -266,6 +268,21 @@ agent as "inherit". Confirmed additions are tracked so
 `canonkit doctor` reports runtime-read coverage, warns when the strict sandbox is
 on and the models file is not readable, and reports whether project security is
 configured for the current project; it writes nothing.
+
+The telemetry folder `~/.claude/canonkit-activity` is never a runtime read and
+never part of the recommended set. Only the customize question above adds it,
+because every sandboxed command could then read your activity history (the full
+statement and the trade-off are in [tools.md](tools.md) and
+[telemetry.md](telemetry.md#sandboxed-commands)). Enter, or closed input, keeps
+it closed. **Yes**, **No, keep current**, `--recommended`, `--yes`, a dry run and
+a run without a terminal never write it, even after an earlier opt-in that you
+undid by hand; they print the snippet and say that **No, customize** offers it.
+It is not offered when the folder is already covered, when user `allowRead` is
+ambiguous, or when `~/.claude` or the folder is a symbolic link. Once added, it
+is tracked like the runtime reads, and `uninstall` removes it only if it is still
+present unchanged. When a loaded settings scope enables the sandbox and canonkit is installed
+for Claude Code, `canonkit doctor` reports it as an OK line, closed by choice or
+readable, and never as a warning; in other cases it says nothing about it.
 
 ### Returning existing Claude installations to native approvals
 
@@ -430,7 +447,7 @@ compiler behavior, not containment on the listed platforms.
 | `sandbox.allowUnsandboxedCommands: false` | 2.1.302 (conservative) | [Unsandboxed retry](https://code.claude.com/docs/en/settings-reference#sandbox-allowunsandboxedcommands) |
 | `sandbox.autoAllowBashIfSandboxed: true` when neither project nor user sets a choice and the strict sandbox profile is written (or when you confirm the change from an explicit `false`) | 2.1.302 (conservative) | [Sandbox auto-approval](https://code.claude.com/docs/en/settings-reference#sandbox-autoallowbashifsandboxed) |
 | `sandbox.network.strictAllowlist: true` in user settings only | 2.1.219 | [Strict network list](https://code.claude.com/docs/en/settings-reference#sandbox-network-strictallowlist) |
-| `sandbox.filesystem.allowRead` items for detected runtimes and the model choices file, appended in user settings only after confirmation | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
+| `sandbox.filesystem.allowRead` items for detected runtimes and the model choices file, appended in user settings only after confirmation; the telemetry folder only after the customize opt-in | 2.1.302 (conservative) | [Sandboxing](https://code.claude.com/docs/en/sandboxing) |
 
 The four shell switches additionally require an available, unverified sandbox
 capability. The 2.1.302 floors are canonkit's supported baseline, not claims

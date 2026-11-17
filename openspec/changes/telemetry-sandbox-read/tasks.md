@@ -27,12 +27,12 @@ last edit.
 
 ## 5. Documentation
 
-- [ ] 5.1 `docs/tools.md` (Claude Code sandbox section): the opt-in telemetry entry, the canonical exposure sentence, that it lives in user settings, that it follows symlinks (so install does not offer it through one), and the alternative of running the dashboard from your own terminal. Verify: the snippet and sentence match what install prints.
-- [ ] 5.2 `docs/telemetry.md`: who can read the folder after opt-in, the canonical sentence (and that new `gate` records still keep `file` paths and `project`, since L4-5 today mentions only `detail` and `task`), and the observed sandboxed-client-to-sandboxed-server `127.0.0.1` limitation. `docs/install.md`: the customize question and that *Yes*/`--recommended` never add it. Verify: Spencer's drift check against the implemented messages.
-- [ ] 5.3 Release notes entry. Verify: Spencer confirms it is present.
+- [x] 5.1 `docs/tools.md` (Claude Code sandbox section): the opt-in telemetry entry, the canonical exposure sentence, that it lives in user settings, that it follows symlinks (so install does not offer it through one), and the alternative of running the dashboard from your own terminal. Verify: the snippet and sentence match what install prints.
+- [x] 5.2 `docs/telemetry.md`: who can read the folder after opt-in, the canonical sentence (and that new `gate` records still keep `file` paths and `project`, since L4-5 today mentions only `detail` and `task`), and the observed sandboxed-client-to-sandboxed-server `127.0.0.1` limitation. `docs/install.md`: the customize question and that *Yes*/`--recommended` never add it. Verify: Spencer's drift check against the implemented messages.
+- [x] 5.3 Release notes entry. Verify: Spencer confirms it is present.
 
 ## 6. Integration and closure
 
 - [x] 6.1 Run the touched tests and their consumers (`test/security.test.js`, `test/doctor-report.test.js`, `test/e2e/security-cli.test.js`, `test/e2e/cli-unified-install.test.js`, `test/e2e/uninstall.test.js`). Check that the fixtures set the sandbox capability and Claude version explicitly, for the Ubuntu, macOS and Windows matrix. Verify: all pass.
-- [ ] 6.2 Independent review after the last edit: Gard (security) and Quinn (acceptance against these specs). Verify: no open blocking finding. Any edit after the review triggers a new review.
+- [x] 6.2 Independent review after the last edit: Gard (security) and Quinn (acceptance against these specs). Verify: no open blocking finding. Any edit after the review triggers a new review.
 - [ ] 6.3 Integration Review and Spencer's drift check (orchestrate skill) before sync/archive. Run `graphify update .`. Delete `docs/plans/telemetry-sandbox-read-handoff.md` once the change is archived. Verify: `openspec validate telemetry-sandbox-read --strict` passes.

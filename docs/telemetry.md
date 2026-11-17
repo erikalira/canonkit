@@ -3,7 +3,9 @@
 The Claude Code hook records numbers and metadata about what each session spends,
 including paths and identifiers in some event types. New records omit dispatch
 descriptions (`task`) and command fragments (`detail`); older records may retain
-them until rotation. No existing logs are rewritten or deleted by this change.
+them until rotation. New `gate` records still keep the `project` and, when a gate
+fired on a file, that `file` (secret-looking files included). No existing logs are
+rewritten or deleted by this change.
 Hook telemetry stays on your machine, in `~/.claude/canonkit-activity/`. Optional
 [Learning Loop contributions](learning-loop.md#contributing-a-general-improvement)
 send only user-reviewed, explicitly authorized sanitized issues, not raw logs.
@@ -77,6 +79,30 @@ The dashboard binds to `127.0.0.1`, validates loopback `Host` and same-origin
 does not enable CORS. New JSON uses a `nosniff` response; the compiled page has a
 restrictive content policy. The older Activity page retains its inline script
 under a path-specific policy for compatibility.
+
+### Sandboxed commands
+
+The folder is yours to read: you, and anything you run outside the Claude Code
+sandbox, can read it, as can other local users if your file permissions allow.
+When the sandbox denies reads of your home directory, sandboxed commands (an
+agent that runs the dashboard, or the Learning Loop reading telemetry) cannot
+see it, and canonkit leaves it that way unless you opt in. Opening it means:
+
+> Every sandboxed command could read your activity history: session IDs, project names, agent names, and the paths of files that gates flagged, including secret-looking files. Older records can also hold the first 80 characters of commands and dispatch descriptions. It holds no prompts and no tool output.
+
+That includes a command run by an agent following injected instructions. The
+**No, customize** review of `canonkit install` offers the read exception, with
+"Keep closed" preselected; no other path adds it. When a loaded settings scope
+enables the sandbox and canonkit is installed for Claude Code, `canonkit doctor`
+shows the current state as an OK line, open or closed; otherwise it says nothing
+about it. The entry, its user-settings location and
+the symbolic-link rule are in [tools.md](tools.md).
+
+Running the dashboard from your own terminal needs no exception. Observed once,
+after opening the folder: a sandboxed `curl` could not reach a dashboard that
+another sandboxed command served on `127.0.0.1:4317`, while a browser outside the
+sandbox could. So an agent-run dashboard may not be reachable from other
+sandboxed commands; canonkit does not work around this.
 
 ## Engineering baseline coverage
 

@@ -61,6 +61,17 @@ a handoff keep their details there; items without one carry them inline.
   antes/depois"). Waits for enough post-3.2.1 review dispatches; until then the
   effect of proposals 1 and 2 is UNMEASURED. Checked 2026-11-16: the two
   telemetry files are absent in this environment; keep this item open.
+- [ ] **Suggest OpenSpec when work starts, not only once a change exists**
+  (raised 2026-11-17). The "OpenSpec change lifecycle" in
+  `skills/orchestrate/SKILL.md` (~L245) and the block in `tools/openspec.md`
+  cover only an already selected change; nothing says when to open one.
+  Proposal: when the project already uses OpenSpec and the work is MEDIUM/HIGH
+  and spans sessions or has acceptance criteria and decisions worth keeping, the
+  agent asks (`AskUserQuestion`): explore first (`/opsx:explore`) when the
+  problem is still ambiguous, or propose the change (`/opsx:propose`) when the
+  scope is clear. Never starts on its own; LOW never; projects without OpenSpec
+  stay without it. MEDIUM (team configuration for every project): Virgo
+  implements.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 - [x] **Skill for the one-backlog-item-per-session cycle**: done in 3.2.1
@@ -144,6 +155,19 @@ a handoff keep their details there; items without one carry them inline.
   (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
   `settings.json` was not checked. Confidence: low. Next step: check which
   files they read; if a user can empty one by hand, reuse `readSettingsText`.
+- [ ] **Shell-edit rule loses to the auto-mode prompt**: on 2026-11-17, in the
+  futlens project, Claude edited its scratchpad script with
+  `sed -i ... && bash ssr-check.sh`, which triggered a permission prompt. Both
+  `reference/agents-block.md` ("Dedicated tools, not the shell", "Temporary work
+  outside the repository") and the Claude Code block ("File work uses Read, Edit
+  and Write") already forbid it. Likely cause: Claude Code's auto-mode system
+  prompt explicitly invites `sed`, heredocs and short scripts for small edits, and
+  the block never says it overrides that guidance, or that the scratchpad counts.
+  Confidence: medium (one occurrence; the harness prompt was not captured from
+  that session). Next step: run `learning-loop` on the transcript; if confirmed,
+  add one sentence to the Claude Code block: the rule holds in auto mode and in
+  the scratchpad, despite harness guidance. Do not widen the hook to ask on every
+  `sed -i`: it would add prompts, not remove them.
 - [ ] **Doctor flags Bash allow rules made redundant by the sandbox**:
   `assessClaude` in `bin/security.js` (the `saved-approvals` check) only counts
   `permissions.allow` rules. With the strict sandbox and
@@ -182,6 +206,32 @@ a handoff keep their details there; items without one carry them inline.
   `bin/cli.js`, so reformatting breaks them; make them format-independent
   first. Confidence: high (cause confirmed by the user). MEDIUM (shared tooling
   and CI): Pipe for CI.
+- [ ] **Telemetry read: LOW notes from the 6.2 review** (Gard and Quinn,
+  2026-11-17; OpenSpec `telemetry-sandbox-read`, approved without blockers).
+  Any code change here touches sandbox permissions: Bob implements, Gard
+  reviews.
+  - **Doctor silent cases only unit-tested** (Quinn): ambiguous `allowRead`,
+    unknown or below-floor version and a symlinked folder are proven only by
+    `compileTelemetryRead` tests; the doctor wiring (`bin/cli.js` ~L2758-2765)
+    is not. Add one e2e case (Claude 2.1.301, sandbox on, expect no row).
+  - **"Already covered" does not check bytes** (Quinn): the e2e test asserts the
+    entry is kept, not that `settings.json` is byte-identical.
+  - **Test-only export** (Quinn): `applySecurityAnswer` is exported only for a
+    test; mark it with a comment.
+  - **Loose regex** (Quinn): the first telemetry e2e test's output regex has a
+    broad `|` alternative. Harmless; tighten it.
+  - **Symlink check before the prompts** (Gard): `telemetryReadSymlink` runs at
+    plan time (`bin/cli.js` ~L637), not at write time. Needs same-user write
+    access to `~/.claude`. Option: re-check right before applying.
+  - **lstat errors fail open** (Gard): `telemetryReadSymlink` (`bin/security.js`
+    ~L507) treats any error as "not a link"; only ENOENT is clearly benign.
+    Option: treat other errors as `telemetry-read-symlink`.
+  - **Exposure sentence omits usage metadata** (Gard): the folder also holds
+    tool names, token and size counts, models and timestamps. Optional
+    rewording of `TELEMETRY_EXPOSURE` (and the docs that quote it verbatim).
+  - **Offered when the sandbox is off** (Gard): install offers the read even
+    when no scope sets `sandbox.enabled`, where it has no effect. Confusing, not
+    harmful. Confidence: medium.
 - [ ] **Graphify/OpenSpec pins and hooks**: waits for your decision and the
   ADR 0001 stability window ([handoff](docs/plans/tool-pins-update-handoff.md)).
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
