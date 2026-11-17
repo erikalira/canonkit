@@ -35,4 +35,4 @@ last edit.
 
 - [x] 6.1 Run the touched tests and their consumers (`test/security.test.js`, `test/doctor-report.test.js`, `test/e2e/security-cli.test.js`, `test/e2e/cli-unified-install.test.js`, `test/e2e/uninstall.test.js`). Check that the fixtures set the sandbox capability and Claude version explicitly, for the Ubuntu, macOS and Windows matrix. Verify: all pass.
 - [x] 6.2 Independent review after the last edit: Gard (security) and Quinn (acceptance against these specs). Verify: no open blocking finding. Any edit after the review triggers a new review.
-- [ ] 6.3 Integration Review and Spencer's drift check (orchestrate skill) before sync/archive. Run `graphify update .`. Delete `docs/plans/telemetry-sandbox-read-handoff.md` once the change is archived. Verify: `openspec validate telemetry-sandbox-read --strict` passes.
+- [x] 6.3 Integration Review and Spencer's drift check (orchestrate skill) before sync/archive. Run `graphify update .`. Delete `docs/plans/telemetry-sandbox-read-handoff.md` once the change is archived. Verify: `openspec validate telemetry-sandbox-read --strict` passes.
