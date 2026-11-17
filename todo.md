@@ -97,6 +97,62 @@ a handoff keep their details there; items without one carry them inline.
 
 ### P3 — improvements without urgency
 
+- [ ] **Learning-loop: two browser-evidence lessons from futlens**
+  (user, 2026-11-17).
+  1. **Stale build**: the preview was served with `--no-build` from a `.output`
+     older than the edits. Only Perry asks for a fresh production build
+     (`agents/perry.md`); Pixie and `stack-packs/ui-review/SKILL.md` don't
+     require confirming the served build is newer than the last edit.
+  2. **Locked Chrome profile**: chrome-devtools MCP failed with "The browser is
+     already running for .../chrome-devtools-mcp/chrome-profile" (an automated
+     Chrome from an earlier session held the profile). The subagent reported it
+     correctly without working around it, but nobody told the user what to
+     close.
+  Next step: run `learning-loop`; locate the rules (pixie, perry, ui-review,
+  orchestrate), decide kit vs project for each, propose narrow changes.
+  First read: both look generic. Confidence: medium.
+- [ ] **Sandbox placeholders still clutter the editor after
+  `git-ignore-sandbox-files`** (user, 2026-11-17). Git is clean, but the
+  worktree still holds ~20 0-byte files and `.cc-writes/` dirs (`.bashrc`,
+  `.zshrc`, `.gitconfig`, `.mcp.json`, `.idea`, `.claude/agents`,
+  `.claude/settings.local.json`…, plus `dashboard/.claude/.cc-writes` and
+  `openspec/.claude/.cc-writes`), all shown in the VS Code explorer. The command
+  then prints "No 0-byte untracked sandbox placeholders to hide", which reads as
+  "nothing to fix" while the user still sees them. Two gaps:
+  1. **Editor noise**: offer an opt-in `files.exclude` for the same static names
+     (where: `.vscode/settings.json` is shared, user settings are not per
+     project — decide), or at least document it. The sandbox recreates the
+     files, so deleting them does not stick.
+  2. **Read-only trap**: the placeholder is mode 444; saving into it fails in
+     VS Code ("File is read-only… Overwrite"). Document that it is safe to
+     replace (`chmod 644` from the user's own terminal, or Overwrite), that the
+     sandbox still blocks writes to it afterwards, and that a file with real
+     content stays hidden by the exclude block until a reconcile.
+  Also reword the "nothing to hide" message to say git already ignores them and
+  the files stay on disk by design. Confidence: high (observed in this
+  worktree). Next step: decide the editor option; docs part is LOW.
+- [ ] **Doc: giving a session access to another folder or repository**
+  (user, 2026-11-17; asked repeatedly). One table in `docs/install.md`
+  (sandbox section) covering: read only vs read-write; file tools (Read/Edit)
+  vs Bash; one project vs every project (project `settings.local.json` vs
+  `~/.claude/settings.json`); session-only (`/add-dir`). Observed this session
+  (Claude Code, WSL, strict sandbox) — verify each against the current docs
+  and version before publishing:
+  - `permissions.additionalDirectories` makes it a working directory: file
+    tools read and write (add `deny` `Edit(//path/**)`/`Write(//path/**)` for
+    read-only); the sandbox allows Bash writes there and then protects that
+    repo's `.claude/*`, `.mcp.json`… paths, so **placeholders appear in the
+    other repo too**. Bash read was not granted in the config shown. The Read
+    tool kept refusing until a restart (unconfirmed).
+  - `sandbox.filesystem.allowRead` (user settings) gives Bash read only, no
+    working directory, no placeholders; file tools stay blocked by
+    `blockReadsOutsideWorkingDirectories`.
+  - A project's `.claude/settings.local.json` starts as a 444 placeholder (see
+    the item above).
+  Confidence: medium on the mechanics, high on the need. Next step: confirm the
+  matrix (claude-code-guide or docs), then write it; Spencer reviews only if it
+  lands in the install guide's security section.
+
 - [ ] **`docs/install.md` names only `orchestrate` among the shipped skills**
   (Spencer, 2026-11-15). The paragraph "Alongside the blocks goes the
   `orchestrate` skill" (~L1153) gives only orchestrate's install paths;
@@ -257,6 +313,26 @@ a handoff keep their details there; items without one carry them inline.
   receipt so `uninstall` removes the rules and `doctor` does not count them as
   `saved-approvals` (bin/security.js:617); update the README and
   `docs/install.md`. MEDIUM: implementation by Bob, review by Gard.
+
+- [ ] **Trim subagent startup context, step 1: measure** (discussed
+  2026-11-17). `access` cut the tool-schema share; what is left is the agent
+  body (6–11 KB per file in `agents/`) and the inherited instructions,
+  including the managed block (`reference/agents-block.md`, ~13.8 KB) and
+  CLAUDE.md. `events.jsonl` has no dispatch token counts yet. Measure one
+  `read` and one `full` dispatch, split into agent body, inherited block and
+  tools, before acting on either item below. Rejected: per-dispatch tool lists
+  (the `Agent` tool takes no tools parameter) and moving whole agent bodies
+  into skills (each skill load is a tool call that resends the context).
+  - [ ] **Rare sections into on-demand references.** Move long procedures used
+    by few dispatches (e.g. Perry's measurement detail, Pipe's checklists) into
+    files the agent reads only when the task needs them, as `orchestrate` does.
+    The core role, risk scale and report format stay in the agent file.
+  - [ ] **Orchestrator-only rules out of what subagents inherit.** Much of the
+    managed block only serves the lead (dispatch rules, branches, new session,
+    images). Check whether Claude Code lets a subagent skip the inherited
+    instructions, or move those rules into the `orchestrate` skill so the cut
+    applies to every dispatch. Changes a managed block: Virgo implements, and
+    Spencer checks for doc drift.
 
 ### P4 — evaluations, user actions and cosmetics
 
