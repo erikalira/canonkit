@@ -169,6 +169,19 @@ a handoff keep their details there; items without one carry them inline.
      model config, security settings).
   3. Add an `npm run typecheck` script (`tsc -p . --noEmit`) and include it in
      `validate`/CI.
+- [ ] **Adopt Prettier project-wide** (decided 2026-11-17). Today the repo has
+  no formatter config, so an editor's format-on-save rewrites a whole file: on
+  2026-11-16 one Ctrl+S turned a 51-line change to `bin/cli.js` into a
+  5,200-line diff (`be964ea`, undone in `4c23dd7`). To do: add a
+  `.prettierrc` matching the current style (double quotes, wide lines) and a
+  `.prettierignore` (`graphify-out/`, `dashboard/dist/`, generated files);
+  `prettier` as a devDependency only (the published CLI stays dependency-light);
+  `npm run format` / `format:check`, with the check in `validate`/CI. Reformat
+  in one dedicated commit and list it in `.git-blame-ignore-revs`. Watch: the
+  post-preflight tests in `test/e2e/` count exact source strings in
+  `bin/cli.js`, so reformatting breaks them; make them format-independent
+  first. Confidence: high (cause confirmed by the user). MEDIUM (shared tooling
+  and CI): Pipe for CI.
 - [ ] **Graphify/OpenSpec pins and hooks**: waits for your decision and the
   ADR 0001 stability window ([handoff](docs/plans/tool-pins-update-handoff.md)).
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
