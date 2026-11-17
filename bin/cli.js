@@ -18,121 +18,29 @@
  * an installer that runs before you trust the repo should not ask you to trust
  * a dependency tree first.
  */
-import {
-  readdir,
-  lstat,
-  readFile,
-  writeFile,
-  mkdir,
-  copyFile,
-  rm,
-  rename,
-  chmod,
-} from "node:fs/promises";
-import {
-  existsSync,
-  readFileSync,
-  readdirSync,
-  realpathSync,
-  statSync,
-  lstatSync,
-  accessSync,
-  constants as fsc,
-} from "node:fs";
+import { readdir, lstat, readFile, writeFile, mkdir, copyFile, rm, rename, chmod } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, realpathSync, statSync, lstatSync, accessSync, constants as fsc } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
 import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
-import {
-  resolveBin,
-  projectOnlyHit,
-  windowsOnlyHits,
-  danglingHits,
-  readWindowsRoots,
-  runBin,
-  binVersion,
-  display,
-  SAFE_ARG,
-} from "./exec.js";
+import { resolveBin, projectOnlyHit, windowsOnlyHits, danglingHits, readWindowsRoots, runBin, binVersion, display, SAFE_ARG } from "./exec.js";
 import { InstallManifest, removeManagedBlock } from "./install-manifest.js";
-import {
-  renderInstallReport,
-  renderRemainingItems,
-  shortPath,
-} from "./install-report.js";
+import { renderInstallReport, renderRemainingItems, shortPath } from "./install-report.js";
 import { renderDoctorReport } from "./doctor-report.js";
 import { LEGEND, rowText } from "./change-rows.js";
 import { migrateClaudeHooks, isCanonicalClaudeHook } from "./claude-hooks.js";
 import { STACK_PACK_IDS, StackPackStore } from "./stack-packs.js";
-import {
-  show as showModels,
-  refresh as refreshModels,
-  setup as setupModels,
-  prepareRecommendedModels,
-  modelDiagnosis,
-} from "./models-command.js";
-import {
-  HARNESSES as DISCOVERABLE,
-  readCatalog,
-  catalogPath,
-} from "./model-discovery.js";
-import {
-  accessProblem,
-  claudeRestriction,
-  reservedKeyOf,
-} from "./agent-access.js";
-import {
-  HONORED_FIELDS,
-  userConfigPath,
-  projectConfigPath,
-  projectRoot,
-  readChoices,
-  resolve as resolveChoice,
-} from "./model-config.js";
+import { show as showModels, refresh as refreshModels, setup as setupModels, prepareRecommendedModels, modelDiagnosis } from "./models-command.js";
+import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-discovery.js";
+import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
+import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
-import {
-  SECURITY_VERSION_FLOORS,
-  collectEnvironment,
-  repositoryRoot,
-  safePath,
-  projectStateDir,
-  readSecurityBytes,
-  parseSecuritySettings,
-  readSettingsText,
-  parseProjectLocalSandboxSettings,
-  compileSecurity,
-  compileNetworkSecurity,
-  compileRuntimeReads,
-  applyRuntimeReads,
-  trustedOwnedAllowRead,
-  detectRuntimeRoots,
-  withModelsRead,
-  MODELS_READ_ITEM,
-  TELEMETRY_READ_ITEM,
-  TELEMETRY_EXPOSURE,
-  compileTelemetryRead,
-  telemetryReadSymlink,
-  SECURITY_SETTINGS,
-  undoSecurity,
-  undoNetworkSecurity,
-  projectSecurityOwnership,
-  networkSecurityOwnership,
-  isSandboxNullPlaceholder,
-  isNullDeviceStat,
-  anyNullPlaceholder,
-  directoryBlocker,
-  serializeSecurity,
-  assessClaude,
-  inspectCodex,
-  inspectOpencode,
-} from "./security.js";
+import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, withModelsRead, MODELS_READ_ITEM, TELEMETRY_READ_ITEM, TELEMETRY_EXPOSURE, compileTelemetryRead, telemetryReadSymlink, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
-const PACKAGE_ROOT = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "..",
-);
+const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
 const REFERENCE_DIR = path.join(PACKAGE_ROOT, "reference");
 const HOOKS_DIR = path.join(PACKAGE_ROOT, "hooks");
@@ -154,25 +62,14 @@ const HOOK_FILES = {
 // The OpenCode 2 plugin entry: an ESM file that loads ../canonkit/canonkit-opencode.js.
 // Kept out of HOOK_FILES because its destination differs (opencodeDir()/plugins/,
 // where OpenCode loads every file as a plugin) and it is not CommonJS.
-const OPENCODE_PLUGIN = Object.freeze({
-  from: "opencode-plugin.mjs",
-  to: "plugins/canonkit.js",
-});
+const OPENCODE_PLUGIN = Object.freeze({ from: "opencode-plugin.mjs", to: "plugins/canonkit.js" });
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 
 async function dashboardDistributionFiles() {
-  return [
-    "serve.js",
-    "package.json",
-    "execution-model.js",
-    "activity.html",
-    "THIRD_PARTY_NOTICES.md",
-    ...(await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) =>
-      path.join("dist", file),
-    ),
-  ];
+  return ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", ...
+    (await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) => path.join("dist", file))];
 }
 
 // Every event each hook must be registered under, with the matcher it needs
@@ -184,8 +81,7 @@ async function dashboardDistributionFiles() {
 const HOOK = "canonkit-hook.js";
 const HOOK_EVENTS = {
   [HOOK]: {
-    PreToolUse:
-      "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
+    PreToolUse: "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task|SendMessage",
     PostToolUse: "Agent|Task|Read|Grep|Glob|Bash|PowerShell",
     SubagentStop: null,
     UserPromptSubmit: null,
@@ -198,22 +94,10 @@ const HOOK_EVENTS = {
 // ~/.claude/CLAUDE.md; Codex reads AGENTS.md and never looks at .claude/.
 // OpenCode reads ~/.config/opencode/AGENTS.md, and ~/.claude/CLAUDE.md only
 // while that file does not exist.
-const ROSTER = [
-  "<!-- agent-team-config:start -->",
-  "<!-- agent-team-config:end -->",
-];
-const ROUTING = [
-  "<!-- agent-team-config:routing:start -->",
-  "<!-- agent-team-config:routing:end -->",
-];
-const OPENCODE = [
-  "<!-- agent-team-config:opencode:start -->",
-  "<!-- agent-team-config:opencode:end -->",
-];
-const CODEX = [
-  "<!-- agent-team-config:codex:start -->",
-  "<!-- agent-team-config:codex:end -->",
-];
+const ROSTER = ["<!-- agent-team-config:start -->", "<!-- agent-team-config:end -->"];
+const ROUTING = ["<!-- agent-team-config:routing:start -->", "<!-- agent-team-config:routing:end -->"];
+const OPENCODE = ["<!-- agent-team-config:opencode:start -->", "<!-- agent-team-config:opencode:end -->"];
+const CODEX = ["<!-- agent-team-config:codex:start -->", "<!-- agent-team-config:codex:end -->"];
 const PROJECT_SPECIALISTS = [
   "<!-- agent-team-config:specialists:start -->",
   "<!-- agent-team-config:specialists:end -->",
@@ -227,8 +111,7 @@ const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Normalizing at the single read boundary keeps newline handling out of the
 // parsing that follows. Files this installer does not own are read raw, so it
 // never reformats a user's AGENTS.md as a side effect of editing one block.
-const readOwned = async (p) =>
-  (await readFile(p, "utf8")).replace(/\r\n/g, "\n");
+const readOwned = async (p) => (await readFile(p, "utf8")).replace(/\r\n/g, "\n");
 
 /* ------------------------------------------------------------------ agents */
 
@@ -239,9 +122,7 @@ const readOwned = async (p) =>
  * core installs it everywhere, treating it as a specialist hides it.
  */
 async function readAgents() {
-  const files = (await readdir(AGENTS_DIR))
-    .filter((f) => f.endsWith(".md"))
-    .sort();
+  const files = (await readdir(AGENTS_DIR)).filter((f) => f.endsWith(".md")).sort();
   const agents = [];
 
   for (const file of files) {
@@ -278,14 +159,10 @@ function parseAgent(file, text) {
   }
 
   if (front.name !== name) {
-    throw new Error(
-      `agents/${file}: frontmatter name is '${front.name}' — must match the filename`,
-    );
+    throw new Error(`agents/${file}: frontmatter name is '${front.name}' — must match the filename`);
   }
   if (front.tier !== "core" && front.tier !== "specialist") {
-    throw new Error(
-      `agents/${file}: tier is '${front.tier ?? "missing"}' — expected core or specialist`,
-    );
+    throw new Error(`agents/${file}: tier is '${front.tier ?? "missing"}' — expected core or specialist`);
   }
   if (front.tier === "specialist" && !AUTHORITIES.includes(front.authority)) {
     throw new Error(
@@ -295,14 +172,10 @@ function parseAgent(file, text) {
   // A vendor model label in the source is the coupling `need` replaced: Claude
   // Code acts on a `model:` field itself, so a stale one would pin a model.
   if ("model" in front) {
-    throw new Error(
-      `agents/${file}: 'model:' is no longer accepted — replace it with need: ${NEEDS.join(" | ")}`,
-    );
+    throw new Error(`agents/${file}: 'model:' is no longer accepted — replace it with need: ${NEEDS.join(" | ")}`);
   }
   if (!NEEDS.includes(front.need)) {
-    throw new Error(
-      `agents/${file}: need is '${front.need ?? "missing"}' — expected ${NEEDS.join(", ")}`,
-    );
+    throw new Error(`agents/${file}: need is '${front.need ?? "missing"}' — expected ${NEEDS.join(", ")}`);
   }
 
   const problem = accessProblem(text.slice(4, end).split(/\r?\n/));
@@ -349,13 +222,11 @@ async function summaries() {
 // Codex's own home: $CODEX_HOME when set, else ~/.codex. Every user-level Codex
 // path hangs off it, agents included, so setting it moves them; the
 // project-scoped .codex/agents that `add` writes is relative to the project.
-const codexHome = () =>
-  path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
+const codexHome = () => path.resolve(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"));
 const copilotHome = () => path.join(os.homedir(), ".copilot");
 const claudeHome = () => {
   const override = process.env.CLAUDE_CONFIG_DIR;
-  if (override && !path.isAbsolute(override))
-    throw new Error("CLAUDE_CONFIG_DIR must be an absolute directory");
+  if (override && !path.isAbsolute(override)) throw new Error("CLAUDE_CONFIG_DIR must be an absolute directory");
   return path.resolve(override || path.join(os.homedir(), ".claude"));
 };
 
@@ -374,12 +245,9 @@ const claudeHome = () => {
 // now; say so once per run rather than fail an install that used to work.
 let codexModelWarned = false;
 function warnIgnoredCodexModel(ctx) {
-  if (process.env.CANONKIT_CODEX_MODEL === undefined || codexModelWarned)
-    return;
+  if (process.env.CANONKIT_CODEX_MODEL === undefined || codexModelWarned) return;
   codexModelWarned = true;
-  ctx.log(
-    "WARN CANONKIT_CODEX_MODEL is ignored: use canonkit models setup --codex and reinstall",
-  );
+  ctx.log("WARN CANONKIT_CODEX_MODEL is ignored: use canonkit models setup --codex and reinstall");
 }
 
 // TOML basic strings escape these two; the multi-line literal string used for
@@ -391,9 +259,7 @@ function codexAgent(agent, choice = {}) {
   // for it. Failing here beats emitting a file that silently truncates the
   // agent's instructions at the first occurrence.
   if (agent.body.includes("'''")) {
-    throw new Error(
-      `agents/${agent.name}.md: body contains ''' and cannot be written as a TOML literal string`,
-    );
+    throw new Error(`agents/${agent.name}.md: body contains ''' and cannot be written as a TOML literal string`);
   }
 
   return `# Generated by canonkit from agents/${agent.name}.md — do not edit here.
@@ -407,14 +273,9 @@ ${agent.body.replace(/\n+$/, "")}
 
 function codexChoiceFor(agent, layers, record, ctx) {
   const choice = choiceFor(agent, "codex", layers);
-  const model =
-    record?.status === "discovered"
-      ? record.models.find((m) => m.id === choice.model)
-      : null;
+  const model = record?.status === "discovered" ? record.models.find((m) => m.id === choice.model) : null;
   if (model && choice.effort && !model.efforts.includes(choice.effort)) {
-    ctx.log(
-      `WARN Codex ${agent.name}: ${choice.model} does not support effort ${choice.effort}; both settings inherit`,
-    );
+    ctx.log(`WARN Codex ${agent.name}: ${choice.model} does not support effort ${choice.effort}; both settings inherit`);
     return {};
   }
   return choice;
@@ -440,17 +301,10 @@ function claudeAgent(agent, choice = {}) {
   const end = agent.source.indexOf("\n---", 4);
   // The restriction comes only from translating `access`: drop any harness
   // restriction key a source smuggled past validation.
-  const head = agent.source
-    .slice(0, end)
-    .split("\n")
-    .filter((l) => !reservedKeyOf(l))
-    .join("\n");
+  const head = agent.source.slice(0, end).split("\n").filter((l) => !reservedKeyOf(l)).join("\n");
   const r = claudeRestriction(agent.access);
   const restriction = r ? `\n${r.key}: ${r.value}` : "";
-  const fields = HONORED_FIELDS.claude
-    .filter((f) => choice[f])
-    .map((f) => `\n${f}: ${JSON.stringify(choice[f])}`)
-    .join("");
+  const fields = HONORED_FIELDS.claude.filter((f) => choice[f]).map((f) => `\n${f}: ${JSON.stringify(choice[f])}`).join("");
   return head + restriction + fields + agent.source.slice(end);
 }
 
@@ -534,10 +388,7 @@ function applyBlockLf(original, blockText, markers) {
   const marked = new RegExp(`${esc(start)}[\\s\\S]*?${esc(end)}`);
 
   if (marked.test(original)) {
-    return {
-      text: original.replace(marked, () => managed),
-      action: "updated managed block in",
-    };
+    return { text: original.replace(marked, () => managed), action: "updated managed block in" };
   }
 
   let text = original;
@@ -561,10 +412,8 @@ function applyBlockLf(original, blockText, markers) {
 }
 
 async function syncBlock(blockPath, targetPath, markers, ctx, plannedText) {
-  const blockText = plannedText ?? (await readOwned(blockPath));
-  const original = existsSync(targetPath)
-    ? await readFile(targetPath, "utf8")
-    : "";
+  const blockText = plannedText ?? await readOwned(blockPath);
+  const original = existsSync(targetPath) ? await readFile(targetPath, "utf8") : "";
   const { text, action } = applyBlock(original, blockText, markers);
 
   if (text === original) {
@@ -592,13 +441,7 @@ const DEFAULT_TARGETS = ["claude", "codex"];
  * cancelled: nothing is written. A terminal menu starts empty; non-terminal
  * runs keep the historic Claude + Codex defaults.
  */
-async function chooseTargets(
-  flags,
-  {
-    interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
-    prompt,
-  } = {},
-) {
+async function chooseTargets(flags, { interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt } = {}) {
   const picked = TARGETS.filter((t) => flags.includes(`--${t}`));
   if (picked.length) return picked;
   if (!interactive) return [...DEFAULT_TARGETS];
@@ -610,30 +453,10 @@ async function chooseTargets(
     name: "targets",
     message: "Install the team for",
     choices: [
-      {
-        title: "Claude Code",
-        value: "claude",
-        selected: false,
-        description: "~/.claude/agents, hooks, dashboard",
-      },
-      {
-        title: "Codex",
-        value: "codex",
-        selected: false,
-        description: "$CODEX_HOME (~/.codex), ~/.agents/skills",
-      },
-      {
-        title: "OpenCode",
-        value: "opencode",
-        selected: false,
-        description: "~/.config/opencode, ~/.agents/skills",
-      },
-      {
-        title: "GitHub Copilot",
-        value: "copilot",
-        selected: false,
-        description: "~/.copilot/agents, ~/.copilot/skills",
-      },
+      { title: "Claude Code", value: "claude", selected: false, description: "~/.claude/agents, hooks, dashboard" },
+      { title: "Codex", value: "codex", selected: false, description: "$CODEX_HOME (~/.codex), ~/.agents/skills" },
+      { title: "OpenCode", value: "opencode", selected: false, description: "~/.config/opencode, ~/.agents/skills" },
+      { title: "GitHub Copilot", value: "copilot", selected: false, description: "~/.copilot/agents, ~/.copilot/skills" },
     ],
     min: 1,
     hint: "space selects, enter confirms. Pick at least one.",
@@ -646,24 +469,13 @@ async function chooseTargets(
   return !answer.cancelled && targets?.length ? targets : null;
 }
 
-async function resolveInstallProjectTarget(
-  cwd = process.cwd(),
-  home = os.homedir(),
-) {
+async function resolveInstallProjectTarget(cwd = process.cwd(), home = os.homedir()) {
   const target = realpathSync.native(cwd);
   const root = await repositoryRoot(target);
   const packageRoot = realpathSync.native(PACKAGE_ROOT);
   const homeRoot = realpathSync.native(home);
-  const same = (a, b) =>
-    process.platform === "win32"
-      ? a.toLowerCase() === b.toLowerCase()
-      : a === b;
-  if (
-    !root ||
-    same(realpathSync.native(root), packageRoot) ||
-    same(target, homeRoot)
-  )
-    return null;
+  const same = (a, b) => process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
+  if (!root || same(realpathSync.native(root), packageRoot) || same(target, homeRoot)) return null;
   return target;
 }
 
@@ -672,16 +484,11 @@ function projectMenuName(project) {
   return name.length > 42 ? `…${name.slice(-41)}` : name;
 }
 
-async function chooseProjectItems(
-  catalog,
-  project,
-  {
-    interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
-    prompt,
-    explicit = { tools: [], specialists: [], stacks: [] },
-    targets,
-  } = {},
-) {
+async function chooseProjectItems(catalog, project, {
+  interactive = !!(process.stdin.isTTY && process.stdout.isTTY), prompt,
+  explicit = { tools: [], specialists: [], stacks: [] },
+  targets,
+} = {}) {
   const selected = {
     tools: [...new Set(explicit.tools)],
     specialists: [...new Set(explicit.specialists)],
@@ -689,16 +496,9 @@ async function chooseProjectItems(
     toolHarnesses: {},
     skippedTools: [],
   };
-  if (
-    interactive &&
-    !selected.tools.length &&
-    !selected.specialists.length &&
-    !selected.stacks.length
-  ) {
-    const ask =
-      prompt ?? (async (config) => (await import("prompts")).default(config));
-    const recommended = (category, item) =>
-      category === "tools" && ["graphify", "openspec"].includes(item.name);
+  if (interactive && !selected.tools.length && !selected.specialists.length && !selected.stacks.length) {
+    const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
+    const recommended = (category, item) => category === "tools" && ["graphify", "openspec"].includes(item.name);
     for (const [category, label, rows] of [
       ["tools", "Optional tools", catalog.tools],
       ["specialists", "Domain specialists", catalog.specialists],
@@ -714,26 +514,18 @@ async function chooseProjectItems(
             ...(category === "tools" && item.missing ? ["not installed"] : []),
           ];
           return {
-            title: fitMenuLine(
-              `${item.name}${tags.length ? ` (${tags.join(", ")})` : ""}`,
-            ),
+            title: fitMenuLine(`${item.name}${tags.length ? ` (${tags.join(", ")})` : ""}`),
             value: item.name,
             // A recommended tool whose binary is missing starts unselected: selecting it
             // would only fail after everything else was applied.
             selected: recommended(category, item) && !item.missing,
-            description: fitMenuLine(
-              [item.description, item.state, item.active ? "active" : ""]
-                .filter(Boolean)
-                .join(" · "),
-              74,
-            ),
+            description: fitMenuLine([item.description, item.state, item.active ? "active" : ""].filter(Boolean).join(" · "), 74),
           };
         }),
         // Both variants must fit fitMenuLine's 78 columns.
-        hint:
-          category === "tools" && rows.some((item) => item.missing)
-            ? "space toggles, enter confirms; none selected skips; missing tools are skipped"
-            : "space toggles, enter confirms; none selected skips this category",
+        hint: category === "tools" && rows.some((item) => item.missing)
+          ? "space toggles, enter confirms; none selected skips; missing tools are skipped"
+          : "space toggles, enter confirms; none selected skips this category",
         instructions: false,
       });
       if (prompted.cancelled) return null;
@@ -745,37 +537,23 @@ async function chooseProjectItems(
       if (category === "tools") {
         // Guidance before anything is written; the tool is skipped, not failed,
         // and stays in the report's remaining items.
-        const missing = rows.filter(
-          (item) => item.missing && prompted.value.includes(item.name),
-        );
+        const missing = rows.filter((item) => item.missing && prompted.value.includes(item.name));
         for (const item of missing) {
-          console.error(
-            `\n${item.name} is not installed, so it was skipped; the rest of the install continues.`,
-          );
+          console.error(`\n${item.name} is not installed, so it was skipped; the rest of the install continues.`);
           printMissing(item.tool, project, toolExec());
           console.error("");
         }
         selected.skippedTools = missing.map((item) => item.name);
-        selected.tools = prompted.value.filter(
-          (name) => !selected.skippedTools.includes(name),
-        );
+        selected.tools = prompted.value.filter((name) => !selected.skippedTools.includes(name));
       }
     }
   }
-  const selectedHarnesses =
-    targets &&
-    new Set(
-      targets.map((target) =>
-        target === "copilot" ? "github-copilot" : target,
-      ),
-    );
+  const selectedHarnesses = targets && new Set(targets.map((target) => target === "copilot" ? "github-copilot" : target));
   for (const name of [...new Set(selected.tools)]) {
     const tool = catalog.tools.find((item) => item.name === name)?.tool;
     if (!tool?.harness) continue;
     if (selectedHarnesses) {
-      selected.toolHarnesses[name] = tool.harness.allowed.filter((key) =>
-        selectedHarnesses.has(key),
-      );
+      selected.toolHarnesses[name] = tool.harness.allowed.filter((key) => selectedHarnesses.has(key));
       continue;
     }
     const choice = await chooseHarness(tool, null, { interactive, prompt });
@@ -785,36 +563,24 @@ async function chooseProjectItems(
   return selected;
 }
 
-async function chooseProjectScope(
-  project,
-  { interactive, noProject, prompt } = {},
-) {
+async function chooseProjectScope(project, { interactive, noProject, prompt } = {}) {
   if (!project || noProject) return !noProject;
   if (!interactive) return true;
   const name = projectMenuName(project);
   console.log(`Project: ${name}`);
-  console.log(
-    "Adds selected tools, specialists, and project model/security settings.",
-  );
-  const ask =
-    prompt ?? (async (question) => (await import("prompts")).default(question));
+  console.log("Adds selected tools, specialists, and project model/security settings.");
+  const ask = prompt ?? (async (question) => (await import("prompts")).default(question));
   const answer = await askInstallChoice(ask, {
-    type: "select",
-    name: "project-scope",
-    message: `Set up ${name}?`,
+    type: "select", name: "project-scope", message: `Set up ${name}?`,
     choices: [
       { title: "Yes, set up this project (recommended)", value: true },
       { title: "No, user level only", value: false },
-    ],
-    initial: 0,
-    hint: "Enter sets up this project; choose No for user-level setup only.",
-    instructions: false,
+    ], initial: 0, hint: "Enter sets up this project; choose No for user-level setup only.", instructions: false,
   });
   return answer.cancelled ? null : !!answer.value;
 }
 
-const securityDigest = (value) =>
-  value === null ? null : createHash("sha256").update(value).digest("hex");
+const securityDigest = (value) => value === null ? null : createHash("sha256").update(value).digest("hex");
 async function optionalBytes(file) {
   return readSecurityBytes(file);
 }
@@ -832,144 +598,44 @@ async function readProjectLocalSandbox(file) {
   }
 }
 
-const PROJECT_CORE_NAMES = [
-  "archie",
-  "bob",
-  "gard",
-  "perry",
-  "pipe",
-  "pixie",
-  "quinn",
-  "scott",
-  "spencer",
-  "virgo",
-];
+const PROJECT_CORE_NAMES = ["archie", "bob", "gard", "perry", "pipe", "pixie", "quinn", "scott", "spencer", "virgo"];
 function scopedSecurityManifest(ctx, root, targets = ["claude", "codex"]) {
   const codexEntries = PROJECT_CORE_NAMES.map((name) => ({
-    id: `project:file:.codex/agents/${name}.toml`,
-    root: "project",
-    relative: `.codex/agents/${name}.toml`,
-    kind: "file",
-    owners: ["codex"],
-    preserveModified: true,
+    id: `project:file:.codex/agents/${name}.toml`, root: "project",
+    relative: `.codex/agents/${name}.toml`, kind: "file", owners: ["codex"], preserveModified: true,
   }));
-  return new InstallManifest({
-    home: os.homedir(),
-    roots: { project: root },
-    catalog: [
-      {
-        id: "project:json:.claude/settings.json",
-        root: "project",
-        relative: ".claude/settings.json",
-        kind: "json",
-        owners: ["claude"],
-        undo: undoSecurity,
-        securityOwnership: projectSecurityOwnership,
-      },
-      ...codexEntries,
-    ],
-    stateDir: projectStateDir(os.homedir(), root),
-    targets,
-    dryRun: ctx.dryRun,
-    log: ctx.log,
-  });
+  return new InstallManifest({ home: os.homedir(), roots: { project: root },
+    catalog: [{ id: "project:json:.claude/settings.json", root: "project", relative: ".claude/settings.json", kind: "json", owners: ["claude"], undo: undoSecurity, securityOwnership: projectSecurityOwnership }, ...codexEntries],
+    stateDir: projectStateDir(os.homedir(), root), targets, dryRun: ctx.dryRun, log: ctx.log });
 }
 
-async function prepareSecurity(
-  ctx,
-  targets,
-  { wireHooks = false, projectInScope = true } = {},
-) {
+async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope = true } = {}) {
   if (!targets.includes("claude")) return null;
   const root = await repositoryRoot();
-  const evidence = await collectEnvironment({
-    cwd: root ?? process.cwd(),
-    dryRun: ctx.dryRun,
-    windowsRoots: readWindowsRoots(),
-  });
+  const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), dryRun: ctx.dryRun, windowsRoots: readWindowsRoots() });
   const globalFile = settingsPath();
   await safePath(globalFile);
   const globalBefore = await optionalBytes(globalFile);
-  const userSettings = parseSecuritySettings(
-    globalBefore,
-    "user Claude settings",
-  );
-  const migration = wireHooks
-    ? null
-    : migrateClaudeHooks(userSettings, claudeHome());
+  const userSettings = parseSecuritySettings(globalBefore, "user Claude settings");
+  const migration = wireHooks ? null : migrateClaudeHooks(userSettings, claudeHome());
   const globalSource = migration?.data ?? userSettings;
-  const globalPlan = {
-    file: globalFile,
-    before: globalBefore,
-    migration,
-    originalData: structuredClone(userSettings),
-    sourceData: structuredClone(globalSource),
-    ...compileNetworkSecurity(globalSource, evidence),
-  };
+  const globalPlan = { file: globalFile, before: globalBefore, migration, originalData: structuredClone(userSettings), sourceData: structuredClone(globalSource), ...compileNetworkSecurity(globalSource, evidence) };
   globalPlan.rows = globalPlan.changes.map((key) => {
-    const current = key
-      .split(".")
-      .reduce((value, part) => value?.[part], globalSource);
-    const recommended = key
-      .split(".")
-      .reduce((value, part) => value?.[part], globalPlan.data);
-    return {
-      path: key,
-      scope: "user",
-      current: current ?? null,
-      recommended,
-      marker: current === undefined ? "+" : "->",
-      reason: settingReason(key),
-      answerKey: `user:${key}`,
-      selectable: true,
-    };
+    const current = key.split(".").reduce((value, part) => value?.[part], globalSource);
+    const recommended = key.split(".").reduce((value, part) => value?.[part], globalPlan.data);
+    return { path: key, scope: "user", current: current ?? null, recommended, marker: current === undefined ? "+" : "->", reason: settingReason(key), answerKey: `user:${key}`, selectable: true };
   });
-  if (migration?.removed.length)
-    globalPlan.rows.push({
-      path: "hooks.legacyCanonkit",
-      scope: "user",
-      current: `${migration.removed.length} handlers`,
-      recommended: "unregistered",
-      marker: "->",
-      reason:
-        "legacy canonkit hook handlers are removed during native security setup",
-      answerKey: "user:hooks.legacyCanonkit",
-      selectable: true,
-    });
+  if (migration?.removed.length) globalPlan.rows.push({ path: "hooks.legacyCanonkit", scope: "user", current: `${migration.removed.length} handlers`, recommended: "unregistered", marker: "->", reason: "legacy canonkit hook handlers are removed during native security setup", answerKey: "user:hooks.legacyCanonkit", selectable: true });
   // Runtime read exceptions are only proposed here; the review step decides whether they are written.
-  const detected =
-    evidence.sandboxCapability === "available-unverified"
-      ? withModelsRead(
-          detectRuntimeRoots({
-            cwd: root ?? process.cwd(),
-            windowsRoots: readWindowsRoots(),
-          }),
-        )
-      : undefined;
-  globalPlan.runtimeReads = compileRuntimeReads(
-    migration?.data ?? userSettings,
-    evidence,
-    { detected },
-  );
-  for (const root of globalPlan.runtimeReads.proposed)
-    globalPlan.rows.push({
-      path: `sandbox.filesystem.allowRead:${root.item}`,
-      scope: "user",
-      current: null,
-      recommended: root.item,
-      marker: "+",
-      reason: `${root.label} needs this runtime read location`,
-      answerKey: `runtime:${root.item}`,
-      selectable: true,
-    });
+  const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
+  globalPlan.runtimeReads = compileRuntimeReads(migration?.data ?? userSettings, evidence, { detected });
+  for (const root of globalPlan.runtimeReads.proposed) globalPlan.rows.push({
+    path: `sandbox.filesystem.allowRead:${root.item}`, scope: "user", current: null, recommended: root.item,
+    marker: "+", reason: `${root.label} needs this runtime read location`, answerKey: `runtime:${root.item}`, selectable: true,
+  });
   // The telemetry read is opt-in: kept off `rows` and `runtimeReads`, so no recommended path can apply it.
-  globalPlan.telemetryRead = compileTelemetryRead(
-    migration?.data ?? userSettings,
-    evidence,
-    { claudeInstalled: true, symlinked: await telemetryReadSymlink() },
-  );
-  if (migration?.removed.length)
-    globalPlan.changes.push("hooks.legacyCanonkit");
+  globalPlan.telemetryRead = compileTelemetryRead(migration?.data ?? userSettings, evidence, { claudeInstalled: true, symlinked: await telemetryReadSymlink() });
+  if (migration?.removed.length) globalPlan.changes.push("hooks.legacyCanonkit");
   let project = null;
   if (root) {
     const file = path.join(root, ".claude", "settings.json");
@@ -978,65 +644,21 @@ async function prepareSecurity(
     if (projectInScope) await safePath(projectStateDir(os.homedir(), root));
     const before = await optionalBytes(file);
     const settings = parseSecuritySettings(before, "project Claude settings");
-    const migration = wireHooks
-      ? null
-      : migrateClaudeHooks(settings, claudeHome());
+    const migration = wireHooks ? null : migrateClaudeHooks(settings, claudeHome());
     if (projectInScope) {
       const local = await readProjectLocalSandbox(localFile);
       const sourceData = migration?.data ?? settings;
-      project = {
-        root,
-        file,
-        before,
-        migration,
-        originalData: structuredClone(settings),
-        sourceData: structuredClone(sourceData),
-        localFile,
-        localSettings: local.settings,
-        localSettingsKnown: local.known,
-        ...compileSecurity(sourceData, evidence, {
-          userSettings,
-          projectLocalSettings: local.settings,
-          projectLocalSettingsKnown: local.known,
-        }),
-      };
-      project.rows = project.rows.map((row) => ({
-        ...row,
-        scope: "project",
-        answerKey: `project:${row.path}`,
-      }));
+      project = { root, file, before, migration, originalData: structuredClone(settings), sourceData: structuredClone(sourceData), localFile, localSettings: local.settings, localSettingsKnown: local.known,
+        ...compileSecurity(sourceData, evidence, { userSettings, projectLocalSettings: local.settings, projectLocalSettingsKnown: local.known }) };
+      project.rows = project.rows.map((row) => ({ ...row, scope: "project", answerKey: `project:${row.path}` }));
       if (migration?.removed.length) {
         project.changes.push("hooks.legacyCanonkit");
-        project.rows.push({
-          path: "hooks.legacyCanonkit",
-          scope: "project",
-          current: `${migration.removed.length} handlers`,
-          recommended: "unregistered",
-          marker: "->",
-          reason:
-            "legacy canonkit hook handlers are removed during native security setup",
-          answerKey: "project:hooks.legacyCanonkit",
-          selectable: true,
-        });
+        project.rows.push({ path: "hooks.legacyCanonkit", scope: "project", current: `${migration.removed.length} handlers`, recommended: "unregistered", marker: "->", reason: "legacy canonkit hook handlers are removed during native security setup", answerKey: "project:hooks.legacyCanonkit", selectable: true });
       }
     } else {
-      project = {
-        root,
-        file,
-        before,
-        migration: null,
-        sourceData: structuredClone(settings),
-        localFile,
-        localSettings: {},
-        localSettingsKnown: true,
-        changes: [],
-        gaps: [],
-        weaker: [],
-        rows: [],
-        unapplied: [],
-        notConfigured: true,
-        legacyLeft: migration?.removed ?? [],
-      };
+      project = { root, file, before, migration: null, sourceData: structuredClone(settings), localFile, localSettings: {}, localSettingsKnown: true,
+        changes: [], gaps: [], weaker: [], rows: [], unapplied: [], notConfigured: true,
+        legacyLeft: migration?.removed ?? [] };
     }
   }
   return { evidence, global: globalPlan, project };
@@ -1045,10 +667,8 @@ async function prepareSecurity(
 const TELEMETRY_ANSWER = "telemetry:~/.claude/canonkit-activity";
 const TELEMETRY_SNIPPET = `  "sandbox": { "filesystem": { "allowRead": ["${TELEMETRY_READ_ITEM}"] } }`;
 const AUTO_APPROVAL = "sandbox.autoAllowBashIfSandboxed";
-const settingReason = (key) =>
-  SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
-const fitMenuLine = (value, width = 78) =>
-  value.length <= width ? value : `${value.slice(0, width - 1)}…`;
+const settingReason = (key) => SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
+const fitMenuLine = (value, width = 78) => value.length <= width ? value : `${value.slice(0, width - 1)}…`;
 const wrapText = (value, width = 78) => {
   const words = String(value).split(/\s+/).filter(Boolean);
   const lines = [];
@@ -1056,10 +676,7 @@ const wrapText = (value, width = 78) => {
   for (const word of words) {
     if (!line) line = word;
     else if (`${line} ${word}`.length <= width) line += ` ${word}`;
-    else {
-      lines.push(line);
-      line = word;
-    }
+    else { lines.push(line); line = word; }
   }
   if (line) lines.push(line);
   return lines.join("\n");
@@ -1075,10 +692,7 @@ const dottedSet = (data, key, value) => {
   at[parts.at(-1)] = value;
 };
 
-function applySecurityAnswer(
-  security,
-  { securityAnswer = "default", selectedRows = [] } = {},
-) {
+function applySecurityAnswer(security, { securityAnswer = "default", selectedRows = [] } = {}) {
   if (!security || securityAnswer === "default") return security;
   if (securityAnswer === "keep") {
     // The install plan starts with recommended changes already compiled. A
@@ -1089,49 +703,23 @@ function applySecurityAnswer(
     return security;
   }
   const selected = new Set(selectedRows);
-  if (
-    securityAnswer === "customize" &&
-    security.project &&
-    !security.project.notConfigured
-  ) {
+  if (securityAnswer === "customize" && security.project && !security.project.notConfigured) {
     const auto = "project:sandbox.autoAllowBashIfSandboxed";
-    const base = [
-      "sandbox.enabled",
-      "sandbox.failIfUnavailable",
-      "sandbox.allowUnsandboxedCommands",
-    ]
-      .map((key) =>
-        security.project.rows.find(
-          (row) => row.path === key && row.marker !== "=",
-        ),
-      )
+    const base = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]
+      .map((key) => security.project.rows.find((row) => row.path === key && row.marker !== "="))
       .filter(Boolean);
-    if (selected.has(auto) && base.some((row) => !selected.has(row.answerKey)))
-      selected.delete(auto);
+    if (selected.has(auto) && base.some((row) => !selected.has(row.answerKey))) selected.delete(auto);
   }
-  const checked = (row) =>
-    !!row &&
-    (securityAnswer === "recommended" ||
-      selected.has(row.answerKey) ||
-      selected.has(row.path));
+  const checked = (row) => !!row && (securityAnswer === "recommended" || selected.has(row.answerKey) || selected.has(row.path));
   const project = security.project;
   if (project && !project.notConfigured) {
     const migration = project.migration;
-    const migrationRow = project.rows.find(
-      (row) => row.path === "hooks.legacyCanonkit",
-    );
+    const migrationRow = project.rows.find((row) => row.path === "hooks.legacyCanonkit");
     const migrationSelected = !!migration && checked(migrationRow);
-    const sourceData = migrationSelected
-      ? migration.data
-      : project.originalData;
+    const sourceData = migrationSelected ? migration.data : project.originalData;
     const answers = {};
     for (const row of project.rows) {
-      if (
-        row.path === "hooks.legacyCanonkit" ||
-        row.marker === "=" ||
-        !row.selectable
-      )
-        continue;
+      if (row.path === "hooks.legacyCanonkit" || row.marker === "=" || !row.selectable) continue;
       answers[row.path] = checked(row);
     }
     const compiled = compileSecurity(sourceData, security.evidence, {
@@ -1140,68 +728,39 @@ function applySecurityAnswer(
       projectLocalSettingsKnown: project.localSettingsKnown,
       answers,
     });
-    Object.assign(project, compiled, {
-      sourceData: structuredClone(sourceData),
-      migration: migrationSelected ? migration : null,
-    });
+    Object.assign(project, compiled, { sourceData: structuredClone(sourceData), migration: migrationSelected ? migration : null });
     if (migrationSelected) project.changes.push("hooks.legacyCanonkit");
     project.rows = [
-      ...compiled.rows.map((row) => ({
-        ...row,
-        scope: "project",
-        answerKey: `project:${row.path}`,
-      })),
+      ...compiled.rows.map((row) => ({ ...row, scope: "project", answerKey: `project:${row.path}` })),
       ...(migrationRow ? [migrationRow] : []),
     ].filter(Boolean);
-    project.legacyLeft = migrationSelected ? [] : (migration?.removed ?? []);
+    project.legacyLeft = migrationSelected ? [] : migration?.removed ?? [];
   }
 
   const global = security.global;
   const globalMigration = global.migration;
-  const migrationRow = global.rows.find(
-    (row) => row.path === "hooks.legacyCanonkit",
-  );
+  const migrationRow = global.rows.find((row) => row.path === "hooks.legacyCanonkit");
   const migrationSelected = !!globalMigration && checked(migrationRow);
-  const globalSource = migrationSelected
-    ? globalMigration.data
-    : global.originalData;
+  const globalSource = migrationSelected ? globalMigration.data : global.originalData;
   const network = compileNetworkSecurity(globalSource, security.evidence);
-  const networkRow = global.rows.find(
-    (row) => row.path === "sandbox.network.strictAllowlist",
-  );
+  const networkRow = global.rows.find((row) => row.path === "sandbox.network.strictAllowlist");
   const networkSelected = networkRow && checked(networkRow);
   if (!networkSelected) {
     network.data = structuredClone(globalSource);
     network.changes = [];
   }
-  Object.assign(global, network, {
-    sourceData: structuredClone(globalSource),
-    migration: migrationSelected ? globalMigration : null,
-  });
+  Object.assign(global, network, { sourceData: structuredClone(globalSource), migration: migrationSelected ? globalMigration : null });
   if (migrationSelected) global.changes.push("hooks.legacyCanonkit");
-  const runtimeItems = (global.runtimeReads?.proposed ?? []).filter((root) =>
-    checked(
-      global.rows.find((row) => row.answerKey === `runtime:${root.item}`),
-    ),
-  );
+  const runtimeItems = (global.runtimeReads?.proposed ?? []).filter((root) => checked(global.rows.find((row) => row.answerKey === `runtime:${root.item}`)));
   if (runtimeItems.length) {
-    global.data = applyRuntimeReads(
-      global.data,
-      runtimeItems.map((root) => root.item),
-    );
-    if (!global.changes.includes("sandbox.filesystem.allowRead"))
-      global.changes.push("sandbox.filesystem.allowRead");
+    global.data = applyRuntimeReads(global.data, runtimeItems.map((root) => root.item));
+    if (!global.changes.includes("sandbox.filesystem.allowRead")) global.changes.push("sandbox.filesystem.allowRead");
   }
   // Opt-in only: the customize menu's own answer. Never through checked() (which "recommended" satisfies) and never by path.
-  if (
-    securityAnswer === "customize" &&
-    global.telemetryRead?.proposed &&
-    selectedRows.includes(TELEMETRY_ANSWER)
-  ) {
+  if (securityAnswer === "customize" && global.telemetryRead?.proposed && selectedRows.includes(TELEMETRY_ANSWER)) {
     global.data = applyRuntimeReads(global.data, [TELEMETRY_READ_ITEM]);
     global.telemetryApplied = true;
-    if (!global.changes.includes("sandbox.filesystem.allowRead"))
-      global.changes.push("sandbox.filesystem.allowRead");
+    if (!global.changes.includes("sandbox.filesystem.allowRead")) global.changes.push("sandbox.filesystem.allowRead");
   }
   return security;
 }
@@ -1214,47 +773,30 @@ function allSecurityRows(security) {
 }
 
 /** Resolve a security answer using arrow-key menus; no writes happen here. */
-async function reviewSecurity(
-  ctx,
-  security,
-  { interactive = false, securityAnswer, prompt } = {},
-) {
+async function reviewSecurity(ctx, security, { interactive = false, securityAnswer, prompt } = {}) {
   if (!security) return { securityAnswer: "default", selectedRows: [] };
   const runtime = security.global.runtimeReads;
-  for (const item of runtime?.unhandled ?? [])
-    ctx.log(
-      `WARN security runtime-reads: ${item.item} (${item.label}) is not a known runtime location; no read exception was proposed for it`,
-    );
-  for (const entry of (security.project?.weaker ?? []).filter(
-    (item) => item.source === "local" && item.path !== AUTO_APPROVAL,
-  )) {
-    ctx.log(
-      `WARN security project-local: ${entry.path} is ${entry.current} in this project's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`,
-    );
+  for (const item of runtime?.unhandled ?? []) ctx.log(`WARN security runtime-reads: ${item.item} (${item.label}) is not a known runtime location; no read exception was proposed for it`);
+  for (const entry of (security.project?.weaker ?? []).filter((item) => item.source === "local" && item.path !== AUTO_APPROVAL)) {
+    ctx.log(`WARN security project-local: ${entry.path} is ${entry.current} in this project's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
   }
   const proposed = runtime?.proposed ?? [];
   const telemetry = security.global.telemetryRead;
   if (telemetry?.gaps.includes("telemetry-read-symlink")) {
-    ctx.log(
-      `WARN security telemetry-read: not offered: ~/.claude or ${TELEMETRY_READ_ITEM} is a symbolic link, and the sandbox follows links, so the entry could expose the link target. To let sandboxed commands read it anyway, add this to sandbox.filesystem.allowRead in user Claude settings yourself:`,
-    );
+    ctx.log(`WARN security telemetry-read: not offered: ~/.claude or ${TELEMETRY_READ_ITEM} is a symbolic link, and the sandbox follows links, so the entry could expose the link target. To let sandboxed commands read it anyway, add this to sandbox.filesystem.allowRead in user Claude settings yourself:`);
     ctx.log(TELEMETRY_SNIPPET);
   }
   // Every path that cannot ask (Yes, keep current, --recommended, --yes, no terminal, dry run) says how to opt in.
   const telemetryHint = () => {
     if (!telemetry?.proposed) return;
-    ctx.log(
-      `RECOMMENDATION security telemetry-read: not added (opt-in, closed to sandboxed commands). To add it, choose "No, customize" in canonkit install, or put this in sandbox.filesystem.allowRead of user Claude settings:${telemetry.conditional ? ` (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run)` : ""}`,
-    );
+    ctx.log(`RECOMMENDATION security telemetry-read: not added (opt-in, closed to sandboxed commands). To add it, choose "No, customize" in canonkit install, or put this in sandbox.filesystem.allowRead of user Claude settings:${telemetry.conditional ? ` (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run)` : ""}`);
     ctx.log(TELEMETRY_SNIPPET);
   };
   if (!interactive && !securityAnswer) {
     telemetryHint();
     if (proposed.length) {
       const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
-      ctx.log(
-        `RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings (${ctx.dryRun ? "dry run" : "no terminal"}: not written; use canonkit install --recommended to apply them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`,
-      );
+      ctx.log(`RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings (${ctx.dryRun ? "dry run" : "no terminal"}: not written; use canonkit install --recommended to apply them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`);
       ctx.log(snippet);
     }
     return { securityAnswer: "default", selectedRows: [] };
@@ -1262,130 +804,74 @@ async function reviewSecurity(
   if (!securityAnswer) securityAnswer = "customize";
   if (["recommended", "keep"].includes(securityAnswer)) {
     if (securityAnswer === "keep") {
-      const changes = allSecurityRows(security).filter(
-        (row) =>
-          row.marker !== "=" &&
-          row.answerKey &&
-          !row.answerKey.startsWith("runtime:"),
-      );
+      const changes = allSecurityRows(security).filter((row) => row.marker !== "=" && row.answerKey && !row.answerKey.startsWith("runtime:"));
       if (changes.length) {
-        ctx.log(
-          "RECOMMENDATION security settings (not written; apply with canonkit install --recommended):",
-        );
+        ctx.log("RECOMMENDATION security settings (not written; apply with canonkit install --recommended):");
         for (const row of changes) ctx.log(rowTextForSecurity(row));
       }
       if (proposed.length) {
         const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
-        ctx.log(
-          "RECOMMENDATION security runtime-reads: kept current; user Claude settings unchanged. Add these detected paths to sandbox.filesystem.allowRead later:",
-        );
+        ctx.log("RECOMMENDATION security runtime-reads: kept current; user Claude settings unchanged. Add these detected paths to sandbox.filesystem.allowRead later:");
         ctx.log(snippet);
       }
     }
     telemetryHint();
     return { securityAnswer, selectedRows: [] };
   }
-  if (securityAnswer !== "customize")
-    throw new Error(`Unknown security answer: ${securityAnswer}`);
-  const ask =
-    prompt ?? (async (question) => (await import("prompts")).default(question));
+  if (securityAnswer !== "customize") throw new Error(`Unknown security answer: ${securityAnswer}`);
+  const ask = prompt ?? (async (question) => (await import("prompts")).default(question));
   const answer = async (question) => {
     const result = await askInstallChoice(ask, question, { report: false });
-    if (result.cancelled)
-      throw Object.assign(new Error(result.message), {
-        code: result.eof ? "INSTALL_INPUT_CLOSED" : "INSTALL_CANCELLED",
-      });
+    if (result.cancelled) throw Object.assign(new Error(result.message), { code: result.eof ? "INSTALL_INPUT_CLOSED" : "INSTALL_CANCELLED" });
     return result.value;
   };
   let selectedRows = [];
   if (proposed.length) {
     const add = await answer({
-      type: "select",
-      name: "security-runtime-reads",
-      message: "Add detected runtime reads?",
+      type: "select", name: "security-runtime-reads", message: "Add detected runtime reads?",
       choices: [
         { title: "Yes, add them (recommended)", value: true },
         { title: "Keep current", value: false },
-      ],
-      initial: 0,
-      hint: "Enter adds the listed runtime reads",
+      ], initial: 0, hint: "Enter adds the listed runtime reads",
     });
-    if (add)
-      selectedRows.push(...proposed.map((root) => `runtime:${root.item}`));
+    if (add) selectedRows.push(...proposed.map((root) => `runtime:${root.item}`));
   }
   if (telemetry?.proposed) {
     // Its own question, default off. The long text goes through ctx.log: menu messages are cut to one line.
     ctx.log(TELEMETRY_EXPOSURE);
-    ctx.log(
-      "Alternative: run the dashboard from your own terminal, which needs no exception.",
-    );
-    const result = await askInstallChoice(
-      ask,
-      {
-        type: "select",
-        name: "security-telemetry-read",
-        message: `Let sandboxed commands read ${TELEMETRY_READ_ITEM}?`,
-        choices: [
-          { title: "Keep closed (recommended)", value: false },
-          { title: `Add ${TELEMETRY_READ_ITEM} to allowRead`, value: true },
-        ],
-        initial: 0,
-        hint: "Enter keeps it closed",
-      },
-      { report: false },
-    );
+    ctx.log("Alternative: run the dashboard from your own terminal, which needs no exception.");
+    const result = await askInstallChoice(ask, {
+      type: "select", name: "security-telemetry-read", message: `Let sandboxed commands read ${TELEMETRY_READ_ITEM}?`,
+      choices: [
+        { title: "Keep closed (recommended)", value: false },
+        { title: `Add ${TELEMETRY_READ_ITEM} to allowRead`, value: true },
+      ], initial: 0, hint: "Enter keeps it closed",
+    }, { report: false });
     // Closed input declines; Ctrl-C aborts like every other security menu.
-    if (result.cancelled && !result.eof)
-      throw Object.assign(new Error(result.message), {
-        code: "INSTALL_CANCELLED",
-      });
-    if (!result.cancelled && result.value === true)
-      selectedRows.push(TELEMETRY_ANSWER);
+    if (result.cancelled && !result.eof) throw Object.assign(new Error(result.message), { code: "INSTALL_CANCELLED" });
+    if (!result.cancelled && result.value === true) selectedRows.push(TELEMETRY_ANSWER);
   }
-  const changes = allSecurityRows(security).filter(
-    (row) =>
-      row.selectable &&
-      row.marker !== "=" &&
-      !row.answerKey.startsWith("runtime:"),
-  );
+  const changes = allSecurityRows(security).filter((row) => row.selectable && row.marker !== "=" && !row.answerKey.startsWith("runtime:"));
   if (changes.length) {
     const choices = changes.map((row) => ({
-      title: fitMenuLine(
-        `${row.scope.toUpperCase()}  ${rowTextForSecurity(row)}`,
-      ),
+      title: fitMenuLine(`${row.scope.toUpperCase()}  ${rowTextForSecurity(row)}`),
       value: row.answerKey,
       selected: true,
     }));
     const selected = await answer({
-      type: "multiselect",
-      name: "security-choices",
-      message: "Security changes",
-      choices,
-      hint: "Unchecked keeps current; unchecking any sandbox row keeps auto-approval off.",
+      type: "multiselect", name: "security-choices", message: "Security changes",
+      choices, hint: "Unchecked keeps current; unchecking any sandbox row keeps auto-approval off.",
     });
-    if (!Array.isArray(selected))
-      throw Object.assign(new Error("Input closed: nothing was installed."), {
-        code: "INSTALL_INPUT_CLOSED",
-      });
+    if (!Array.isArray(selected)) throw Object.assign(new Error("Input closed: nothing was installed."), { code: "INSTALL_INPUT_CLOSED" });
     selectedRows.push(...selected);
     const checked = new Set(selectedRows);
-    const baseSandbox = [
-      "sandbox.enabled",
-      "sandbox.failIfUnavailable",
-      "sandbox.allowUnsandboxedCommands",
-    ]
-      .map((key) =>
-        security.project?.rows.find(
-          (row) => row.path === key && row.marker !== "=",
-        ),
-      )
+    const baseSandbox = ["sandbox.enabled", "sandbox.failIfUnavailable", "sandbox.allowUnsandboxedCommands"]
+      .map((key) => security.project?.rows.find((row) => row.path === key && row.marker !== "="))
       .filter(Boolean);
     if (baseSandbox.some((row) => !checked.has(row.answerKey))) {
       checked.delete("project:sandbox.autoAllowBashIfSandboxed");
       selectedRows = [...checked];
-      ctx.log(
-        "WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile; the selected sandbox settings leave the profile partial.",
-      );
+      ctx.log("WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile; the selected sandbox settings leave the profile partial.");
     }
   }
   return { securityAnswer: "customize", selectedRows };
@@ -1399,44 +885,15 @@ async function applyClaudeUserPlan(ctx) {
   const plan = ctx.networkSecurityPlan;
   if (!plan?.changes.length) return;
   await safePath(plan.file);
-  if (
-    securityDigest(await optionalBytes(plan.file)) !==
-    securityDigest(plan.before)
-  )
-    throw new Error(
-      "Concurrent edit of user Claude settings; security configuration was preserved",
-    );
+  if (securityDigest(await optionalBytes(plan.file)) !== securityDigest(plan.before)) throw new Error("Concurrent edit of user Claude settings; security configuration was preserved");
   if (ctx.recommendedSetup) {
-    const rows = (plan.rows ?? []).filter(
-      (row) =>
-        row.marker !== "=" &&
-        plan.changes.some(
-          (key) => row.path === key || row.path.startsWith(`${key}:`),
-        ),
-    );
-    for (const row of rows)
-      ctx.log(
-        actionRowText(
-          `${ctx.dryRun ? "would apply" : "Applying"} user security:`,
-          row,
-        ),
-      );
-    if (plan.telemetryApplied)
-      ctx.log(
-        `${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: sandbox.filesystem.allowRead += ${TELEMETRY_READ_ITEM}`,
-      );
+    const rows = (plan.rows ?? []).filter((row) => row.marker !== "=" && plan.changes.some((key) => row.path === key || row.path.startsWith(`${key}:`)));
+    for (const row of rows) ctx.log(actionRowText(`${ctx.dryRun ? "would apply" : "Applying"} user security:`, row));
+    if (plan.telemetryApplied) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: sandbox.filesystem.allowRead += ${TELEMETRY_READ_ITEM}`);
   } else {
-    for (const key of plan.changes)
-      ctx.log(
-        `${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: ${key} (native modes and personal permissions preserved)`,
-      );
+    for (const key of plan.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: ${key} (native modes and personal permissions preserved)`);
   }
-  await ctx.writeAtomic(
-    plan.file,
-    serializeSecurity(plan.data, plan.before?.toString("utf8")).toString(
-      "utf8",
-    ),
-  );
+  await ctx.writeAtomic(plan.file, serializeSecurity(plan.data, plan.before?.toString("utf8")).toString("utf8"));
 }
 
 async function planInstall(ctx, options = {}) {
@@ -1444,253 +901,112 @@ async function planInstall(ctx, options = {}) {
   const projectInScope = options.projectInScope !== false;
   // Every selected harness and both security stores are validated before a
   // manifest lock/recovery or any distribution write begins.
-  if (options.wireHooks && targets.includes("claude"))
-    await readSettingsForWiring(settingsPath());
-  if (options.wireHooks && targets.includes("codex")) {
-    refuseUnquotableCodexPath();
-    await readCodexHooksForWiring(codexHooksPath());
-  }
-  if (options.wireHooks && targets.includes("opencode")) {
-    await readOpencodeConfigForWiring();
-    if (!ctx.dryRun) refuseOpencodeBelow2();
-  }
+  if (options.wireHooks && targets.includes("claude")) await readSettingsForWiring(settingsPath());
+  if (options.wireHooks && targets.includes("codex")) { refuseUnquotableCodexPath(); await readCodexHooksForWiring(codexHooksPath()); }
+  if (options.wireHooks && targets.includes("opencode")) { await readOpencodeConfigForWiring(); if (!ctx.dryRun) refuseOpencodeBelow2(); }
   warnIgnoredCodexModel(ctx);
-  const security = await prepareSecurity(ctx, targets, {
-    ...options,
-    projectInScope,
-  });
-  const codexRoot =
-    projectInScope && targets.includes("codex") ? await repositoryRoot() : null;
-  const projectRootForInstall = projectInScope
-    ? (security?.project?.root ?? codexRoot)
-    : null;
-  const projectCodexChoices =
-    projectInScope && codexRoot
-      ? await readChoices(projectConfigPath(codexRoot), { project: true })
-      : null;
-  const projectManifest =
-    projectInScope && projectRootForInstall
-      ? scopedSecurityManifest(ctx, projectRootForInstall, targets)
-      : null;
+  const security = await prepareSecurity(ctx, targets, { ...options, projectInScope });
+  const codexRoot = projectInScope && targets.includes("codex") ? await repositoryRoot() : null;
+  const projectRootForInstall = projectInScope ? security?.project?.root ?? codexRoot : null;
+  const projectCodexChoices = projectInScope && codexRoot ? await readChoices(projectConfigPath(codexRoot), { project: true }) : null;
+  const projectManifest = projectInScope && projectRootForInstall ? scopedSecurityManifest(ctx, projectRootForInstall, targets) : null;
   if (projectManifest) await projectManifest.load();
   for (const manifest of [ctx.manifest, projectManifest].filter(Boolean)) {
-    for (const spec of manifest.catalog.values())
-      if (spec.owners.some((owner) => targets.includes(owner)))
-        await safePath(manifest.target(spec));
+    for (const spec of manifest.catalog.values()) if (spec.owners.some((owner) => targets.includes(owner))) await safePath(manifest.target(spec));
   }
   return {
-    targets,
-    security,
-    projectInScope,
-    projectRootForInstall,
-    projectCodexChoices,
-    projectManifest,
-    close: async () => {
-      await projectManifest?.close();
-    },
-    apply: async (
-      securityDecision,
-      { userModelChoices, userModelCatalog } = {},
-    ) => {
+    targets, security, projectInScope, projectRootForInstall, projectCodexChoices, projectManifest,
+    close: async () => { await projectManifest?.close(); },
+    apply: async (securityDecision, { userModelChoices, userModelCatalog } = {}) => {
       applySecurityAnswer(security, securityDecision);
       const completed = [];
       try {
-        // Fixed order: global distribution, then the current repository receipt.
-        await ctx.manifest?.start();
-        await projectManifest?.start();
-        const configured = {
-          ...ctx,
-          networkSecurityPlan: security?.global,
-          hookWiringRequested: options.wireHooks === true,
-          recommendedSetup: !!userModelChoices,
-        };
-        if (security && !options.wireHooks) {
-          for (const [label, plan] of [
-            ["user", security.global],
-            ["project", security.project],
-          ]) {
-            if (!plan?.migration) continue;
-            if (plan.migration.removed.length) {
-              if (securityDecision.securityAnswer === "keep") {
-                ctx.log(
-                  `WARN migration ${label}: ${plan.migration.removed.length} canonical canonkit hook handler(s) remain in ${label} settings; apply with canonkit install --recommended`,
-                );
-              } else {
-                ctx.log(
-                  `${ctx.dryRun ? "would unregister" : "Unregistering"} ${plan.migration.removed.length} canonical canonkit hook handlers in ${label} settings`,
-                );
-              }
-            }
-            for (const key of plan.migration.ambiguous)
-              ctx.log(
-                `WARN migration ${label} ${key}: ambiguous canonkit command preserved; inspect /hooks manually`,
-              );
-          }
-          await applyClaudeUserPlan(configured);
-          if (!ctx.dryRun && security.global.changes.length)
-            completed.push("user Claude settings");
-        }
-        await installDistribution(configured, {
-          ...options,
-          userModelChoices,
-          userModelCatalog,
-        });
-        if (projectManifest && targets.includes("codex")) {
-          await installProjectCodex(
-            ctx,
-            projectManifest,
-            projectRootForInstall,
-            projectCodexChoices,
-            { userChoices: userModelChoices, catalog: userModelCatalog },
-          );
-        }
-        if (security) {
-          for (const gap of security.global.gaps)
-            ctx.log(`WARN security network: ${gap}`);
-          const project = security.project;
-          if (!project)
-            ctx.log(
-              "WARN security project: no project here; project security not set up, and user settings do not cover it",
-            );
-          else if (project.notConfigured) {
-            ctx.log(
-              `WARN security project: not configured for this project (${project.root}); install again with project setup selected to apply it`,
-            );
-            if (project.legacyLeft?.length)
-              ctx.log(
-                `WARN migration project: this project still has ${project.legacyLeft.length} legacy canonkit hook handler(s); setting up this project during install removes them`,
-              );
+    // Fixed order: global distribution, then the current repository receipt.
+    await ctx.manifest?.start();
+    await projectManifest?.start();
+    const configured = { ...ctx, networkSecurityPlan: security?.global, hookWiringRequested: options.wireHooks === true, recommendedSetup: !!userModelChoices };
+    if (security && !options.wireHooks) {
+      for (const [label, plan] of [["user", security.global], ["project", security.project]]) {
+        if (!plan?.migration) continue;
+        if (plan.migration.removed.length) {
+          if (securityDecision.securityAnswer === "keep") {
+            ctx.log(`WARN migration ${label}: ${plan.migration.removed.length} canonical canonkit hook handler(s) remain in ${label} settings; apply with canonkit install --recommended`);
           } else {
-            ctx.log(`Project security (${project.root}):`);
-            for (const key of project.changes) {
-              if (userModelChoices) {
-                const row = project.rows.find((item) => item.path === key);
-                if (row)
-                  ctx.log(
-                    actionRowText(
-                      `${ctx.dryRun ? "would apply" : "Applying"} project security:`,
-                      row,
-                    ),
-                  );
-                else
-                  ctx.log(
-                    `${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`,
-                  );
-              } else
-                ctx.log(
-                  `${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`,
-                );
-            }
-            for (const row of project.unapplied ?? []) {
-              const current =
-                row.current === null
-                  ? "is not set"
-                  : `remains ${JSON.stringify(row.current)}`;
-              ctx.log(
-                `RECOMMENDATION security: ${row.path} ${current}; ${row.reason}. Apply with canonkit install --recommended`,
-              );
-            }
-            const hasAutoApprovalChoice =
-              project.data.sandbox?.autoAllowBashIfSandboxed !== undefined ||
-              project.localSettings.sandbox?.autoAllowBashIfSandboxed !==
-                undefined ||
-              security.global.data.sandbox?.autoAllowBashIfSandboxed !==
-                undefined;
-            const localSandbox = project.localSettings?.sandbox ?? {};
-            const localKeepsStrictProfile =
-              project.localSettingsKnown &&
-              localSandbox.enabled !== false &&
-              localSandbox.failIfUnavailable !== false &&
-              localSandbox.allowUnsandboxedCommands !== true;
-            if (
-              ctx.dryRun &&
-              localKeepsStrictProfile &&
-              !hasAutoApprovalChoice &&
-              project.environment?.versionEvidence === "not-probed-dry-run" &&
-              project.environment.platform !== "win32"
-            ) {
-              // A dry run deliberately does not probe Claude or infer sandbox
-              // support from PATH. Still show the conditional catalog row so the
-              // preview makes the recommended setting visible.
-              const conditional = rowText(
-                {
-                  label: "sandbox.autoAllowBashIfSandboxed",
-                  current: "unset",
-                  recommended: true,
-                  marker: "+",
-                },
-                { padded: false },
-              );
-              ctx.log(`would apply project security: ${conditional}`);
-              ctx.log(
-                wrapText(
-                  `  (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox} and OS sandbox support; version not probed in dry run)`,
-                ),
-              );
-            }
-            if (
-              project.gaps.includes(
-                "sandbox-autoapproval-disabled-under-strict-profile",
-              )
-            ) {
-              const target =
-                project.localSettings.sandbox?.autoAllowBashIfSandboxed ===
-                false
-                  ? "this project's .claude/settings.local.json"
-                  : project.data.sandbox?.autoAllowBashIfSandboxed === false
-                    ? "this project's .claude/settings.json"
-                    : "user Claude settings";
-              ctx.log(
-                `RECOMMENDATION security approval: set sandbox.autoAllowBashIfSandboxed to true in ${target} for the strict sandbox profile; the explicit false was preserved.`,
-              );
-            }
-            await safePath(project.file);
-            if (
-              securityDigest(await optionalBytes(project.file)) !==
-              securityDigest(project.before)
-            )
-              throw new Error(
-                "Concurrent edit of project settings; security configuration was preserved",
-              );
-            if (project.changes.length)
-              await projectManifest.write(
-                project.file,
-                serializeSecurity(
-                  project.data,
-                  project.before?.toString("utf8"),
-                ),
-              );
-            if (!ctx.dryRun && project.changes.length)
-              completed.push("project Claude settings");
-            for (const gap of project.gaps) {
-              if (gap === "sandbox-autoapproval-requires-full-sandbox-profile")
-                ctx.log(
-                  "WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile",
-                );
-              else ctx.log(`WARN security coverage: ${gap}`);
-            }
+            ctx.log(`${ctx.dryRun ? "would unregister" : "Unregistering"} ${plan.migration.removed.length} canonical canonkit hook handlers in ${label} settings`);
           }
-          if (ctx.dryRun)
-            ctx.log(
-              "Security version/runtime checks not executed in dry run; effective coverage unknown",
-            );
-          if (security.evidence.versionEvidence === "windows-binary-ignored")
-            ctx.log(
-              `WARN security claude: a Windows copy at ${plain(security.evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`,
-            );
-          ctx.log(
-            "Check native permissions and security coverage: npx canonkit doctor",
-          );
         }
-      } catch (err) {
-        if (completed.length)
-          ctx.log(
-            `Partial installation: completed ${completed.join(" and ")}; later stages did not complete. Receipts and private snapshots remain; fix the reported condition and re-run install. Removed hook registrations were not restored.`,
-          );
-        throw err;
-      } finally {
-        await projectManifest?.close();
+        for (const key of plan.migration.ambiguous) ctx.log(`WARN migration ${label} ${key}: ambiguous canonkit command preserved; inspect /hooks manually`);
       }
+      await applyClaudeUserPlan(configured);
+      if (!ctx.dryRun && security.global.changes.length) completed.push("user Claude settings");
+    }
+    await installDistribution(configured, { ...options, userModelChoices, userModelCatalog });
+    if (projectManifest && targets.includes("codex")) {
+      await installProjectCodex(ctx, projectManifest, projectRootForInstall, projectCodexChoices, { userChoices: userModelChoices, catalog: userModelCatalog });
+    }
+    if (security) {
+      for (const gap of security.global.gaps) ctx.log(`WARN security network: ${gap}`);
+      const project = security.project;
+      if (!project) ctx.log("WARN security project: no project here; project security not set up, and user settings do not cover it");
+      else if (project.notConfigured) {
+        ctx.log(`WARN security project: not configured for this project (${project.root}); install again with project setup selected to apply it`);
+        if (project.legacyLeft?.length) ctx.log(`WARN migration project: this project still has ${project.legacyLeft.length} legacy canonkit hook handler(s); setting up this project during install removes them`);
+      }
+      else {
+        ctx.log(`Project security (${project.root}):`);
+        for (const key of project.changes) {
+          if (userModelChoices) {
+            const row = project.rows.find((item) => item.path === key);
+            if (row) ctx.log(actionRowText(`${ctx.dryRun ? "would apply" : "Applying"} project security:`, row));
+            else ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`);
+          } else ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} project security: ${key}`);
+        }
+        for (const row of project.unapplied ?? []) {
+          const current = row.current === null ? "is not set" : `remains ${JSON.stringify(row.current)}`;
+          ctx.log(`RECOMMENDATION security: ${row.path} ${current}; ${row.reason}. Apply with canonkit install --recommended`);
+        }
+        const hasAutoApprovalChoice = project.data.sandbox?.autoAllowBashIfSandboxed !== undefined
+          || project.localSettings.sandbox?.autoAllowBashIfSandboxed !== undefined
+          || security.global.data.sandbox?.autoAllowBashIfSandboxed !== undefined;
+        const localSandbox = project.localSettings?.sandbox ?? {};
+        const localKeepsStrictProfile = project.localSettingsKnown
+          && localSandbox.enabled !== false
+          && localSandbox.failIfUnavailable !== false
+          && localSandbox.allowUnsandboxedCommands !== true;
+        if (ctx.dryRun && localKeepsStrictProfile && !hasAutoApprovalChoice
+          && project.environment?.versionEvidence === "not-probed-dry-run"
+          && project.environment.platform !== "win32") {
+          // A dry run deliberately does not probe Claude or infer sandbox
+          // support from PATH. Still show the conditional catalog row so the
+          // preview makes the recommended setting visible.
+          const conditional = rowText({
+            label: "sandbox.autoAllowBashIfSandboxed", current: "unset", recommended: true, marker: "+",
+          }, { padded: false });
+          ctx.log(`would apply project security: ${conditional}`);
+          ctx.log(wrapText(`  (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox} and OS sandbox support; version not probed in dry run)`));
+        }
+        if (project.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
+          const target = project.localSettings.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.local.json"
+            : project.data.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.json" : "user Claude settings";
+          ctx.log(`RECOMMENDATION security approval: set sandbox.autoAllowBashIfSandboxed to true in ${target} for the strict sandbox profile; the explicit false was preserved.`);
+        }
+        await safePath(project.file);
+        if (securityDigest(await optionalBytes(project.file)) !== securityDigest(project.before)) throw new Error("Concurrent edit of project settings; security configuration was preserved");
+        if (project.changes.length) await projectManifest.write(project.file, serializeSecurity(project.data, project.before?.toString("utf8")));
+        if (!ctx.dryRun && project.changes.length) completed.push("project Claude settings");
+        for (const gap of project.gaps) {
+          if (gap === "sandbox-autoapproval-requires-full-sandbox-profile") ctx.log("WARN security coverage: auto-approval was not enabled because it requires the full sandbox profile");
+          else ctx.log(`WARN security coverage: ${gap}`);
+        }
+      }
+      if (ctx.dryRun) ctx.log("Security version/runtime checks not executed in dry run; effective coverage unknown");
+      if (security.evidence.versionEvidence === "windows-binary-ignored") ctx.log(`WARN security claude: a Windows copy at ${plain(security.evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these), so its version is unknown and version-gated settings are not added or updated by this install (existing ones are kept); install Claude Code inside WSL and re-run`);
+      ctx.log("Check native permissions and security coverage: npx canonkit doctor");
+    }
+      } catch (err) {
+        if (completed.length) ctx.log(`Partial installation: completed ${completed.join(" and ")}; later stages did not complete. Receipts and private snapshots remain; fix the reported condition and re-run install. Removed hook registrations were not restored.`);
+        throw err;
+      } finally { await projectManifest?.close(); }
     },
   };
 }
@@ -1698,11 +1014,7 @@ async function planInstall(ctx, options = {}) {
 async function install(ctx, options = {}) {
   const plan = await planInstall(ctx, options);
   try {
-    const securityDecision = await reviewSecurity(
-      ctx,
-      plan.security,
-      options.review,
-    );
+    const securityDecision = await reviewSecurity(ctx, plan.security, options.review);
     await plan.apply(securityDecision);
   } finally {
     await plan.close();
@@ -1711,38 +1023,22 @@ async function install(ctx, options = {}) {
 
 function interactiveHeading(title) {
   const line = `── ${title} ──────────`;
-  return process.stdout.isTTY &&
-    !Object.hasOwn(process.env, "NO_COLOR") &&
-    process.env.TERM !== "dumb"
-    ? `\u001b[1m${line}\u001b[0m`
-    : line;
+  return process.stdout.isTTY && !Object.hasOwn(process.env, "NO_COLOR") && process.env.TERM !== "dumb" ? `\u001b[1m${line}\u001b[0m` : line;
 }
 
 function printRecommendedSetup(ctx, modelPlan, security, projectInScope) {
   const modelRows = modelPlan?.rows ?? [];
   const allUserSecurityRows = security?.global?.rows ?? [];
-  const allProjectSecurityRows = projectInScope
-    ? (security?.project?.rows ?? [])
-    : [];
-  const securityComplete =
-    allProjectSecurityRows.length > 0 &&
-    allProjectSecurityRows.every((row) => row.marker === "=");
+  const allProjectSecurityRows = projectInScope ? (security?.project?.rows ?? []) : [];
+  const securityComplete = allProjectSecurityRows.length > 0 && allProjectSecurityRows.every((row) => row.marker === "=");
   const userRows = [
     ...modelRows,
-    ...allUserSecurityRows
-      .filter((row) => row.marker !== "=")
-      .map((row) => ({ ...row, label: row.path })),
+    ...allUserSecurityRows.filter((row) => row.marker !== "=").map((row) => ({ ...row, label: row.path })),
   ];
   const projectRows = projectInScope
-    ? allProjectSecurityRows
-        .filter((row) => row.marker !== "=")
-        .map((row) => ({ ...row, label: row.path }))
+    ? allProjectSecurityRows.filter((row) => row.marker !== "=").map((row) => ({ ...row, label: row.path }))
     : [];
-  const allRows = [
-    ...modelRows,
-    ...allUserSecurityRows,
-    ...allProjectSecurityRows,
-  ];
+  const allRows = [...modelRows, ...allUserSecurityRows, ...allProjectSecurityRows];
   ctx.log(interactiveHeading("Recommended setup"));
   ctx.log("");
   ctx.log(LEGEND);
@@ -1750,23 +1046,18 @@ function printRecommendedSetup(ctx, modelPlan, security, projectInScope) {
   ctx.log("USER · Models");
   if (modelRows.length) {
     const labelWidth = Math.max(...modelRows.map((row) => row.label.length));
-    for (const row of modelRows)
-      ctx.log(
-        `  ${rowText({ ...row, label: row.label.padEnd(labelWidth) }, { limit: 76 })}`,
-      );
-  } else ctx.log("  no model changes");
+    for (const row of modelRows) ctx.log(`  ${rowText({ ...row, label: row.label.padEnd(labelWidth) }, { limit: 76 })}`);
+  }
+  else ctx.log("  no model changes");
   ctx.log("");
   ctx.log("USER · Security");
   const userSecurityRows = userRows.filter((row) => !modelRows.includes(row));
-  if (userSecurityRows.length)
-    for (const row of userSecurityRows)
-      ctx.log(`  ${rowText(row, { limit: 76 })}`);
+  if (userSecurityRows.length) for (const row of userSecurityRows) ctx.log(`  ${rowText(row, { limit: 76 })}`);
   else ctx.log("  no user security changes");
   ctx.log("");
   ctx.log("PROJECT · Security");
   if (!projectInScope) ctx.log("  not set up");
-  else if (projectRows.length)
-    for (const row of projectRows) ctx.log(`  ${rowText(row, { limit: 76 })}`);
+  else if (projectRows.length) for (const row of projectRows) ctx.log(`  ${rowText(row, { limit: 76 })}`);
   else ctx.log("  no project changes");
   if (securityComplete) {
     ctx.log("  ✓ Already at the recommended profile");
@@ -1779,19 +1070,14 @@ function printRecommendedSetup(ctx, modelPlan, security, projectInScope) {
     else if (row.marker === "!") counts.unresolved++;
   }
   ctx.log("");
-  ctx.log(
-    `${counts.replaced + counts.added} changes · ${counts.replaced} replaced · ${counts.added} added`,
-  );
-  ctx.log(
-    `${counts.matched} already recommended${counts.unresolved ? ` · ! ${counts.unresolved} unresolved` : ""}`,
-  );
+  ctx.log(`${counts.replaced + counts.added} changes · ${counts.replaced} replaced · ${counts.added} added`);
+  ctx.log(`${counts.matched} already recommended${counts.unresolved ? ` · ! ${counts.unresolved} unresolved` : ""}`);
   ctx.log("");
   return { userRows, projectRows, allRows };
 }
 
 async function askInstallChoice(prompt, question, { report = true } = {}) {
-  const ask =
-    prompt ?? (async (config) => (await import("prompts")).default(config));
+  const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
   const configuration = {
     ...question,
     message: fitMenuLine(question.message ?? ""),
@@ -1799,9 +1085,7 @@ async function askInstallChoice(prompt, question, { report = true } = {}) {
     choices: question.choices?.map((choice) => ({
       ...choice,
       title: fitMenuLine(choice.title ?? ""),
-      description: choice.description
-        ? fitMenuLine(choice.description, 74)
-        : choice.description,
+      description: choice.description ? fitMenuLine(choice.description, 74) : choice.description,
     })),
     instructions: false,
   };
@@ -1832,123 +1116,54 @@ async function askInstallChoice(prompt, question, { report = true } = {}) {
   return { value: answer };
 }
 
-function printInstallSummary(
-  ctx,
-  {
-    targets,
-    projectItems,
-    projectInScope,
-    modelPlan,
-    customModelPlan,
-    setupAnswer,
-    security,
-    securityDecision,
-  },
-) {
+function printInstallSummary(ctx, { targets, projectItems, projectInScope, modelPlan, customModelPlan, setupAnswer, security, securityDecision }) {
   ctx.log(interactiveHeading("Review installation"));
   ctx.log("");
   ctx.log("USER");
-  ctx.log(
-    fitMenuLine(
-      `  Harnesses: ${targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target]).join(", ")}`,
-    ),
-  );
+  ctx.log(fitMenuLine(`  Harnesses: ${targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target]).join(", ")}`));
   let legendPrinted = false;
   const printLegend = () => {
     if (!legendPrinted) ctx.log(`  ${LEGEND}`);
     legendPrinted = true;
   };
   if (setupAnswer === "keep") ctx.log("  Models: unchanged (kept current)");
-  else if (
-    setupAnswer === "recommended" &&
-    modelPlan?.rows.length &&
-    modelPlan.rows.every((row) => row.marker === "=")
-  )
-    ctx.log("  Models: unchanged");
+  else if (setupAnswer === "recommended" && modelPlan?.rows.length && modelPlan.rows.every((row) => row.marker === "=")) ctx.log("  Models: unchanged");
   else if (setupAnswer === "recommended" && modelPlan?.rows.length) {
     printLegend();
-    for (const row of modelPlan.rows)
-      ctx.log(fitMenuLine(`  ${rowText(row, { limit: 76 })}`));
+    for (const row of modelPlan.rows) ctx.log(fitMenuLine(`  ${rowText(row, { limit: 76 })}`));
   } else if (setupAnswer === "customize" && customModelPlan?.apply) {
     ctx.log("  Model choices: customized");
   }
   const userSecurity = security?.global?.rows ?? [];
   const selected = new Set(securityDecision?.selectedRows ?? []);
-  const visibleUserSecurity =
-    setupAnswer === "keep"
-      ? []
-      : userSecurity.filter(
-          (row) =>
-            setupAnswer === "recommended" ||
-            setupAnswer === "default" ||
-            selected.has(row.answerKey) ||
-            selected.has(row.path),
-        );
+  const visibleUserSecurity = setupAnswer === "keep" ? [] : userSecurity.filter((row) =>
+    setupAnswer === "recommended" || setupAnswer === "default" || selected.has(row.answerKey) || selected.has(row.path));
   if (setupAnswer === "keep") ctx.log("  Security: unchanged (kept current)");
-  else if (
-    setupAnswer === "recommended" &&
-    userSecurity.length &&
-    userSecurity.every((row) => row.marker === "=")
-  )
-    ctx.log("  Security: unchanged");
+  else if (setupAnswer === "recommended" && userSecurity.length && userSecurity.every((row) => row.marker === "=")) ctx.log("  Security: unchanged");
   else if (visibleUserSecurity.length) {
     printLegend();
-    for (const row of visibleUserSecurity)
-      ctx.log(
-        fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`),
-      );
+    for (const row of visibleUserSecurity) ctx.log(fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`));
   } else if (!modelPlan?.rows.length) ctx.log("  Models: unchanged");
-  if (setupAnswer === "customize" && selected.has(TELEMETRY_ANSWER))
-    ctx.log(
-      `  + sandbox.filesystem.allowRead: ${TELEMETRY_READ_ITEM} (sandboxed commands can read your activity history)`,
-    );
+  if (setupAnswer === "customize" && selected.has(TELEMETRY_ANSWER)) ctx.log(`  + sandbox.filesystem.allowRead: ${TELEMETRY_READ_ITEM} (sandboxed commands can read your activity history)`);
 
   ctx.log("");
   ctx.log("PROJECT");
   if (!projectInScope) ctx.log("  not set up");
   else {
-    const itemNames = [
-      ...(projectItems?.tools ?? []),
-      ...(projectItems?.specialists ?? []),
-      ...(projectItems?.stacks ?? []),
-    ];
-    if (itemNames.length)
-      ctx.log(fitMenuLine(`  Items: ${itemNames.join(", ")}`));
+    const itemNames = [...(projectItems?.tools ?? []), ...(projectItems?.specialists ?? []), ...(projectItems?.stacks ?? [])];
+    if (itemNames.length) ctx.log(fitMenuLine(`  Items: ${itemNames.join(", ")}`));
     else ctx.log("  No project items selected");
-    if (projectItems?.skippedTools?.length)
-      ctx.log(
-        fitMenuLine(
-          `  Skipped (not installed): ${projectItems.skippedTools.join(", ")}`,
-        ),
-      );
+    if (projectItems?.skippedTools?.length) ctx.log(fitMenuLine(`  Skipped (not installed): ${projectItems.skippedTools.join(", ")}`));
     const projectSecurity = security?.project?.rows ?? [];
-    const visibleProjectSecurity =
-      setupAnswer === "keep"
-        ? []
-        : projectSecurity.filter(
-            (row) =>
-              setupAnswer === "recommended" ||
-              setupAnswer === "default" ||
-              selected.has(row.answerKey) ||
-              selected.has(row.path),
-          );
+    const visibleProjectSecurity = setupAnswer === "keep" ? [] : projectSecurity.filter((row) =>
+      setupAnswer === "recommended" || setupAnswer === "default" || selected.has(row.answerKey) || selected.has(row.path));
     if (setupAnswer === "keep") ctx.log("  Security: unchanged (kept current)");
-    else if (
-      setupAnswer === "recommended" &&
-      projectSecurity.length &&
-      projectSecurity.every((row) => row.marker === "=")
-    )
-      ctx.log("  Security: unchanged");
+    else if (setupAnswer === "recommended" && projectSecurity.length && projectSecurity.every((row) => row.marker === "=")) ctx.log("  Security: unchanged");
     else if (visibleProjectSecurity.length) {
       printLegend();
-      for (const row of visibleProjectSecurity)
-        ctx.log(
-          fitMenuLine(
-            `  ${rowText({ ...row, label: row.path }, { limit: 76 })}`,
-          ),
-        );
-    } else if (security?.project?.notConfigured)
-      ctx.log("  Security: not set up");
+      for (const row of visibleProjectSecurity) ctx.log(fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`));
+    }
+    else if (security?.project?.notConfigured) ctx.log("  Security: not set up");
     else ctx.log("  No project security changes");
   }
   ctx.log("");
@@ -1966,9 +1181,7 @@ async function removeAgentsLeftovers(ctx, coreAgents) {
     try {
       if (!(await lstat(file)).isFile()) continue;
       if (toLf(await readFile(file, "utf8")) !== agent.source) {
-        ctx.log(
-          `  kept ${file}: differs from this package's ${agent.name} (delete it by hand if unwanted)`,
-        );
+        ctx.log(`  kept ${file}: differs from this package's ${agent.name} (delete it by hand if unwanted)`);
         continue;
       }
     } catch (err) {
@@ -1977,9 +1190,7 @@ async function removeAgentsLeftovers(ctx, coreAgents) {
       continue;
     }
     await ctx.remove(file);
-    ctx.log(
-      `  ${ctx.dryRun ? "would remove" : "removed"} 2.0 leftover: ${file}`,
-    );
+    ctx.log(`  ${ctx.dryRun ? "would remove" : "removed"} 2.0 leftover: ${file}`);
   }
 }
 
@@ -2006,24 +1217,17 @@ async function installDistribution(ctx, options = {}) {
   if (wire && opencode) {
     await readOpencodeConfigForWiring();
     // A dry run starts no program, `opencode --version` included.
-    if (ctx.dryRun)
-      ctx.log(
-        "would check that opencode --version is 2 or later (not run in a dry run)",
-      );
+    if (ctx.dryRun) ctx.log("would check that opencode --version is 2 or later (not run in a dry run)");
     else refuseOpencodeBelow2();
   }
 
   // User-level agents follow the user's choices only: a project's choices
   // reach them through dispatch parameters, never by rewriting them here.
   // Read before any write, so a file this version cannot trust stops the install.
-  const userChoices =
-    claude || codex
-      ? (options.userModelChoices ?? (await readChoices(userConfigPath())))
-      : null;
+  const userChoices = claude || codex ? options.userModelChoices ?? await readChoices(userConfigPath()) : null;
   if (!options.userModelChoices) await discoverModels(ctx, targets);
   const codexCatalog = codex
-    ? (options.userModelCatalog ??
-      (await readCatalog(catalogPath()).catch(() => null)))
+    ? options.userModelCatalog ?? await readCatalog(catalogPath()).catch(() => null)
     : null;
 
   // Claude Code reads ~/.claude/agents only; no verified harness reads
@@ -2033,10 +1237,7 @@ async function installDistribution(ctx, options = {}) {
   for (const dest of dests) {
     await ctx.mkdir(dest);
     for (const agent of core(agents)) {
-      await ctx.write(
-        path.join(dest, `${agent.name}.md`),
-        claudeAgent(agent, choiceFor(agent, "claude", { user: userChoices })),
-      );
+      await ctx.write(path.join(dest, `${agent.name}.md`), claudeAgent(agent, choiceFor(agent, "claude", { user: userChoices })));
     }
     ctx.log(`Installed ${core(agents).length} agents -> ${dest}`);
 
@@ -2046,10 +1247,7 @@ async function installDistribution(ctx, options = {}) {
     for (const agent of specialists(agents)) {
       const stray = path.join(dest, `${agent.name}.md`);
       if (existsSync(stray)) {
-        if (ctx.manifest) {
-          ctx.log(`  preserved untracked user-level specialist: ${stray}`);
-          continue;
-        }
+        if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
         await ctx.remove(stray);
         ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
       }
@@ -2062,10 +1260,7 @@ async function installDistribution(ctx, options = {}) {
   if (claude) await removeAgentsLeftovers(ctx, core(agents));
 
   if (codex) {
-    await installCodex(ctx, agents, path.join(codexHome(), "agents"), {
-      userChoices,
-      record: codexCatalog?.harnesses?.codex,
-    });
+    await installCodex(ctx, agents, path.join(codexHome(), "agents"), { userChoices, record: codexCatalog?.harnesses?.codex });
     await installCodexHooks(ctx, { wire });
   }
   if (opencode) {
@@ -2074,9 +1269,7 @@ async function installDistribution(ctx, options = {}) {
   }
   if (copilot) await installCopilot(ctx, agents, copilotAgentsDir());
   if (claude) {
-    const planned = await installHooks(ctx, path.join(claudeHome(), "hooks"), {
-      wire,
-    });
+    const planned = await installHooks(ctx, path.join(claudeHome(), "hooks"), { wire });
     await upgradeFromMeuTime(ctx, claudeHome(), { wire, planned });
     await installDashboard(ctx, path.join(claudeHome(), "canonkit-dashboard"));
   }
@@ -2093,17 +1286,11 @@ async function installDistribution(ctx, options = {}) {
 
   ctx.log("");
   ctx.log("Core installed.");
-  if (options.showProjectHint)
-    ctx.log(
-      "Project items: run npx canonkit list to see optional tools, specialists and stack packs.",
-    );
+  if (options.showProjectHint) ctx.log("Project items: run npx canonkit list to see optional tools, specialists and stack packs.");
   // doctor checks the Claude Code half (the agents, the blocks and the hook),
   // plus the Codex hook where one is installed. Without Claude Code its rows
   // would all FAIL, so a Codex-only install is not pointed at it.
-  if (claude)
-    ctx.log(
-      "Check the install (agents, blocks, hook wiring, config): npx canonkit doctor",
-    );
+  if (claude) ctx.log("Check the install (agents, blocks, hook wiring, config): npx canonkit doctor");
 }
 
 /**
@@ -2117,9 +1304,7 @@ async function discoverModels(ctx, targets) {
   try {
     await refreshModels(ctx, { harnesses, keepWithin: 24 * 60 * 60 * 1000 });
   } catch (err) {
-    ctx.log(
-      `WARN model discovery: ${err.message}; agents keep their configured choices or inherit`,
-    );
+    ctx.log(`WARN model discovery: ${err.message}; agents keep their configured choices or inherit`);
   }
 }
 
@@ -2130,23 +1315,14 @@ async function discoverModels(ctx, targets) {
 async function installCodex(ctx, agents, dest, { userChoices, record } = {}) {
   await ctx.mkdir(dest);
   for (const agent of core(agents)) {
-    await ctx.write(
-      path.join(dest, `${agent.name}.toml`),
-      codexAgent(
-        agent,
-        codexChoiceFor(agent, { user: userChoices }, record, ctx),
-      ),
-    );
+    await ctx.write(path.join(dest, `${agent.name}.toml`), codexAgent(agent, codexChoiceFor(agent, { user: userChoices }, record, ctx)));
   }
   ctx.log(`Installed ${core(agents).length} agents -> ${dest}`);
 
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.toml`);
     if (existsSync(stray)) {
-      if (ctx.manifest) {
-        ctx.log(`  preserved untracked user-level specialist: ${stray}`);
-        continue;
-      }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.toml`);
     }
@@ -2161,102 +1337,55 @@ async function installCodex(ctx, agents, dest, { userChoices, record } = {}) {
   const stale = await olderCopies(dest, agents, ".toml");
 
   if (stale.length) {
-    ctx.log(
-      `  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`,
-    );
-    ctx.log(
-      "  Codex does not load these — remove them yourself once you have checked.",
-    );
+    ctx.log(`  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`);
+    ctx.log("  Codex does not load these — remove them yourself once you have checked.");
   }
 }
 
-async function installProjectCodex(
-  ctx,
-  manifest,
-  root,
-  project,
-  { userChoices, catalog } = {},
-) {
+async function installProjectCodex(ctx, manifest, root, project, { userChoices, catalog } = {}) {
   const agents = core(await readAgents());
-  const user = userChoices ?? (await readChoices(userConfigPath()));
-  const record = (
-    catalog ?? (await readCatalog(catalogPath()).catch(() => null))
-  )?.harnesses?.codex;
+  const user = userChoices ?? await readChoices(userConfigPath());
+  const record = (catalog ?? await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
   for (const agent of agents) {
     const file = path.join(root, ".codex", "agents", `${agent.name}.toml`);
     const relative = path.relative(root, file);
-    if (
-      !relative ||
-      relative.startsWith(`..${path.sep}`) ||
-      relative === ".." ||
-      path.isAbsolute(relative)
-    )
-      throw new Error("Project Codex destination escapes repository root");
+    if (!relative || relative.startsWith(`..${path.sep}`) || relative === ".." || path.isAbsolute(relative)) throw new Error("Project Codex destination escapes repository root");
     await safePath(file);
     const spec = manifest.byPath.get(path.resolve(file));
-    if (!spec)
-      throw new Error(`Uncatalogued project Codex agent: ${agent.name}`);
+    if (!spec) throw new Error(`Uncatalogued project Codex agent: ${agent.name}`);
     const userChoice = codexChoiceFor(agent, { user }, record, ctx);
     const projectChoice = codexChoiceFor(agent, { user, project }, record, ctx);
-    const desired =
-      project &&
-      (userChoice.model !== projectChoice.model ||
-        userChoice.effort !== projectChoice.effort);
-    if (!desired) {
-      await manifest.retire(file);
-      continue;
-    }
+    const desired = project && (userChoice.model !== projectChoice.model || userChoice.effort !== projectChoice.effort);
+    if (!desired) { await manifest.retire(file); continue; }
     const receipt = manifest.data.entries[spec.id];
     if (existsSync(file) && !receipt) {
       ctx.log(`WARN preexisting project Codex agent preserved: ${file}`);
       continue;
     }
     if (receipt) {
-      const bytes = await readFile(file).catch((err) => {
-        if (err.code === "ENOENT") return null;
-        throw err;
-      });
-      if (
-        bytes &&
-        createHash("sha256").update(bytes).digest("hex") !== receipt.hash
-      ) {
+      const bytes = await readFile(file).catch((err) => { if (err.code === "ENOENT") return null; throw err; });
+      if (bytes && createHash("sha256").update(bytes).digest("hex") !== receipt.hash) {
         await manifest.retire(file);
         continue;
       }
     }
     await manifest.write(file, codexAgent(agent, projectChoice));
-    ctx.log(
-      `${ctx.dryRun ? "would install" : "Installed"} project Codex agent: ${agent.name}`,
-    );
+    ctx.log(`${ctx.dryRun ? "would install" : "Installed"} project Codex agent: ${agent.name}`);
   }
 }
 
 // Files in dest that are not this repo's but carry one of its agents' names.
 async function olderCopies(dest, agents, ext) {
   const owned = new Set(agents.map((a) => `${a.name}${ext}`));
-  const entries = existsSync(dest)
-    ? await readdir(dest, { withFileTypes: true })
-    : [];
+  const entries = existsSync(dest) ? await readdir(dest, { withFileTypes: true }) : [];
   return entries
     .filter((e) => e.isFile() && !owned.has(e.name) && !e.name.startsWith("."))
-    .filter((e) =>
-      agents.some((a) =>
-        e.name
-          .toLowerCase()
-          .replace(/\.[^.]+$/, "")
-          .split(/[^a-z0-9]+/)
-          .includes(a.name),
-      ),
-    );
+    .filter((e) => agents.some((a) => e.name.toLowerCase().replace(/\.[^.]+$/, "").split(/[^a-z0-9]+/).includes(a.name)));
 }
 
 // OpenCode's global config folder: $XDG_CONFIG_HOME/opencode, else
 // ~/.config/opencode — on Windows too.
-const opencodeDir = () =>
-  path.join(
-    process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"),
-    "opencode",
-  );
+const opencodeDir = () => path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config"), "opencode");
 const opencodeAgentsDir = () => path.join(opencodeDir(), "agents");
 const copilotAgentsDir = () => path.join(copilotHome(), "agents");
 
@@ -2274,10 +1403,7 @@ async function installOpencode(ctx, agents, dest) {
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.md`);
     if (existsSync(stray)) {
-      if (ctx.manifest) {
-        ctx.log(`  preserved untracked user-level specialist: ${stray}`);
-        continue;
-      }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
       ctx.log(`  removed specialist left at user level: ${agent.name}.md`);
     }
@@ -2288,36 +1414,24 @@ async function installOpencode(ctx, agents, dest) {
   const stale = await olderCopies(dest, agents, ".md");
 
   if (stale.length) {
-    ctx.log(
-      `  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`,
-    );
-    ctx.log(
-      "  OpenCode loads any .md here as an agent — remove them yourself once you have checked.",
-    );
+    ctx.log(`  possible older copies of agents this repo owns: ${stale.map((e) => e.name).join(", ")}`);
+    ctx.log("  OpenCode loads any .md here as an agent — remove them yourself once you have checked.");
   }
 }
 
 async function installCopilot(ctx, agents, dest) {
   await ctx.mkdir(dest);
   for (const agent of core(agents)) {
-    await ctx.write(
-      path.join(dest, `${agent.name}.agent.md`),
-      copilotAgent(agent),
-    );
+    await ctx.write(path.join(dest, `${agent.name}.agent.md`), copilotAgent(agent));
   }
   ctx.log(`Installed ${core(agents).length} agents -> ${dest}`);
 
   for (const agent of specialists(agents)) {
     const stray = path.join(dest, `${agent.name}.agent.md`);
     if (existsSync(stray)) {
-      if (ctx.manifest) {
-        ctx.log(`  preserved untracked user-level specialist: ${stray}`);
-        continue;
-      }
+      if (ctx.manifest) { ctx.log(`  preserved untracked user-level specialist: ${stray}`); continue; }
       await ctx.remove(stray);
-      ctx.log(
-        `  removed specialist left at user level: ${agent.name}.agent.md`,
-      );
+      ctx.log(`  removed specialist left at user level: ${agent.name}.agent.md`);
     }
   }
 }
@@ -2332,15 +1446,11 @@ async function installCopilot(ctx, agents, dest) {
  * problem the agents had, in its worse form, because nothing validated it.
  */
 async function installHooks(ctx, dest, { wire = false } = {}) {
-  const files = HOOK_FILES.claude.filter((f) =>
-    existsSync(path.join(HOOKS_DIR, f)),
-  );
+  const files = HOOK_FILES.claude.filter((f) => existsSync(path.join(HOOKS_DIR, f)));
   if (!files.length) return null;
 
   await copyKeepingLocal(ctx, HOOKS_DIR, dest, files);
-  ctx.log(
-    `Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`,
-  );
+  ctx.log(`Installed ${files.length} hook${files.length === 1 ? "" : "s"} -> ${dest}`);
 
   if (wire) return wireHooks(ctx, dest);
   await reportHookWiring(ctx, dest, files);
@@ -2377,11 +1487,7 @@ async function installDashboard(ctx, dest) {
  * .local.bak — there is no shipped copy left to tell an edit from.
  * Legacy handling sunsets in 2.0.
  */
-const LEGACY = {
-  hook: "meu-time-hook.js",
-  log: "meu-time-activity",
-  dashboard: "meu-time-dashboard",
-};
+const LEGACY = { hook: "meu-time-hook.js", log: "meu-time-activity", dashboard: "meu-time-dashboard" };
 const FORWARDER_MARK = "canonkit-forwarder";
 const HOOK_FORWARDER = `#!/usr/bin/env node
 // ${FORWARDER_MARK}: written by \`canonkit install\`. A settings.json (the global
@@ -2398,9 +1504,7 @@ require('./canonkit-hook.js').run();
 // would read as edited by hand: never refreshed, never removed.
 const SHIPPED_FORWARDERS = [];
 const forwarderFor = (current) =>
-  current.includes(FORWARDER_MARK) &&
-  current.includes(".run()") &&
-  !SHIPPED_FORWARDERS.includes(current)
+  current.includes(FORWARDER_MARK) && current.includes(".run()") && !SHIPPED_FORWARDERS.includes(current)
     ? current
     : HOOK_FORWARDER;
 // The hook rotates its log at 2 MB. A merged log is split so the live file starts
@@ -2408,11 +1512,7 @@ const forwarderFor = (current) =>
 // the Stop gate reads, current session included.
 const LOG_TAIL_BYTES = 1024 * 1024;
 
-async function upgradeFromMeuTime(
-  ctx,
-  claudeDir,
-  { wire = false, planned = null } = {},
-) {
+async function upgradeFromMeuTime(ctx, claudeDir, { wire = false, planned = null } = {}) {
   const notes = [];
   // History is user data, never an uninstall-owned artifact. Keep the existing
   // migration's merge/rollback guarantees without claiming ownership of logs.
@@ -2426,15 +1526,11 @@ async function upgradeFromMeuTime(
     } else {
       try {
         await history.move(oldLog, newLog);
-        notes.push(
-          `moved ~/.claude/${LEGACY.log} -> ~/.claude/canonkit-activity (history kept)`,
-        );
+        notes.push(`moved ~/.claude/${LEGACY.log} -> ~/.claude/canonkit-activity (history kept)`);
       } catch (err) {
         // A file held open (a running dashboard on Windows) blocks the move. The
         // read-through keeps the history visible, so the install goes on.
-        notes.push(
-          `could not move ~/.claude/${LEGACY.log} (${err.code ?? err.message}); it is still read in place.`,
-        );
+        notes.push(`could not move ~/.claude/${LEGACY.log} (${err.code ?? err.message}); it is still read in place.`);
         notes.push("  Re-run install once nothing holds it open.");
       }
     }
@@ -2455,30 +1551,18 @@ async function upgradeFromMeuTime(
       if (retire.remove) await ctx.remove(oldHook);
       notes.push(...retire.notes);
     } else if (next !== HOOK_FORWARDER) {
-      notes.push(
-        `${LEGACY.hook} carries the forwarder mark but was edited by hand; left as is.`,
-      );
+      notes.push(`${LEGACY.hook} carries the forwarder mark but was edited by hand; left as is.`);
     } else if (settingsMention(claudeDir, LEGACY.hook)) {
-      notes.push(
-        `settings.json still runs ${LEGACY.hook}: it now forwards to canonkit-hook.js, so the gates`,
-      );
-      notes.push(
-        `  keep firing. Replace that command with canonkit-hook.js (wiring above), then delete ${LEGACY.hook}.`,
-      );
+      notes.push(`settings.json still runs ${LEGACY.hook}: it now forwards to canonkit-hook.js, so the gates`);
+      notes.push(`  keep firing. Replace that command with canonkit-hook.js (wiring above), then delete ${LEGACY.hook}.`);
     } else {
-      notes.push(
-        `${LEGACY.hook} now forwards to canonkit-hook.js, in case a project's .claude/settings.json`,
-      );
-      notes.push(
-        "  still runs it. Point those at canonkit-hook.js, then delete it.",
-      );
+      notes.push(`${LEGACY.hook} now forwards to canonkit-hook.js, in case a project's .claude/settings.json`);
+      notes.push("  still runs it. Point those at canonkit-hook.js, then delete it.");
     }
   }
 
   if (existsSync(path.join(claudeDir, LEGACY.dashboard))) {
-    notes.push(
-      `~/.claude/${LEGACY.dashboard} is no longer updated: the dashboard is now ~/.claude/canonkit-dashboard.`,
-    );
+    notes.push(`~/.claude/${LEGACY.dashboard} is no longer updated: the dashboard is now ~/.claude/canonkit-dashboard.`);
     notes.push("  Delete the old one yourself.");
   }
 
@@ -2496,10 +1580,7 @@ async function upgradeFromMeuTime(
  * order. The old folder is then gone, so this runs once and never nags again.
  */
 async function mergeLegacyLog(ctx, oldLog, newLog) {
-  if (ctx.dryRun)
-    return [
-      `would merge ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity and remove it`,
-    ];
+  if (ctx.dryRun) return [`would merge ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity and remove it`];
   // Moved aside first: on Windows this is what fails while something (a running
   // dashboard) holds the folder, and then nothing has been touched yet.
   const staging = `${oldLog}.merging`;
@@ -2513,34 +1594,15 @@ async function mergeLegacyLog(ctx, oldLog, newLog) {
   }
   const live = path.join(newLog, "events.jsonl");
   const rotated = `${live}.1`;
-  const text = (f) => {
-    try {
-      return readRegularText(f);
-    } catch {
-      return "";
-    }
-  };
+  const text = (f) => { try { return readRegularText(f); } catch { return ""; } };
   const hadRotated = existsSync(rotated);
   const prevRotated = text(rotated);
   try {
     const before = text(live);
-    const lines = [
-      path.join(staging, "events.jsonl.1"),
-      path.join(staging, "events.jsonl"),
-      rotated,
-    ]
-      .map(text)
-      .concat(before)
-      .join("\n")
-      .split("\n")
-      .filter((l) => l.trim());
+    const lines = [path.join(staging, "events.jsonl.1"), path.join(staging, "events.jsonl"), rotated]
+      .map(text).concat(before).join("\n").split("\n").filter((l) => l.trim());
     let cut = lines.length;
-    for (
-      let bytes = 0;
-      cut > 0 &&
-      bytes + Buffer.byteLength(lines[cut - 1]) + 1 <= LOG_TAIL_BYTES;
-      cut--
-    ) {
+    for (let bytes = 0; cut > 0 && bytes + Buffer.byteLength(lines[cut - 1]) + 1 <= LOG_TAIL_BYTES; cut--) {
       bytes += Buffer.byteLength(lines[cut - 1]) + 1;
     }
     const body = (ls) => (ls.length ? ls.join("\n") + "\n" : "");
@@ -2548,38 +1610,23 @@ async function mergeLegacyLog(ctx, oldLog, newLog) {
     else await ctx.remove(rotated);
     // The hook appends while sessions run: whatever landed since the read above
     // is carried over right before the swap.
-    await ctx.writeAtomic(
-      live,
-      body(lines.slice(cut)) + text(live).slice(before.length),
-    );
+    await ctx.writeAtomic(live, body(lines.slice(cut)) + text(live).slice(before.length));
   } catch (err) {
     // Back to where it was, .1 included: a .1 that already holds the old lines,
     // next to a restored old folder, would merge them twice on the re-run.
     try {
       if (hadRotated) await ctx.writeAtomic(rotated, prevRotated);
       else await ctx.remove(rotated);
-    } catch {
-      /* best effort */
-    }
-    try {
-      await ctx.move(staging, oldLog);
-    } catch {
-      /* left at .merging */
-    }
-    return [
-      `could not merge ~/.claude/${LEGACY.log} into canonkit-activity (${err.code ?? err.message}); re-run install.`,
-    ];
+    } catch { /* best effort */ }
+    try { await ctx.move(staging, oldLog); } catch { /* left at .merging */ }
+    return [`could not merge ~/.claude/${LEGACY.log} into canonkit-activity (${err.code ?? err.message}); re-run install.`];
   }
   try {
     await ctx.removeTree(staging);
   } catch (err) {
-    return [
-      `merged ~/.claude/${LEGACY.log} into canonkit-activity; delete ~/.claude/${LEGACY.log}.merging (${err.code ?? err.message}).`,
-    ];
+    return [`merged ~/.claude/${LEGACY.log} into canonkit-activity; delete ~/.claude/${LEGACY.log}.merging (${err.code ?? err.message}).`];
   }
-  return [
-    `merged ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity (history kept) and removed it`,
-  ];
+  return [`merged ~/.claude/${LEGACY.log} into ~/.claude/canonkit-activity (history kept) and removed it`];
 }
 
 /**
@@ -2614,39 +1661,25 @@ function pathKey(p) {
 // readFileSync on a FIFO blocks forever: look first (stat follows a symlink to a
 // regular file, as readFileSync did) and treat anything else as unreadable.
 function readRegularSync(file) {
-  if (!statSync(file).isFile())
-    throw Object.assign(new Error(`${file} is not a regular file`), {
-      code: "ENOTREG",
-    });
+  if (!statSync(file).isFile()) throw Object.assign(new Error(`${file} is not a regular file`), { code: "ENOTREG" });
   return readFileSync(file);
 }
 
 const readRegularText = (file) => readRegularSync(file).toString("utf8");
 
 function legacyRunners(claudeDir, override = {}) {
-  const dirs = [
-    claudeDir,
-    ...[process.cwd(), process.env.CLAUDE_PROJECT_DIR]
-      .filter(Boolean)
-      .map((d) => path.join(d, ".claude")),
-  ];
+  const dirs = [claudeDir, ...[process.cwd(), process.env.CLAUDE_PROJECT_DIR].filter(Boolean).map((d) => path.join(d, ".claude"))];
   const seen = new Set();
   const running = [];
   const unreadable = [];
-  for (const file of dirs.flatMap((d) =>
-    ["settings.json", "settings.local.json"].map((f) => path.join(d, f)),
-  )) {
+  for (const file of dirs.flatMap((d) => ["settings.json", "settings.local.json"].map((f) => path.join(d, f)))) {
     if (seen.has(pathKey(file))) continue;
     seen.add(pathKey(file));
     let bytes;
     try {
-      bytes =
-        pathKey(file) in override
-          ? Buffer.from(override[pathKey(file)])
-          : readRegularSync(file);
+      bytes = pathKey(file) in override ? Buffer.from(override[pathKey(file)]) : readRegularSync(file);
     } catch (err) {
-      if (err.code !== "ENOENT" && err.code !== "ENOTDIR")
-        unreadable.push(file);
+      if (err.code !== "ENOENT" && err.code !== "ENOTDIR") unreadable.push(file);
       continue;
     }
     // Without the extension: `node .../meu-time-hook` runs the same file.
@@ -2659,9 +1692,7 @@ const slash = (p) => p.split(path.sep).join("/");
 const tilde = (p) => {
   const home = slash(os.homedir());
   const s = slash(p);
-  return s.toLowerCase().startsWith(home.toLowerCase() + "/")
-    ? `~${s.slice(home.length)}`
-    : s;
+  return s.toLowerCase().startsWith(home.toLowerCase() + "/") ? `~${s.slice(home.length)}` : s;
 };
 
 /**
@@ -2674,35 +1705,19 @@ function retireForwarder(ctx, claudeDir, file, content, planned) {
   const shown = tilde(file);
   const keep = (notes) => ({ remove: false, notes });
   if (content !== HOOK_FORWARDER) {
-    return keep([
-      `kept ${shown}: it was edited by hand (not the forwarder install writes). Delete it yourself once no settings.json runs it.`,
-    ]);
+    return keep([`kept ${shown}: it was edited by hand (not the forwarder install writes). Delete it yourself once no settings.json runs it.`]);
   }
-  const { running, unreadable } = legacyRunners(
-    claudeDir,
-    planned ? { [pathKey(planned.file)]: planned.text } : {},
-  );
+  const { running, unreadable } = legacyRunners(claudeDir, planned ? { [pathKey(planned.file)]: planned.text } : {});
   if (running.length || unreadable.length) {
     return keep([
-      ...running.map(
-        (f) =>
-          `kept ${shown}: ${slash(f)} still runs ${LEGACY.hook}. Point it at ${HOOK}, then re-run.`,
-      ),
-      ...unreadable.map(
-        (f) =>
-          `kept ${shown}: could not read ${slash(f)}, which may still run it.`,
-      ),
+      ...running.map((f) => `kept ${shown}: ${slash(f)} still runs ${LEGACY.hook}. Point it at ${HOOK}, then re-run.`),
+      ...unreadable.map((f) => `kept ${shown}: could not read ${slash(f)}, which may still run it.`),
     ]);
   }
   if (ctx.manifest) {
-    return keep([
-      `kept ${shown}: other projects cannot be enumerated. Point their .claude/settings.json at canonkit-hook.js, then delete the forwarder manually.`,
-    ]);
+    return keep([`kept ${shown}: other projects cannot be enumerated. Point their .claude/settings.json at canonkit-hook.js, then delete the forwarder manually.`]);
   }
-  if (ctx.dryRun)
-    return keep([
-      `would remove ${shown}: no settings file in sight runs it any more.`,
-    ]);
+  if (ctx.dryRun) return keep([`would remove ${shown}: no settings file in sight runs it any more.`]);
   return {
     remove: true,
     notes: [
@@ -2716,11 +1731,7 @@ function retireForwarder(ctx, claudeDir, file, content, planned) {
 // Raw text, not parsed: a settings file that is not valid JSON can still run the hook.
 function settingsMention(claudeDir, name) {
   return ["settings.json", "settings.local.json"].some((f) => {
-    try {
-      return readRegularText(path.join(claudeDir, f)).includes(name);
-    } catch {
-      return false;
-    }
+    try { return readRegularText(path.join(claudeDir, f)).includes(name); } catch { return false; }
   });
 }
 
@@ -2733,16 +1744,11 @@ function settingsMention(claudeDir, name) {
 async function copyKeepingLocal(ctx, fromDir, dest, files) {
   await ctx.mkdir(dest);
   for (const entry of files) {
-    const [src, file] =
-      typeof entry === "string" ? [entry, entry] : [entry.from, entry.to];
+    const [src, file] = typeof entry === "string" ? [entry, entry] : [entry.from, entry.to];
     const from = path.join(fromDir, src);
     const to = path.join(dest, file);
     await ctx.mkdir(path.dirname(to));
-    if (
-      !ctx.manifest &&
-      existsSync(to) &&
-      (await readOwned(to)) !== (await readOwned(from))
-    ) {
+    if (!ctx.manifest && existsSync(to) && (await readOwned(to)) !== (await readOwned(from))) {
       await ctx.copy(to, `${to}.local.bak`);
       ctx.log(`  ${file} differed — previous copy kept as ${file}.local.bak`);
     }
@@ -2768,21 +1774,13 @@ const isObject = (v) => !!v && typeof v === "object" && !Array.isArray(v);
 function wiringGaps(hooks, file) {
   const covers = (entry, tool) => {
     if (!entry.matcher || entry.matcher === "*") return true;
-    try {
-      return new RegExp(`^(?:${entry.matcher})$`).test(tool);
-    } catch {
-      return false;
-    }
+    try { return new RegExp(`^(?:${entry.matcher})$`).test(tool); } catch { return false; }
   };
   const gaps = [];
   for (const [event, matcher] of Object.entries(HOOK_EVENTS[file])) {
-    const own = (Array.isArray(hooks[event]) ? hooks[event] : []).filter(
-      (e) => isObject(e) && JSON.stringify(e.hooks ?? []).includes(file),
-    );
-    const covered =
-      own.length > 0 &&
-      (!matcher ||
-        matcher.split("|").every((tool) => own.some((e) => covers(e, tool))));
+    const own = (Array.isArray(hooks[event]) ? hooks[event] : [])
+      .filter((e) => isObject(e) && JSON.stringify(e.hooks ?? []).includes(file));
+    const covered = own.length > 0 && (!matcher || matcher.split("|").every((tool) => own.some((e) => covers(e, tool))));
     if (!covered) gaps.push([event, matcher]);
   }
   return gaps;
@@ -2801,9 +1799,7 @@ async function reportHookWiring(ctx, dest, files) {
     try {
       parsed = JSON.parse(readSettingsText(await readFile(settings, "utf8")));
     } catch {
-      ctx.log(
-        "  ~/.claude/settings.json is not valid JSON — cannot check hook wiring",
-      );
+      ctx.log("  ~/.claude/settings.json is not valid JSON — cannot check hook wiring");
       return;
     }
   }
@@ -2812,8 +1808,7 @@ async function reportHookWiring(ctx, dest, files) {
   const missing = []; // [file, event, matcher]
   for (const file of files) {
     if (HOOK_EVENTS[file]) {
-      for (const [event, matcher] of wiringGaps(hooks, file))
-        missing.push([file, event, matcher]);
+      for (const [event, matcher] of wiringGaps(hooks, file)) missing.push([file, event, matcher]);
     } else if (!JSON.stringify(hooks).includes(file)) {
       // A hook this map does not describe: the most that can be said is whether
       // anything references it at all.
@@ -2824,21 +1819,13 @@ async function reportHookWiring(ctx, dest, files) {
 
   ctx.log("");
   for (const file of new Set(missing.map(([f]) => f))) {
-    const events = missing
-      .filter(([f, e]) => f === file && e)
-      .map(([, e]) => e);
-    ctx.log(
-      `  ${file} is not referenced by ~/.claude/settings.json with required coverage${events.length ? ` under: ${events.join(", ")}` : ""}`,
-    );
+    const events = missing.filter(([f, e]) => f === file && e).map(([, e]) => e);
+    ctx.log(`  ${file} is not referenced by ~/.claude/settings.json with required coverage${events.length ? ` under: ${events.join(", ")}` : ""}`);
   }
-  ctx.log(
-    "  These hooks are optional; native approvals remain authoritative. To opt in explicitly (backup first):",
-  );
+  ctx.log("  These hooks are optional; native approvals remain authoritative. To opt in explicitly (backup first):");
   ctx.log("    npx canonkit install --wire-hooks");
-  ctx.log('  or add under "hooks" in settings.json yourself:');
-  ctx.log(
-    "  If an entry already exists, update its matcher instead of adding a duplicate hook.",
-  );
+  ctx.log("  or add under \"hooks\" in settings.json yourself:");
+  ctx.log("  If an entry already exists, update its matcher instead of adding a duplicate hook.");
   for (const [file, event, matcher] of missing) {
     const entry = `{ ${matcher ? `"matcher": "${matcher}", ` : ""}"hooks": [{ "type": "command", "command": "node ${slash(path.join(dest, file))}" }] }`;
     ctx.log(event ? `    "${event}": [${entry}]` : `    ${entry}`);
@@ -2852,29 +1839,20 @@ async function reportHookWiring(ctx, dest, files) {
  * install before it writes anything. Messages name key paths, never values.
  * Codex's hooks.json has the same shape under `hooks` and gets the same rule.
  */
-const readSettingsForWiring = (file) =>
-  readHooksFileForWiring(file, "~/.claude/settings.json");
+const readSettingsForWiring = (file) => readHooksFileForWiring(file, "~/.claude/settings.json");
 
 async function readHooksFileForWiring(file, label) {
   if (!existsSync(file)) return { text: null, data: {} };
   const text = (await readSecurityBytes(file)).toString("utf8");
   const refuse = (why) =>
-    new Error(
-      `Refusing --wire-hooks: ${label} ${why}. Nothing was written; fix it, then re-run.`,
-    );
+    new Error(`Refusing --wire-hooks: ${label} ${why}. Nothing was written; fix it, then re-run.`);
   let data;
-  try {
-    data = JSON.parse(readSettingsText(text));
-  } catch {
-    throw refuse("is not valid JSON");
-  }
+  try { data = JSON.parse(readSettingsText(text)); } catch { throw refuse("is not valid JSON"); }
   if (!isObject(data)) throw refuse("is not a JSON object");
   if (data.hooks !== undefined) {
-    if (!isObject(data.hooks))
-      throw refuse('has a "hooks" that is not an object');
+    if (!isObject(data.hooks)) throw refuse('has a "hooks" that is not an object');
     for (const [event, entries] of Object.entries(data.hooks)) {
-      if (!Array.isArray(entries))
-        throw refuse(`has hooks.${event}, which is not an array`);
+      if (!Array.isArray(entries)) throw refuse(`has hooks.${event}, which is not an array`);
     }
   }
   return { text, data };
@@ -2888,15 +1866,8 @@ async function readHooksFileForWiring(file, label) {
 // redirects): `node x;curl|sh;/canonkit-hook.js` is a wrapper, not the shape.
 const EXACT_HOOK_COMMAND =
   /^\s*node\s+(?:"(?:[^"$`]*[\\/])?(?:meu-time-hook|canonkit-hook)\.js"|'(?:[^']*[\\/])?(?:meu-time-hook|canonkit-hook)\.js'|(?:[^\s"';|&$`()<>]*[\\/])?(?:meu-time-hook|canonkit-hook)\.js)\s*$/;
-const isOurHook = (h) =>
-  isObject(h) &&
-  h.type === "command" &&
-  typeof h.command === "string" &&
-  EXACT_HOOK_COMMAND.test(h.command);
-const mentionsHook = (h) =>
-  isObject(h) &&
-  typeof h.command === "string" &&
-  /(?:meu-time-hook|canonkit-hook)\.js/.test(h.command);
+const isOurHook = (h) => isObject(h) && h.type === "command" && typeof h.command === "string" && EXACT_HOOK_COMMAND.test(h.command);
+const mentionsHook = (h) => isObject(h) && typeof h.command === "string" && /(?:meu-time-hook|canonkit-hook)\.js/.test(h.command);
 
 /**
  * The settings with the hook wired, and what changed, by key path. Per required
@@ -2912,17 +1883,13 @@ function wireSettings(data, command) {
   const hooks = out.hooks;
   const changes = [];
   const wrappers = [];
-  const entriesOf = (entry) =>
-    isObject(entry) && Array.isArray(entry.hooks) ? entry.hooks : [];
+  const entriesOf = (entry) => (isObject(entry) && Array.isArray(entry.hooks) ? entry.hooks : []);
   const canonical = (h) => ({ ...h, type: "command", command });
 
   for (const [event, entries] of Object.entries(hooks)) {
-    entries.forEach((entry, i) =>
-      entriesOf(entry).forEach((h, j) => {
-        if (mentionsHook(h) && !isOurHook(h))
-          wrappers.push(`hooks.${event}[${i}].hooks[${j}]`);
-      }),
-    );
+    entries.forEach((entry, i) => entriesOf(entry).forEach((h, j) => {
+      if (mentionsHook(h) && !isOurHook(h)) wrappers.push(`hooks.${event}[${i}].hooks[${j}]`);
+    }));
   }
 
   const required = HOOK_EVENTS[HOOK];
@@ -2930,13 +1897,9 @@ function wireSettings(data, command) {
     if (event in required) continue;
     hooks[event] = entries.map((entry) => {
       const list = entriesOf(entry);
-      if (!list.some((h) => isOurHook(h) && h.command !== command))
-        return entry;
+      if (!list.some((h) => isOurHook(h) && h.command !== command)) return entry;
       changes.push(`hooks.${event}: command now runs ${HOOK}`);
-      return {
-        ...entry,
-        hooks: list.map((h) => (isOurHook(h) ? canonical(h) : h)),
-      };
+      return { ...entry, hooks: list.map((h) => (isOurHook(h) ? canonical(h) : h)) };
     });
   }
 
@@ -2954,9 +1917,7 @@ function wireSettings(data, command) {
       const theirs = list.filter((h) => !isOurHook(h));
       if (theirs.length) {
         next.push({ ...entry, hooks: theirs });
-        note(
-          "moved out of an entry shared with other hooks (their matcher unchanged)",
-        );
+        note("moved out of an entry shared with other hooks (their matcher unchanged)");
         continue;
       }
       if (own) {
@@ -2973,10 +1934,7 @@ function wireSettings(data, command) {
       next.push(own);
     }
     if (!own) {
-      next.push({
-        ...(matcher ? { matcher } : {}),
-        hooks: [{ type: "command", command }],
-      });
+      next.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: "command", command }] });
       note("added");
     }
     hooks[event] = next;
@@ -2992,10 +1950,7 @@ function wireSettings(data, command) {
 function serializeSettings(data, original) {
   const indent = (original && /\n([ \t]+)"/.exec(original)?.[1]) || "  ";
   const text = JSON.stringify(data, null, indent) + "\n";
-  return (
-    (original?.startsWith("﻿") ? "﻿" : "") +
-    toEol(text, original ? usesCrlf(original) : false)
-  );
+  return (original?.startsWith("﻿") ? "﻿" : "") + toEol(text, original ? usesCrlf(original) : false);
 }
 
 /**
@@ -3007,37 +1962,18 @@ function serializeSettings(data, original) {
 async function wireHooks(ctx, dest) {
   const file = settingsPath();
   const { text, data } = await readSettingsForWiring(file);
-  if (
-    ctx.networkSecurityPlan &&
-    securityDigest(text === null ? null : Buffer.from(text)) !==
-      securityDigest(ctx.networkSecurityPlan.before)
-  )
-    throw new Error(
-      "Concurrent edit of user Claude settings; wiring was preserved",
-    );
+  if (ctx.networkSecurityPlan && securityDigest(text === null ? null : Buffer.from(text)) !== securityDigest(ctx.networkSecurityPlan.before)) throw new Error("Concurrent edit of user Claude settings; wiring was preserved");
   const command = `node "${slash(path.join(dest, HOOK))}"`;
-  const {
-    data: wired,
-    changes,
-    wrappers,
-  } = wireSettings(ctx.networkSecurityPlan?.data ?? data, command);
-  changes.push(
-    ...(ctx.networkSecurityPlan?.changes ?? []).map(
-      (key) => `${key}: restrictive user-scope setting applied`,
-    ),
-  );
+  const { data: wired, changes, wrappers } = wireSettings(ctx.networkSecurityPlan?.data ?? data, command);
+  changes.push(...(ctx.networkSecurityPlan?.changes ?? []).map((key) => `${key}: restrictive user-scope setting applied`));
   const after = serializeSettings(wired, text);
 
   ctx.log("");
   // Its own entry is still written beside a wrapper: wired is not left to a
   // command canonkit cannot read. Until the wrapper goes, the hook runs twice.
   for (const w of wrappers) {
-    ctx.log(
-      `  ${w}: a command that wraps the hook — left as is. If it runs it under an event wired below,`,
-    );
-    ctx.log(
-      `    the hook runs twice there (every gate asks twice): remove the wrapper or point it elsewhere.`,
-    );
+    ctx.log(`  ${w}: a command that wraps the hook — left as is. If it runs it under an event wired below,`);
+    ctx.log(`    the hook runs twice there (every gate asks twice): remove the wrapper or point it elsewhere.`);
   }
   if (JSON.stringify(wired) === JSON.stringify(data)) {
     await ctx.manifest?.observe(file);
@@ -3049,14 +1985,9 @@ async function wireHooks(ctx, dest) {
   } else {
     const bak = text === null ? null : await ctx.backup(file);
     await ctx.writeAtomic(file, after);
-    ctx.log(
-      `Wired ${HOOK} into ~/.claude/settings.json${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`,
-    );
+    ctx.log(`Wired ${HOOK} into ~/.claude/settings.json${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
     // The copy holds whatever settings.json holds, env tokens included.
-    if (bak)
-      ctx.log(
-        `  The backup carries the same values as settings.json (env included): keep it out of a dotfiles repo.`,
-      );
+    if (bak) ctx.log(`  The backup carries the same values as settings.json (env included): keep it out of a dotfiles repo.`);
   }
   for (const c of changes) ctx.log(`  ${c}`);
   return ctx.dryRun ? { file, text: after } : null;
@@ -3075,10 +2006,8 @@ const codexHooksPath = () => path.join(codexHome(), "hooks.json");
 // files it runs (slice 7), so a command that never changes is trusted once and
 // a refresh of canonkit/ asks for nothing. No commandWindows: Codex runs this
 // through powershell.exe, where `node "<path>"` works as it does in sh.
-const codexCommand = () =>
-  `node "${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}"`;
-const readCodexHooksForWiring = (file) =>
-  readHooksFileForWiring(file, tilde(file));
+const codexCommand = () => `node "${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}"`;
+const readCodexHooksForWiring = (file) => readHooksFileForWiring(file, tilde(file));
 
 // Inside double quotes sh and PowerShell still expand `$` and a backtick, and a
 // `"` ends the quote: a CODEX_HOME holding one would run another path or none,
@@ -3086,9 +2015,7 @@ const readCodexHooksForWiring = (file) =>
 function refuseUnquotableCodexPath() {
   const dir = slash(codexHooksDir());
   if (/["$`]/.test(dir)) {
-    throw new Error(
-      `Refusing --wire-hooks: the Codex hook path ${dir} holds ", $ or a backtick, which the shell Codex runs it through would expand. Nothing was written; set CODEX_HOME to a plain path, then re-run.`,
-    );
+    throw new Error(`Refusing --wire-hooks: the Codex hook path ${dir} holds ", $ or a backtick, which the shell Codex runs it through would expand. Nothing was written; set CODEX_HOME to a plain path, then re-run.`);
   }
 }
 
@@ -3096,11 +2023,7 @@ function refuseUnquotableCodexPath() {
 // EXACT_HOOK_COMMAND: a command that wraps the adapter is the user's.
 const EXACT_CODEX_COMMAND =
   /^\s*node\s+(?:"(?:[^"$`]*[\\/])?canonkit-codex\.js"|'(?:[^']*[\\/])?canonkit-codex\.js'|(?:[^\s"';|&$`()<>]*[\\/])?canonkit-codex\.js)\s*$/;
-const isOurCodexHook = (h) =>
-  isObject(h) &&
-  h.type === "command" &&
-  typeof h.command === "string" &&
-  EXACT_CODEX_COMMAND.test(h.command);
+const isOurCodexHook = (h) => isObject(h) && h.type === "command" && typeof h.command === "string" && EXACT_CODEX_COMMAND.test(h.command);
 
 /**
  * hooks.json with the adapter wired, what changed and what was left, by key
@@ -3114,45 +2037,31 @@ function wireCodexHooks(data, command) {
   const out = structuredClone(data);
   out.hooks ??= {};
   const groups = (out.hooks.PreToolUse ??= []);
-  const handlersOf = (g) =>
-    isObject(g) && Array.isArray(g.hooks) ? g.hooks : [];
-  const mine = groups.flatMap((g, i) =>
-    handlersOf(g).flatMap((h, j) => (isOurCodexHook(h) ? [[i, j]] : [])),
-  );
+  const handlersOf = (g) => (isObject(g) && Array.isArray(g.hooks) ? g.hooks : []);
+  const mine = groups.flatMap((g, i) => handlersOf(g).flatMap((h, j) => (isOurCodexHook(h) ? [[i, j]] : [])));
   const changes = [];
   const notes = [];
 
   if (!mine.length) {
-    groups.push({
-      matcher: CODEX_MATCHER,
-      hooks: [{ type: "command", command }],
-    });
+    groups.push({ matcher: CODEX_MATCHER, hooks: [{ type: "command", command }] });
     return { data: out, changes: ["hooks.PreToolUse: added"], notes };
   }
-  const [i, j] =
-    mine.find(([g, h]) => groups[g].hooks[h].command === command) ?? mine[0];
+  const [i, j] = mine.find(([g, h]) => groups[g].hooks[h].command === command) ?? mine[0];
   const group = groups[i];
   if (group.hooks[j].command !== command) {
     group.hooks[j] = { ...group.hooks[j], command };
-    changes.push(
-      `hooks.PreToolUse[${i}]: command now runs ${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}`,
-    );
+    changes.push(`hooks.PreToolUse[${i}]: command now runs ${slash(path.join(codexHooksDir(), CODEX_ADAPTER))}`);
   }
   if (group.matcher !== CODEX_MATCHER) {
     if (group.hooks.length === 1) {
       group.matcher = CODEX_MATCHER;
       changes.push(`hooks.PreToolUse[${i}]: matcher set to ${CODEX_MATCHER}`);
     } else {
-      notes.push(
-        `hooks.PreToolUse[${i}]: shared with other hooks, so its matcher is left as is — give ${CODEX_ADAPTER} a group of its own with matcher ${CODEX_MATCHER}`,
-      );
+      notes.push(`hooks.PreToolUse[${i}]: shared with other hooks, so its matcher is left as is — give ${CODEX_ADAPTER} a group of its own with matcher ${CODEX_MATCHER}`);
     }
   }
   for (const [g, h] of mine) {
-    if (g !== i || h !== j)
-      notes.push(
-        `hooks.PreToolUse[${g}].hooks[${h}]: a second ${CODEX_ADAPTER} hook, left in place (removing it would shift the trust of the hooks after it) — remove it yourself`,
-      );
+    if (g !== i || h !== j) notes.push(`hooks.PreToolUse[${g}].hooks[${h}]: a second ${CODEX_ADAPTER} hook, left in place (removing it would shift the trust of the hooks after it) — remove it yourself`);
   }
   return { data: out, changes, notes };
 }
@@ -3193,15 +2102,10 @@ async function wireCodexHooksFile(ctx) {
   } else {
     const bak = text === null ? null : await ctx.backup(file);
     await ctx.writeAtomic(file, serializeSettings(wired, text));
-    ctx.log(
-      `Wired ${CODEX_ADAPTER} into ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`,
-    );
+    ctx.log(`Wired ${CODEX_ADAPTER} into ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
   }
   for (const c of changes) ctx.log(`  ${c}`);
-  if (!ctx.dryRun)
-    ctx.log(
-      "  Codex skips a new or changed hook until it is trusted: run /hooks in Codex to trust it.",
-    );
+  if (!ctx.dryRun) ctx.log("  Codex skips a new or changed hook until it is trusted: run /hooks in Codex to trust it.");
 }
 
 /* --------------------------------------------------- opencode hook wiring */
@@ -3219,19 +2123,13 @@ const OPENCODE_ASKS = Object.freeze([
   Object.freeze({ action: "shell", resource: "git commit *", effect: "ask" }),
   Object.freeze({ action: "shell", resource: "git push *", effect: "ask" }),
 ]);
-const sameRule = (e, r) =>
-  isObject(e) &&
-  e.action === r.action &&
-  e.resource === r.resource &&
-  e.effect === r.effect;
+const sameRule = (e, r) => isObject(e) && e.action === r.action && e.resource === r.resource && e.effect === r.effect;
 const ruleText = (r) => `${r.action} "${r.resource}" ${r.effect}`;
 // A rule that can decide a shell call: action `shell`, `*`, or a glob matching
 // shell. Its resource is not compared: telling whether `git *` or `npm *`
 // overlaps `git commit *` is pattern against pattern.
 const decidesShell = (e) =>
-  isObject(e) &&
-  typeof e.action === "string" &&
-  new RegExp(`^${e.action.split("*").map(esc).join(".*")}$`).test("shell");
+  isObject(e) && typeof e.action === "string" && new RegExp(`^${e.action.split("*").map(esc).join(".*")}$`).test("shell");
 const isDeny = (e) => isObject(e) && e.effect === "deny";
 
 /**
@@ -3243,12 +2141,7 @@ function asksNotInEffect(list) {
   const ours = (e) => OPENCODE_ASKS.some((r) => sameRule(e, r));
   return OPENCODE_ASKS.filter((ask) => {
     const last = list.findLastIndex((e) => sameRule(e, ask));
-    return (
-      last === -1 ||
-      list
-        .slice(last + 1)
-        .some((e) => decidesShell(e) && !isDeny(e) && !ours(e))
-    );
+    return last === -1 || list.slice(last + 1).some((e) => decidesShell(e) && !isDeny(e) && !ours(e));
   });
 }
 
@@ -3257,19 +2150,10 @@ function asksNotInEffect(list) {
 // An ask appended after a deny it overlaps would win over it, and without
 // comparing resources there is no telling which do.
 function deniesShell(data) {
-  if (
-    (Array.isArray(data.permissions) ? data.permissions : []).some(
-      (e) => decidesShell(e) && isDeny(e),
-    )
-  )
-    return true;
+  if ((Array.isArray(data.permissions) ? data.permissions : []).some((e) => decidesShell(e) && isDeny(e))) return true;
   const v1 = data.permission;
-  const hasDeny = (v) =>
-    v === "deny" || (isObject(v) && Object.values(v).some(hasDeny));
-  return (
-    v1 === "deny" ||
-    (isObject(v1) && ["bash", "shell", "*"].some((k) => hasDeny(v1[k])))
-  );
+  const hasDeny = (v) => v === "deny" || (isObject(v) && Object.values(v).some(hasDeny));
+  return v1 === "deny" || (isObject(v1) && ["bash", "shell", "*"].some((k) => hasDeny(v1[k])));
 }
 
 /**
@@ -3281,22 +2165,16 @@ function deniesShell(data) {
  * denies shell calls, nothing is written: appending could undo a deny.
  */
 function wireOpencodePermissions(data) {
-  const gaps = asksNotInEffect(
-    Array.isArray(data.permissions) ? data.permissions : [],
-  );
-  if (gaps.length && deniesShell(data))
-    return { data, changes: [], left: gaps };
+  const gaps = asksNotInEffect(Array.isArray(data.permissions) ? data.permissions : []);
+  if (gaps.length && deniesShell(data)) return { data, changes: [], left: gaps };
   const out = structuredClone(data);
   const list = (out.permissions ??= []);
   const changes = [];
   for (const ask of gaps) {
     const had = list.some((e) => sameRule(e, ask));
-    for (let i = list.length - 1; i >= 0; i--)
-      if (sameRule(list[i], ask)) list.splice(i, 1);
+    for (let i = list.length - 1; i >= 0; i--) if (sameRule(list[i], ask)) list.splice(i, 1);
     list.push({ ...ask });
-    changes.push(
-      `permissions: ${ruleText(ask)} ${had ? "moved to the end, after a rule that allowed shell calls first" : "added at the end"}`,
-    );
+    changes.push(`permissions: ${ruleText(ask)} ${had ? "moved to the end, after a rule that allowed shell calls first" : "added at the end"}`);
   }
   return { data: out, changes, left: [] };
 }
@@ -3315,28 +2193,18 @@ async function readOpencodeConfigForWiring() {
   const file = opencodeConfigPath();
   const jsonc = path.join(opencodeDir(), "opencode.jsonc");
   const label = tilde(file);
-  const refuse = (why, fix = "fix it, then re-run") =>
-    new Error(`Refusing --wire-hooks: ${why}. Nothing was written; ${fix}.`);
+  const refuse = (why, fix = "fix it, then re-run") => new Error(`Refusing --wire-hooks: ${why}. Nothing was written; ${fix}.`);
   if (existsSync(jsonc)) {
-    throw refuse(
-      `${tilde(jsonc)} exists, and its comments would not survive a rewrite`,
-      `move its settings into ${label} and re-run, or add these at the end of its "permissions" yourself: ${OPENCODE_ASKS.map((r) => JSON.stringify(r)).join(", ")}`,
-    );
+    throw refuse(`${tilde(jsonc)} exists, and its comments would not survive a rewrite`, `move its settings into ${label} and re-run, or add these at the end of its "permissions" yourself: ${OPENCODE_ASKS.map((r) => JSON.stringify(r)).join(", ")}`);
   }
   if (!existsSync(file)) return { text: null, data: {} };
   const text = await readFile(file, "utf8");
   let data;
-  try {
-    data = JSON.parse(text.replace(/^﻿/, ""));
-  } catch {
-    throw refuse(`${label} is not plain JSON (comments or a trailing comma?)`);
-  }
+  try { data = JSON.parse(text.replace(/^﻿/, "")); } catch { throw refuse(`${label} is not plain JSON (comments or a trailing comma?)`); }
   if (!isObject(data)) throw refuse(`${label} is not a JSON object`);
   if (data.permissions !== undefined) {
-    if (!Array.isArray(data.permissions))
-      throw refuse(`${label} has a "permissions" that is not an array`);
-    if (!data.permissions.every(isObject))
-      throw refuse(`${label} has a "permissions" entry that is not an object`);
+    if (!Array.isArray(data.permissions)) throw refuse(`${label} has a "permissions" that is not an array`);
+    if (!data.permissions.every(isObject)) throw refuse(`${label} has a "permissions" entry that is not an object`);
   }
   return { text, data };
 }
@@ -3345,43 +2213,25 @@ async function readOpencodeConfigForWiring() {
 // run: wiring it there would be a gate that looks installed and is off. A
 // version that cannot be read refuses for the same reason.
 function refuseOpencodeBelow2() {
-  const refuse = (why, fix) =>
-    new Error(
-      `Refusing --wire-hooks: ${why}, and the canonkit plugin runs only in OpenCode 2 or later. Nothing was written; ${fix}, then re-run.`,
-    );
+  const refuse = (why, fix) => new Error(`Refusing --wire-hooks: ${why}, and the canonkit plugin runs only in OpenCode 2 or later. Nothing was written; ${fix}, then re-run.`);
   // PATH entries inside the folder install runs from are skipped (npx puts
   // <cwd>/node_modules/.bin first, where a planted binary would sit). Run from
   // home, that would skip %APPDATA%\npm and ~/.local/bin too, so there only
   // home's node_modules is skipped.
   const cwd = process.cwd();
   const toHome = path.relative(cwd, os.homedir());
-  const root =
-    toHome === "" || (!toHome.startsWith("..") && !path.isAbsolute(toHome))
-      ? path.join(cwd, "node_modules")
-      : cwd;
+  const root = toHome === "" || (!toHome.startsWith("..") && !path.isAbsolute(toHome)) ? path.join(cwd, "node_modules") : cwd;
   // On WSL a Windows opencode would run through interop: skipped, and named below.
   const windowsRoots = readWindowsRoots();
   const abs = resolveBin("opencode", { cwd: root, windowsRoots });
   if (!abs) {
     const windows = windowsOnlyHits("opencode", { cwd: root, windowsRoots });
-    if (windows.length)
-      throw refuse(
-        `opencode was found only on the Windows side (${plain(windows[0])}) and is not run through WSL interop, so its version cannot be checked`,
-        "run it inside WSL with a Linux-side install of OpenCode 2 or later",
-      );
-    throw refuse(
-      "opencode is not on PATH, so its version cannot be checked",
-      "install OpenCode 2 or put it on PATH",
-    );
+    if (windows.length) throw refuse(`opencode was found only on the Windows side (${plain(windows[0])}) and is not run through WSL interop, so its version cannot be checked`, "run it inside WSL with a Linux-side install of OpenCode 2 or later");
+    throw refuse("opencode is not on PATH, so its version cannot be checked", "install OpenCode 2 or put it on PATH");
   }
   const version = binVersion(abs, { project: root, windowsRoots });
-  if (!version)
-    throw refuse(
-      `${display(abs, ["--version"])} printed no version`,
-      "check that OpenCode runs",
-    );
-  if (Number(version.split(".")[0]) < 2)
-    throw refuse(`OpenCode is ${version}`, "upgrade OpenCode");
+  if (!version) throw refuse(`${display(abs, ["--version"])} printed no version`, "check that OpenCode runs");
+  if (Number(version.split(".")[0]) < 2) throw refuse(`OpenCode is ${version}`, "upgrade OpenCode");
 }
 
 /**
@@ -3394,13 +2244,9 @@ async function installOpencodeHooks(ctx, { wire = false } = {}) {
   const dest = opencodeHooksDir();
   if (!wire && !existsSync(dest) && !existsSync(opencodePluginPath())) return;
   await copyKeepingLocal(ctx, HOOKS_DIR, dest, HOOK_FILES.opencode);
-  ctx.log(
-    `Installed ${HOOK_FILES.opencode.length} OpenCode hook files -> ${dest}`,
-  );
+  ctx.log(`Installed ${HOOK_FILES.opencode.length} OpenCode hook files -> ${dest}`);
   await copyKeepingLocal(ctx, HOOKS_DIR, opencodeDir(), [OPENCODE_PLUGIN]);
-  ctx.log(
-    `Installed the OpenCode plugin -> ${opencodePluginPath()} (loaded when OpenCode starts)`,
-  );
+  ctx.log(`Installed the OpenCode plugin -> ${opencodePluginPath()} (loaded when OpenCode starts)`);
   if (wire) await wireOpencodeConfig(ctx);
 }
 
@@ -3414,9 +2260,7 @@ async function wireOpencodeConfig(ctx) {
 
   ctx.log("");
   if (left.length) {
-    ctx.log(
-      `  ${where} denies shell calls, and an ask after a deny it overlaps wins over it: the git commit/push asks were not added.`,
-    );
+    ctx.log(`  ${where} denies shell calls, and an ask after a deny it overlaps wins over it: the git commit/push asks were not added.`);
     ctx.log(`  To have them, ${asksByHand(left)}.`);
     return;
   }
@@ -3430,22 +2274,15 @@ async function wireOpencodeConfig(ctx) {
   } else {
     const bak = text === null ? null : await ctx.backup(file);
     await ctx.writeAtomic(file, serializeSettings(wired, text));
-    ctx.log(
-      `Added the git commit/push asks to ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`,
-    );
+    ctx.log(`Added the git commit/push asks to ${where}${bak ? ` (previous copy: ${path.basename(bak)})` : ""}:`);
   }
   for (const c of changes) ctx.log(`  ${c}`);
-  ctx.log(
-    "  They match the command as typed (git -c x=y commit is not matched), and opencode run rejects an ask unless --auto.",
-  );
+  ctx.log("  They match the command as typed (git -c x=y commit is not matched), and opencode run rejects an ask unless --auto.");
 }
 
 async function syncClaudeRouting(ctx, { existingOnly = false } = {}) {
-  const existing = existingOnly
-    ? await optionalBytes(path.join(claudeHome(), "CLAUDE.md"))
-    : null;
-  const existingBlock =
-    existing === null ? null : removeManagedBlock(existing, ROUTING).block;
+  const existing = existingOnly ? await optionalBytes(path.join(claudeHome(), "CLAUDE.md")) : null;
+  const existingBlock = existing === null ? null : removeManagedBlock(existing, ROUTING).block;
   if (existingOnly && !existingBlock) return;
   // Claude Code reads ~/.claude/CLAUDE.md. The routing block only points at
   // ~/AGENTS.md in plain text: projects live under a folder that contains it, so
@@ -3462,68 +2299,28 @@ async function syncClaudeRouting(ctx, { existingOnly = false } = {}) {
     try {
       const combined = {};
       let disabled = false;
-      for (const file of [
-        settingsPath(),
-        path.join(claudeHome(), "settings.local.json"),
-      ]) {
-        const bytes =
-          ctx.hookWiringRequested === false &&
-          file === settingsPath() &&
-          ctx.networkSecurityPlan
-            ? serializeSecurity(ctx.networkSecurityPlan.data)
-            : await optionalBytes(file);
+      for (const file of [settingsPath(), path.join(claudeHome(), "settings.local.json")]) {
+        const bytes = ctx.hookWiringRequested === false && file === settingsPath() && ctx.networkSecurityPlan ? serializeSecurity(ctx.networkSecurityPlan.data) : await optionalBytes(file);
         if (bytes === null) continue;
         const data = JSON.parse(readSettingsText(bytes));
         disabled ||= data.disableAllHooks === true;
-        for (const [event, groups] of Object.entries(
-          isObject(data.hooks) ? data.hooks : {},
-        ))
-          if (Array.isArray(groups))
-            combined[event] = [...(combined[event] ?? []), ...groups];
+        for (const [event, groups] of Object.entries(isObject(data.hooks) ? data.hooks : {})) if (Array.isArray(groups)) combined[event] = [...(combined[event] ?? []), ...groups];
       }
-      const canonical = Object.fromEntries(
-        Object.entries(combined).map(([event, groups]) => [
-          event,
-          groups.map((group) => ({
-            ...group,
-            hooks: Array.isArray(group?.hooks)
-              ? group.hooks.filter((hook) =>
-                  isCanonicalClaudeHook(hook, claudeHome()),
-                )
-              : [],
-          })),
-        ]),
-      );
-      registered =
-        !disabled &&
-        wiringGaps(canonical, HOOK).length === 0 &&
-        (await optionalBytes(path.join(claudeHome(), "hooks", HOOK)))?.equals(
-          await readFile(path.join(HOOKS_DIR, HOOK)),
-        );
-    } catch {
-      registered = false;
-    }
+      const canonical = Object.fromEntries(Object.entries(combined).map(([event, groups]) => [event,
+        groups.map((group) => ({ ...group, hooks: Array.isArray(group?.hooks) ? group.hooks.filter((hook) => isCanonicalClaudeHook(hook, claudeHome())) : [] }))]));
+      registered = !disabled && wiringGaps(canonical, HOOK).length === 0 && (await optionalBytes(path.join(claudeHome(), "hooks", HOOK)))?.equals(await readFile(path.join(HOOKS_DIR, HOOK)));
+    } catch { registered = false; }
   }
   const rendered = renderRoutingBlock(await readOwned(source), registered);
   if (existingOnly) {
     // Retiring stale claims is narrower than reference distribution: preserve
     // every byte outside the existing block, including BOM and mixed EOLs.
     const marked = applyBlock("", rendered, ROUTING).text;
-    const block = removeManagedBlock(
-      Buffer.from(toEol(marked, usesCrlf(existing.toString("utf8")))),
-      ROUTING,
-    ).block;
+    const block = removeManagedBlock(Buffer.from(toEol(marked, usesCrlf(existing.toString("utf8")))) , ROUTING).block;
     const start = existing.indexOf(Buffer.from(ROUTING[0]));
-    const next = Buffer.concat([
-      existing.subarray(0, start),
-      block,
-      existing.subarray(start + existingBlock.length),
-    ]);
+    const next = Buffer.concat([existing.subarray(0, start), block, existing.subarray(start + existingBlock.length)]);
     if (next.equals(existing)) await ctx.manifest?.observe(claudeMd);
-    else {
-      await ctx.write(claudeMd, next);
-      ctx.log(`Refreshed existing Claude hook claims in ${claudeMd}`);
-    }
+    else { await ctx.write(claudeMd, next); ctx.log(`Refreshed existing Claude hook claims in ${claudeMd}`); }
     return;
   }
   await syncBlock(source, claudeMd, ROUTING, ctx, rendered);
@@ -3531,12 +2328,7 @@ async function syncClaudeRouting(ctx, { existingOnly = false } = {}) {
 
 async function syncReference(ctx, targets = DEFAULT_TARGETS) {
   // The roster says who exists and what each one owns, and is runtime-neutral.
-  await syncBlock(
-    path.join(REFERENCE_DIR, "agents-block.md"),
-    path.join(os.homedir(), "AGENTS.md"),
-    ROSTER,
-    ctx,
-  );
+  await syncBlock(path.join(REFERENCE_DIR, "agents-block.md"), path.join(os.homedir(), "AGENTS.md"), ROSTER, ctx);
 
   if (targets.includes("claude")) await syncClaudeRouting(ctx);
 
@@ -3544,12 +2336,7 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
     // Codex does not load ~/AGENTS.md from a repository below home, so its own
     // block (in $CODEX_HOME/AGENTS.md) points at it. Its [ENFORCED] lines name
     // the Codex hook, not the Claude one.
-    await syncBlock(
-      path.join(REFERENCE_DIR, "codex-block.md"),
-      path.join(codexHome(), "AGENTS.md"),
-      CODEX,
-      ctx,
-    );
+    await syncBlock(path.join(REFERENCE_DIR, "codex-block.md"), path.join(codexHome(), "AGENTS.md"), CODEX, ctx);
   }
 
   if (targets.includes("opencode")) {
@@ -3558,22 +2345,11 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
     // Creating this file is also what stops OpenCode falling back to
     // ~/.claude/CLAUDE.md, rules of your own included.
     const opencodeMd = path.join(opencodeDir(), "AGENTS.md");
-    const fallback =
-      !existsSync(opencodeMd) &&
-      existsSync(path.join(claudeHome(), "CLAUDE.md"));
-    await syncBlock(
-      path.join(REFERENCE_DIR, "opencode-block.md"),
-      opencodeMd,
-      OPENCODE,
-      ctx,
-    );
+    const fallback = !existsSync(opencodeMd) && existsSync(path.join(claudeHome(), "CLAUDE.md"));
+    await syncBlock(path.join(REFERENCE_DIR, "opencode-block.md"), opencodeMd, OPENCODE, ctx);
     if (fallback) {
-      ctx.log(
-        `  OpenCode now reads ${opencodeMd} instead of ~/.claude/CLAUDE.md:`,
-      );
-      ctx.log(
-        "  copy any rule of your own from there that OpenCode should keep, outside the markers.",
-      );
+      ctx.log(`  OpenCode now reads ${opencodeMd} instead of ~/.claude/CLAUDE.md:`);
+      ctx.log("  copy any rule of your own from there that OpenCode should keep, outside the markers.");
     }
   }
 
@@ -3581,11 +2357,8 @@ async function syncReference(ctx, targets = DEFAULT_TARGETS) {
 }
 
 function renderRoutingBlock(source, registered) {
-  const optional =
-    /<!-- canonkit:optional-hooks:start -->[\s\S]*?<!-- canonkit:optional-hooks:end -->/;
-  return registered
-    ? source.replace(/<!-- canonkit:optional-hooks:(?:start|end) -->\n?/g, "")
-    : source.replace(optional, "").trimEnd() + "\n";
+  const optional = /<!-- canonkit:optional-hooks:start -->[\s\S]*?<!-- canonkit:optional-hooks:end -->/;
+  return registered ? source.replace(/<!-- canonkit:optional-hooks:(?:start|end) -->\n?/g, "") : source.replace(optional, "").trimEnd() + "\n";
 }
 
 /**
@@ -3600,9 +2373,7 @@ function renderRoutingBlock(source, registered) {
 // Relative paths of every file below dir, sorted.
 async function filesUnder(dir, prefix = "") {
   const out = [];
-  for (const e of await readdir(path.join(dir, prefix), {
-    withFileTypes: true,
-  })) {
+  for (const e of await readdir(path.join(dir, prefix), { withFileTypes: true })) {
     const rel = path.join(prefix, e.name);
     if (e.isDirectory()) out.push(...(await filesUnder(dir, rel)));
     else if (e.isFile()) out.push(rel);
@@ -3613,11 +2384,7 @@ async function filesUnder(dir, prefix = "") {
 async function installSkills(ctx, targets = DEFAULT_TARGETS) {
   if (!existsSync(SKILLS_DIR)) return;
   const names = (await readdir(SKILLS_DIR, { withFileTypes: true }))
-    .filter(
-      (e) =>
-        e.isDirectory() &&
-        existsSync(path.join(SKILLS_DIR, e.name, "SKILL.md")),
-    )
+    .filter((e) => e.isDirectory() && existsSync(path.join(SKILLS_DIR, e.name, "SKILL.md")))
     .map((e) => e.name)
     .sort();
   if (!names.length) return;
@@ -3626,22 +2393,14 @@ async function installSkills(ctx, targets = DEFAULT_TARGETS) {
     targets.includes("claude") && path.join(claudeHome(), "skills"),
     // OpenCode reads both of these natively; this one is the runtime-neutral
     // path, so an OpenCode-only install writes nothing under ~/.claude.
-    (targets.includes("codex") || targets.includes("opencode")) &&
-      path.join(os.homedir(), ".agents", "skills"),
+    (targets.includes("codex") || targets.includes("opencode")) && path.join(os.homedir(), ".agents", "skills"),
     targets.includes("copilot") && path.join(copilotHome(), "skills"),
   ].filter(Boolean);
   for (const root of roots) {
     for (const name of names) {
-      await copyKeepingLocal(
-        ctx,
-        path.join(SKILLS_DIR, name),
-        path.join(root, name),
-        await filesUnder(path.join(SKILLS_DIR, name)),
-      );
+      await copyKeepingLocal(ctx, path.join(SKILLS_DIR, name), path.join(root, name), await filesUnder(path.join(SKILLS_DIR, name)));
     }
-    ctx.log(
-      `Installed ${names.length} skill${names.length === 1 ? "" : "s"} (${names.join(", ")}) -> ${root}`,
-    );
+    ctx.log(`Installed ${names.length} skill${names.length === 1 ? "" : "s"} (${names.join(", ")}) -> ${root}`);
   }
 }
 
@@ -3660,20 +2419,10 @@ async function installSkills(ctx, targets = DEFAULT_TARGETS) {
 async function refuseEmptyFileAsDirectory(dirs) {
   for (const dir of dirs) {
     let info;
-    try {
-      info = await lstat(dir);
-    } catch {
-      continue;
-    }
+    try { info = await lstat(dir); } catch { continue; }
     const kind = directoryBlocker(info);
-    if (kind === "device")
-      throw new Error(
-        `${plain(dir)} is write-protected by the Claude Code sandbox. Run this command from your own terminal; nothing was written.`,
-      );
-    if (kind === "empty")
-      throw new Error(
-        `${plain(dir)} is an empty file, but a directory is needed there. Delete it and run this command again; nothing was written.`,
-      );
+    if (kind === "device") throw new Error(`${plain(dir)} is write-protected by the Claude Code sandbox. Run this command from your own terminal; nothing was written.`);
+    if (kind === "empty") throw new Error(`${plain(dir)} is an empty file, but a directory is needed there. Delete it and run this command again; nothing was written.`);
   }
 }
 
@@ -3710,30 +2459,15 @@ async function addSpecialists(ctx, names, options = {}) {
   // on top of the user's. "The project" for choices is the repository root,
   // the same one `models show` and the orchestrate skill read.
   const choicesRoot = remove ? null : await projectRoot(project);
-  const layers = remove
-    ? null
-    : {
-        user: await readChoices(userConfigPath()),
-        project: choicesRoot
-          ? await readChoices(projectConfigPath(choicesRoot), { project: true })
-          : null,
-      };
-  const codexRecord = remove
-    ? null
-    : (await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
+  const layers = remove ? null : { user: await readChoices(userConfigPath()), project: choicesRoot ? await readChoices(projectConfigPath(choicesRoot), { project: true }) : null };
+  const codexRecord = remove ? null : (await readCatalog(catalogPath()).catch(() => null))?.harnesses?.codex;
   const agentsDir = path.join(project, ".claude", "agents");
   const codexDir = path.join(project, ".codex", "agents");
   await safePath(codexDir);
   for (const name of names) await safePath(path.join(codexDir, `${name}.toml`));
   const opencodeProjectDir = path.join(project, ".opencode", "agents");
   const copilotProjectDir = path.join(project, ".github", "agents");
-  await refuseEmptyFileAsDirectory([
-    path.join(project, ".claude"),
-    agentsDir,
-    codexDir,
-    opencodeProjectDir,
-    copilotProjectDir,
-  ]);
+  await refuseEmptyFileAsDirectory([path.join(project, ".claude"), agentsDir, codexDir, opencodeProjectDir, copilotProjectDir]);
   await ctx.mkdir(agentsDir);
   await ctx.mkdir(codexDir);
   await ctx.mkdir(opencodeProjectDir);
@@ -3745,41 +2479,21 @@ async function addSpecialists(ctx, names, options = {}) {
     const opencodeTarget = path.join(opencodeProjectDir, `${name}.md`);
     const copilotTarget = path.join(copilotProjectDir, `${name}.agent.md`);
     if (remove) {
-      if (
-        [target, codexTarget, opencodeTarget, copilotTarget].some((p) =>
-          existsSync(p),
-        )
-      ) {
+      if ([target, codexTarget, opencodeTarget, copilotTarget].some((p) => existsSync(p))) {
         await ctx.remove(target);
         await ctx.remove(codexTarget);
         await ctx.remove(opencodeTarget);
         await ctx.remove(copilotTarget);
-        ctx.log(
-          `Removed ${name} from .claude/agents/, .codex/agents/, .opencode/agents/ and .github/agents/`,
-        );
+        ctx.log(`Removed ${name} from .claude/agents/, .codex/agents/, .opencode/agents/ and .github/agents/`);
       } else {
         ctx.log(`Not installed: ${name}`);
       }
     } else {
-      await ctx.write(
-        target,
-        claudeAgent(
-          known.get(name),
-          choiceFor(known.get(name), "claude", layers),
-        ),
-      );
-      await ctx.write(
-        codexTarget,
-        codexAgent(
-          known.get(name),
-          codexChoiceFor(known.get(name), layers, codexRecord, ctx),
-        ),
-      );
+      await ctx.write(target, claudeAgent(known.get(name), choiceFor(known.get(name), "claude", layers)));
+      await ctx.write(codexTarget, codexAgent(known.get(name), codexChoiceFor(known.get(name), layers, codexRecord, ctx)));
       await ctx.write(opencodeTarget, opencodeAgent(known.get(name)));
       await ctx.write(copilotTarget, copilotAgent(known.get(name)));
-      ctx.log(
-        `Installed ${name} -> .claude/agents/${name}.md, .codex/agents/${name}.toml, .opencode/agents/${name}.md and .github/agents/${name}.agent.md`,
-      );
+      ctx.log(`Installed ${name} -> .claude/agents/${name}.md, .codex/agents/${name}.toml, .opencode/agents/${name}.md and .github/agents/${name}.agent.md`);
     }
   }
 
@@ -3791,11 +2505,7 @@ async function addSpecialists(ctx, names, options = {}) {
     ? new Set(
         specialists(agents)
           .map((a) => a.name)
-          .filter((n) =>
-            remove
-              ? onDisk(n) && !names.includes(n)
-              : onDisk(n) || names.includes(n),
-          ),
+          .filter((n) => (remove ? onDisk(n) && !names.includes(n) : onDisk(n) || names.includes(n))),
       )
     : null;
 
@@ -3810,47 +2520,26 @@ async function changeProject(ctx, names, options = {}) {
   const known = new Set(specialists(agents).map((agent) => agent.name));
   for (const name of names) {
     if (known.has(name) || STACK_PACK_IDS.includes(name)) continue;
-    if (core(agents).some((agent) => agent.name === name))
-      throw new Error(
-        `${name} is a core agent — install it with 'npx canonkit install'.`,
-      );
-    throw new Error(
-      `Not a domain specialist or stack pack: ${name}\nSpecialists: ${[...known].join(" ")}\nStack packs: ${STACK_PACK_IDS.join(" ")}`,
-    );
+    if (core(agents).some((agent) => agent.name === name)) throw new Error(`${name} is a core agent — install it with 'npx canonkit install'.`);
+    throw new Error(`Not a domain specialist or stack pack: ${name}\nSpecialists: ${[...known].join(" ")}\nStack packs: ${STACK_PACK_IDS.join(" ")}`);
   }
   const packs = names.filter((name) => STACK_PACK_IDS.includes(name));
   const selected = names.filter((name) => known.has(name));
-  if (!packs.length) {
-    await addSpecialists(ctx, selected, options);
-    return 0;
-  }
-  return new StackPackStore({ dryRun: ctx.dryRun, log: ctx.log }).change(
-    packs,
-    {
-      remove: options.remove,
-      before: async () => {
-        if (selected.length) await addSpecialists(ctx, selected, options);
-      },
-    },
-  );
+  if (!packs.length) { await addSpecialists(ctx, selected, options); return 0; }
+  return new StackPackStore({ dryRun: ctx.dryRun, log: ctx.log }).change(packs, {
+    remove: options.remove,
+    before: async () => { if (selected.length) await addSpecialists(ctx, selected, options); },
+  });
 }
 
 /**
  * Rebuild the managed block in the project's AGENTS.md from what is actually on
  * disk, so the file reflects reality rather than the history of commands.
  */
-async function rebuildProjectBlock(
-  ctx,
-  project,
-  agents,
-  agentsDir,
-  projected = null,
-) {
+async function rebuildProjectBlock(ctx, project, agents, agentsDir, projected = null) {
   const summary = await summaries();
   const installed = specialists(agents).filter((a) =>
-    projected
-      ? projected.has(a.name)
-      : existsSync(path.join(agentsDir, `${a.name}.md`)),
+    projected ? projected.has(a.name) : existsSync(path.join(agentsDir, `${a.name}.md`)),
   );
   const target = path.join(project, "AGENTS.md");
   const raw = existsSync(target) ? await readFile(target, "utf8") : "";
@@ -3865,10 +2554,7 @@ async function rebuildProjectBlock(
 
   const label = { veto: "veto", blocks: "blocks", none: "no veto" };
   const entries = installed
-    .map(
-      (a) =>
-        `- **${a.name}** (${label[a.authority]}) — ${summary.get(a.name) ?? "specialist."}`,
-    )
+    .map((a) => `- **${a.name}** (${label[a.authority]}) — ${summary.get(a.name) ?? "specialist."}`)
     .join("\n");
   const body = `# Project subagents
 
@@ -3910,18 +2596,14 @@ function replaceProjectBlock(raw, markers, body) {
     const m = inPlace.exec(original);
     const before = original.slice(0, m.index).replace(/\n+$/, "");
     const after = original.slice(m.index + m[0].length).replace(/^\n+/, "");
-    const stripped = (
-      before && after ? `${before}\n\n${after}` : before || after
-    ).trim();
+    const stripped = (before && after ? `${before}\n\n${after}` : before || after).trim();
     return { text: toEol(stripped ? `${stripped}\n` : "", crlf), had };
   }
 
   const managed = `${start}\n${body.trim()}\n${end}`;
   const lf = had
     ? original.replace(inPlace, () => managed)
-    : (original.trim() ? `${original.replace(/\s+$/, "")}\n\n` : "") +
-      managed +
-      "\n";
+    : (original.trim() ? `${original.replace(/\s+$/, "")}\n\n` : "") + managed + "\n";
   return { text: toEol(lf, crlf), had };
 }
 
@@ -3932,11 +2614,7 @@ function readProjectBlock(raw, markers) {
   return m ? m[1] : null;
 }
 
-async function readInstallCatalog({
-  project = realpathSync.native(process.cwd()),
-  checkToolVersions = false,
-  dryRun = false,
-} = {}) {
+async function readInstallCatalog({ project = realpathSync.native(process.cwd()), checkToolVersions = false, dryRun = false } = {}) {
   const agents = await readAgents();
   const tools = await readTools();
   const agentsDir = path.join(project, ".claude", "agents");
@@ -3946,21 +2624,10 @@ async function readInstallCatalog({
   const toolExecOptions = toolExec();
   const toolRows = [...tools.values()].map((tool) => {
     const abs = resolveBin(tool.bin, { cwd: project, ...toolExecOptions });
-    const state = !abs
-      ? "not on PATH"
-      : checkToolVersions && !dryRun
-        ? `installed ${binVersion(abs, { project, env: toolEnv(tool), ...toolExecOptions }) ?? "?"}`
-        : dryRun && checkToolVersions
-          ? "not checked"
-          : "installed (version not checked)";
-    return {
-      name: tool.name,
-      description: tool.rules[0] ?? "",
-      state,
-      missing: !abs,
-      active: active.has(tool.name),
-      tool,
-    };
+    const state = !abs ? "not on PATH"
+      : checkToolVersions && !dryRun ? `installed ${binVersion(abs, { project, env: toolEnv(tool), ...toolExecOptions }) ?? "?"}`
+        : dryRun && checkToolVersions ? "not checked" : "installed (version not checked)";
+    return { name: tool.name, description: tool.rules[0] ?? "", state, missing: !abs, active: active.has(tool.name), tool };
   });
   const specialistRows = specialists(agents).map((agent) => {
     const present = [
@@ -3969,11 +2636,7 @@ async function readInstallCatalog({
       path.join(project, ".opencode", "agents", `${agent.name}.md`),
       path.join(project, ".github", "agents", `${agent.name}.agent.md`),
     ].filter(existsSync).length;
-    return {
-      ...agent,
-      installed: existsSync(path.join(agentsDir, `${agent.name}.md`)),
-      state: present === 4 ? "installed" : present ? "partial" : "absent",
-    };
+    return { ...agent, installed: existsSync(path.join(agentsDir, `${agent.name}.md`)), state: present === 4 ? "installed" : present ? "partial" : "absent" };
   });
   const stacks = await new StackPackStore({ project }).catalogItems();
   return { agents, tools: toolRows, specialists: specialistRows, stacks };
@@ -3985,40 +2648,30 @@ async function list(ctx) {
   const userDest = path.join(claudeHome(), "agents");
   const copilotDest = copilotAgentsDir();
   const projectDest = path.join(process.cwd(), ".claude", "agents");
-  const mark = (dir, name) =>
-    existsSync(path.join(dir, `${name}.md`)) ? "installed" : "-";
+  const mark = (dir, name) => (existsSync(path.join(dir, `${name}.md`)) ? "installed" : "-");
 
   ctx.log(`Core team (user level: ${userDest})`);
   for (const a of core(agents)) {
-    ctx.log(
-      `  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${mark(userDest, a.name)}`,
-    );
+    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${mark(userDest, a.name)}`);
   }
 
   ctx.log("");
   ctx.log(`Copilot profiles (user level: ${copilotDest})`);
   for (const a of core(agents)) {
-    ctx.log(
-      `  ${a.name.padEnd(10)} ${existsSync(path.join(copilotDest, `${a.name}.agent.md`)) ? "installed" : "-"}`,
-    );
+    ctx.log(`  ${a.name.padEnd(10)} ${existsSync(path.join(copilotDest, `${a.name}.agent.md`)) ? "installed" : "-"}`);
   }
 
   ctx.log("");
   ctx.log(`Domain specialists (this project: ${projectDest})`);
   for (const a of catalog.specialists) {
-    ctx.log(
-      `  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${a.installed ? "installed" : "-"}`,
-    );
+    ctx.log(`  ${a.name.padEnd(10)} ${String(a.need).padEnd(8)} ${a.installed ? "installed" : "-"}`);
   }
 
   ctx.log("");
   ctx.log("Optional tools (graphify, openspec): canonkit tool list");
   ctx.log("");
-  ctx.log(
-    "Stack packs (this project; skills, installed explicitly with canonkit add <stack>)",
-  );
-  for (const { name, state } of catalog.stacks)
-    ctx.log(`  ${name.padEnd(12)} ${state}`);
+  ctx.log("Stack packs (this project; skills, installed explicitly with canonkit add <stack>)");
+  for (const { name, state } of catalog.stacks) ctx.log(`  ${name.padEnd(12)} ${state}`);
 }
 
 /* ------------------------------------------------------------------ doctor */
@@ -4034,374 +2687,131 @@ async function list(ctx) {
  * hook module, and the installed hook is only syntax-checked.
  */
 async function securityDiagnosis() {
-  const rows = [],
-    add = (status, check, detail) =>
-      rows.push({ status, check, detail, more: [] });
+  const rows = [], add = (status, check, detail) => rows.push({ status, check, detail, more: [] });
   let root = null;
-  try {
-    root = await repositoryRoot();
-  } catch {
-    add("FAIL", "security project", "unknown: unsafe or invalid project root");
-  }
-  const evidence = await collectEnvironment({
-    cwd: root ?? process.cwd(),
-    windowsRoots: readWindowsRoots(),
-  });
-  add(
-    "OK",
-    "security environment",
-    `detected ${evidence.platform}, WSL ${evidence.wsl}, container ${evidence.container}; sandbox capability ${evidence.sandboxCapability}; runtime unknown`,
-  );
+  try { root = await repositoryRoot(); }
+  catch { add("FAIL", "security project", "unknown: unsafe or invalid project root"); }
+  const evidence = await collectEnvironment({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() });
+  add("OK", "security environment", `detected ${evidence.platform}, WSL ${evidence.wsl}, container ${evidence.container}; sandbox capability ${evidence.sandboxCapability}; runtime unknown`);
   const sources = [];
   for (const [label, file] of [
-    ["user", settingsPath()],
-    ["user-local", path.join(claudeHome(), "settings.local.json")],
-    ...(root
-      ? [
-          ["project", path.join(root, ".claude", "settings.json")],
-          ["project-local", path.join(root, ".claude", "settings.local.json")],
-        ]
-      : []),
+    ["user", settingsPath()], ["user-local", path.join(claudeHome(), "settings.local.json")],
+    ...(root ? [["project", path.join(root, ".claude", "settings.json")], ["project-local", path.join(root, ".claude", "settings.local.json")]] : []),
   ]) {
     try {
       // Doctor only: inside the sandbox the placeholder is /dev/null (char device 1:3) over the real 0-byte file.
-      const devNull =
-        label === "project-local" && (await isSandboxNullPlaceholder(file));
+      const devNull = label === "project-local" && await isSandboxNullPlaceholder(file);
       if (!devNull) await safePath(file);
       const bytes = devNull ? Buffer.alloc(0) : await optionalBytes(file);
       // Doctor only: the sandbox's 0-byte placeholder for settings.local.json is not a broken config.
       if (label === "project-local" && bytes !== null && bytes.length === 0) {
-        add(
-          "OK",
-          "security claude placeholder",
-          `${label}: empty file, probably a sandbox placeholder; ignored`,
-        );
+        add("OK", "security claude placeholder", `${label}: empty file, probably a sandbox placeholder; ignored`);
         sources.push({ label, data: null });
         continue;
       }
-      sources.push({
-        label,
-        data: bytes === null ? null : parseSecuritySettings(bytes, label),
-      });
-    } catch {
-      sources.push({ label, error: true });
+      sources.push({ label, data: bytes === null ? null : parseSecuritySettings(bytes, label) });
     }
+    catch { sources.push({ label, error: true }); }
   }
-  add(
-    "WARN",
-    "security claude version",
-    evidence.versionEvidence === "windows-binary-ignored"
-      ? `unknown; a Windows copy at ${plain(evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these); no authenticated session or boundary test was started`
-      : `${evidence.claudeVersion ?? "unknown"}; ${evidence.versionEvidence}; no authenticated session or boundary test was started`,
-  );
+  add("WARN", "security claude version", evidence.versionEvidence === "windows-binary-ignored"
+    ? `unknown; a Windows copy at ${plain(evidence.ignoredWindowsBinary)} was ignored (it reads Windows settings, not these); no authenticated session or boundary test was started`
+    : `${evidence.claudeVersion ?? "unknown"}; ${evidence.versionEvidence}; no authenticated session or boundary test was started`);
   // allowRead items canonkit appended (per the user receipt) are not review-worthy exceptions.
   let ownedAllowRead = [];
   try {
-    const receipt = new InstallManifest({
-      home: os.homedir(),
-      ...(await installCatalog(await readAgents())),
-      targets: ["claude"],
-      dryRun: true,
-    });
-    if (await receipt.load())
-      ownedAllowRead = trustedOwnedAllowRead(
-        receipt.data.entries["claude:json:settings.json"]?.securityChanges?.[
-          "sandbox.filesystem.allowRead"
-        ]?.appendedItems,
-      );
-  } catch {
-    /* an unreadable receipt is reported by the tracked-policy check below */
-  }
-  for (const detail of assessClaude(sources, evidence, { ownedAllowRead }))
-    add(
-      detail.status,
-      `security claude ${detail.control}`,
-      `${detail.coverage}: ${detail.detail}`,
-    );
-  const profile =
-    evidence.platform === "win32"
-      ? "native-windows-partial"
-      : evidence.sandboxCapability === "available-unverified"
-        ? "sandbox-configured-runtime-unverified"
-        : "available-file-controls-partial";
-  add(
-    "WARN",
-    "security claude desired-profile",
-    `partial: ${profile}; configured keys do not establish effective session containment`,
-  );
+    const receipt = new InstallManifest({ home: os.homedir(), ...await installCatalog(await readAgents()), targets: ["claude"], dryRun: true });
+    if (await receipt.load()) ownedAllowRead = trustedOwnedAllowRead(receipt.data.entries["claude:json:settings.json"]?.securityChanges?.["sandbox.filesystem.allowRead"]?.appendedItems);
+  } catch { /* an unreadable receipt is reported by the tracked-policy check below */ }
+  for (const detail of assessClaude(sources, evidence, { ownedAllowRead })) add(detail.status, `security claude ${detail.control}`, `${detail.coverage}: ${detail.detail}`);
+  const profile = evidence.platform === "win32" ? "native-windows-partial" : evidence.sandboxCapability === "available-unverified" ? "sandbox-configured-runtime-unverified" : "available-file-controls-partial";
+  add("WARN", "security claude desired-profile", `partial: ${profile}; configured keys do not establish effective session containment`);
   const user = sources.find((source) => source.label === "user");
   const project = sources.find((source) => source.label === "project");
   if (root && !project?.error && !user?.error) {
-    const projectLocal = sources.find(
-      (source) => source.label === "project-local",
-    );
+    const projectLocal = sources.find((source) => source.label === "project-local");
     const desired = compileSecurity(project?.data ?? {}, evidence, {
       userSettings: user?.data ?? {},
       projectLocalSettings: projectLocal?.data ?? {},
       projectLocalSettingsKnown: !projectLocal?.error,
     });
-    for (const row of desired.rows.filter(
-      (item) => item.current === null && item.marker === "+",
-    )) {
-      add(
-        "WARN",
-        "security claude desired-controls",
-        `partial: ${row.path} is not set in effective project settings; ${row.reason}. Apply with canonkit install --recommended`,
-      );
+    for (const row of desired.rows.filter((item) => item.current === null && item.marker === "+")) {
+      add("WARN", "security claude desired-controls", `partial: ${row.path} is not set in effective project settings; ${row.reason}. Apply with canonkit install --recommended`);
     }
-    if (desired.changes.length)
-      add(
-        "WARN",
-        "security claude desired-controls",
-        `partial: supported project controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this project`,
-      );
-    if (
-      desired.gaps.includes(
-        "sandbox-autoapproval-disabled-under-strict-profile",
-      )
-    ) {
-      const target =
-        projectLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false
-          ? "this project's .claude/settings.local.json"
-          : project?.data?.sandbox?.autoAllowBashIfSandboxed === false
-            ? "this project's .claude/settings.json"
-            : "user Claude settings";
-      add(
-        "WARN",
-        "security claude approval-recommendation",
-        `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired; canonkit install offers this change from a terminal. Doctor did not edit settings`,
-      );
+    if (desired.changes.length) add("WARN", "security claude desired-controls", `partial: supported project controls pending: ${desired.changes.join(", ")}; run canonkit install --claude from this project`);
+    if (desired.gaps.includes("sandbox-autoapproval-disabled-under-strict-profile")) {
+      const target = projectLocal?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.local.json"
+        : project?.data?.sandbox?.autoAllowBashIfSandboxed === false ? "this project's .claude/settings.json" : "user Claude settings";
+      add("WARN", "security claude approval-recommendation", `partial: sandbox.autoAllowBashIfSandboxed is explicitly false with the strict sandbox profile; set it to true in ${target} if desired; canonkit install offers this change from a terminal. Doctor did not edit settings`);
     }
   }
-  const userSources = sources.filter((source) =>
-    ["user", "user-local"].includes(source.label),
-  );
+  const userSources = sources.filter((source) => ["user", "user-local"].includes(source.label));
   if (userSources.length && !userSources.some((source) => source.error)) {
-    const allowRead = userSources.flatMap(
-      (source) => source.data?.sandbox?.filesystem?.allowRead ?? [],
-    );
-    const detected =
-      evidence.sandboxCapability === "available-unverified"
-        ? withModelsRead(
-            detectRuntimeRoots({
-              cwd: root ?? process.cwd(),
-              windowsRoots: readWindowsRoots(),
-            }),
-          )
-        : undefined;
-    const runtime = compileRuntimeReads(
-      { sandbox: { filesystem: { allowRead } } },
-      evidence,
-      { detected },
-    );
+    const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
+    const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
+    const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
     // This warning is a hint when any loaded scope enables sandboxing; settings precedence is left to the install flow.
-    if (
-      runtime.proposed.some((entry) => entry.item === MODELS_READ_ITEM) &&
-      sources.some((source) => source.data?.sandbox?.enabled === true)
-    )
-      add(
-        "WARN",
-        "security claude models-file",
-        `partial: ${MODELS_READ_ITEM} is not in sandbox.filesystem.allowRead of user settings; sandboxed canonkit models show would report "inherit" for every agent instead of your choices. Re-run canonkit install from a terminal. Doctor did not edit settings`,
-      );
-    for (const item of runtime.proposed.filter(
-      (entry) => entry.item !== MODELS_READ_ITEM,
-    ))
-      add(
-        "WARN",
-        "security claude runtime-reads",
-        `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`,
-      );
-    for (const entry of runtime.broad)
-      add(
-        "WARN",
-        "security claude runtime-reads",
-        `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`,
-      );
-    const uncoveredRuntime = runtime.proposed.filter(
-      (entry) => entry.item !== MODELS_READ_ITEM,
-    );
-    if (
-      runtime.covered.length &&
-      !uncoveredRuntime.length &&
-      !runtime.broad.length
-    )
-      add(
-        "OK",
-        "security claude runtime-reads",
-        `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`,
-      );
+    if (runtime.proposed.some((entry) => entry.item === MODELS_READ_ITEM) && sources.some((source) => source.data?.sandbox?.enabled === true)) add("WARN", "security claude models-file", `partial: ${MODELS_READ_ITEM} is not in sandbox.filesystem.allowRead of user settings; sandboxed canonkit models show would report "inherit" for every agent instead of your choices. Re-run canonkit install from a terminal. Doctor did not edit settings`);
+    for (const item of runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM)) add("WARN", "security claude runtime-reads", `partial: ${item.item} (${item.label}) is not covered by sandbox.filesystem.allowRead in user settings; sandboxed commands may not find it. Add it, e.g. "sandbox": { "filesystem": { "allowRead": ["${item.item}"] } }, or run canonkit install from a terminal. Doctor did not edit settings`);
+    for (const entry of runtime.broad) add("WARN", "security claude runtime-reads", `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`);
+    const uncoveredRuntime = runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM);
+    if (runtime.covered.length && !uncoveredRuntime.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
     // Informational and always OK: leaving the folder closed is a valid choice. Silent unless the sandbox is on and canonkit is installed for Claude.
-    const claudeInstalled =
-      existsSync(path.join(claudeHome(), "canonkit-dashboard")) ||
-      userSources.some((source) =>
-        Object.values(isObject(source.data?.hooks) ? source.data.hooks : {})
-          .flat()
-          .some(
-            (group) =>
-              Array.isArray(group?.hooks) &&
-              group.hooks.some((hook) =>
-                isCanonicalClaudeHook(hook, claudeHome()),
-              ),
-          ),
-      );
-    if (
-      claudeInstalled &&
-      sources.some((source) => source.data?.sandbox?.enabled === true)
-    ) {
-      const telemetry = compileTelemetryRead(
-        { sandbox: { filesystem: { allowRead } } },
-        evidence,
-        { claudeInstalled, symlinked: await telemetryReadSymlink() },
-      );
-      if (telemetry.covered)
-        add(
-          "OK",
-          "security claude telemetry-read",
-          `${TELEMETRY_READ_ITEM} is readable by sandboxed commands. The history holds session IDs, project names, agent names and the paths of files that gates flagged (see docs/telemetry.md)`,
-        );
-      else if (telemetry.proposed)
-        add(
-          "OK",
-          "security claude telemetry-read",
-          `${TELEMETRY_READ_ITEM} is closed to sandboxed commands (opt-in, by choice). ${TELEMETRY_EXPOSURE} The customize review of canonkit install offers it; doctor did not edit settings`,
-        );
+    const claudeInstalled = existsSync(path.join(claudeHome(), "canonkit-dashboard")) || userSources.some((source) =>
+      Object.values(isObject(source.data?.hooks) ? source.data.hooks : {}).flat().some((group) => Array.isArray(group?.hooks) && group.hooks.some((hook) => isCanonicalClaudeHook(hook, claudeHome()))));
+    if (claudeInstalled && sources.some((source) => source.data?.sandbox?.enabled === true)) {
+      const telemetry = compileTelemetryRead({ sandbox: { filesystem: { allowRead } } }, evidence, { claudeInstalled, symlinked: await telemetryReadSymlink() });
+      if (telemetry.covered) add("OK", "security claude telemetry-read", `${TELEMETRY_READ_ITEM} is readable by sandboxed commands. The history holds session IDs, project names, agent names and the paths of files that gates flagged (see docs/telemetry.md)`);
+      else if (telemetry.proposed) add("OK", "security claude telemetry-read", `${TELEMETRY_READ_ITEM} is closed to sandboxed commands (opt-in, by choice). ${TELEMETRY_EXPOSURE} The customize review of canonkit install offers it; doctor did not edit settings`);
     }
   }
-  if (evidence.container === "indicated")
-    add(
-      "WARN",
-      "security container",
-      "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence",
-    );
-  add(
-    "WARN",
-    "security remediation",
-    "partial: reapply supported native controls with canonkit install --claude from the project; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed",
-  );
+  if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
+  add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the project; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
   const checkTracked = async (receipt, id, label) => {
     try {
-      if (!(await receipt.load())) return;
+      if (!await receipt.load()) return;
       const entry = receipt.data.entries[id];
       if (!entry?.afterSnapshot || !entry.securityChanges) return;
       receipt.target(entry);
-      const bytes = await readSecurityBytes(
-        path.join(receipt.dir, "backups", entry.afterSnapshot),
-      );
-      if (!bytes || securityDigest(bytes) !== entry.hash)
-        throw new Error("Private snapshot evidence does not match");
+      const bytes = await readSecurityBytes(path.join(receipt.dir, "backups", entry.afterSnapshot));
+      if (!bytes || securityDigest(bytes) !== entry.hash) throw new Error("Private snapshot evidence does not match");
       const installed = parseSecuritySettings(bytes);
       const source = sources.find((item) => item.label === label);
       if (source?.error) return; // The malformed/inaccessible source already fails assessment.
-      const get = (data, keys) =>
-        keys.reduce((value, key) => value?.[key], data);
+      const get = (data, keys) => keys.reduce((value, key) => value?.[key], data);
       for (const [key, record] of Object.entries(entry.securityChanges)) {
         const keys = key.split(".");
         if (Object.hasOwn(record, "appendedItems")) {
           // Appended read exceptions: the install snapshot must hold them. A later removal is the user's
           // choice (it narrows access); the runtime-reads check reports a missing one.
           const list = get(installed, keys);
-          if (
-            !Array.isArray(list) ||
-            record.appendedItems.some((item) => !list.includes(item))
-          )
-            throw new Error("Ownership evidence does not match");
+          if (!Array.isArray(list) || record.appendedItems.some((item) => !list.includes(item))) throw new Error("Ownership evidence does not match");
           continue;
         }
-        if (get(installed, keys) !== record.afterValue)
-          throw new Error("Ownership evidence does not match");
-        if (get(source?.data, keys) !== record.afterValue)
-          add(
-            "FAIL",
-            "security claude tracked-policy",
-            `partial: tracked ${label} setting ${key} is missing or changed; re-run canonkit install${label === "project" ? " from this project" : ""}`,
-          );
+        if (get(installed, keys) !== record.afterValue) throw new Error("Ownership evidence does not match");
+        if (get(source?.data, keys) !== record.afterValue) add("FAIL", "security claude tracked-policy", `partial: tracked ${label} setting ${key} is missing or changed; re-run canonkit install${label === "project" ? " from this project" : ""}`);
       }
-    } catch {
-      add(
-        "FAIL",
-        "security receipt",
-        `unknown: ${label} receipt or private evidence cannot be validated; no repair performed`,
-      );
-    }
+    } catch { add("FAIL", "security receipt", `unknown: ${label} receipt or private evidence cannot be validated; no repair performed`); }
   };
   const globalCatalog = await installCatalog(await readAgents());
-  await checkTracked(
-    new InstallManifest({
-      home: os.homedir(),
-      ...globalCatalog,
-      targets: ["claude"],
-      dryRun: true,
-    }),
-    "claude:json:settings.json",
-    "user",
-  );
-  if (!root)
-    add(
-      "WARN",
-      "security project",
-      "unavailable: not inside a project (Git repository); run canonkit install from the project you want to set up. User settings are checked separately",
-    );
+  await checkTracked(new InstallManifest({ home: os.homedir(), ...globalCatalog, targets: ["claude"], dryRun: true }), "claude:json:settings.json", "user");
+  if (!root) add("WARN", "security project", "unavailable: not inside a project (Git repository); run canonkit install from the project you want to set up. User settings are checked separately");
   else {
     // Read provenance without starting/recovering a store or creating locks.
-    const receipt = scopedSecurityManifest(
-      { dryRun: true, log: () => {} },
-      root,
-    );
+    const receipt = scopedSecurityManifest({ dryRun: true, log: () => {} }, root);
     const hasReceipt = await receipt.load();
-    if (
-      !hasReceipt ||
-      !receipt.data?.entries["project:json:.claude/settings.json"]
-    ) {
-      add(
-        "WARN",
-        "security project",
-        `not configured for this project; user settings do not cover it (${root}). Run canonkit install --claude from this project to set it up`,
-      );
+    if (!hasReceipt || !receipt.data?.entries["project:json:.claude/settings.json"]) {
+      add("WARN", "security project", `not configured for this project; user settings do not cover it (${root}). Run canonkit install --claude from this project to set it up`);
     }
-    await checkTracked(
-      receipt,
-      "project:json:.claude/settings.json",
-      "project",
-    );
+    await checkTracked(receipt, "project:json:.claude/settings.json", "project");
   }
-  const readConfig = async (file) => {
-    try {
-      await safePath(file);
-      const bytes = await optionalBytes(file);
-      return bytes?.toString("utf8") ?? null;
-    } catch {
-      return undefined;
-    }
-  };
+  const readConfig = async (file) => { try { await safePath(file); const bytes = await optionalBytes(file); return bytes?.toString("utf8") ?? null; } catch { return undefined; } };
   const codex = await readConfig(path.join(codexHome(), "config.toml"));
-  const codexSummary =
-    codex === undefined
-      ? {
-          coverage: "unknown",
-          detail: "configuration inaccessible; no enforcement changed",
-        }
-      : inspectCodex(codex);
-  add(
-    "WARN",
-    "security codex",
-    `${codexSummary.coverage}: ${codexSummary.detail}`,
-  );
+  const codexSummary = codex === undefined ? { coverage: "unknown", detail: "configuration inaccessible; no enforcement changed" } : inspectCodex(codex);
+  add("WARN", "security codex", `${codexSummary.coverage}: ${codexSummary.detail}`);
   const ocJsonc = path.join(opencodeDir(), "opencode.jsonc");
-  const isJsonc = existsSync(ocJsonc),
-    opencode = await readConfig(isJsonc ? ocJsonc : opencodeConfigPath());
-  const ocSummary =
-    opencode === undefined
-      ? {
-          coverage: "unknown",
-          detail: "configuration inaccessible; no enforcement changed",
-        }
-      : inspectOpencode(opencode, isJsonc);
-  add(
-    "WARN",
-    "security opencode",
-    `${ocSummary.coverage}: ${ocSummary.detail}`,
-  );
+  const isJsonc = existsSync(ocJsonc), opencode = await readConfig(isJsonc ? ocJsonc : opencodeConfigPath());
+  const ocSummary = opencode === undefined ? { coverage: "unknown", detail: "configuration inaccessible; no enforcement changed" } : inspectOpencode(opencode, isJsonc);
+  add("WARN", "security opencode", `${ocSummary.coverage}: ${ocSummary.detail}`);
   return rows;
 }
 
@@ -4410,63 +2820,34 @@ async function doctor({ verbose = false } = {}) {
   const claudeDir = claudeHome();
   const results = [];
   // `scope: "project"` marks a row about the current project; no scope means user level.
-  const add = (status, check, detail, more = [], scope) =>
-    results.push({ status, check, detail, more, ...(scope ? { scope } : {}) });
-  const text = (p) => {
-    try {
-      return toLf(readRegularSync(p).toString("utf8"));
-    } catch {
-      return null;
-    }
-  };
+  const add = (status, check, detail, more = [], scope) => results.push({ status, check, detail, more, ...(scope ? { scope } : {}) });
+  const text = (p) => { try { return toLf(readRegularSync(p).toString("utf8")); } catch { return null; } };
 
   // agents: every core agent in ~/.claude/agents, matching what install would
   // write now (this package's agent plus the user's model choices). A choices
   // file doctor cannot read is reported by the models check below.
   const agents = core(await readAgents());
   let userChoices;
-  try {
-    userChoices = await readChoices(userConfigPath(home));
-  } catch {
-    userChoices = undefined;
-  }
-  const missing = [],
-    stale = [];
+  try { userChoices = await readChoices(userConfigPath(home)); } catch { userChoices = undefined; }
+  const missing = [], stale = [];
   for (const a of agents) {
     const x = text(path.join(claudeDir, "agents", `${a.name}.md`));
     if (x === null) missing.push(a.name);
-    else if (
-      x !== claudeAgent(a, choiceFor(a, "claude", { user: userChoices }))
-    )
-      stale.push(a.name);
+    else if (x !== claudeAgent(a, choiceFor(a, "claude", { user: userChoices }))) stale.push(a.name);
   }
   if (missing.length) {
-    add(
-      "FAIL",
-      "agents",
-      `missing from ~/.claude/agents: ${missing.join(", ")} — run npx canonkit install`,
-    );
+    add("FAIL", "agents", `missing from ~/.claude/agents: ${missing.join(", ")} — run npx canonkit install`);
   } else if (stale.length) {
-    add(
-      "WARN",
-      "agents",
-      `differ from this package's: ${stale.join(", ")} — run npx canonkit install`,
-    );
+    add("WARN", "agents", `differ from this package's: ${stale.join(", ")} — run npx canonkit install`);
   } else {
     add("OK", "agents", `${agents.length} core agents in ~/.claude/agents`);
   }
 
   // Leftovers from installs before 2.1: ~/.agents/<core>.md is read by no harness.
   // Install removes the byte-identical ones; doctor reports what is left.
-  const leftovers = agents
-    .filter((a) => text(path.join(home, ".agents", `${a.name}.md`)) !== null)
-    .map((a) => a.name);
+  const leftovers = agents.filter((a) => text(path.join(home, ".agents", `${a.name}.md`)) !== null).map((a) => a.name);
   if (leftovers.length) {
-    add(
-      "WARN",
-      "agents leftovers",
-      `~/.agents has core-named copies: ${leftovers.join(", ")} — not read by any harness; npx canonkit install removes the byte-identical ones`,
-    );
+    add("WARN", "agents leftovers", `~/.agents has core-named copies: ${leftovers.join(", ")} — not read by any harness; npx canonkit install removes the byte-identical ones`);
   }
 
   // opencode agents: checked only where OpenCode was installed for, which is
@@ -4476,124 +2857,46 @@ async function doctor({ verbose = false } = {}) {
   const ocText = agents.map((a) => [a, text(path.join(ocDir, `${a.name}.md`))]);
   if (ocText.some(([, t]) => t !== null)) {
     const ocMissing = ocText.filter(([, t]) => t === null).map(([a]) => a.name);
-    const ocStale = ocText
-      .filter(([a, t]) => t !== null && t !== opencodeAgent(a))
-      .map(([a]) => a.name);
+    const ocStale = ocText.filter(([a, t]) => t !== null && t !== opencodeAgent(a)).map(([a]) => a.name);
     const where = tilde(ocDir);
-    if (ocMissing.length)
-      add(
-        "FAIL",
-        "opencode agents",
-        `missing from ${where}: ${ocMissing.join(", ")} — run npx canonkit install --opencode`,
-      );
-    else if (ocStale.length)
-      add(
-        "WARN",
-        "opencode agents",
-        `differ from this package's: ${ocStale.join(", ")} — run npx canonkit install --opencode`,
-      );
-    else
-      add(
-        "OK",
-        "opencode agents",
-        `${agents.length} core agents in ${where}, current`,
-      );
+    if (ocMissing.length) add("FAIL", "opencode agents", `missing from ${where}: ${ocMissing.join(", ")} — run npx canonkit install --opencode`);
+    else if (ocStale.length) add("WARN", "opencode agents", `differ from this package's: ${ocStale.join(", ")} — run npx canonkit install --opencode`);
+    else add("OK", "opencode agents", `${agents.length} core agents in ${where}, current`);
   }
 
   const copilotDir = copilotAgentsDir();
-  const copilotText = agents.map((a) => [
-    a,
-    text(path.join(copilotDir, `${a.name}.agent.md`)),
-  ]);
+  const copilotText = agents.map((a) => [a, text(path.join(copilotDir, `${a.name}.agent.md`))]);
   if (copilotText.some(([, t]) => t !== null)) {
-    const copilotMissing = copilotText
-      .filter(([, t]) => t === null)
-      .map(([a]) => a.name);
-    const copilotStale = copilotText
-      .filter(([a, t]) => t !== null && t !== copilotAgent(a))
-      .map(([a]) => a.name);
+    const copilotMissing = copilotText.filter(([, t]) => t === null).map(([a]) => a.name);
+    const copilotStale = copilotText.filter(([a, t]) => t !== null && t !== copilotAgent(a)).map(([a]) => a.name);
     const where = tilde(copilotDir);
-    if (copilotMissing.length)
-      add(
-        "FAIL",
-        "copilot agents",
-        `missing from ${where}: ${copilotMissing.join(", ")} — run npx canonkit install --copilot`,
-      );
-    else if (copilotStale.length)
-      add(
-        "WARN",
-        "copilot agents",
-        `differ from this package's: ${copilotStale.join(", ")} — run npx canonkit install --copilot`,
-      );
-    else
-      add(
-        "OK",
-        "copilot agents",
-        `${agents.length} core agents in ${where}, current`,
-      );
+    if (copilotMissing.length) add("FAIL", "copilot agents", `missing from ${where}: ${copilotMissing.join(", ")} — run npx canonkit install --copilot`);
+    else if (copilotStale.length) add("WARN", "copilot agents", `differ from this package's: ${copilotStale.join(", ")} — run npx canonkit install --copilot`);
+    else add("OK", "copilot agents", `${agents.length} core agents in ${where}, current`);
   }
 
   // reference: the managed blocks the team's rules live in.
-  const blocks = [
-    [path.join(home, "AGENTS.md"), ROSTER],
-    [path.join(claudeDir, "CLAUDE.md"), ROUTING],
-  ];
-  const noBlock = blocks
-    .filter(
-      ([f, [start, end]]) =>
-        !(text(f)?.includes(start) && text(f)?.includes(end)),
-    )
-    .map(([f]) => tilde(f));
-  if (noBlock.length)
-    add(
-      "FAIL",
-      "reference",
-      `no managed block in ${noBlock.join(", ")} — run npx canonkit reference`,
-    );
-  else
-    add(
-      "OK",
-      "reference",
-      "managed blocks in ~/AGENTS.md and ~/.claude/CLAUDE.md",
-    );
+  const blocks = [[path.join(home, "AGENTS.md"), ROSTER], [path.join(claudeDir, "CLAUDE.md"), ROUTING]];
+  const noBlock = blocks.filter(([f, [start, end]]) => !(text(f)?.includes(start) && text(f)?.includes(end))).map(([f]) => tilde(f));
+  if (noBlock.length) add("FAIL", "reference", `no managed block in ${noBlock.join(", ")} — run npx canonkit reference`);
+  else add("OK", "reference", "managed blocks in ~/AGENTS.md and ~/.claude/CLAUDE.md");
 
   // hook file and syntax: on disk, this package's, and parseable — a hook that
   // does not parse fails open, which turns every gate off with no sign.
   const hookFile = path.join(claudeDir, "hooks", HOOK);
   const hookText = text(hookFile);
   if (hookText === null) {
-    add(
-      "FAIL",
-      "hook file",
-      `${tilde(hookFile)} is not on disk — run npx canonkit install`,
-    );
+    add("FAIL", "hook file", `${tilde(hookFile)} is not on disk — run npx canonkit install`);
     add("FAIL", "hook syntax", "nothing to check: the hook is not on disk");
   } else {
     if (hookText !== (await readOwned(path.join(HOOKS_DIR, HOOK)))) {
-      add(
-        "WARN",
-        "hook file",
-        `${tilde(hookFile)} differs from this package's — run npx canonkit install (a local edit is kept as .local.bak)`,
-      );
+      add("WARN", "hook file", `${tilde(hookFile)} differs from this package's — run npx canonkit install (a local edit is kept as .local.bak)`);
     } else {
       add("OK", "hook file", `${tilde(hookFile)}, same as this package's`);
     }
-    const check = spawnSync(process.execPath, ["--check", hookFile], {
-      encoding: "utf8",
-    });
+    const check = spawnSync(process.execPath, ["--check", hookFile], { encoding: "utf8" });
     if (check.status === 0) add("OK", "hook syntax", "node --check passes");
-    else
-      add(
-        "FAIL",
-        "hook syntax",
-        `node --check fails: ${
-          (/^\w*Error\b.*$/m.exec(check.stderr ?? "") ?? [
-            String(check.stderr ?? check.error)
-              .trim()
-              .split("\n")[0],
-          ])[0]
-        }`,
-      );
+    else add("FAIL", "hook syntax", `node --check fails: ${(/^\w*Error\b.*$/m.exec(check.stderr ?? "") ?? [String(check.stderr ?? check.error).trim().split("\n")[0]])[0]}`);
   }
 
   // hook wiring: registered per event with its matcher. settings.local.json is
@@ -4607,49 +2910,21 @@ async function doctor({ verbose = false } = {}) {
     if (f === "settings.local.json" && raw === "") continue; // empty: a sandbox placeholder, nothing wired
     anySettings = true;
     let parsed;
-    try {
-      parsed = JSON.parse(readSettingsText(raw));
-    } catch {
-      bad.push(f);
-      continue;
-    }
-    for (const [event, entries] of Object.entries(
-      isObject(parsed?.hooks) ? parsed.hooks : {},
-    )) {
-      if (Array.isArray(entries))
-        hooks[event] = [...(hooks[event] ?? []), ...entries];
+    try { parsed = JSON.parse(readSettingsText(raw)); } catch { bad.push(f); continue; }
+    for (const [event, entries] of Object.entries(isObject(parsed?.hooks) ? parsed.hooks : {})) {
+      if (Array.isArray(entries)) hooks[event] = [...(hooks[event] ?? []), ...entries];
     }
   }
   const gaps = wiringGaps(hooks, HOOK);
-  const claudeHooksActive = Object.values(hooks)
-    .flat()
-    .some(
-      (group) => Array.isArray(group?.hooks) && group.hooks.some(mentionsHook),
-    );
+  const claudeHooksActive = Object.values(hooks).flat().some((group) => Array.isArray(group?.hooks) && group.hooks.some(mentionsHook));
   if (bad.length) {
-    add(
-      "FAIL",
-      "hook wiring",
-      `${bad.map((f) => `~/.claude/${f}`).join(", ")} is not valid JSON: the runtime cannot read its hooks`,
-    );
+    add("FAIL", "hook wiring", `${bad.map((f) => `~/.claude/${f}`).join(", ")} is not valid JSON: the runtime cannot read its hooks`);
   } else if (!claudeHooksActive) {
-    add(
-      "OK",
-      "hook wiring",
-      "optional canonkit hooks inactive; native approval modes remain authoritative",
-    );
+    add("OK", "hook wiring", "optional canonkit hooks inactive; native approval modes remain authoritative");
   } else if (gaps.length) {
-    add(
-      "FAIL",
-      "hook wiring",
-      `not registered with the required matcher under: ${gaps.map(([e]) => e).join(", ")} — run npx canonkit install --wire-hooks`,
-    );
+    add("FAIL", "hook wiring", `not registered with the required matcher under: ${gaps.map(([e]) => e).join(", ")} — run npx canonkit install --wire-hooks`);
   } else {
-    add(
-      "OK",
-      "hook wiring",
-      `registered with its matcher under ${Object.keys(HOOK_EVENTS[HOOK]).join(", ")}`,
-    );
+    add("OK", "hook wiring", `registered with its matcher under ${Object.keys(HOOK_EVENTS[HOOK]).join(", ")}`);
   }
 
   // codex hook: checked where it was installed, which only --wire-hooks starts.
@@ -4658,93 +2933,32 @@ async function doctor({ verbose = false } = {}) {
   // not text: the files are copies, and any difference is not this package's code.
   const codexDir = codexHooksDir();
   if (existsSync(codexDir)) {
-    const bytes = (p) => {
-      try {
-        return readFileSync(p);
-      } catch {
-        return null;
-      }
-    };
-    const cxMissing = [],
-      cxStale = [];
+    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const cxMissing = [], cxStale = [];
     for (const f of HOOK_FILES.codex) {
       const b = bytes(path.join(codexDir, f));
       if (b === null) cxMissing.push(f);
-      else if (!b.equals(readFileSync(path.join(HOOKS_DIR, f))))
-        cxStale.push(f);
+      else if (!b.equals(readFileSync(path.join(HOOKS_DIR, f)))) cxStale.push(f);
     }
     const where = tilde(codexDir);
-    if (cxMissing.length)
-      add(
-        "FAIL",
-        "codex hook files",
-        `missing from ${where}: ${cxMissing.join(", ")} — Codex lets every call through; run npx canonkit install --codex`,
-      );
-    else if (cxStale.length)
-      add(
-        "FAIL",
-        "codex hook files",
-        `differ from this package's in ${where}: ${cxStale.join(", ")} — run npx canonkit install --codex (a local edit is kept as .local.bak)`,
-      );
-    else
-      add(
-        "OK",
-        "codex hook files",
-        `${HOOK_FILES.codex.length} files in ${where}, same as this package's`,
-      );
+    if (cxMissing.length) add("FAIL", "codex hook files", `missing from ${where}: ${cxMissing.join(", ")} — Codex lets every call through; run npx canonkit install --codex`);
+    else if (cxStale.length) add("FAIL", "codex hook files", `differ from this package's in ${where}: ${cxStale.join(", ")} — run npx canonkit install --codex (a local edit is kept as .local.bak)`);
+    else add("OK", "codex hook files", `${HOOK_FILES.codex.length} files in ${where}, same as this package's`);
 
     const hooksFile = codexHooksPath();
     const fix = "run npx canonkit install --codex --wire-hooks";
     const raw = text(hooksFile);
     let parsed;
-    try {
-      parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, ""));
-    } catch {
-      parsed = undefined;
-    }
+    try { parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, "")); } catch { parsed = undefined; }
     // Found by the exact command install writes: one naming another copy runs
     // files these rows did not check.
-    const own = (
-      Array.isArray(parsed?.hooks?.PreToolUse) ? parsed.hooks.PreToolUse : []
-    ).filter(
-      (g) =>
-        isObject(g) &&
-        Array.isArray(g.hooks) &&
-        g.hooks.some(
-          (h) =>
-            isObject(h) && h.type === "command" && h.command === codexCommand(),
-        ),
-    );
-    if (raw === null)
-      add(
-        "FAIL",
-        "codex hook wiring",
-        `${tilde(hooksFile)} does not exist: Codex never runs the hook — ${fix}`,
-      );
-    else if (parsed === undefined)
-      add(
-        "FAIL",
-        "codex hook wiring",
-        `${tilde(hooksFile)} is not valid JSON: Codex cannot read its hooks`,
-      );
-    else if (!own.length)
-      add(
-        "FAIL",
-        "codex hook wiring",
-        `no PreToolUse group in ${tilde(hooksFile)} runs ${codexCommand()} — ${fix}`,
-      );
-    else if (!own.some((g) => g.matcher === CODEX_MATCHER))
-      add(
-        "FAIL",
-        "codex hook wiring",
-        `its PreToolUse matcher is ${JSON.stringify(own[0].matcher ?? null)}, not ${CODEX_MATCHER} — ${fix}`,
-      );
-    else
-      add(
-        "OK",
-        "codex hook wiring",
-        `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`,
-      );
+    const own = (Array.isArray(parsed?.hooks?.PreToolUse) ? parsed.hooks.PreToolUse : [])
+      .filter((g) => isObject(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isObject(h) && h.type === "command" && h.command === codexCommand()));
+    if (raw === null) add("FAIL", "codex hook wiring", `${tilde(hooksFile)} does not exist: Codex never runs the hook — ${fix}`);
+    else if (parsed === undefined) add("FAIL", "codex hook wiring", `${tilde(hooksFile)} is not valid JSON: Codex cannot read its hooks`);
+    else if (!own.length) add("FAIL", "codex hook wiring", `no PreToolUse group in ${tilde(hooksFile)} runs ${codexCommand()} — ${fix}`);
+    else if (!own.some((g) => g.matcher === CODEX_MATCHER)) add("FAIL", "codex hook wiring", `its PreToolUse matcher is ${JSON.stringify(own[0].matcher ?? null)}, not ${CODEX_MATCHER} — ${fix}`);
+    else add("OK", "codex hook wiring", `registered under PreToolUse with matcher ${CODEX_MATCHER} (whether it is trusted is Codex's: /hooks)`);
   }
 
   // opencode hook: checked where either half was installed. As with Codex, a
@@ -4753,51 +2967,21 @@ async function doctor({ verbose = false } = {}) {
   const ocHooks = opencodeHooksDir();
   const ocPlugin = opencodePluginPath();
   if (existsSync(ocHooks) || existsSync(ocPlugin)) {
-    const bytes = (p) => {
-      try {
-        return readFileSync(p);
-      } catch {
-        return null;
-      }
-    };
+    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
     const files = [
-      ...HOOK_FILES.opencode.map((f) => [
-        `canonkit/${f}`,
-        path.join(ocHooks, f),
-        path.join(HOOKS_DIR, f),
-      ]),
-      [
-        OPENCODE_PLUGIN.to,
-        ocPlugin,
-        path.join(HOOKS_DIR, OPENCODE_PLUGIN.from),
-      ],
+      ...HOOK_FILES.opencode.map((f) => [`canonkit/${f}`, path.join(ocHooks, f), path.join(HOOKS_DIR, f)]),
+      [OPENCODE_PLUGIN.to, ocPlugin, path.join(HOOKS_DIR, OPENCODE_PLUGIN.from)],
     ];
-    const ocMissing = [],
-      ocStale = [];
+    const ocMissing = [], ocStale = [];
     for (const [name, at, ours] of files) {
       const b = bytes(at);
       if (b === null) ocMissing.push(name);
       else if (!b.equals(readFileSync(ours))) ocStale.push(name);
     }
     const where = tilde(opencodeDir());
-    if (ocMissing.length)
-      add(
-        "FAIL",
-        "opencode hook files",
-        `missing from ${where}: ${ocMissing.join(", ")} — OpenCode lets every call through; run npx canonkit install --opencode`,
-      );
-    else if (ocStale.length)
-      add(
-        "FAIL",
-        "opencode hook files",
-        `differ from this package's in ${where}: ${ocStale.join(", ")} — run npx canonkit install --opencode (a local edit is kept as .local.bak)`,
-      );
-    else
-      add(
-        "OK",
-        "opencode hook files",
-        `${files.length} files in ${where}, same as this package's (OpenCode 2 only)`,
-      );
+    if (ocMissing.length) add("FAIL", "opencode hook files", `missing from ${where}: ${ocMissing.join(", ")} — OpenCode lets every call through; run npx canonkit install --opencode`);
+    else if (ocStale.length) add("FAIL", "opencode hook files", `differ from this package's in ${where}: ${ocStale.join(", ")} — run npx canonkit install --opencode (a local edit is kept as .local.bak)`);
+    else add("OK", "opencode hook files", `${files.length} files in ${where}, same as this package's (OpenCode 2 only)`);
 
     // The asks are config, not a gate, so a gap is a WARN.
     const cfg = opencodeConfigPath();
@@ -4805,235 +2989,101 @@ async function doctor({ verbose = false } = {}) {
     const fix = "run npx canonkit install --opencode --wire-hooks";
     const raw = text(cfg);
     let parsed;
-    try {
-      parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, ""));
-    } catch {
-      parsed = undefined;
-    }
-    const list = isObject(parsed) ? (parsed.permissions ?? []) : null;
-    if (existsSync(jsonc))
-      add(
-        "WARN",
-        "opencode permissions",
-        `${tilde(jsonc)} exists and doctor does not read it: check that its "permissions" end with ${OPENCODE_ASKS.map(ruleText).join(" and ")}`,
-      );
-    else if (raw === null)
-      add(
-        "WARN",
-        "opencode permissions",
-        `${tilde(cfg)} does not exist: OpenCode does not ask before git commit/git push — ${fix}`,
-      );
-    else if (!Array.isArray(list))
-      add(
-        "WARN",
-        "opencode permissions",
-        `${tilde(cfg)} is not a JSON object with a "permissions" list: cannot check the git commit/push asks`,
-      );
+    try { parsed = raw === null ? null : JSON.parse(raw.replace(/^﻿/, "")); } catch { parsed = undefined; }
+    const list = isObject(parsed) ? parsed.permissions ?? [] : null;
+    if (existsSync(jsonc)) add("WARN", "opencode permissions", `${tilde(jsonc)} exists and doctor does not read it: check that its "permissions" end with ${OPENCODE_ASKS.map(ruleText).join(" and ")}`);
+    else if (raw === null) add("WARN", "opencode permissions", `${tilde(cfg)} does not exist: OpenCode does not ask before git commit/git push — ${fix}`);
+    else if (!Array.isArray(list)) add("WARN", "opencode permissions", `${tilde(cfg)} is not a JSON object with a "permissions" list: cannot check the git commit/push asks`);
     else {
       const gaps = asksNotInEffect(list);
-      if (gaps.length && deniesShell(parsed))
-        add(
-          "WARN",
-          "opencode permissions",
-          `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls, and it denies shell calls, so --wire-hooks leaves them to you: ${asksByHand(gaps)}`,
-        );
-      else if (gaps.length)
-        add(
-          "WARN",
-          "opencode permissions",
-          `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls (the last match wins) — ${fix}`,
-        );
-      else
-        add(
-          "OK",
-          "opencode permissions",
-          `git commit/git push ask, in effect in ${tilde(cfg)} (as typed: pattern-limited)`,
-        );
+      if (gaps.length && deniesShell(parsed)) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls, and it denies shell calls, so --wire-hooks leaves them to you: ${asksByHand(gaps)}`);
+      else if (gaps.length) add("WARN", "opencode permissions", `${gaps.map(ruleText).join(" and ")} missing from ${tilde(cfg)} or followed by a rule that allows shell calls (the last match wins) — ${fix}`);
+      else add("OK", "opencode permissions", `git commit/git push ask, in effect in ${tilde(cfg)} (as typed: pattern-limited)`);
     }
   }
 
   // codex reference: Codex does not read ~/AGENTS.md from a repo below home, so
   // its team rules live in its own block. Checked only where Codex was
   // installed for — any core agent in its agents folder says it was.
-  if (
-    agents.some((a) =>
-      existsSync(path.join(codexHome(), "agents", `${a.name}.toml`)),
-    )
-  ) {
+  if (agents.some((a) => existsSync(path.join(codexHome(), "agents", `${a.name}.toml`)))) {
     const codexMd = path.join(codexHome(), "AGENTS.md");
     const [cStart, cEnd] = CODEX;
-    if (text(codexMd)?.includes(cStart) && text(codexMd)?.includes(cEnd))
-      add("OK", "codex reference", `managed block in ${tilde(codexMd)}`);
-    else
-      add(
-        "WARN",
-        "codex reference",
-        `no managed block in ${tilde(codexMd)}: Codex does not read ~/AGENTS.md from a repo below home, so it does not see the team's rules — run npx canonkit reference --codex`,
-      );
+    if (text(codexMd)?.includes(cStart) && text(codexMd)?.includes(cEnd)) add("OK", "codex reference", `managed block in ${tilde(codexMd)}`);
+    else add("WARN", "codex reference", `no managed block in ${tilde(codexMd)}: Codex does not read ~/AGENTS.md from a repo below home, so it does not see the team's rules — run npx canonkit reference --codex`);
   }
 
   // opencode reference: the block says which of OpenCode's rules its plugin
   // enforces. Checked only where OpenCode was installed for, as above.
-  if (
-    agents.some((a) =>
-      existsSync(path.join(opencodeAgentsDir(), `${a.name}.md`)),
-    )
-  ) {
+  if (agents.some((a) => existsSync(path.join(opencodeAgentsDir(), `${a.name}.md`)))) {
     const ocMd = path.join(opencodeDir(), "AGENTS.md");
     const [oStart, oEnd] = OPENCODE;
-    if (text(ocMd)?.includes(oStart) && text(ocMd)?.includes(oEnd))
-      add("OK", "opencode reference", `managed block in ${tilde(ocMd)}`);
-    else
-      add(
-        "WARN",
-        "opencode reference",
-        `no managed block in ${tilde(ocMd)}: OpenCode does not see which of its rules a plugin enforces — run npx canonkit reference --opencode`,
-      );
+    if (text(ocMd)?.includes(oStart) && text(ocMd)?.includes(oEnd)) add("OK", "opencode reference", `managed block in ${tilde(ocMd)}`);
+    else add("WARN", "opencode reference", `no managed block in ${tilde(ocMd)}: OpenCode does not see which of its rules a plugin enforces — run npx canonkit reference --opencode`);
   }
 
   // codex AGENTS.override.md: Codex reads it in place of AGENTS.md in the same
   // folder, so the synced codex block is never loaded while it exists.
   const override = path.join(codexHome(), "AGENTS.override.md");
   if (existsSync(override)) {
-    add(
-      "WARN",
-      "codex AGENTS.override.md",
-      `${tilde(override)} exists: Codex reads it instead of ${tilde(path.join(codexHome(), "AGENTS.md"))}, so the codex block is not loaded — move its rules into the override or remove the override`,
-    );
+    add("WARN", "codex AGENTS.override.md", `${tilde(override)} exists: Codex reads it instead of ${tilde(path.join(codexHome(), "AGENTS.md"))}, so the codex block is not loaded — move its rules into the override or remove the override`);
   }
 
   // log: where every gate and dispatch is recorded; the Stop gate reads it. Checked
   // without writing: the folder, or the nearest existing parent the hook creates it in.
   const logDir = path.join(claudeDir, "canonkit-activity");
   let probe = logDir;
-  while (!existsSync(probe) && path.dirname(probe) !== probe)
-    probe = path.dirname(probe);
+  while (!existsSync(probe) && path.dirname(probe) !== probe) probe = path.dirname(probe);
   try {
     if (!statSync(probe).isDirectory()) throw new Error("not a folder");
     accessSync(probe, fsc.W_OK);
-    add(
-      "OK",
-      "log",
-      probe === logDir
-        ? `${tilde(logDir)} is writable`
-        : `${tilde(logDir)} will be created on the first event`,
-    );
+    add("OK", "log", probe === logDir ? `${tilde(logDir)} is writable` : `${tilde(logDir)} will be created on the first event`);
   } catch (err) {
-    add(
-      "FAIL",
-      "log",
-      `cannot write ${tilde(probe)} (${err.code ?? err.message}): no gate is recorded, so the Stop gate never fires`,
-    );
+    add("FAIL", "log", `cannot write ${tilde(probe)} (${err.code ?? err.message}): no gate is recorded, so the Stop gate never fires`);
   }
 
   // forwarder: the pre-rename file, and any settings in sight still running it.
   const forwarder = path.join(claudeDir, "hooks", LEGACY.hook);
   const { running, unreadable } = legacyRunners(claudeDir);
   const runBy = running.map(slash).join(", ");
-  const unread = unreadable.length
-    ? `; could not read ${unreadable.map(slash).join(", ")}`
-    : "";
+  const unread = unreadable.length ? `; could not read ${unreadable.map(slash).join(", ")}` : "";
   // The file in ~/.claude/hooks is user level; a row is project scope only when every
   // settings file it names (running it or unreadable) sits in the project, not in ~/.claude.
-  const projectOnly = [...running, ...unreadable].every(
-    (f) => pathKey(path.dirname(f)) !== pathKey(claudeDir),
-  );
+  const projectOnly = [...running, ...unreadable].every((f) => pathKey(path.dirname(f)) !== pathKey(claudeDir));
   if (existsSync(forwarder)) {
-    add(
-      "WARN",
-      "forwarder",
-      `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json; check other projects, then remove the forwarder manually`,
-    );
+    add("WARN", "forwarder", `${tilde(forwarder)} is still on disk${runBy ? `, run by ${runBy}` : ""}${unread}. npx canonkit install --wire-hooks rewires ~/.claude/settings.json; check other projects, then remove the forwarder manually`);
   } else if (running.length) {
-    add(
-      "FAIL",
-      "forwarder",
-      `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`,
-      [],
-      projectOnly ? "project" : undefined,
-    );
+    add("FAIL", "forwarder", `${runBy} still run ${LEGACY.hook}, which is not on disk: every gate there is off. Point it at ${HOOK}${unread}`, [], projectOnly ? "project" : undefined);
   } else if (unreadable.length) {
-    add(
-      "WARN",
-      "forwarder",
-      `no ${LEGACY.hook} left${unread}`,
-      [],
-      projectOnly ? "project" : undefined,
-    );
+    add("WARN", "forwarder", `no ${LEGACY.hook} left${unread}`, [], projectOnly ? "project" : undefined);
   } else {
-    add(
-      "OK",
-      "forwarder",
-      `no ${LEGACY.hook} left, and no settings in sight run it`,
-    );
+    add("OK", "forwarder", `no ${LEGACY.hook} left, and no settings in sight run it`);
   }
 
   // config: what the gates resolve to from here, by this package's hook module.
-  const { projectConfig } = createRequire(import.meta.url)(
-    path.join(HOOKS_DIR, HOOK),
-  );
+  const { projectConfig } = createRequire(import.meta.url)(path.join(HOOKS_DIR, HOOK));
   const cfg = projectConfig(process.cwd());
   const found = cfg.file && existsSync(cfg.file);
-  const parts = [
-    `file ${found ? slash(cfg.file) : "none (defaults)"}`,
-    `root ${slash(cfg.root)}`,
-  ];
-  if (found)
-    parts.push(
-      `${cfg.include.length} include, ${cfg.exclude.length} exclude, ${cfg.perf.length} perfBudgets`,
-    );
+  const parts = [`file ${found ? slash(cfg.file) : "none (defaults)"}`, `root ${slash(cfg.root)}`];
+  if (found) parts.push(`${cfg.include.length} include, ${cfg.exclude.length} exclude, ${cfg.perf.length} perfBudgets`);
   if (cfg.project) {
-    parts.push(
-      `project ${slash(cfg.project.file)} also applies ${cfg.project.include.length} include, ${cfg.project.perf.length} perfBudgets`,
-    );
+    parts.push(`project ${slash(cfg.project.file)} also applies ${cfg.project.include.length} include, ${cfg.project.perf.length} perfBudgets`);
   }
   const ignored = [
     ...cfg.ignored.map((i) => `ignored ${i.where}: ${i.why}`),
-    ...(cfg.project?.ignored ?? []).map(
-      (i) => `ignored in the project file ${i.where}: ${i.why}`,
-    ),
+    ...(cfg.project?.ignored ?? []).map((i) => `ignored in the project file ${i.where}: ${i.why}`),
   ];
-  add(
-    ignored.length ? "WARN" : "OK",
-    "config",
-    parts.join(", "),
-    ignored,
-    "project",
-  );
+  add(ignored.length ? "WARN" : "OK", "config", parts.join(", "), ignored, "project");
 
   // models: stored choices against the stored discovery; never starts a harness.
-  for (const row of await modelDiagnosis(await readAgents(), {
-    home,
-    cwd: process.cwd(),
-  }))
-    add(row.status, row.check, row.detail, [], row.scope);
+  for (const row of await modelDiagnosis(await readAgents(), { home, cwd: process.cwd() })) add(row.status, row.check, row.detail, [], row.scope);
 
-  const claudeInstalled = agents.some((agent) =>
-    existsSync(path.join(claudeDir, "agents", `${agent.name}.md`)),
-  );
-  const otherInstalled = agents.some(
-    (agent) =>
-      existsSync(path.join(codexHome(), "agents", `${agent.name}.toml`)) ||
-      existsSync(path.join(opencodeAgentsDir(), `${agent.name}.md`)),
-  );
-  const claudeChecks = new Set([
-    "agents",
-    "reference",
-    "hook file",
-    "hook syntax",
-    "hook wiring",
-    "log",
-    "forwarder",
-    "config",
-  ]);
+  const claudeInstalled = agents.some((agent) => existsSync(path.join(claudeDir, "agents", `${agent.name}.md`)));
+  const otherInstalled = agents.some((agent) => existsSync(path.join(codexHome(), "agents", `${agent.name}.toml`)) || existsSync(path.join(opencodeAgentsDir(), `${agent.name}.md`)));
+  const claudeChecks = new Set(["agents", "reference", "hook file", "hook syntax", "hook wiring", "log", "forwarder", "config"]);
   const optionalChecks = new Set(["hook file", "hook syntax", "log"]);
-  const report = results.filter(
-    (row) =>
-      (claudeInstalled || !otherInstalled || !claudeChecks.has(row.check)) &&
-      (claudeHooksActive || !optionalChecks.has(row.check)),
-  );
-  report.push(...(await securityDiagnosis()));
-  report.push(...(await sandboxPlaceholderDiagnosis()));
+  const report = results.filter((row) => (claudeInstalled || !otherInstalled || !claudeChecks.has(row.check)) && (claudeHooksActive || !optionalChecks.has(row.check)));
+  report.push(...await securityDiagnosis());
+  report.push(...await sandboxPlaceholderDiagnosis());
   if (!verbose) {
     const { lines, failed: bad } = renderDoctorReport(report);
     console.log(lines.join("\n"));
@@ -5045,11 +3095,7 @@ async function doctor({ verbose = false } = {}) {
   }
   const failed = report.filter((r) => r.status === "FAIL").length;
   console.log("");
-  console.log(
-    failed
-      ? `${failed} check${failed === 1 ? "" : "s"} failed.`
-      : "No check failed.",
-  );
+  console.log(failed ? `${failed} check${failed === 1 ? "" : "s"} failed.` : "No check failed.");
   return failed ? 1 : 0;
 }
 
@@ -5074,9 +3120,7 @@ const PIN = /^\d+\.\d+\.\d+$/;
 // A setup step may never write a CLAUDE.md (Claude Code would stop reading the
 // project's AGENTS.md) or call a model. Those are graphify's `<platform> install`
 // and `extract`; `hook install` is the one install subcommand allowed.
-const forbiddenStep = (args) =>
-  args.includes("extract") ||
-  (args.includes("install") && args.join(" ") !== "hook install");
+const forbiddenStep = (args) => args.includes("extract") || (args.includes("install") && args.join(" ") !== "hook install");
 
 const HARNESS_SLOT = "{harness}";
 
@@ -5088,21 +3132,15 @@ const HARNESS_SLOT = "{harness}";
 function composeSetup(template, keys) {
   return template.map((args) => {
     const step = args.map((a) => (a === HARNESS_SLOT ? keys.join(",") : a));
-    if (step.some((a) => !SAFE_ARG.test(a)))
-      throw new Error(
-        `setup step '${step.join(" ")}' has an argument that is not a plain literal`,
-      );
-    if (forbiddenStep(step))
-      throw new Error(`setup step '${step.join(" ")}' is not allowed`);
+    if (step.some((a) => !SAFE_ARG.test(a))) throw new Error(`setup step '${step.join(" ")}' has an argument that is not a plain literal`);
+    if (forbiddenStep(step)) throw new Error(`setup step '${step.join(" ")}' is not allowed`);
     return step;
   });
 }
 
 async function readTools() {
   if (!existsSync(TOOLS_DIR)) return new Map();
-  const files = (await readdir(TOOLS_DIR))
-    .filter((f) => f.endsWith(".md"))
-    .sort();
+  const files = (await readdir(TOOLS_DIR)).filter((f) => f.endsWith(".md")).sort();
   const tools = new Map();
   for (const file of files) {
     const tool = parseTool(file, await readOwned(path.join(TOOLS_DIR, file)));
@@ -5120,8 +3158,7 @@ function parseTool(file, text) {
   const where = `tools/${file}`;
   const name = path.basename(file, ".md");
   const end = text.indexOf("\n---", 4);
-  if (!text.startsWith("---\n") || end === -1)
-    throw new Error(`${where}: no frontmatter`);
+  if (!text.startsWith("---\n") || end === -1) throw new Error(`${where}: no frontmatter`);
 
   const front = {};
   let list = null;
@@ -5140,36 +3177,16 @@ function parseTool(file, text) {
     }
   }
 
-  const lists = [
-    "install",
-    "setup",
-    "touches",
-    "notes",
-    "undo",
-    "env",
-    "gitignore",
-    "harness",
-  ];
+  const lists = ["install", "setup", "touches", "notes", "undo", "env", "gitignore", "harness"];
   for (const key of lists) {
-    if (front[key] !== undefined && !Array.isArray(front[key]))
-      throw new Error(`${where}: ${key} must be a list`);
+    if (front[key] !== undefined && !Array.isArray(front[key])) throw new Error(`${where}: ${key} must be a list`);
   }
-  if (front.name !== name)
-    throw new Error(
-      `${where}: frontmatter name is '${front.name}' — must match the filename`,
-    );
-  if (!/^[a-z0-9][a-z0-9_-]*$/.test(front.bin ?? ""))
-    throw new Error(`${where}: bin must be a bare command name`);
+  if (front.name !== name) throw new Error(`${where}: frontmatter name is '${front.name}' — must match the filename`);
+  if (!/^[a-z0-9][a-z0-9_-]*$/.test(front.bin ?? "")) throw new Error(`${where}: bin must be a bare command name`);
   // An exact version, not a range: the printed install command is what a person
   // copies, and a range there installs whatever was published this morning.
-  if (!PIN.test(front.pin ?? ""))
-    throw new Error(
-      `${where}: pin '${front.pin ?? "missing"}' — must be an exact x.y.z`,
-    );
-  if (
-    !front.install?.length ||
-    !front.install.some((l) => l.includes("{pin}"))
-  ) {
+  if (!PIN.test(front.pin ?? "")) throw new Error(`${where}: pin '${front.pin ?? "missing"}' — must be an exact x.y.z`);
+  if (!front.install?.length || !front.install.some((l) => l.includes("{pin}"))) {
     throw new Error(`${where}: install must print the pinned command ({pin})`);
   }
   if (!front.setup?.length) throw new Error(`${where}: setup is empty`);
@@ -5184,27 +3201,14 @@ function parseTool(file, text) {
         placeholders++;
         continue;
       }
-      if (!SAFE_ARG.test(a))
-        throw new Error(
-          `${where}: setup argument ${JSON.stringify(a)} is not a plain literal`,
-        );
+      if (!SAFE_ARG.test(a)) throw new Error(`${where}: setup argument ${JSON.stringify(a)} is not a plain literal`);
     }
-    if (forbiddenStep(args))
-      throw new Error(
-        `${where}: setup step '${args.join(" ")}' is not allowed`,
-      );
+    if (forbiddenStep(args)) throw new Error(`${where}: setup step '${args.join(" ")}' is not allowed`);
   }
-  if (placeholders > 1)
-    throw new Error(`${where}: ${HARNESS_SLOT} may appear once in setup`);
-  if (placeholders && front.harness === undefined)
-    throw new Error(`${where}: ${HARNESS_SLOT} needs a harness list`);
-  if (
-    !placeholders &&
-    (front.harness !== undefined || front.defaultharness !== undefined)
-  ) {
-    throw new Error(
-      `${where}: a harness list needs ${HARNESS_SLOT} as a whole setup argument`,
-    );
+  if (placeholders > 1) throw new Error(`${where}: ${HARNESS_SLOT} may appear once in setup`);
+  if (placeholders && front.harness === undefined) throw new Error(`${where}: ${HARNESS_SLOT} needs a harness list`);
+  if (!placeholders && (front.harness !== undefined || front.defaultharness !== undefined)) {
+    throw new Error(`${where}: a harness list needs ${HARNESS_SLOT} as a whole setup argument`);
   }
 
   let harness = null;
@@ -5214,33 +3218,20 @@ function parseTool(file, text) {
       const at = item.indexOf(": ");
       const key = at < 0 ? item : item.slice(0, at);
       const text = at < 0 ? "" : item.slice(at + 2).trim();
-      if (!/^[a-z][a-z-]*$/.test(key) || !SAFE_ARG.test(key))
-        throw new Error(
-          `${where}: harness key ${JSON.stringify(key)} is not a plain name`,
-        );
+      if (!/^[a-z][a-z-]*$/.test(key) || !SAFE_ARG.test(key)) throw new Error(`${where}: harness key ${JSON.stringify(key)} is not a plain name`);
       if (!text) throw new Error(`${where}: harness ${key} lists no paths`);
-      if (Object.hasOwn(touchesBy, key))
-        throw new Error(`${where}: harness ${key} is listed twice`);
+      if (Object.hasOwn(touchesBy, key)) throw new Error(`${where}: harness ${key} is listed twice`);
       touchesBy[key] = text;
     }
     const allowed = Object.keys(touchesBy);
     if (!allowed.length) throw new Error(`${where}: harness list is empty`);
-    const wanted = (
-      typeof front.defaultharness === "string" ? front.defaultharness : ""
-    ).split(",");
+    const wanted = (typeof front.defaultharness === "string" ? front.defaultharness : "").split(",");
     if (wanted.some((k) => !Object.hasOwn(touchesBy, k))) {
-      throw new Error(
-        `${where}: defaultharness must be a non-empty comma-separated subset of: ${allowed.join(", ")}`,
-      );
+      throw new Error(`${where}: defaultharness must be a non-empty comma-separated subset of: ${allowed.join(", ")}`);
     }
-    harness = {
-      allowed,
-      touches: touchesBy,
-      default: allowed.filter((k) => wanted.includes(k)),
-    };
+    harness = { allowed, touches: touchesBy, default: allowed.filter((k) => wanted.includes(k)) };
     // The step each choice would compose must pass the same checks as a literal one.
-    for (const keys of [harness.default, ...allowed.map((k) => [k])])
-      composeSetup(template, keys);
+    for (const keys of [harness.default, ...allowed.map((k) => [k])]) composeSetup(template, keys);
   }
   const setup = harness ? composeSetup(template, harness.default) : template;
 
@@ -5252,40 +3243,22 @@ function parseTool(file, text) {
   // Fixed environment for every run of the tool, literal like its arguments:
   // the way to switch off a behaviour that reaches outside the project.
   for (const kv of front.env ?? []) {
-    if (!/^[A-Z_][A-Z0-9_]*=[A-Za-z0-9_.,:-]*$/.test(kv))
-      throw new Error(
-        `${where}: env entry ${JSON.stringify(kv)} is not KEY=literal`,
-      );
+    if (!/^[A-Z_][A-Z0-9_]*=[A-Za-z0-9_.,:-]*$/.test(kv)) throw new Error(`${where}: env entry ${JSON.stringify(kv)} is not KEY=literal`);
     // Variables that decide which program or module is loaded would undo what
     // exec.js does about PATH (PYTHONPATH=. loads the project's code).
-    if (
-      /^(PATH|PATHEXT|COMSPEC|PYTHON\w*|NODE_\w*|NPM_CONFIG_\w*|LD_\w*|DYLD_\w*)=/i.test(
-        kv,
-      )
-    ) {
-      throw new Error(
-        `${where}: env entry ${kv.split("=")[0]} changes what gets loaded — not allowed`,
-      );
+    if (/^(PATH|PATHEXT|COMSPEC|PYTHON\w*|NODE_\w*|NPM_CONFIG_\w*|LD_\w*|DYLD_\w*)=/i.test(kv)) {
+      throw new Error(`${where}: env entry ${kv.split("=")[0]} changes what gets loaded — not allowed`);
     }
   }
   // Plain relative patterns under one top-level directory each: they are
   // written verbatim into the project's .gitignore and passed to git ls-files.
   for (const p of front.gitignore ?? []) {
-    if (
-      !/^!?[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.*-]+)*\/?$/.test(p) ||
-      p.split("/").some((s) => s === "..")
-    ) {
-      throw new Error(
-        `${where}: gitignore pattern ${JSON.stringify(p)} is not a plain relative path`,
-      );
+    if (!/^!?[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.*-]+)*\/?$/.test(p) || p.split("/").some((s) => s === "..")) {
+      throw new Error(`${where}: gitignore pattern ${JSON.stringify(p)} is not a plain relative path`);
     }
   }
-  if (!rules.length || rules.length > 3)
-    throw new Error(
-      `${where}: the block takes 1 to 3 rule lines, found ${rules.length}`,
-    );
-  if (rules.some((l) => l.includes(front.pin)))
-    throw new Error(`${where}: the pin lives only in the frontmatter`);
+  if (!rules.length || rules.length > 3) throw new Error(`${where}: the block takes 1 to 3 rule lines, found ${rules.length}`);
+  if (rules.some((l) => l.includes(front.pin))) throw new Error(`${where}: the pin lives only in the frontmatter`);
 
   return {
     name,
@@ -5300,9 +3273,7 @@ function parseTool(file, text) {
     touches: front.touches ?? [],
     notes: front.notes ?? [],
     undo: front.undo ?? [],
-    env: Object.fromEntries(
-      (front.env ?? []).map((kv) => kv.split(/=(.*)/s).slice(0, 2)),
-    ),
+    env: Object.fromEntries((front.env ?? []).map((kv) => kv.split(/=(.*)/s).slice(0, 2))),
     gitignore: front.gitignore ?? [],
     rules,
   };
@@ -5315,10 +3286,7 @@ function parseTool(file, text) {
  */
 function toolProject() {
   const project = realpathSync.native(process.cwd());
-  const same =
-    process.platform === "win32"
-      ? (a, b) => a.toLowerCase() === b.toLowerCase()
-      : (a, b) => a === b;
+  const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
   if (same(project, realpathSync.native(PACKAGE_ROOT))) {
     throw new Error(
       "Refusing: this is canonkit itself, the source of truth.\n" +
@@ -5330,10 +3298,7 @@ function toolProject() {
 
 async function getTool(name) {
   const tools = await readTools();
-  if (!tools.has(name))
-    throw new Error(
-      `Not a canonkit tool: ${name}\nTools: ${[...tools.keys()].join(" ")}`,
-    );
+  if (!tools.has(name)) throw new Error(`Not a canonkit tool: ${name}\nTools: ${[...tools.keys()].join(" ")}`);
   return { tools, tool: tools.get(name) };
 }
 
@@ -5341,21 +3306,14 @@ async function getTool(name) {
 function activeTools(raw, tools) {
   const inner = readProjectBlock(raw, PROJECT_TOOLS);
   if (inner === null) return new Set();
-  const names = [...inner.matchAll(/^- \*\*([a-z0-9_-]+)\*\*/gm)].map(
-    (m) => m[1],
-  );
+  const names = [...inner.matchAll(/^- \*\*([a-z0-9_-]+)\*\*/gm)].map((m) => m[1]);
   return new Set(names.filter((n) => tools.has(n)));
 }
 
 function toolsBlockBody(tools, active) {
   const entries = [...tools.values()]
     .filter((t) => active.has(t.name))
-    .map((t) =>
-      [
-        `- **${t.name}** — ${t.rules[0]}`,
-        ...t.rules.slice(1).map((r) => `  ${r}`),
-      ].join("\n"),
-    )
+    .map((t) => [`- **${t.name}** — ${t.rules[0]}`, ...t.rules.slice(1).map((r) => `  ${r}`)].join("\n"))
     .join("\n");
   return `# Project tools
 
@@ -5370,23 +3328,10 @@ Managed by canonkit: \`npx canonkit tool add|remove <name>\` changes this list.`
 async function writeToolsBlock(ctx, project, tools, active) {
   const target = path.join(project, "AGENTS.md");
   const raw = existsSync(target) ? await readFile(target, "utf8") : "";
-  const { text, had } = replaceProjectBlock(
-    raw,
-    PROJECT_TOOLS,
-    active.size ? toolsBlockBody(tools, active) : null,
-  );
-  if (text === raw)
-    return ctx.log(
-      active.size || !had
-        ? "already current: AGENTS.md"
-        : "No tools block in AGENTS.md",
-    );
+  const { text, had } = replaceProjectBlock(raw, PROJECT_TOOLS, active.size ? toolsBlockBody(tools, active) : null);
+  if (text === raw) return ctx.log(active.size || !had ? "already current: AGENTS.md" : "No tools block in AGENTS.md");
   await ctx.writeAtomic(target, text);
-  ctx.log(
-    !active.size
-      ? "Removed tools block from AGENTS.md"
-      : `${had ? "Updated" : "Added"} tools block in AGENTS.md`,
-  );
+  ctx.log(!active.size ? "Removed tools block from AGENTS.md" : `${had ? "Updated" : "Added"} tools block in AGENTS.md`);
 }
 
 /**
@@ -5396,10 +3341,7 @@ async function writeToolsBlock(ctx, project, tools, active) {
  * directories, outside the block, are its decision and win: patterns are
  * last-match-wins, so a block appended after them would quietly overrule them.
  */
-const gitignoreMarkers = (name) => [
-  `# agent-team-config:gitignore:${name}:start`,
-  `# agent-team-config:gitignore:${name}:end`,
-];
+const gitignoreMarkers = (name) => [`# agent-team-config:gitignore:${name}:start`, `# agent-team-config:gitignore:${name}:end`];
 const gitignoreRoot = (p) => p.replace(/^!?\/?/, "").split("/")[0];
 
 function gitignorePlan(project, tool) {
@@ -5410,30 +3352,19 @@ function gitignorePlan(project, tool) {
     raw = readRegularText(target);
   } catch (err) {
     if (err.code !== "ENOENT") {
-      const why =
-        err.code === "ENOTREG"
-          ? ".gitignore is not a regular file"
-          : `.gitignore is not a regular file or cannot be read (${err.code ?? "unknown"})`;
-      throw Object.assign(new Error(`${why}; canonkit did not touch it.`), {
-        code: "ENOTREG",
-      });
+      const why = err.code === "ENOTREG" ? ".gitignore is not a regular file" : `.gitignore is not a regular file or cannot be read (${err.code ?? "unknown"})`;
+      throw Object.assign(new Error(`${why}; canonkit did not touch it.`), { code: "ENOTREG" });
     }
   }
   const markers = gitignoreMarkers(tool.name);
   const roots = [...new Set(tool.gitignore.map(gitignoreRoot))];
-  const outside = toLf(raw).replace(
-    new RegExp(`${esc(markers[0])}[\\s\\S]*?${esc(markers[1])}`),
-    "",
-  );
+  const outside = toLf(raw).replace(new RegExp(`${esc(markers[0])}[\\s\\S]*?${esc(markers[1])}`), "");
   const own = outside
     .split("\n")
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith("#") && roots.includes(gitignoreRoot(l)));
   if (own.length) return { target, roots, own };
-  const body = [
-    `# ${tool.name}: rebuilt locally; only the ! lines are versioned. Managed by canonkit tool add ${tool.name}.`,
-    ...tool.gitignore,
-  ].join("\n");
+  const body = [`# ${tool.name}: rebuilt locally; only the ! lines are versioned. Managed by canonkit tool add ${tool.name}.`, ...tool.gitignore].join("\n");
   const { text, had } = replaceProjectBlock(raw, markers, body);
   return { target, roots, raw, text, had };
 }
@@ -5442,54 +3373,27 @@ async function writeGitignore(ctx, project, tool) {
   const plan = gitignorePlan(project, tool);
   if (!plan) return;
   if (plan.own) {
-    ctx.log(
-      `.gitignore already has its own rules for ${plan.roots.join(", ")} (${plan.own.join(", ")}); left as is.`,
-    );
+    ctx.log(`.gitignore already has its own rules for ${plan.roots.join(", ")} (${plan.own.join(", ")}); left as is.`);
     return;
   }
   if (plan.text === plan.raw) ctx.log("already current: .gitignore");
   else {
     await ctx.writeAtomic(plan.target, plan.text);
-    ctx.log(
-      `${plan.had ? "Updated" : "Added"} ${tool.name} block in .gitignore`,
-    );
+    ctx.log(`${plan.had ? "Updated" : "Added"} ${tool.name} block in .gitignore`);
   }
   // Ignoring does not untrack: files committed before stay versioned. Printed,
   // never run — git rm touches the index the person is about to commit from.
   const git = sandboxGit(project);
   if (!git) return;
-  const r = git([
-    "ls-files",
-    "-c",
-    "-i",
-    "--exclude-standard",
-    "--",
-    ...plan.roots,
-  ]);
-  const tracked =
-    r.status === 0
-      ? r.stdout
-          .split("\n")
-          .map((l) => l.trim())
-          .filter(Boolean)
-      : [];
+  const r = git(["ls-files", "-c", "-i", "--exclude-standard", "--", ...plan.roots]);
+  const tracked = r.status === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
   if (!tracked.length) return;
-  const shown =
-    tracked.slice(0, 5).join(", ") +
-    (tracked.length > 5 ? `, … (${tracked.length} in all)` : "");
-  ctx.log(
-    `  note:    already committed, so still tracked despite .gitignore: ${shown}`,
-  );
-  ctx.log(
-    `           to stop tracking them (files stay on disk): git rm -r --cached -q -- ${plan.roots.join(" ")} && git add -- ${plan.roots.join(" ")}`,
-  );
+  const shown = tracked.slice(0, 5).join(", ") + (tracked.length > 5 ? `, … (${tracked.length} in all)` : "");
+  ctx.log(`  note:    already committed, so still tracked despite .gitignore: ${shown}`);
+  ctx.log(`           to stop tracking them (files stay on disk): git rm -r --cached -q -- ${plan.roots.join(" ")} && git add -- ${plan.roots.join(" ")}`);
 }
 
-const CLAUDE_MD = [
-  "CLAUDE.md",
-  path.join(".claude", "CLAUDE.md"),
-  "CLAUDE.local.md",
-];
+const CLAUDE_MD = ["CLAUDE.md", path.join(".claude", "CLAUDE.md"), "CLAUDE.local.md"];
 
 /**
  * Both modes check the repository and detect existing automation. With opt-in,
@@ -5499,10 +3403,7 @@ const CLAUDE_MD = [
  * how to chain graphify by hand. A hook that already carries graphify's marker
  * block was chained already, and `graphify hook install` only rewrites its block.
  */
-const GRAPHIFY_HOOKS = {
-  "post-commit": "# graphify-hook-start",
-  "post-checkout": "# graphify-checkout-hook-start",
-};
+const GRAPHIFY_HOOKS = { "post-commit": "# graphify-hook-start", "post-checkout": "# graphify-checkout-hook-start" };
 
 function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   const fail = (lines) => ({ ok: false, message: lines.join("\n") });
@@ -5511,24 +3412,17 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   if (!out) return fail(["graphify needs git, and git is not on PATH."]);
 
   const top = out(["rev-parse", "--show-toplevel"]);
-  if (top.status !== 0)
-    return fail([`Not a git repository: ${project}`, "Run git init first."]);
-  const same =
-    process.platform === "win32"
-      ? (a, b) => a.toLowerCase() === b.toLowerCase()
-      : (a, b) => a === b;
+  if (top.status !== 0) return fail([`Not a git repository: ${project}`, "Run git init first."]);
+  const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
   const root = realpathSync.native(path.resolve(top.stdout.trim()));
-  if (!same(root, project))
-    return fail([`Run this from the repository root: ${root}`]);
+  if (!same(root, project)) return fail([`Run this from the repository root: ${root}`]);
 
   // graphify's hooks and merge driver start Python with `-c` / `-m graphify`
   // from the worktree root, which Python searches first: a graphify package
   // committed to the repo would run on every commit, checkout and merge — a
   // branch from anyone, before review. The hooks also run the interpreter named
   // in graphify-out/.graphify_python, so that file must not come from the repo.
-  const shadow = ["graphify", "graphify.py"].filter((f) =>
-    existsSync(path.join(project, f)),
-  );
+  const shadow = ["graphify", "graphify.py"].filter((f) => existsSync(path.join(project, f)));
   if (shadow.length) {
     return fail([
       `${shadow.join(" and ")} at the repository root would be imported by graphify's hooks instead of the installed graphify.`,
@@ -5536,14 +3430,9 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
     ]);
   }
   const tracked = out(["ls-files", "--", "graphify-out/.graphify_python"]);
-  if (tracked.status !== 0)
-    return fail([
-      `git ls-files failed: ${tracked.stderr.trim() || tracked.error}`,
-    ]);
+  if (tracked.status !== 0) return fail([`git ls-files failed: ${tracked.stderr.trim() || tracked.error}`]);
   if (tracked.stdout.trim()) {
-    return fail([
-      "graphify-out/.graphify_python is committed, and graphify's hooks run the interpreter it names. Remove it from git first.",
-    ]);
+    return fail(["graphify-out/.graphify_python is committed, and graphify's hooks run the interpreter it names. Remove it from git first."]);
   }
 
   const chain = [
@@ -5553,49 +3442,29 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   ];
   const hooksPath = out(["config", "core.hooksPath"]);
   if (withGitHooks && hooksPath.status === 0 && hooksPath.stdout.trim()) {
-    return fail([
-      `core.hooksPath is set (${hooksPath.stdout.trim()}): git hooks are managed elsewhere, so canonkit installs none.`,
-      ...chain,
-    ]);
+    return fail([`core.hooksPath is set (${hooksPath.stdout.trim()}): git hooks are managed elsewhere, so canonkit installs none.`, ...chain]);
   }
-  if (hooksPath.status !== 1 && hooksPath.status !== 0)
-    return fail([
-      `git config core.hooksPath failed: ${hooksPath.stderr.trim() || hooksPath.error}`,
-    ]);
+  if (hooksPath.status !== 1 && hooksPath.status !== 0) return fail([`git config core.hooksPath failed: ${hooksPath.stderr.trim() || hooksPath.error}`]);
 
   const dir = out(["rev-parse", "--git-path", "hooks"]);
-  if (dir.status !== 0)
-    return fail([
-      `git rev-parse --git-path hooks failed: ${dir.stderr.trim() || dir.error}`,
-    ]);
+  if (dir.status !== 0) return fail([`git rev-parse --git-path hooks failed: ${dir.stderr.trim() || dir.error}`]);
   const hooksDir = path.resolve(project, dir.stdout.trim());
   const before = hookSnapshot(hooksDir);
   const merge = out(["config", "--get", "merge.graphify.driver"]);
-  if (merge.status !== 0 && merge.status !== 1)
-    return fail([
-      `git config merge.graphify failed: ${merge.stderr.trim() || merge.error}`,
-    ]);
-  const automatic = [...before]
-    .filter(([, text]) => /# graphify-(?:checkout-)?hook/.test(text))
-    .map(([name]) => name);
+  if (merge.status !== 0 && merge.status !== 1) return fail([`git config merge.graphify failed: ${merge.stderr.trim() || merge.error}`]);
+  const automatic = [...before].filter(([, text]) => /# graphify-(?:checkout-)?hook/.test(text)).map(([name]) => name);
   // Husky 9 stores wrapper scripts in .husky/_, and user hook bodies in .husky/.
   if (hooksPath.stdout.trim() && path.basename(hooksDir) === "_") {
     for (const [name, text] of hookSnapshot(path.dirname(hooksDir))) {
-      if (/# graphify-(?:checkout-)?hook/.test(text))
-        automatic.push(`../${name}`);
+      if (/# graphify-(?:checkout-)?hook/.test(text)) automatic.push(`../${name}`);
     }
   }
   if (merge.stdout.trim()) automatic.push("merge.graphify driver");
 
-  for (const [hook, marker] of withGitHooks
-    ? Object.entries(GRAPHIFY_HOOKS)
-    : []) {
+  for (const [hook, marker] of withGitHooks ? Object.entries(GRAPHIFY_HOOKS) : []) {
     const file = path.join(hooksDir, hook);
     if (existsSync(file) && !hookHasMarker(file, marker)) {
-      return fail([
-        `${path.relative(project, file)} already exists and is not graphify's; canonkit never overwrites a git hook.`,
-        ...chain,
-      ]);
+      return fail([`${path.relative(project, file)} already exists and is not graphify's; canonkit never overwrites a git hook.`, ...chain]);
     }
   }
   return { ok: true, hooksDir, before, automatic };
@@ -5603,33 +3472,19 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
 
 /** Whether a hook file is a regular file carrying the marker; absent or any other kind (a FIFO) is false. */
 function hookHasMarker(file, marker) {
-  try {
-    return readRegularText(file).includes(marker);
-  } catch {
-    return false;
-  }
+  try { return readRegularText(file).includes(marker); } catch { return false; }
 }
 
 /** A hook's text without graphify's marked block, whitespace folded. */
 function outsideBlock(text, marker) {
-  const block = new RegExp(
-    `${esc(marker)}[\\s\\S]*?${esc(marker.replace(/-start$/, "-end"))}`,
-  );
+  const block = new RegExp(`${esc(marker)}[\\s\\S]*?${esc(marker.replace(/-start$/, "-end"))}`);
   return toLf(text).replace(block, "").replace(/\s+/g, " ").trim();
 }
 
 /** Every hook file (samples aside) with its contents, to compare after setup. */
 function hookSnapshot(dir) {
-  const files = existsSync(dir)
-    ? readdirSync(dir)
-        .filter((f) => !f.endsWith(".sample"))
-        .sort()
-    : [];
-  return new Map(
-    files
-      .filter((f) => statSync(path.join(dir, f)).isFile())
-      .map((f) => [f, readFileSync(path.join(dir, f), "utf8")]),
-  );
+  const files = existsSync(dir) ? readdirSync(dir).filter((f) => !f.endsWith(".sample")).sort() : [];
+  return new Map(files.filter((f) => statSync(path.join(dir, f)).isFile()).map((f) => [f, readFileSync(path.join(dir, f), "utf8")]));
 }
 
 /**
@@ -5639,29 +3494,17 @@ function hookSnapshot(dir) {
 function graphifyHooksProblems(check) {
   const problems = [];
   for (const [f, text] of hookSnapshot(check.hooksDir)) {
-    if (!check.before.has(f) && !GRAPHIFY_HOOKS[f])
-      problems.push(`unexpected new git hook: ${f}`);
-    if (
-      check.before.has(f) &&
-      !GRAPHIFY_HOOKS[f] &&
-      check.before.get(f) !== text
-    )
-      problems.push(`git hook changed: ${f}`);
+    if (!check.before.has(f) && !GRAPHIFY_HOOKS[f]) problems.push(`unexpected new git hook: ${f}`);
+    if (check.before.has(f) && !GRAPHIFY_HOOKS[f] && check.before.get(f) !== text) problems.push(`git hook changed: ${f}`);
     // A hook chained by hand before: graphify may rewrite its own block, and
     // nothing else in the file.
-    if (
-      check.before.has(f) &&
-      GRAPHIFY_HOOKS[f] &&
-      outsideBlock(check.before.get(f), GRAPHIFY_HOOKS[f]) !==
-        outsideBlock(text, GRAPHIFY_HOOKS[f])
-    ) {
+    if (check.before.has(f) && GRAPHIFY_HOOKS[f] && outsideBlock(check.before.get(f), GRAPHIFY_HOOKS[f]) !== outsideBlock(text, GRAPHIFY_HOOKS[f])) {
       problems.push(`git hook changed outside graphify's block: ${f}`);
     }
   }
   for (const [hook, marker] of Object.entries(GRAPHIFY_HOOKS)) {
     const file = path.join(check.hooksDir, hook);
-    if (!hookHasMarker(file, marker))
-      problems.push(`${hook} does not carry graphify's hook block`);
+    if (!hookHasMarker(file, marker)) problems.push(`${hook} does not carry graphify's hook block`);
   }
   return problems;
 }
@@ -5677,9 +3520,7 @@ function loud(lines) {
 }
 
 function warnNewClaudeMd(project, existedBefore) {
-  const appeared = CLAUDE_MD.filter(
-    (f, i) => !existedBefore[i] && existsSync(path.join(project, f)),
-  );
+  const appeared = CLAUDE_MD.filter((f, i) => !existedBefore[i] && existsSync(path.join(project, f)));
   if (!appeared.length) return;
   loud([
     `${appeared.join(" and ")} appeared during setup. canonkit never creates one.`,
@@ -5692,9 +3533,7 @@ async function confirm(yes, question = "Proceed? [y/N] ", confirmAction) {
   if (yes) return true;
   if (confirmAction) return Boolean(await confirmAction(question));
   if (!process.stdin.isTTY) {
-    console.error(
-      "Not running: there is no terminal to confirm on. Read the preflight above, then re-run with --yes.",
-    );
+    console.error("Not running: there is no terminal to confirm on. Read the preflight above, then re-run with --yes.");
     return false;
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -5706,20 +3545,10 @@ async function confirm(yes, question = "Proceed? [y/N] ", confirmAction) {
 // How a harness is shown in the menu and in the preflight. Display only: what a
 // choice writes comes from the registry's `harness:` list.
 const HARNESS_MENU = {
-  claude: {
-    title: "Claude Code",
-    description: ".claude/skills, .claude/commands",
-  },
+  claude: { title: "Claude Code", description: ".claude/skills, .claude/commands" },
   codex: { title: "Codex", description: ".agents/skills" },
-  opencode: {
-    title: "OpenCode",
-    description: ".opencode/skills, .opencode/commands",
-  },
-  "github-copilot": {
-    title: "GitHub Copilot",
-    description:
-      ".github/skills, .github/prompts (usually committed, shared with the team)",
-  },
+  opencode: { title: "OpenCode", description: ".opencode/skills, .opencode/commands" },
+  "github-copilot": { title: "GitHub Copilot", description: ".github/skills, .github/prompts (usually committed, shared with the team)" },
 };
 const harnessName = (key) => HARNESS_MENU[key]?.title ?? key;
 
@@ -5730,23 +3559,12 @@ const harnessName = (key) => HARNESS_MENU[key]?.title ?? key;
  */
 function harnessFlag(tools, tool, given) {
   if (!tool.harness) {
-    const names = [...tools.values()]
-      .filter((t) => t.harness)
-      .map((t) => t.name)
-      .join(", ");
-    return {
-      error: `--harness applies to ${names} only; ${tool.name} has no harness choice.`,
-    };
+    const names = [...tools.values()].filter((t) => t.harness).map((t) => t.name).join(", ");
+    return { error: `--harness applies to ${names} only; ${tool.name} has no harness choice.` };
   }
   const list = tool.harness.allowed.join(", ");
-  if (given.length > 1)
-    return {
-      error:
-        "--harness may be given only once; list several values with commas.",
-    };
-  const needsValue = {
-    error: `--harness needs a value: ${list} (comma-separated).`,
-  };
+  if (given.length > 1) return { error: "--harness may be given only once; list several values with commas." };
+  const needsValue = { error: `--harness needs a value: ${list} (comma-separated).` };
   const raw = given[0];
   if (raw == null || raw === "") return needsValue;
   const picked = new Set();
@@ -5754,17 +3572,10 @@ function harnessFlag(tools, tool, given) {
     if (part === "") return needsValue;
     if (!Object.hasOwn(tool.harness.touches, part)) {
       const shown = plain(part).slice(0, 40) + (part.length > 40 ? "..." : "");
-      if (
-        part === "copilot" &&
-        tool.harness.allowed.includes("github-copilot")
-      ) {
-        return {
-          error: `Unknown harness "${shown}". Did you mean github-copilot? Use one or more of: ${list}.`,
-        };
+      if (part === "copilot" && tool.harness.allowed.includes("github-copilot")) {
+        return { error: `Unknown harness "${shown}". Did you mean github-copilot? Use one or more of: ${list}.` };
       }
-      return {
-        error: `Unknown harness "${shown}". Use one or more of: ${list} (comma-separated).`,
-      };
+      return { error: `Unknown harness "${shown}". Use one or more of: ${list} (comma-separated).` };
     }
     picked.add(part);
   }
@@ -5777,23 +3588,12 @@ function harnessFlag(tools, tool, given) {
  * a terminal gets the same multiselect as `install`. The typed answer is never
  * evaluated: only registry keys come back. Null means cancelled, nothing runs.
  */
-async function chooseHarness(
-  tool,
-  keys,
-  {
-    yes = false,
-    dryRun = false,
-    interactive = false,
-    dumb = false,
-    prompt,
-  } = {},
-) {
+async function chooseHarness(tool, keys, { yes = false, dryRun = false, interactive = false, dumb = false, prompt } = {}) {
   if (keys) return { keys, source: "flag" };
   const fallback = (source) => ({ keys: [...tool.harness.default], source });
   if (yes || dryRun || !interactive) return fallback("default");
   if (dumb) return fallback("no-menu");
-  const ask =
-    prompt ?? (async (config) => (await import("prompts")).default(config));
+  const ask = prompt ?? (async (config) => (await import("prompts")).default(config));
   const answer = await ask({
     type: "multiselect",
     name: "harness",
@@ -5809,21 +3609,12 @@ async function chooseHarness(
     instructions: false,
   });
   const picked = Array.isArray(answer?.harness) ? answer.harness : [];
-  if (
-    !picked.length ||
-    picked.some((k) => !Object.hasOwn(tool.harness.touches, k))
-  )
-    return null;
-  return {
-    keys: tool.harness.allowed.filter((k) => picked.includes(k)),
-    source: "chosen",
-  };
+  if (!picked.length || picked.some((k) => !Object.hasOwn(tool.harness.touches, k))) return null;
+  return { keys: tool.harness.allowed.filter((k) => picked.includes(k)), source: "chosen" };
 }
 
 /** What a harness choice adds to `touches:` that is true whichever one it is. */
-const harnessStaticTouches = () => [
-  "adds to the harnesses configured earlier; removes none",
-];
+const harnessStaticTouches = () => ["adds to the harnesses configured earlier; removes none"];
 
 /**
  * The top-level directories the chosen harnesses (and the tool's shared
@@ -5836,11 +3627,7 @@ const harnessStaticTouches = () => [
  */
 function unsafeWriteRoot(tool, project, keys) {
   const texts = [...tool.touches, ...keys.map((k) => tool.harness.touches[k])];
-  const paths = new Set(
-    texts
-      .flatMap((t) => t.replace(/\s+\(.*$/, "").split(/,\s*/))
-      .filter((p) => /^\.?[A-Za-z0-9_-]+\//.test(p)),
-  );
+  const paths = new Set(texts.flatMap((t) => t.replace(/\s+\(.*$/, "").split(/,\s*/)).filter((p) => /^\.?[A-Za-z0-9_-]+\//.test(p)));
   for (const p of paths) {
     const segs = p.split("/");
     const trailing = segs[segs.length - 1] === "";
@@ -5882,41 +3669,17 @@ function printMissing(tool, project, exec) {
   const dangling = danglingHits(tool.bin, { cwd: project, ...exec });
   console.error(
     [
-      ...(inside
-        ? [
-            `${tool.bin} was found only inside the project (${plain(inside)}); canonkit runs binaries from outside it only.`,
-          ]
-        : []),
-      ...(windows.length
-        ? [
-            `${tool.bin} was found only on the Windows side (${plain(windows[0])}); canonkit does not run Windows binaries through WSL interop.`,
-          ]
-        : []),
+      ...(inside ? [`${tool.bin} was found only inside the project (${plain(inside)}); canonkit runs binaries from outside it only.`] : []),
+      ...(windows.length ? [`${tool.bin} was found only on the Windows side (${plain(windows[0])}); canonkit does not run Windows binaries through WSL interop.`] : []),
       ...(inside || windows.length ? [] : [`${tool.bin} is not on PATH.`]),
       // Fixed wording, no snippet and no folder derived from the target: which folder to allow is the person's call.
-      ...dangling
-        .slice(0, 1)
-        .map(
-          ({ link, target }) =>
-            `${tool.bin} is at ${plain(link)} but its target is not readable (${plain(target)}): the link is broken, or the folder is hidden from this process. Under the Claude Code sandbox, allow that folder in sandbox.filesystem.allowRead of your user settings (~/.claude/settings.json); see docs/tools.md (Claude Code sandbox).`,
-        ),
+      ...dangling.slice(0, 1).map(({ link, target }) => `${tool.bin} is at ${plain(link)} but its target is not readable (${plain(target)}): the link is broken, or the folder is hidden from this process. Under the Claude Code sandbox, allow that folder in sandbox.filesystem.allowRead of your user settings (~/.claude/settings.json); see docs/tools.md (Claude Code sandbox).`),
       // Not on native Windows: ~/.nvm, ~/.local and the bubblewrap/Seatbelt sandbox do not apply there.
-      ...(inside ||
-      windows.length ||
-      dangling.length ||
-      process.platform === "win32"
-        ? []
-        : [
-            "If it is installed under ~/.nvm or ~/.local and this runs inside the Claude Code sandbox, that folder may be hidden: see docs/tools.md (Claude Code sandbox).",
-          ]),
+      ...(inside || windows.length || dangling.length || process.platform === "win32" ? [] : ["If it is installed under ~/.nvm or ~/.local and this runs inside the Claude Code sandbox, that folder may be hidden: see docs/tools.md (Claude Code sandbox)."]),
       "canonkit only integrates tools you installed; it installs nothing.",
       `Install the pinned version (${tool.requires}):`,
       ...tool.install.map((l) => `  ${l}`),
-      ...(windows.length
-        ? [
-            "Run it inside WSL with a Linux-side npm: `which -a npm` must list a path outside /mnt/ first.",
-          ]
-        : []),
+      ...(windows.length ? ["Run it inside WSL with a Linux-side npm: `which -a npm` must list a path outside /mnt/ first."] : []),
       `then re-run: npx canonkit tool add ${tool.name}`,
     ].join("\n"),
   );
@@ -5930,20 +3693,7 @@ function printMissing(tool, project, exec) {
  * setup fails — an entry for a tool whose setup did not finish teaches agents a
  * workflow the project does not have.
  */
-async function toolAdd(
-  ctx,
-  name,
-  {
-    yes = false,
-    withGitHooks = false,
-    harness: given,
-    prompt,
-    confirmAction,
-    interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
-    dumb = process.env.TERM === "dumb",
-    compactInstall = false,
-  } = {},
-) {
+async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: given, prompt, confirmAction, interactive = !!(process.stdin.isTTY && process.stdout.isTTY), dumb = process.env.TERM === "dumb", compactInstall = false } = {}) {
   const { tools, tool } = await getTool(name);
   // Before anything runs, --version included: the flag is checked against the
   // registry's list, and only a registry key ever reaches an argument.
@@ -5967,22 +3717,14 @@ async function toolAdd(
 
   let choice = null;
   if (tool.harness) {
-    choice = await chooseHarness(tool, flagKeys, {
-      yes,
-      dryRun: ctx.dryRun,
-      interactive,
-      dumb,
-      prompt,
-    });
+    choice = await chooseHarness(tool, flagKeys, { yes, dryRun: ctx.dryRun, interactive, dumb, prompt });
     if (!choice) {
       console.error("Cancelled. Nothing was changed.");
       return 1;
     }
     const bad = unsafeWriteRoot(tool, project, choice.keys);
     if (bad) {
-      console.error(
-        `Refusing: ${plain(bad)} in this project is a symlink or not a directory, and ${tool.name} would write through it. Nothing was run.`,
-      );
+      console.error(`Refusing: ${plain(bad)} in this project is a symlink or not a directory, and ${tool.name} would write through it. Nothing was run.`);
       return 1;
     }
   }
@@ -5994,9 +3736,7 @@ async function toolAdd(
     console.error(`${err.message} Nothing was run.`);
     return 1;
   }
-  const base = choice
-    ? composeSetup(tool.setupTemplate, choice.keys)
-    : tool.setup;
+  const base = choice ? composeSetup(tool.setupTemplate, choice.keys) : tool.setup;
   const setup = withGitHooks ? [["hook", "install"], ...base] : base;
 
   let version = null;
@@ -6016,180 +3756,96 @@ async function toolAdd(
   log(`${tool.name}: setup in ${plain(project)}`);
   log(`  binary:  ${plain(abs)}`);
   const warnings = [];
-  const shadows = windowsOnlyHits(tool.bin, {
-    cwd: project,
-    before: abs,
-    ...exec,
-  });
+  const shadows = windowsOnlyHits(tool.bin, { cwd: project, before: abs, ...exec });
   if (shadows.length) {
     const warning = `a Windows copy comes first in PATH (${plain(shadows[0])}); canonkit ignores it, but agents and shells running bare \`${tool.bin}\` may use it. To stop that, set appendWindowsPath=false under [interop] in /etc/wsl.conf.`;
     warnings.push(warning);
     log(`  note:    ${warning}`);
   }
-  if (ctx.dryRun)
-    log(
-      "  version: not checked (a dry run executes nothing, --version included)",
-    );
+  if (ctx.dryRun) log("  version: not checked (a dry run executes nothing, --version included)");
   else if (!version) {
     warnings.push(`Version could not be checked; canonkit pins ${tool.pin}.`);
     log(`  version: unknown (--version failed); canonkit pins ${tool.pin}`);
-  } else if (version !== tool.pin) {
-    warnings.push(
-      `Installed version ${version}; canonkit pins ${tool.pin}. Setup will not update the tool binary.`,
-    );
-    log(
-      `  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`,
-    );
+  }
+  else if (version !== tool.pin) {
+    warnings.push(`Installed version ${version}; canonkit pins ${tool.pin}. Setup will not update the tool binary.`);
+    log(`  version: ${version} — canonkit pins ${tool.pin}. Nothing is updated; to match:`);
     for (const l of tool.install) log(`             ${l}`);
   } else log(`  version: ${version} (the pinned one)`);
   if (choice) {
-    const how = {
-      flag: "from --harness",
-      default: "default; choose with --harness",
-      chosen: "chosen above",
-      "no-menu":
-        "default; this terminal cannot show a menu; choose with --harness",
-    }[choice.source];
+    const how = { flag: "from --harness", default: "default; choose with --harness", chosen: "chosen above", "no-menu": "default; this terminal cannot show a menu; choose with --harness" }[choice.source];
     log(`  harness: ${choice.keys.map(harnessName).join(", ")} (${how})`);
   }
   if (tool.preflight === "git-hooks") {
-    if (ctx.dryRun)
-      log("  checks:  repository and Git automation (not run in a dry run)");
+    if (ctx.dryRun) log("  checks:  repository and Git automation (not run in a dry run)");
     if (withGitHooks) {
-      warnings.push(
-        "--with-git-hooks enables repository code on commit, checkout and merge; trust every branch.",
-      );
-      log(
-        "  WARNING: --with-git-hooks enables hooks and a merge driver that can execute repository code",
-      );
-      log(
-        "           on commit, checkout and merge before review. Trust every branch you check out.",
-      );
-      log(
-        "  touches: .git/hooks/post-commit, .git/hooks/post-checkout, .git/config and .gitattributes",
-      );
+      warnings.push("--with-git-hooks enables repository code on commit, checkout and merge; trust every branch.");
+      log("  WARNING: --with-git-hooks enables hooks and a merge driver that can execute repository code");
+      log("           on commit, checkout and merge before review. Trust every branch you check out.");
+      log("  touches: .git/hooks/post-commit, .git/hooks/post-checkout, .git/config and .gitattributes");
     } else {
-      log(
-        "  Git automation: no hooks or merge driver installed or removed (--yes does not enable them).",
-      );
+      log("  Git automation: no hooks or merge driver installed or removed (--yes does not enable them).");
       if (hooks?.automatic.length) {
         const warning = `Existing Graphify Git automation remains enabled (${hooks.automatic.join(", ")}); it can execute repository code on commit, checkout and merge. Trust every branch. To disable it, review and run graphify hook uninstall.`;
         warnings.push(warning);
-        if (!compactInstall)
-          loud([
-            `Existing graphify Git automation remains enabled: ${hooks.automatic.join(", ")}.`,
-            "It can execute repository code on commit, checkout and merge before review. Trust every branch.",
-            "No migration performed. To disable it, review and run `graphify hook uninstall`, then inspect git config and .gitattributes.",
-          ]);
+        if (!compactInstall) loud([
+          `Existing graphify Git automation remains enabled: ${hooks.automatic.join(", ")}.`,
+          "It can execute repository code on commit, checkout and merge before review. Trust every branch.",
+          "No migration performed. To disable it, review and run `graphify hook uninstall`, then inspect git config and .gitattributes.",
+        ]);
       }
     }
   }
-  setup.forEach((args, i) =>
-    log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`),
-  );
-  const touches = choice
-    ? [
-        ...tool.touches,
-        ...choice.keys.map((k) => tool.harness.touches[k]),
-        ...harnessStaticTouches(tool),
-      ]
-    : tool.touches;
-  const writeTargets = [
-    ...tool.touches,
-    ...(choice ? choice.keys.map((k) => tool.harness.touches[k]) : []),
-  ]
-    .map(
-      (item) => /^(\.\/[A-Za-z0-9_./*-]+|\.?[A-Za-z0-9_-]+\/)/.exec(item)?.[1],
-    )
+  setup.forEach((args, i) => log(`  ${i ? "        " : "runs:   "} ${display(abs, args)}`));
+  const touches = choice ? [...tool.touches, ...choice.keys.map((k) => tool.harness.touches[k]), ...harnessStaticTouches(tool)] : tool.touches;
+  const writeTargets = [...tool.touches, ...(choice ? choice.keys.map((k) => tool.harness.touches[k]) : [])]
+    .map((item) => /^(\.\/[A-Za-z0-9_./*-]+|\.?[A-Za-z0-9_-]+\/)/.exec(item)?.[1])
     .filter((item, index, all) => item && all.indexOf(item) === index);
   if (tool.gitignore.length) writeTargets.push(".gitignore");
   writeTargets.push("AGENTS.md");
   touches.forEach((t, i) => log(`  ${i ? "        " : "touches:"} ${t}`));
-  if (tool.gitignore.length)
-    log(
-      `  then:    .gitignore — canonkit's ${tool.name} block (${tool.gitignore.join(" ")}), unless it already has rules for them`,
-    );
-  log(
-    "  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds",
-  );
+  if (tool.gitignore.length) log(`  then:    .gitignore — canonkit's ${tool.name} block (${tool.gitignore.join(" ")}), unless it already has rules for them`);
+  log("  then:    AGENTS.md — canonkit's tools block, written last and only if setup succeeds");
   for (const [k, v] of Object.entries(tool.env)) log(`  env:     ${k}=${v}`);
   for (const n of tool.notes) log(`  note:    ${n}`);
 
-  const title =
-    name === "openspec" ? "OpenSpec" : name[0].toUpperCase() + name.slice(1);
+  const title = name === "openspec" ? "OpenSpec" : name[0].toUpperCase() + name.slice(1);
   const commandLines = setup.map((args) => display(abs, args));
   if (compactInstall && !ctx.dryRun) {
     console.log(`\n${title} setup`);
     console.log(`  Project: ${shortPath(project)}`);
     console.log(`  Command: ${commandLines.join("; ")}`);
     console.log(`  Writes:  ${writeTargets.join(", ")}`);
-    if (version !== tool.pin)
-      console.log(`  Version: ${version ?? "unknown"} (pinned ${tool.pin})`);
+    if (version !== tool.pin) console.log(`  Version: ${version ?? "unknown"} (pinned ${tool.pin})`);
     for (const warning of warnings) console.log(`  Warning: ${warning}`);
   } else if (compactInstall) {
-    ctx.log(
-      `TOOL_SETUP_WOULD: ${title} in ${shortPath(project)}: ${commandLines.join("; ")}`,
-    );
+    ctx.log(`TOOL_SETUP_WOULD: ${title} in ${shortPath(project)}: ${commandLines.join("; ")}`);
   }
 
   if (ctx.dryRun) {
-    const raw = existsSync(path.join(project, "AGENTS.md"))
-      ? await readFile(path.join(project, "AGENTS.md"), "utf8")
-      : "";
+    const raw = existsSync(path.join(project, "AGENTS.md")) ? await readFile(path.join(project, "AGENTS.md"), "utf8") : "";
     const active = activeTools(raw, tools);
     const ignore = gitignorePlan(project, tool);
-    if (ignore?.own)
-      log(
-        ".gitignore already has its own rules for them; would leave it as is",
-      );
-    else if (ignore)
-      log(
-        ignore.text === ignore.raw
-          ? ".gitignore block already current"
-          : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`,
-      );
-    log(
-      active.has(name)
-        ? "tools block in AGENTS.md already lists it"
-        : "would add it to the tools block in AGENTS.md",
-    );
+    if (ignore?.own) log(".gitignore already has its own rules for them; would leave it as is");
+    else if (ignore) log(ignore.text === ignore.raw ? ".gitignore block already current" : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`);
+    log(active.has(name) ? "tools block in AGENTS.md already lists it" : "would add it to the tools block in AGENTS.md");
     return 0;
   }
 
-  if (
-    !(await confirm(
-      yes,
-      `Run ${title} setup in ${shortPath(project)}? [y/N] `,
-      confirmAction,
-    ))
-  )
-    return 1;
+  if (!(await confirm(yes, `Run ${title} setup in ${shortPath(project)}? [y/N] `, confirmAction))) return 1;
 
   const claudeBefore = CLAUDE_MD.map((f) => existsSync(path.join(project, f)));
   let compactOutput = "";
   for (const [i, args] of setup.entries()) {
     log(`> ${display(abs, args)}`);
-    const r = runBin(abs, args, {
-      cwd: project,
-      env: toolEnv(tool),
-      ...exec,
-      capture: compactInstall,
-    });
+    const r = runBin(abs, args, { cwd: project, env: toolEnv(tool), ...exec, capture: compactInstall });
     if (r.error || r.status !== 0) {
       if (compactInstall && r.stdout) console.log(r.stdout.trimEnd());
       if (compactInstall && r.stderr) console.error(r.stderr.trimEnd());
-      console.error(
-        `${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`,
-      );
+      console.error(`${tool.name} ${args.join(" ")} failed (${r.error ?? `exit ${r.status}`}). Stopped; canonkit did not change AGENTS.md.`);
       if (i > 0) {
-        console.error(
-          `Already done: ${setup
-            .slice(0, i)
-            .map((a) => `${tool.bin} ${a.join(" ")}`)
-            .join(", ")}.`,
-        );
-        if (tool.undo.length)
-          console.error(`To undo it: ${tool.undo.join("; ")}`);
+        console.error(`Already done: ${setup.slice(0, i).map((a) => `${tool.bin} ${a.join(" ")}`).join(", ")}.`);
+        if (tool.undo.length) console.error(`To undo it: ${tool.undo.join("; ")}`);
       }
       warnNewClaudeMd(project, claudeBefore);
       return 1;
@@ -6197,28 +3853,17 @@ async function toolAdd(
     if (compactInstall) {
       const childOutput = [r.stdout, r.stderr].filter(Boolean).join("\n");
       compactOutput += `${compactOutput ? "\n" : ""}${childOutput}`;
-      const warningsFromTool = childOutput
-        .split(/\r?\n/)
-        .filter((line) =>
-          /\b(?:warning|warn|error|failed|refusing)\b/i.test(line),
-        );
+      const warningsFromTool = childOutput.split(/\r?\n/).filter((line) => /\b(?:warning|warn|error|failed|refusing)\b/i.test(line));
       for (const warning of warningsFromTool) {
-        const noSymbols =
-          /warning:\s*(\d+) code file\(s\) yielded no symbols/i.exec(warning);
-        ctx.log(
-          `WARN tool ${name}: ${noSymbols ? `${noSymbols[1]} code files yielded no symbols (see --verbose for details)` : plain(warning.trim())}`,
-        );
+        const noSymbols = /warning:\s*(\d+) code file\(s\) yielded no symbols/i.exec(warning);
+        ctx.log(`WARN tool ${name}: ${noSymbols ? `${noSymbols[1]} code files yielded no symbols (see --verbose for details)` : plain(warning.trim())}`);
       }
     }
   }
 
   if (hooks && withGitHooks) {
     const problems = graphifyHooksProblems(hooks);
-    if (problems.length)
-      loud([
-        "graphify's hooks are not what canonkit expected — check before committing:",
-        ...problems,
-      ]);
+    if (problems.length) loud(["graphify's hooks are not what canonkit expected — check before committing:", ...problems]);
   }
   warnNewClaudeMd(project, claudeBefore);
   await writeGitignore(ctx, project, tool);
@@ -6231,21 +3876,16 @@ async function toolAdd(
   await writeToolsBlock(ctx, project, tools, active);
   if (compactInstall) {
     const graph = /\[graphify watch\] Rebuilt: ([^\r\n]+)/.exec(compactOutput);
-    const openspecCounts = /(\d+ skills and \d+ commands in [^\r\n]+)/.exec(
-      compactOutput,
-    );
-    const result =
-      name === "graphify" && graph
-        ? `updated code graph: ${graph[1]}`
-        : name === "openspec" && /OpenSpec Setup Complete/.test(compactOutput)
-          ? `configured ${choice?.keys.map(harnessName).join(", ") ?? "the selected harnesses"}${openspecCounts ? `; ${openspecCounts[1]}` : ""}`
-          : "setup completed";
+    const openspecCounts = /(\d+ skills and \d+ commands in [^\r\n]+)/.exec(compactOutput);
+    const result = name === "graphify" && graph
+      ? `updated code graph: ${graph[1]}`
+      : name === "openspec" && /OpenSpec Setup Complete/.test(compactOutput)
+        ? `configured ${choice?.keys.map(harnessName).join(", ") ?? "the selected harnesses"}${openspecCounts ? `; ${openspecCounts[1]}` : ""}`
+        : "setup completed";
     ctx.log(`TOOL_SETUP_RESULT: ${title} ${result}`);
     if (name === "openspec") {
       if (/Skipped GitHub Copilot cloud files \(opt-in\)/.test(compactOutput)) {
-        ctx.log(
-          "OpenSpec guidance: GitHub Copilot cloud files are opt-in; enable with `openspec init --copilot-cloud`.",
-        );
+        ctx.log("OpenSpec guidance: GitHub Copilot cloud files are opt-in; enable with `openspec init --copilot-cloud`.");
       }
       if (/Restart your IDE to refresh commands\./.test(compactOutput)) {
         ctx.log("OpenSpec guidance: restart your IDE to refresh commands.");
@@ -6275,24 +3915,11 @@ async function toolRemove(ctx, name) {
   await writeToolsBlock(ctx, project, tools, active);
 
   // The harnesses chosen are not recorded, so every one's files are listed.
-  ctx.log(
-    tool.harness
-      ? `Files ${tool.name} may have written (depending on the harnesses chosen) are left as they are:`
-      : `Files ${tool.name} wrote are left as they are:`,
-  );
-  for (const t of [
-    ...tool.touches,
-    ...(tool.harness
-      ? tool.harness.allowed.map((k) => tool.harness.touches[k])
-      : []),
-  ])
-    ctx.log(`  ${t}`);
+  ctx.log(tool.harness ? `Files ${tool.name} may have written (depending on the harnesses chosen) are left as they are:` : `Files ${tool.name} wrote are left as they are:`);
+  for (const t of [...tool.touches, ...(tool.harness ? tool.harness.allowed.map((k) => tool.harness.touches[k]) : [])]) ctx.log(`  ${t}`);
   // The block stays: graphify-out/ is still on disk, and dropping the rules
   // would turn it into a pile of untracked files.
-  if (tool.gitignore.length)
-    ctx.log(
-      `  .gitignore (canonkit's ${tool.name} block — delete it by hand to version that output)`,
-    );
+  if (tool.gitignore.length) ctx.log(`  .gitignore (canonkit's ${tool.name} block — delete it by hand to version that output)`);
   if (tool.undo.length) {
     ctx.log("To undo its setup, yourself:");
     for (const u of tool.undo) ctx.log(`  ${u}`);
@@ -6302,15 +3929,9 @@ async function toolRemove(ctx, name) {
 
 async function toolList(ctx) {
   const project = realpathSync.native(process.cwd());
-  const catalog = await readInstallCatalog({
-    project,
-    checkToolVersions: true,
-    dryRun: ctx.dryRun,
-  });
+  const catalog = await readInstallCatalog({ project, checkToolVersions: true, dryRun: ctx.dryRun });
   const target = path.join(project, "AGENTS.md");
-  const active = new Set(
-    catalog.tools.filter((tool) => tool.active).map((tool) => tool.name),
-  );
+  const active = new Set(catalog.tools.filter((tool) => tool.active).map((tool) => tool.name));
 
   ctx.log(`Optional tools (this project: ${project})`);
   const exec = toolExec();
@@ -6322,45 +3943,23 @@ async function toolList(ctx) {
       ignored.push(...windowsOnlyHits(t.tool.bin, { cwd: project, ...exec }));
       unreadable.push(...danglingHits(t.tool.bin, { cwd: project, ...exec }));
     }
-    ctx.log(
-      `  ${t.name.padEnd(10)} pin ${t.tool.pin.padEnd(9)} ${t.state.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`,
-    );
+    ctx.log(`  ${t.name.padEnd(10)} pin ${t.tool.pin.padEnd(9)} ${t.state.padEnd(18)} ${active.has(t.name) ? "active" : "-"}`);
   }
-  if (ignored.length)
-    ctx.log(
-      `  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`,
-    );
-  for (const { link, target } of unreadable)
-    ctx.log(`  (unreadable: ${plain(link)} -> ${plain(target)})`);
+  if (ignored.length) ctx.log(`  (ignored Windows copies, not run through WSL interop: ${ignored.map(plain).join(", ")})`);
+  for (const { link, target } of unreadable) ctx.log(`  (unreadable: ${plain(link)} -> ${plain(target)})`);
   ctx.log("");
-  ctx.log(
-    "canonkit installs none of these: `tool add` prints the pinned install command when one is missing.",
-  );
+  ctx.log("canonkit installs none of these: `tool add` prints the pinned install command when one is missing.");
 }
 
-async function toolCommand(
-  ctx,
-  [sub, ...names],
-  flags,
-  { harness, confirmAction } = {},
-) {
+async function toolCommand(ctx, [sub, ...names], flags, { harness, confirmAction } = {}) {
   if (sub === "list" && !names.length) {
     await toolList(ctx);
     return 0;
   }
   if ((sub === "add" || sub === "remove") && names.length === 1) {
-    return sub === "add"
-      ? toolAdd(ctx, names[0], {
-          yes: flags.includes("--yes"),
-          withGitHooks: flags.includes("--with-git-hooks"),
-          harness,
-          confirmAction,
-        })
-      : toolRemove(ctx, names[0]);
+    return sub === "add" ? toolAdd(ctx, names[0], { yes: flags.includes("--yes"), withGitHooks: flags.includes("--with-git-hooks"), harness, confirmAction }) : toolRemove(ctx, names[0]);
   }
-  console.error(
-    "Usage: canonkit tool add|remove <name> | canonkit tool list\n",
-  );
+  console.error("Usage: canonkit tool add|remove <name> | canonkit tool list\n");
   console.error(usage());
   return 1;
 }
@@ -6377,31 +3976,15 @@ async function toolCommand(
  * it protects nothing. A name that can become a real directory gets a
  * `!/dir/` pair, so a real directory stays visible.
  */
-const SANDBOX_MARKERS = [
-  "# canonkit:sandbox-placeholders:start",
-  "# canonkit:sandbox-placeholders:end",
-];
+const SANDBOX_MARKERS = ["# canonkit:sandbox-placeholders:start", "# canonkit:sandbox-placeholders:end"];
 const SANDBOX_PLACEHOLDERS = [
-  { name: ".bash_profile" },
-  { name: ".bashrc" },
-  { name: ".gitconfig" },
-  { name: ".gitmodules" },
-  { name: ".idea", dir: true },
-  { name: ".mcp.json" },
-  { name: ".profile" },
-  { name: ".ripgreprc" },
-  { name: ".zprofile" },
-  { name: ".zshrc" },
-  { name: ".claude/agents", dir: true },
-  { name: ".claude/commands", dir: true },
-  { name: ".claude/hooks", dir: true },
-  { name: ".claude/launch.json" },
-  { name: ".claude/loop.md" },
-  { name: ".claude/output-styles", dir: true },
-  { name: ".claude/routines", dir: true },
-  { name: ".claude/scheduled_tasks.json" },
-  { name: ".claude/settings.local.json" },
-  { name: ".claude/workflows", dir: true },
+  { name: ".bash_profile" }, { name: ".bashrc" }, { name: ".gitconfig" }, { name: ".gitmodules" },
+  { name: ".idea", dir: true }, { name: ".mcp.json" }, { name: ".profile" }, { name: ".ripgreprc" },
+  { name: ".zprofile" }, { name: ".zshrc" },
+  { name: ".claude/agents", dir: true }, { name: ".claude/commands", dir: true }, { name: ".claude/hooks", dir: true },
+  { name: ".claude/launch.json" }, { name: ".claude/loop.md" }, { name: ".claude/output-styles", dir: true },
+  { name: ".claude/routines", dir: true }, { name: ".claude/scheduled_tasks.json" },
+  { name: ".claude/settings.local.json" }, { name: ".claude/workflows", dir: true },
 ];
 
 /**
@@ -6416,23 +3999,9 @@ const SANDBOX_PLACEHOLDERS = [
 function sandboxGit(project, { keepHooksPath = false } = {}) {
   const git = resolveBin("git", { cwd: project });
   if (!git) return null;
-  const env = Object.fromEntries(
-    Object.entries(process.env).filter(
-      ([k]) => !k.toUpperCase().startsWith("GIT_"),
-    ),
-  );
-  const config = [
-    "-c",
-    "core.fsmonitor=false",
-    ...(keepHooksPath ? [] : ["-c", "core.hooksPath=/dev/null"]),
-  ];
-  return (args) =>
-    runBin(git, [...config, ...args], {
-      cwd: project,
-      capture: true,
-      timeout: 30 * 1000,
-      env,
-    });
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith("GIT_")));
+  const config = ["-c", "core.fsmonitor=false", ...(keepHooksPath ? [] : ["-c", "core.hooksPath=/dev/null"])];
+  return (args) => runBin(git, [...config, ...args], { cwd: project, capture: true, timeout: 30 * 1000, env });
 }
 
 /**
@@ -6443,60 +4012,23 @@ function sandboxGit(project, { keepHooksPath = false } = {}) {
  */
 async function sandboxExcludeTarget(project, gitRun) {
   const top = gitRun(["rev-parse", "--show-toplevel"]);
-  if (top.status !== 0)
-    return {
-      skip: `${plain(project)} is not inside a git work tree (no repository, or a bare one); nothing was written.`,
-    };
-  const same =
-    process.platform === "win32"
-      ? (a, b) => a.toLowerCase() === b.toLowerCase()
-      : (a, b) => a === b;
+  if (top.status !== 0) return { skip: `${plain(project)} is not inside a git work tree (no repository, or a bare one); nothing was written.` };
+  const same = process.platform === "win32" ? (a, b) => a.toLowerCase() === b.toLowerCase() : (a, b) => a === b;
   const root = realpathSync.native(path.resolve(top.stdout.trim()));
-  if (!same(root, project))
-    return {
-      skip: `Run this from the repository root (${plain(root)}); nothing was written.`,
-    };
+  if (!same(root, project)) return { skip: `Run this from the repository root (${plain(root)}); nothing was written.` };
   const gp = gitRun(["rev-parse", "--git-path", "info/exclude"]);
-  if (gp.status !== 0 || !gp.stdout.trim())
-    return {
-      refuse: `git rev-parse --git-path info/exclude failed: ${plain(gp.stderr.trim() || gp.error || "no output")}`,
-    };
+  if (gp.status !== 0 || !gp.stdout.trim()) return { refuse: `git rev-parse --git-path info/exclude failed: ${plain(gp.stderr.trim() || gp.error || "no output")}` };
   const reported = path.resolve(project, gp.stdout.trim());
-  if (
-    path.basename(reported) !== "exclude" ||
-    path.basename(path.dirname(reported)) !== "info"
-  )
-    return {
-      refuse: `git reported an unexpected exclude path (${plain(reported)}); nothing was written.`,
-    };
+  if (path.basename(reported) !== "exclude" || path.basename(path.dirname(reported)) !== "info") return { refuse: `git reported an unexpected exclude path (${plain(reported)}); nothing was written.` };
   let gitDir;
-  try {
-    gitDir = realpathSync.native(path.dirname(path.dirname(reported)));
-  } catch {
-    return {
-      refuse: `The git directory for ${plain(reported)} is not readable; nothing was written.`,
-    };
-  }
+  try { gitDir = realpathSync.native(path.dirname(path.dirname(reported))); } catch { return { refuse: `The git directory for ${plain(reported)} is not readable; nothing was written.` }; }
   const info = path.join(gitDir, "info");
   const file = path.join(info, "exclude");
-  for (const [p, want] of [
-    [info, "directory"],
-    [file, "file"],
-  ]) {
+  for (const [p, want] of [[info, "directory"], [file, "file"]]) {
     let st;
-    try {
-      st = await lstat(p);
-    } catch (err) {
-      if (err.code === "ENOENT") continue;
-      throw err;
-    }
-    if (
-      st.isSymbolicLink() ||
-      !(want === "directory" ? st.isDirectory() : st.isFile())
-    ) {
-      return {
-        refuse: `${plain(p)} is a symbolic link or not a regular ${want}; canonkit does not write through it. Nothing was written.`,
-      };
+    try { st = await lstat(p); } catch (err) { if (err.code === "ENOENT") continue; throw err; }
+    if (st.isSymbolicLink() || !(want === "directory" ? st.isDirectory() : st.isFile())) {
+      return { refuse: `${plain(p)} is a symbolic link or not a regular ${want}; canonkit does not write through it. Nothing was written.` };
     }
   }
   // A linked worktree's git dir differs from the common dir that holds info/exclude;
@@ -6504,18 +4036,11 @@ async function sandboxExcludeTarget(project, gitRun) {
   let where = "";
   try {
     if (!(await lstat(path.join(project, ".git"))).isDirectory()) {
-      const dirs = gitRun(["rev-parse", "--git-dir", "--git-common-dir"])
-        .stdout.split("\n")
-        .map((l) => l.trim())
-        .filter(Boolean);
-      const [own, common] = dirs.map((d) =>
-        realpathSync.native(path.resolve(project, d)),
-      );
+      const dirs = gitRun(["rev-parse", "--git-dir", "--git-common-dir"]).stdout.split("\n").map((l) => l.trim()).filter(Boolean);
+      const [own, common] = dirs.map((d) => realpathSync.native(path.resolve(project, d)));
       where = dirs.length === 2 && own !== common ? "worktree" : "submodule";
     }
-  } catch {
-    /* reported by git already */
-  }
+  } catch { /* reported by git already */ }
   return { file, where };
 }
 
@@ -6529,28 +4054,18 @@ async function observeSandboxPlaceholders(project, gitRun) {
   for (const c of SANDBOX_PLACEHOLDERS) {
     const parts = c.name.split("/");
     try {
-      if (
-        parts.length > 1 &&
-        !(await lstat(path.join(project, parts[0]))).isDirectory()
-      )
-        continue;
+      if (parts.length > 1 && !(await lstat(path.join(project, parts[0]))).isDirectory()) continue;
       const st = await lstat(path.join(project, ...parts));
       if (!st.isFile() || st.size !== 0) continue;
-    } catch {
-      continue;
-    }
+    } catch { continue; }
     const tracked = gitRun(["ls-files", "--", c.name]);
-    if (tracked.status !== 0)
-      throw new Error(
-        `git ls-files failed: ${plain(tracked.stderr.trim() || tracked.error || "")}`,
-      );
+    if (tracked.status !== 0) throw new Error(`git ls-files failed: ${plain(tracked.stderr.trim() || tracked.error || "")}`);
     if (!tracked.stdout.trim()) found.push(c);
   }
   return found;
 }
 
-const sandboxLines = (c) =>
-  c.dir ? [`/${c.name}`, `!/${c.name}/`] : [`/${c.name}`];
+const sandboxLines = (c) => (c.dir ? [`/${c.name}`, `!/${c.name}/`] : [`/${c.name}`]);
 
 /** Names a line of the file addresses, whatever its form: `x`, `/x`, `!/x`, `/x/`. */
 function addressedNames(text) {
@@ -6566,17 +4081,9 @@ function addressedNames(text) {
 /** The file's text with the block, and the block itself, or an error when the markers are not a clean pair. */
 function splitSandboxBlock(raw) {
   try {
-    const { bytes, block } = removeManagedBlock(
-      Buffer.from(raw ?? ""),
-      SANDBOX_MARKERS,
-    );
-    return {
-      outside: bytes.toString("utf8"),
-      block: block === null ? null : toLf(block.toString("utf8")),
-    };
-  } catch {
-    return { broken: true };
-  }
+    const { bytes, block } = removeManagedBlock(Buffer.from(raw ?? ""), SANDBOX_MARKERS);
+    return { outside: bytes.toString("utf8"), block: block === null ? null : toLf(block.toString("utf8")) };
+  } catch { return { broken: true }; }
 }
 
 /** Remove exactly the block, its line ending, and the one blank line appending put before it. */
@@ -6586,118 +4093,66 @@ function dropSandboxBlock(raw) {
   const e = raw.indexOf(end) + end.length;
   let before = raw.slice(0, s);
   let after = raw.slice(e).replace(/^\r?\n/, "");
-  if (!after && /\r?\n\r?\n$/.test(before))
-    before = before.replace(/\r?\n$/, "");
+  if (!after && /\r?\n\r?\n$/.test(before)) before = before.replace(/\r?\n$/, "");
   return before + after;
 }
 
 async function readExclude(file) {
-  try {
-    return await readFile(file, "utf8");
-  } catch (err) {
-    if (err.code === "ENOENT") return null;
-    throw err;
-  }
+  try { return await readFile(file, "utf8"); } catch (err) { if (err.code === "ENOENT") return null; throw err; }
 }
 
 async function gitIgnoreSandboxFiles(ctx, { remove = false } = {}) {
   const project = realpathSync.native(process.cwd());
   const gitRun = sandboxGit(project);
-  if (!gitRun) {
-    ctx.log(
-      "git is not on PATH (or only inside the project); nothing was written.",
-    );
-    return 0;
-  }
+  if (!gitRun) { ctx.log("git is not on PATH (or only inside the project); nothing was written."); return 0; }
   const target = await sandboxExcludeTarget(project, gitRun);
-  if (target.skip) {
-    ctx.log(target.skip);
-    return 0;
-  }
-  if (target.refuse) {
-    console.error(target.refuse);
-    return 1;
-  }
+  if (target.skip) { ctx.log(target.skip); return 0; }
+  if (target.refuse) { console.error(target.refuse); return 1; }
   const { file, where } = target;
   const raw = await readExclude(file);
   const parts = splitSandboxBlock(raw);
   if (parts.broken) {
-    console.error(
-      `The canonkit sandbox-placeholders markers in ${plain(file)} are missing one end, duplicated or altered; nothing was changed. Fix or delete those marker lines by hand.`,
-    );
+    console.error(`The canonkit sandbox-placeholders markers in ${plain(file)} are missing one end, duplicated or altered; nothing was changed. Fix or delete those marker lines by hand.`);
     return 1;
   }
-  if (
-    !remove &&
-    (await anyNullPlaceholder(
-      SANDBOX_PLACEHOLDERS.map((c) => path.join(project, ...c.name.split("/"))),
-    ))
-  ) {
-    console.error(
-      "Inside the Claude Code sandbox, git-ignore-sandbox-files changed nothing and left any existing block as it is. Run it from your own terminal; --remove still works here.",
-    );
+  if (!remove && await anyNullPlaceholder(SANDBOX_PLACEHOLDERS.map((c) => path.join(project, ...c.name.split("/"))))) {
+    console.error("Inside the Claude Code sandbox, git-ignore-sandbox-files changed nothing and left any existing block as it is. Run it from your own terminal; --remove still works here.");
     return 0;
   }
-  ctx.log(
-    `Exclude file: ${plain(file)}${where === "worktree" ? " (shared by the main repository and its worktrees)" : where === "submodule" ? " (this submodule's own exclude file)" : ""}`,
-  );
+  ctx.log(`Exclude file: ${plain(file)}${where === "worktree" ? " (shared by the main repository and its worktrees)" : where === "submodule" ? " (this submodule's own exclude file)" : ""}`);
 
   if (remove) {
-    if (parts.block === null) {
-      ctx.log("No sandbox-placeholders block there; nothing to remove.");
-      return 0;
-    }
+    if (parts.block === null) { ctx.log("No sandbox-placeholders block there; nothing to remove."); return 0; }
     await ctx.writeAtomic(file, dropSandboxBlock(raw));
-    ctx.log(
-      `${ctx.dryRun ? "Would remove" : "Removed"} the sandbox-placeholders block (only the lines between its markers).`,
-    );
+    ctx.log(`${ctx.dryRun ? "Would remove" : "Removed"} the sandbox-placeholders block (only the lines between its markers).`);
     return 0;
   }
 
   const observed = await observeSandboxPlaceholders(project, gitRun);
   const outside = addressedNames(parts.outside);
   const mine = observed.filter((c) => !outside.has(c.name));
-  const skipped = observed
-    .filter((c) => outside.has(c.name))
-    .map((c) => c.name);
+  const skipped = observed.filter((c) => outside.has(c.name)).map((c) => c.name);
 
   let body = null;
   if (mine.length) {
-    body = [
-      "# 0-byte placeholders left by the Claude Code sandbox; reduces noise in git status.",
+    body = ["# 0-byte placeholders left by the Claude Code sandbox; reduces noise in git status.",
       "# Managed by canonkit git-ignore-sandbox-files (re-run it to reconcile, or use --remove).",
-      ...mine.flatMap(sandboxLines),
-    ].join("\n");
+      ...mine.flatMap(sandboxLines)].join("\n");
   }
   let text;
-  if (body === null)
-    text = parts.block === null ? (raw ?? "") : dropSandboxBlock(raw);
+  if (body === null) text = parts.block === null ? (raw ?? "") : dropSandboxBlock(raw);
   else text = replaceProjectBlock(raw ?? "", SANDBOX_MARKERS, body).text;
 
-  if (skipped.length)
-    ctx.log(
-      `Skipped, already addressed by a line outside the block (yours win): ${skipped.join(", ")}`,
-    );
-  if (mine.length)
-    ctx.log(
-      `Hiding ${mine.length} placeholder${mine.length === 1 ? "" : "s"}: ${mine.map((c) => c.name).join(", ")}`,
-    );
+  if (skipped.length) ctx.log(`Skipped, already addressed by a line outside the block (yours win): ${skipped.join(", ")}`);
+  if (mine.length) ctx.log(`Hiding ${mine.length} placeholder${mine.length === 1 ? "" : "s"}: ${mine.map((c) => c.name).join(", ")}`);
   else ctx.log("No 0-byte untracked sandbox placeholders to hide.");
   if (text === (raw ?? "")) ctx.log("already current: exclude file");
   else {
     await ctx.writeAtomic(file, text);
-    ctx.log(
-      mine.length
-        ? `${ctx.dryRun ? "Would write" : "Wrote"} the sandbox-placeholders block.`
-        : `${ctx.dryRun ? "Would remove" : "Removed"} the sandbox-placeholders block: nothing left to hide.`,
-    );
+    ctx.log(mine.length ? `${ctx.dryRun ? "Would write" : "Wrote"} the sandbox-placeholders block.` : `${ctx.dryRun ? "Would remove" : "Removed"} the sandbox-placeholders block: nothing left to hide.`);
   }
-  ctx.log(
-    "Note: this only hides these paths from git status, by path; it reduces noise and protects nothing. Files git already tracks stay tracked.",
-  );
-  ctx.log(
-    "If you later put real content in one of the file names (.mcp.json, .claude/settings.local.json, ...), it stays hidden until you run `canonkit git-ignore-sandbox-files` again (reconcile) or `canonkit git-ignore-sandbox-files --remove`.",
-  );
+  ctx.log("Note: this only hides these paths from git status, by path; it reduces noise and protects nothing. Files git already tracks stay tracked.");
+  ctx.log("If you later put real content in one of the file names (.mcp.json, .claude/settings.local.json, ...), it stays hidden until you run `canonkit git-ignore-sandbox-files` again (reconcile) or `canonkit git-ignore-sandbox-files --remove`.");
   return 0;
 }
 
@@ -6715,30 +4170,10 @@ async function sandboxPlaceholderDiagnosis() {
     if (!target.file) return rows;
     const observed = await observeSandboxPlaceholders(project, gitRun);
     if (observed.length) {
-      const ignored = gitRun([
-        "check-ignore",
-        "--",
-        ...observed.map((c) => c.name),
-      ]);
-      const hidden = new Set(
-        ignored.status === 0
-          ? ignored.stdout
-              .split("\n")
-              .map((l) => l.trim())
-              .filter(Boolean)
-          : [],
-      );
-      const open = observed
-        .filter((c) => !hidden.has(c.name))
-        .map((c) => c.name);
-      if (open.length)
-        rows.push({
-          status: "WARN",
-          check: "sandbox placeholders",
-          detail: `0-byte untracked files the Claude Code sandbox leaves show in git status and can be committed by accident (${open.join(", ")}); to hide them from git status here, run: canonkit git-ignore-sandbox-files`,
-          more: [],
-          scope: "project",
-        });
+      const ignored = gitRun(["check-ignore", "--", ...observed.map((c) => c.name)]);
+      const hidden = new Set(ignored.status === 0 ? ignored.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : []);
+      const open = observed.filter((c) => !hidden.has(c.name)).map((c) => c.name);
+      if (open.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `0-byte untracked files the Claude Code sandbox leaves show in git status and can be committed by accident (${open.join(", ")}); to hide them from git status here, run: canonkit git-ignore-sandbox-files`, more: [], scope: "project" });
     }
     const { block } = splitSandboxBlock(await readExclude(target.file));
     if (block) {
@@ -6746,30 +4181,16 @@ async function sandboxPlaceholderDiagnosis() {
       const withContent = [];
       for (const c of SANDBOX_PLACEHOLDERS.filter((x) => listed.has(x.name))) {
         let st;
-        try {
-          st = await lstat(path.join(project, ...c.name.split("/")));
-        } catch {
-          continue;
-        }
+        try { st = await lstat(path.join(project, ...c.name.split("/"))); } catch { continue; }
         // Inside the sandbox the file reads as /dev/null (1:3): still a placeholder, not content.
         if (isNullDeviceStat(st)) continue;
         // Still a placeholder only as a 0-byte regular file (or, for the names that can be one, a real directory).
-        const placeholder =
-          (st.isFile() && st.size === 0) || (c.dir && st.isDirectory());
+        const placeholder = (st.isFile() && st.size === 0) || (c.dir && st.isDirectory());
         if (st.isSymbolicLink() || !placeholder) withContent.push(c.name);
       }
-      if (withContent.length)
-        rows.push({
-          status: "WARN",
-          check: "sandbox placeholders",
-          detail: `hidden from git status by canonkit's block in ${plain(target.file)} but now have content or are no longer an empty file: ${withContent.join(", ")}; re-run canonkit git-ignore-sandbox-files to reconcile, or canonkit git-ignore-sandbox-files --remove`,
-          more: [],
-          scope: "project",
-        });
+      if (withContent.length) rows.push({ status: "WARN", check: "sandbox placeholders", detail: `hidden from git status by canonkit's block in ${plain(target.file)} but now have content or are no longer an empty file: ${withContent.join(", ")}; re-run canonkit git-ignore-sandbox-files to reconcile, or canonkit git-ignore-sandbox-files --remove`, more: [], scope: "project" });
     }
-  } catch {
-    /* a read-only check never fails doctor */
-  }
+  } catch { /* a read-only check never fails doctor */ }
   return rows;
 }
 
@@ -6784,61 +4205,26 @@ const RETIRED_GLOBAL_ARTIFACTS = [
   // Pre-build dashboard versions installed dashboard/index.html. Keep its
   // descriptor so existing manifests remain valid; the running server now
   // serves the compiled dist/index.html, and this legacy copy is left intact.
-  {
-    id: "claude:file:canonkit-dashboard/index.html",
-    root: "claude",
-    relative: "canonkit-dashboard/index.html",
-    kind: "file",
-    owners: ["claude"],
-    public: true,
-  },
+  { id: "claude:file:canonkit-dashboard/index.html", root: "claude", relative: "canonkit-dashboard/index.html", kind: "file", owners: ["claude"], public: true },
 ];
 async function installCatalog(agents) {
-  const roots = {
-    home: path.resolve(os.homedir()),
-    claude: claudeHome(),
-    codex: codexHome(),
-    opencode: path.resolve(opencodeDir()),
-    copilot: copilotHome(),
-    skills: path.join(os.homedir(), ".agents", "skills"),
-  };
+  const roots = { home: path.resolve(os.homedir()), claude: claudeHome(),
+    codex: codexHome(), opencode: path.resolve(opencodeDir()), copilot: copilotHome(),
+    skills: path.join(os.homedir(), ".agents", "skills") };
   const catalog = [];
   const add = (root, relative, kind, owners, extra = {}) => {
     relative = relative.split(path.sep).join("/");
-    catalog.push({
-      id: `${root}:${kind}:${relative}`,
-      root,
-      relative,
-      kind,
-      owners,
-      public: kind === "file",
-      ...extra,
-    });
+    catalog.push({ id: `${root}:${kind}:${relative}`, root, relative, kind, owners, public: kind === "file", ...extra });
   };
   for (const harness of TARGETS) {
-    const suffix = {
-      claude: "md",
-      codex: "toml",
-      opencode: "md",
-      copilot: "agent.md",
-    }[harness];
-    for (const agent of core(agents))
-      add(harness, `agents/${agent.name}.${suffix}`, "file", [harness]);
-    for (const file of HOOK_FILES[harness] ?? [])
-      add(
-        harness,
-        `${harness === "claude" ? "hooks" : "canonkit"}/${file}`,
-        "file",
-        [harness],
-      );
+    const suffix = { claude: "md", codex: "toml", opencode: "md", copilot: "agent.md" }[harness];
+    for (const agent of core(agents)) add(harness, `agents/${agent.name}.${suffix}`, "file", [harness]);
+    for (const file of HOOK_FILES[harness] ?? []) add(harness, `${harness === "claude" ? "hooks" : "canonkit"}/${file}`, "file", [harness]);
   }
   add("opencode", OPENCODE_PLUGIN.to, "file", ["opencode"], { plugin: true });
   add("claude", "hooks/meu-time-hook.js", "file", ["claude"]);
-  for (const file of await dashboardDistributionFiles())
-    add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
-  for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)) {
+  for (const file of await dashboardDistributionFiles()) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
+  for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)) {
     if (!existsSync(path.join(SKILLS_DIR, name, "SKILL.md"))) continue;
     for (const file of await filesUnder(path.join(SKILLS_DIR, name))) {
       add("claude", `skills/${name}/${file}`, "file", ["claude"]);
@@ -6847,33 +4233,14 @@ async function installCatalog(agents) {
     }
   }
   add("home", "AGENTS.md", "block", TARGETS, { markers: ROSTER });
-  for (const [harness, file, markers] of [
-    ["claude", "CLAUDE.md", ROUTING],
-    ["codex", "AGENTS.md", CODEX],
-    ["opencode", "AGENTS.md", OPENCODE],
-  ]) {
+  for (const [harness, file, markers] of [["claude", "CLAUDE.md", ROUTING], ["codex", "AGENTS.md", CODEX], ["opencode", "AGENTS.md", OPENCODE]]) {
     add(harness, file, "block", [harness], { markers });
   }
-  add("claude", "settings.json", "json", ["claude"], {
-    securityOwnership: networkSecurityOwnership,
-    undo: (before, after, current, entry) =>
-      undoNetworkSecurity(
-        before,
-        after,
-        unwireTrackedHooks(before, after, current, "claude"),
-        entry,
-      ),
-  });
-  add("codex", "hooks.json", "json", ["codex"], {
-    undo: (before, after, current) =>
-      unwireTrackedHooks(before, after, current, "codex"),
-  });
-  add("opencode", "opencode.json", "json", ["opencode"], {
-    undo: unwireTrackedPermissions,
-  });
+  add("claude", "settings.json", "json", ["claude"], { securityOwnership: networkSecurityOwnership, undo: (before, after, current, entry) => undoNetworkSecurity(before, after, unwireTrackedHooks(before, after, current, "claude"), entry) });
+  add("codex", "hooks.json", "json", ["codex"], { undo: (before, after, current) => unwireTrackedHooks(before, after, current, "codex") });
+  add("opencode", "opencode.json", "json", ["opencode"], { undo: unwireTrackedPermissions });
   for (const entry of RETIRED_GLOBAL_ARTIFACTS) {
-    if (!catalog.some((current) => current.id === entry.id))
-      catalog.push(entry);
+    if (!catalog.some((current) => current.id === entry.id)) catalog.push(entry);
   }
   return { roots, catalog };
 }
@@ -6882,33 +4249,21 @@ const equalJson = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function configuration(bytes) {
   if (bytes === null) return {};
   let value;
-  try {
-    value = JSON.parse(readSettingsText(bytes));
-  } catch {
-    throw new Error("Configuration is not valid JSON; runtime retained");
-  }
-  if (!isObject(value))
-    throw new Error("Configuration is not a JSON object; runtime retained");
+  try { value = JSON.parse(readSettingsText(bytes)); } catch { throw new Error("Configuration is not valid JSON; runtime retained"); }
+  if (!isObject(value)) throw new Error("Configuration is not a JSON object; runtime retained");
   return value;
 }
 
 function unwireTrackedHooks(beforeBytes, afterBytes, currentBytes, harness) {
-  const before = configuration(beforeBytes),
-    after = configuration(afterBytes),
-    current = configuration(currentBytes);
+  const before = configuration(beforeBytes), after = configuration(afterBytes), current = configuration(currentBytes);
   const ours = harness === "claude" ? isOurHook : isOurCodexHook;
   const handlers = (data) => {
-    if (data.hooks !== undefined && !isObject(data.hooks))
-      throw new Error("Invalid hooks object; runtime retained");
+    if (data.hooks !== undefined && !isObject(data.hooks)) throw new Error("Invalid hooks object; runtime retained");
     const out = [];
     for (const [event, groups] of Object.entries(data.hooks ?? {})) {
-      if (!Array.isArray(groups))
-        throw new Error("Invalid hook event; runtime retained");
+      if (!Array.isArray(groups)) throw new Error("Invalid hook event; runtime retained");
       groups.forEach((group, gi) => {
-        if (Array.isArray(group?.hooks))
-          group.hooks.forEach((hook, hi) => {
-            if (ours(hook)) out.push({ event, gi, hi, hook });
-          });
+        if (Array.isArray(group?.hooks)) group.hooks.forEach((hook, hi) => { if (ours(hook)) out.push({ event, gi, hi, hook }); });
       });
     }
     return out;
@@ -6918,66 +4273,26 @@ function unwireTrackedHooks(beforeBytes, afterBytes, currentBytes, harness) {
   const installed = handlers(after);
   const present = handlers(current);
   if (harness === "claude" && !present.length) return currentBytes;
-  const baseline =
-    harness === "claude"
-      ? migrateClaudeHooks(before, claudeHome()).data
-      : before;
-  if (handlers(baseline).length)
-    throw new Error(
-      "Hook wiring predates its recorded change; restore it manually before uninstalling this runtime",
-    );
+  const baseline = harness === "claude" ? migrateClaudeHooks(before, claudeHome()).data : before;
+  if (handlers(baseline).length) throw new Error("Hook wiring predates its recorded change; restore it manually before uninstalling this runtime");
   for (const entry of present) {
-    if (
-      !installed.some(
-        (record) =>
-          record.event === entry.event && equalJson(record.hook, entry.hook),
-      )
-    )
-      throw new Error("Hook wiring was edited; runtime retained");
+    if (!installed.some((record) => record.event === entry.event && equalJson(record.hook, entry.hook))) throw new Error("Hook wiring was edited; runtime retained");
   }
   for (const record of installed) {
-    if (
-      present.filter(
-        (entry) =>
-          entry.event === record.event && equalJson(entry.hook, record.hook),
-      ).length >
-      installed.filter(
-        (entry) =>
-          entry.event === record.event && equalJson(entry.hook, record.hook),
-      ).length
-    )
-      throw new Error(
-        "Duplicate hook ownership is ambiguous; runtime retained",
-      );
+    if (present.filter((entry) => entry.event === record.event && equalJson(entry.hook, record.hook)).length >
+        installed.filter((entry) => entry.event === record.event && equalJson(entry.hook, record.hook)).length) throw new Error("Duplicate hook ownership is ambiguous; runtime retained");
   }
-  const removed = new Set(
-    present.map(({ event, gi, hi }) => `${event}:${gi}:${hi}`),
-  );
+  const removed = new Set(present.map(({ event, gi, hi }) => `${event}:${gi}:${hi}`));
   if (harness === "codex") {
     for (const [event, groups] of Object.entries(current.hooks ?? {})) {
       groups.forEach((group, gi) => {
         const hooks = Array.isArray(group?.hooks) ? group.hooks : [];
         const mine = hooks.map((_, hi) => removed.has(`${event}:${gi}:${hi}`));
         if (!mine.some(Boolean)) return;
-        if (hooks.some((_, hi) => !mine[hi] && mine.slice(0, hi).some(Boolean)))
-          throw new Error(
-            "Removing this Codex handler would shift another hook's trust index; remove it manually and review /hooks",
-          );
-        if (
-          mine.every(Boolean) &&
-          groups
-            .slice(gi + 1)
-            .some(
-              (g, offset) =>
-                Array.isArray(g?.hooks) &&
-                g.hooks.some(
-                  (_, hi) => !removed.has(`${event}:${gi + offset + 1}:${hi}`),
-                ),
-            )
-        ) {
-          throw new Error(
-            "Removing this Codex group would shift another hook's trust index; remove it manually and review /hooks",
-          );
+        if (hooks.some((_, hi) => !mine[hi] && mine.slice(0, hi).some(Boolean))) throw new Error("Removing this Codex handler would shift another hook's trust index; remove it manually and review /hooks");
+        if (mine.every(Boolean) && groups.slice(gi + 1).some((g, offset) =>
+          Array.isArray(g?.hooks) && g.hooks.some((_, hi) => !removed.has(`${event}:${gi + offset + 1}:${hi}`)))) {
+          throw new Error("Removing this Codex group would shift another hook's trust index; remove it manually and review /hooks");
         }
       });
     }
@@ -6986,84 +4301,41 @@ function unwireTrackedHooks(beforeBytes, afterBytes, currentBytes, harness) {
   for (const [event, groups] of Object.entries(out.hooks ?? {})) {
     out.hooks[event] = groups.flatMap((group, gi) => {
       if (!Array.isArray(group?.hooks)) return [group];
-      const hooks = group.hooks.filter(
-        (_, hi) => !removed.has(`${event}:${gi}:${hi}`),
-      );
+      const hooks = group.hooks.filter((_, hi) => !removed.has(`${event}:${gi}:${hi}`));
       if (hooks.length === group.hooks.length) return [group];
       if (hooks.length) return [{ ...group, hooks }];
-      const installedGroup = installed.find(
-        (entry) =>
-          entry.event === event &&
-          equalJson(after.hooks[event][entry.gi], group),
-      );
-      if (!installedGroup)
-        throw new Error("Hook group metadata was edited; runtime retained");
-      if (Object.keys(group).some((key) => !["matcher", "hooks"].includes(key)))
-        return [{ ...group, hooks: [] }];
+      const installedGroup = installed.find((entry) => entry.event === event && equalJson(after.hooks[event][entry.gi], group));
+      if (!installedGroup) throw new Error("Hook group metadata was edited; runtime retained");
+      if (Object.keys(group).some((key) => !["matcher", "hooks"].includes(key))) return [{ ...group, hooks: [] }];
       return [];
     });
-    if (out.hooks[event].length === 0 && baseline.hooks?.[event] === undefined)
-      delete out.hooks[event];
+    if (out.hooks[event].length === 0 && baseline.hooks?.[event] === undefined) delete out.hooks[event];
   }
-  if (
-    out.hooks &&
-    Object.keys(out.hooks).length === 0 &&
-    baseline.hooks === undefined
-  )
-    delete out.hooks;
+  if (out.hooks && Object.keys(out.hooks).length === 0 && baseline.hooks === undefined) delete out.hooks;
   return Buffer.from(serializeSettings(out, currentBytes.toString("utf8")));
 }
 
 function unwireTrackedPermissions(beforeBytes, afterBytes, currentBytes) {
-  const before = configuration(beforeBytes),
-    after = configuration(afterBytes),
-    current = configuration(currentBytes);
+  const before = configuration(beforeBytes), after = configuration(afterBytes), current = configuration(currentBytes);
   for (const data of [before, after, current]) {
-    if (data.permissions !== undefined && !Array.isArray(data.permissions))
-      throw new Error("Invalid OpenCode permissions; runtime retained");
+    if (data.permissions !== undefined && !Array.isArray(data.permissions)) throw new Error("Invalid OpenCode permissions; runtime retained");
   }
-  const old = before.permissions ?? [],
-    installed = after.permissions ?? [],
-    list = current.permissions ?? [];
-  if (!equalJson(installed.slice(0, old.length), old))
-    throw new Error(
-      "OpenCode moved preexisting permission rules; restore their order manually before uninstalling",
-    );
+  const old = before.permissions ?? [], installed = after.permissions ?? [], list = current.permissions ?? [];
+  if (!equalJson(installed.slice(0, old.length), old)) throw new Error("OpenCode moved preexisting permission rules; restore their order manually before uninstalling");
   const added = installed.slice(old.length);
-  if (
-    added.some(
-      (rule) =>
-        !OPENCODE_ASKS.some((ask) => equalJson(ask, rule)) ||
-        old.some((ruleBefore) => sameRule(ruleBefore, rule)),
-    )
-  ) {
-    throw new Error(
-      "OpenCode permission provenance is ambiguous; runtime retained",
-    );
+  if (added.some((rule) => !OPENCODE_ASKS.some((ask) => equalJson(ask, rule)) || old.some((ruleBefore) => sameRule(ruleBefore, rule)))) {
+    throw new Error("OpenCode permission provenance is ambiguous; runtime retained");
   }
   for (const rule of added) {
-    if (list.filter((entry) => equalJson(entry, rule)).length > 1)
-      throw new Error(
-        "Duplicate OpenCode ask ownership is ambiguous; runtime retained",
-      );
+    if (list.filter((entry) => equalJson(entry, rule)).length > 1) throw new Error("Duplicate OpenCode ask ownership is ambiguous; runtime retained");
   }
   const out = structuredClone(current);
-  if (out.permissions)
-    out.permissions = list.filter(
-      (rule) => !added.some((entry) => equalJson(entry, rule)),
-    );
+  if (out.permissions) out.permissions = list.filter((rule) => !added.some((entry) => equalJson(entry, rule)));
   return Buffer.from(serializeSettings(out, currentBytes.toString("utf8")));
 }
 
 async function globalManifest(ctx, targets) {
-  return new InstallManifest({
-    home: os.homedir(),
-    ...(await installCatalog(await readAgents())),
-    targets,
-    dryRun: ctx.dryRun,
-    log: ctx.log,
-    onChange: ctx.onChange,
-  });
+  return new InstallManifest({ home: os.homedir(), ...(await installCatalog(await readAgents())), targets, dryRun: ctx.dryRun, log: ctx.log, onChange: ctx.onChange });
 }
 
 async function trackedGlobal(ctx, targets, action) {
@@ -7071,158 +4343,73 @@ async function trackedGlobal(ctx, targets, action) {
   try {
     await manifest.load();
     return await action(manifest.wrap(ctx));
-  } finally {
-    await manifest.close();
-  }
+  } finally { await manifest.close(); }
 }
 
 async function uninstallGlobal(ctx, flags) {
   const manifest = await globalManifest(ctx, []);
   const exists = await manifest.load();
   const selected = TARGETS.filter((target) => flags.includes(`--${target}`));
-  manifest.targets = selected.length
-    ? selected
-    : [
-        ...new Set(
-          Object.values(manifest.data.entries).flatMap((entry) => entry.owners),
-        ),
-      ];
-  const harnessNames = manifest.targets.map(
-    (target) =>
-      ({
-        claude: "Claude Code",
-        codex: "Codex",
-        opencode: "OpenCode",
-        copilot: "GitHub Copilot",
-      })[target] ?? target,
-  );
+  manifest.targets = selected.length ? selected : [...new Set(Object.values(manifest.data.entries).flatMap((entry) => entry.owners))];
+  const harnessNames = manifest.targets.map((target) => ({ claude: "Claude Code", codex: "Codex", opencode: "OpenCode", copilot: "GitHub Copilot" })[target] ?? target);
   // Header only when a manifest exists; uninstall() reports the missing case itself.
-  if (exists)
-    ctx.log(
-      `User level: ${ctx.dryRun ? "would remove" : "removing"} tracked entries${harnessNames.length ? ` for ${harnessNames.join(", ")}` : ""}`,
-    );
+  if (exists) ctx.log(`User level: ${ctx.dryRun ? "would remove" : "removing"} tracked entries${harnessNames.length ? ` for ${harnessNames.join(", ")}` : ""}`);
   const referenceFiles = {
-    claude: [
-      settingsPath(),
-      path.join(claudeHome(), "settings.local.json"),
-      path.join(process.cwd(), ".claude", "settings.json"),
-      path.join(process.cwd(), ".claude", "settings.local.json"),
-      ...[process.env.CLAUDE_PROJECT_DIR]
-        .filter(Boolean)
-        .flatMap((dir) => [
-          path.join(dir, ".claude", "settings.json"),
-          path.join(dir, ".claude", "settings.local.json"),
-        ]),
-    ],
-    codex: [
-      codexHooksPath(),
-      path.join(codexHome(), "config.toml"),
-      path.join(process.cwd(), ".codex", "hooks.json"),
-      path.join(process.cwd(), ".codex", "config.toml"),
-    ],
-    opencode: [
-      opencodeConfigPath(),
-      path.join(opencodeDir(), "opencode.jsonc"),
-      path.join(process.cwd(), "opencode.json"),
-      path.join(process.cwd(), "opencode.jsonc"),
-    ],
+    claude: [settingsPath(), path.join(claudeHome(), "settings.local.json"),
+      path.join(process.cwd(), ".claude", "settings.json"), path.join(process.cwd(), ".claude", "settings.local.json"),
+      ...[process.env.CLAUDE_PROJECT_DIR].filter(Boolean).flatMap((dir) => [path.join(dir, ".claude", "settings.json"), path.join(dir, ".claude", "settings.local.json")])],
+    codex: [codexHooksPath(), path.join(codexHome(), "config.toml"), path.join(process.cwd(), ".codex", "hooks.json"), path.join(process.cwd(), ".codex", "config.toml")],
+    opencode: [opencodeConfigPath(), path.join(opencodeDir(), "opencode.jsonc"), path.join(process.cwd(), "opencode.json"), path.join(process.cwd(), "opencode.jsonc")],
   };
   try {
-    return await manifest.uninstall({
-      references: async (harness, projected) => {
-        const residual = [];
-        for (const file of new Set(referenceFiles[harness])) {
-          let text;
-          if (projected.has(file) && projected.get(file) === null) continue;
-          try {
-            text = projected.has(file)
-              ? projected.get(file).toString("utf8")
-              : await readFile(file, "utf8");
-          } catch (err) {
-            if (err.code === "ENOENT") continue;
-            throw new Error(`Cannot inspect reference file ${file}`);
-          }
-          if (harness === "opencode" && file.endsWith(".jsonc")) {
-            residual.push(file);
-            continue;
-          }
-          if (text === "" && path.basename(file) === "settings.local.json")
-            continue; // empty: a sandbox placeholder, no reference
-          // Refuse invalid user-scope JSON even when it no longer contains a
-          // recognizable command. Its intended references cannot be established.
-          if (file.endsWith(".json")) configuration(Buffer.from(text));
-          const names =
-            harness === "codex"
-              ? /canonkit-(?:codex|hook)\.js/
-              : harness === "opencode"
-                ? /canonkit-(?:opencode|hook)\.js|plugins[\\/]canonkit\.js/
-                : /(?:canonkit|meu-time)-hook\.js/;
-          if (names.test(text)) residual.push(file);
+    return await manifest.uninstall({ references: async (harness, projected) => {
+      const residual = [];
+      for (const file of new Set(referenceFiles[harness])) {
+        let text;
+        if (projected.has(file) && projected.get(file) === null) continue;
+        try { text = projected.has(file) ? projected.get(file).toString("utf8") : await readFile(file, "utf8"); }
+        catch (err) { if (err.code === "ENOENT") continue; throw new Error(`Cannot inspect reference file ${file}`); }
+        if (harness === "opencode" && file.endsWith(".jsonc")) { residual.push(file); continue; }
+        if (text === "" && path.basename(file) === "settings.local.json") continue; // empty: a sandbox placeholder, no reference
+        // Refuse invalid user-scope JSON even when it no longer contains a
+        // recognizable command. Its intended references cannot be established.
+        if (file.endsWith(".json")) configuration(Buffer.from(text));
+        const names = harness === "codex" ? /canonkit-(?:codex|hook)\.js/ : harness === "opencode" ? /canonkit-(?:opencode|hook)\.js|plugins[\\/]canonkit\.js/ : /(?:canonkit|meu-time)-hook\.js/;
+        if (names.test(text)) residual.push(file);
+      }
+      if (harness === "claude" && existsSync(path.join(claudeHome(), "hooks", LEGACY.hook))) residual.push("legacy meu-time forwarder (other projects may use it)");
+      if (harness === "opencode") {
+        const plugins = path.join(opencodeDir(), "plugins");
+        let files;
+        try { files = await readdir(plugins, { withFileTypes: true }); }
+        catch (err) { if (err.code !== "ENOENT") throw new Error(`Cannot inspect ${plugins}`); files = []; }
+        for (const entry of files) {
+          if (entry.name === "canonkit.js") continue;
+          if (!entry.isFile()) { residual.push(path.join(plugins, entry.name)); continue; }
+          const file = path.join(plugins, entry.name);
+          const text = await readFile(file, "utf8");
+          if (/canonkit-(?:opencode|hook)\.js|\.\.[\\/]canonkit[\\/]/.test(text)) residual.push(file);
         }
-        if (
-          harness === "claude" &&
-          existsSync(path.join(claudeHome(), "hooks", LEGACY.hook))
-        )
-          residual.push(
-            "legacy meu-time forwarder (other projects may use it)",
-          );
-        if (harness === "opencode") {
-          const plugins = path.join(opencodeDir(), "plugins");
-          let files;
-          try {
-            files = await readdir(plugins, { withFileTypes: true });
-          } catch (err) {
-            if (err.code !== "ENOENT")
-              throw new Error(`Cannot inspect ${plugins}`);
-            files = [];
-          }
-          for (const entry of files) {
-            if (entry.name === "canonkit.js") continue;
-            if (!entry.isFile()) {
-              residual.push(path.join(plugins, entry.name));
-              continue;
-            }
-            const file = path.join(plugins, entry.name);
-            const text = await readFile(file, "utf8");
-            if (
-              /canonkit-(?:opencode|hook)\.js|\.\.[\\/]canonkit[\\/]/.test(text)
-            )
-              residual.push(file);
-          }
-        }
-        return residual;
-      },
-    });
-  } finally {
-    await manifest.close();
-  }
+      }
+      return residual;
+    } });
+  } finally { await manifest.close(); }
 }
 
 async function uninstallProject(ctx) {
   const root = await repositoryRoot();
-  if (!root)
-    throw new Error(
-      "uninstall --project: no project here; run it inside the project (a Git repository) you want to undo",
-    );
+  if (!root) throw new Error("uninstall --project: no project here; run it inside the project (a Git repository) you want to undo");
   await safePath(path.join(root, ".claude", "settings.json"));
-  for (const name of PROJECT_CORE_NAMES)
-    await safePath(path.join(root, ".codex", "agents", `${name}.toml`));
+  for (const name of PROJECT_CORE_NAMES) await safePath(path.join(root, ".codex", "agents", `${name}.toml`));
   const manifest = scopedSecurityManifest(ctx, root);
   try {
-    if (await manifest.load())
-      ctx.log(
-        `Project (${root}): reversing tracked project security and Codex core shadows`,
-      );
-    return await manifest.uninstall({
-      messages: {
-        missing:
-          "No project install manifest for this project: nothing was removed.",
-        kept: "Kept: backups and everything at user level (canonkit uninstall removes it).",
-      },
-    });
-  } finally {
-    await manifest.close();
+    if (await manifest.load()) ctx.log(`Project (${root}): reversing tracked project security and Codex core shadows`);
+    return await manifest.uninstall({ messages: {
+      missing: "No project install manifest for this project: nothing was removed.",
+      kept: "Kept: backups and everything at user level (canonkit uninstall removes it).",
+    } });
   }
+  finally { await manifest.close(); }
 }
 
 function usage() {
@@ -7324,11 +4511,7 @@ function context(dryRun) {
       // The new file keeps the old one's mode: a settings.json kept at 0600
       // must not come back 0644. The temp file is private until then.
       let mode = null;
-      try {
-        mode = statSync(p).mode & 0o7777;
-      } catch {
-        /* a new file: default mode */
-      }
+      try { mode = statSync(p).mode & 0o7777; } catch { /* a new file: default mode */ }
       try {
         await writeFile(tmp, text, mode === null ? undefined : { mode: 0o600 });
         // Best effort: where chmod is refused the file stays 0600, tighter, not looser.
@@ -7381,28 +4564,7 @@ process.stdout.on("error", (err) => {
 });
 
 const PROJECT_SELECTION_FLAGS = ["--specialist", "--stack", "--tool"];
-const KNOWN_FLAGS = [
-  "--dry-run",
-  "--no-reference",
-  "--remove",
-  "--yes",
-  "--with-git-hooks",
-  "--wire-hooks",
-  "--project",
-  "--no-project",
-  "--recommended",
-  "--json",
-  "--verbose",
-  "--claude",
-  "--codex",
-  "--opencode",
-  "--copilot",
-  ...PROJECT_SELECTION_FLAGS,
-  "-h",
-  "--help",
-  "-v",
-  "--version",
-];
+const KNOWN_FLAGS = ["--dry-run", "--no-reference", "--remove", "--yes", "--with-git-hooks", "--wire-hooks", "--project", "--no-project", "--recommended", "--json", "--verbose", "--claude", "--codex", "--opencode", "--copilot", ...PROJECT_SELECTION_FLAGS, "-h", "--help", "-v", "--version"];
 
 // `--harness` is the one option with a value, so it is lifted out before the
 // split on a leading dash: otherwise `--harness a,b` leaves `a,b` as a
@@ -7414,8 +4576,7 @@ function liftHarness(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--harness=")) given.push(a.slice("--harness=".length));
-    else if (a === "--harness")
-      given.push(i + 1 < argv.length ? argv[++i] : null);
+    else if (a === "--harness") given.push(i + 1 < argv.length ? argv[++i] : null);
     else kept.push(a);
   }
   return { kept, harness: given.length ? given : undefined };
@@ -7425,16 +4586,10 @@ function liftProjectSelections(argv) {
   const kept = [];
   const selected = { tools: [], specialists: [], stacks: [] };
   const present = new Set();
-  const category = {
-    "--tool": "tools",
-    "--specialist": "specialists",
-    "--stack": "stacks",
-  };
+  const category = { "--tool": "tools", "--specialist": "specialists", "--stack": "stacks" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    const equal = PROJECT_SELECTION_FLAGS.find((flag) =>
-      arg.startsWith(`${flag}=`),
-    );
+    const equal = PROJECT_SELECTION_FLAGS.find((flag) => arg.startsWith(`${flag}=`));
     if (equal) {
       present.add(equal);
       selected[category[equal]].push(arg.slice(equal.length + 1));
@@ -7442,9 +4597,7 @@ function liftProjectSelections(argv) {
     }
     if (Object.hasOwn(category, arg)) {
       present.add(arg);
-      selected[category[arg]].push(
-        i + 1 < argv.length && !argv[i + 1].startsWith("-") ? argv[++i] : null,
-      );
+      selected[category[arg]].push(i + 1 < argv.length && !argv[i + 1].startsWith("-") ? argv[++i] : null);
       continue;
     }
     kept.push(arg);
@@ -7460,50 +4613,35 @@ function validateProjectSelections(selected, catalog) {
   ];
   for (const [key, names, label] of categories) {
     for (const name of selected[key]) {
-      if (name == null || name === "")
-        return `${key === "tools" ? "--tool" : key === "stacks" ? "--stack" : "--specialist"} needs a value.`;
-      if (!names.includes(name))
-        return `Unknown ${key === "tools" ? "tool" : key === "stacks" ? "stack pack" : "specialist"}: ${name}\n${label}: ${names.join(" ")}`;
+      if (name == null || name === "") return `${key === "tools" ? "--tool" : key === "stacks" ? "--stack" : "--specialist"} needs a value.`;
+      if (!names.includes(name)) return `Unknown ${key === "tools" ? "tool" : key === "stacks" ? "stack pack" : "specialist"}: ${name}\n${label}: ${names.join(" ")}`;
     }
   }
   return null;
 }
 
-async function main(
-  rawArgv,
-  {
-    interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
-    prompt,
-    securityAnswer: givenSecurityAnswer,
-    confirmAction,
-    choose,
-    readLine,
-    resolveProjectTarget = resolveInstallProjectTarget,
-    catalogReader = readInstallCatalog,
-  } = {},
-) {
+async function main(rawArgv, {
+  interactive = !!(process.stdin.isTTY && process.stdout.isTTY),
+  prompt,
+  securityAnswer: givenSecurityAnswer,
+  confirmAction,
+  choose,
+  readLine,
+  resolveProjectTarget = resolveInstallProjectTarget,
+  catalogReader = readInstallCatalog,
+} = {}) {
   const { kept: afterHarness, harness } = liftHarness(rawArgv);
-  const {
-    kept: argv,
-    selected,
-    present: projectSelectionFlags,
-  } = liftProjectSelections(afterHarness);
+  const { kept: argv, selected, present: projectSelectionFlags } = liftProjectSelections(afterHarness);
   const flags = argv.filter((a) => a.startsWith("-"));
   const args = argv.filter((a) => !a.startsWith("-"));
   const [command, ...rest] = args;
 
-  if (
-    flags.includes("-h") ||
-    flags.includes("--help") ||
-    (!command && !flags.length)
-  ) {
+  if (flags.includes("-h") || flags.includes("--help") || (!command && !flags.length)) {
     console.log(usage());
     return 0;
   }
   if (flags.includes("-v") || flags.includes("--version")) {
-    const pkg = JSON.parse(
-      await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"),
-    );
+    const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
     console.log(pkg.version);
     return 0;
   }
@@ -7517,88 +4655,50 @@ async function main(
 
   const ctx = context(flags.includes("--dry-run"));
   if (projectSelectionFlags.size && command !== "install") {
-    console.error(
-      "--specialist, --stack and --tool are only valid for: canonkit install",
-    );
+    console.error("--specialist, --stack and --tool are only valid for: canonkit install");
     return 1;
   }
   const modelsSetup = command === "models" && rest[0] === "setup";
-  if (
-    flags.includes("--project") &&
-    !modelsSetup &&
-    (command !== "uninstall" ||
-      rest.length ||
-      flags.some((flag) => !["--project", "--dry-run"].includes(flag)))
-  ) {
-    console.error(
-      "--project is only valid for: canonkit uninstall --project [--dry-run], canonkit models setup --project",
-    );
+  if (flags.includes("--project") && !modelsSetup && (command !== "uninstall" || rest.length || flags.some((flag) => !["--project", "--dry-run"].includes(flag)))) {
+    console.error("--project is only valid for: canonkit uninstall --project [--dry-run], canonkit models setup --project");
     return 1;
   }
-  if (
-    flags.includes("--json") &&
-    !(command === "models" && rest[0] === "show")
-  ) {
+  if (flags.includes("--json") && !(command === "models" && rest[0] === "show")) {
     console.error("--json is only valid for: canonkit models show");
     return 1;
   }
-  if (
-    flags.includes("--with-git-hooks") &&
-    (command !== "tool" ||
-      rest.length !== 2 ||
-      rest[0] !== "add" ||
-      rest[1] !== "graphify")
-  ) {
-    console.error(
-      "--with-git-hooks is only valid for: canonkit tool add graphify",
-    );
+  if (flags.includes("--with-git-hooks") && (command !== "tool" || rest.length !== 2 || rest[0] !== "add" || rest[1] !== "graphify")) {
+    console.error("--with-git-hooks is only valid for: canonkit tool add graphify");
     return 1;
   }
-  if (
-    harness &&
-    !(command === "tool" && rest[0] === "add" && rest.length === 2)
-  ) {
+  if (harness && !(command === "tool" && rest[0] === "add" && rest.length === 2)) {
     console.error("--harness is only valid for: canonkit tool add <tool>");
     return 1;
   }
   if (flags.includes("--verbose") && !["install", "doctor"].includes(command)) {
-    console.error(
-      "--verbose is only valid for: canonkit install, canonkit doctor",
-    );
+    console.error("--verbose is only valid for: canonkit install, canonkit doctor");
     return 1;
   }
   if (flags.includes("--wire-hooks") && command !== "install") {
     console.error("--wire-hooks is only valid for: canonkit install");
     return 1;
   }
-  if (
-    TARGETS.some((t) => flags.includes(`--${t}`)) &&
-    !["install", "reference", "uninstall", "models"].includes(command)
-  ) {
-    console.error(
-      "--claude, --codex, --opencode and --copilot are only valid for: canonkit install, canonkit reference, canonkit uninstall, canonkit models",
-    );
+  if (TARGETS.some((t) => flags.includes(`--${t}`)) && !["install", "reference", "uninstall", "models"].includes(command)) {
+    console.error("--claude, --codex, --opencode and --copilot are only valid for: canonkit install, canonkit reference, canonkit uninstall, canonkit models");
     return 1;
   }
 
   switch (command) {
     case "install": {
-      const menu =
-        !TARGETS.some((t) => flags.includes(`--${t}`)) && interactive;
+      const menu = !TARGETS.some((t) => flags.includes(`--${t}`)) && interactive;
       if (flags.includes("--no-project") && projectSelectionFlags.size) {
-        console.error(
-          "--no-project cannot be combined with --tool, --specialist or --stack; no project items were installed",
-        );
+        console.error("--no-project cannot be combined with --tool, --specialist or --stack; no project items were installed");
         return 1;
       }
       const checkProjectTarget = interactive || projectSelectionFlags.size > 0;
-      const projectTarget = checkProjectTarget
-        ? await resolveProjectTarget()
-        : null;
+      const projectTarget = checkProjectTarget ? await resolveProjectTarget() : null;
       if (!projectTarget && projectSelectionFlags.size) {
-        console.error(
-          "Project selections require a Git project outside canonkit and HOME. Run install from the project that should receive them.",
-        );
+        console.error("Project selections require a Git project outside canonkit and HOME. Run install from the project that should receive them.");
         return 1;
       }
       const catalog = projectTarget
@@ -7612,17 +4712,10 @@ async function main(
       const targets = await chooseTargets(flags, { interactive, prompt });
       if (!targets) return 1;
       const projectInScope = await chooseProjectScope(projectTarget, {
-        interactive,
-        noProject: flags.includes("--no-project"),
-        prompt,
+        interactive, noProject: flags.includes("--no-project"), prompt,
       });
       if (projectInScope === null) return 1;
-      let projectItems = {
-        tools: [],
-        specialists: [],
-        stacks: [],
-        toolHarnesses: {},
-      };
+      let projectItems = { tools: [], specialists: [], stacks: [], toolHarnesses: {} };
       if (projectTarget && projectInScope) {
         projectItems = await chooseProjectItems(catalog, projectTarget, {
           interactive: menu && projectSelectionFlags.size === 0,
@@ -7634,11 +4727,7 @@ async function main(
           return 1;
         }
       } else if (menu) {
-        console.log(
-          wrapText(
-            "Project items skipped: from a Git project outside canonkit, run npx canonkit add <specialist-or-stack> or npx canonkit tool add <tool>; see npx canonkit list.",
-          ),
-        );
+        console.log(wrapText("Project items skipped: from a Git project outside canonkit, run npx canonkit add <specialist-or-stack> or npx canonkit tool add <tool>; see npx canonkit list."));
       }
       // Default output is a short grouped summary; --verbose prints every step as it happens.
       const verbose = flags.includes("--verbose");
@@ -7647,9 +4736,7 @@ async function main(
       const changed = new Set();
       if (!verbose) {
         const tag = ctx.dryRun ? "[dry-run] " : "";
-        ctx.log = (m) => {
-          lines.push(m ? tag + m : "");
-        };
+        ctx.log = (m) => { lines.push(m ? tag + m : ""); };
         ctx.onChange = (file) => changed.add(file);
       }
       let failed = true;
@@ -7659,85 +4746,45 @@ async function main(
         await trackedGlobal(ctx, targets, async (tracked) => {
           // Decision previews must be visible before prompts, even when install
           // progress is buffered for the compact report.
-          const preview = interactive
-            ? { ...tracked, log: previewLog }
-            : tracked;
+          const preview = interactive ? { ...tracked, log: previewLog } : tracked;
           const options = {
-            reference: !flags.includes("--no-reference"),
-            wireHooks: flags.includes("--wire-hooks"),
-            targets,
-            projectInScope,
-            showProjectHint: !menu && projectSelectionFlags.size === 0,
+            reference: !flags.includes("--no-reference"), wireHooks: flags.includes("--wire-hooks"),
+            targets, projectInScope, showProjectHint: !menu && projectSelectionFlags.size === 0,
           };
           const plan = await planInstall(tracked, options);
           try {
-            const modelHarnesses = targets.filter(
-              (h) => h === "claude" || h === "codex",
-            );
+            const modelHarnesses = targets.filter((h) => h === "claude" || h === "codex");
             const recommendedFlag = flags.includes("--recommended");
-            const showSetupQuestion =
-              interactive &&
-              !recommendedFlag &&
-              !givenSecurityAnswer &&
-              modelHarnesses.length > 0;
-            const modelPlan =
-              modelHarnesses.length && (showSetupQuestion || recommendedFlag)
-                ? await prepareRecommendedModels(modelHarnesses, {
-                    dryRun: ctx.dryRun,
-                  })
-                : null;
+            const showSetupQuestion = interactive && !recommendedFlag && !givenSecurityAnswer && modelHarnesses.length > 0;
+            const modelPlan = modelHarnesses.length && (showSetupQuestion || recommendedFlag)
+              ? await prepareRecommendedModels(modelHarnesses, { dryRun: ctx.dryRun })
+              : null;
             const inScopeSecurityRows = [
               ...(plan.security?.global?.rows ?? []),
-              ...(projectInScope ? (plan.security?.project?.rows ?? []) : []),
+              ...(projectInScope ? plan.security?.project?.rows ?? [] : []),
             ];
-            const hasSecurityChanges = inScopeSecurityRows.some(
-              (row) => row.marker !== "=",
-            );
+            const hasSecurityChanges = inScopeSecurityRows.some((row) => row.marker !== "=");
             let customModelPlan = null;
-            let setupAnswer = recommendedFlag
-              ? "recommended"
-              : (givenSecurityAnswer ?? "default");
+            let setupAnswer = recommendedFlag ? "recommended" : givenSecurityAnswer ?? "default";
             if (showSetupQuestion) {
-              printRecommendedSetup(
-                preview,
-                modelPlan,
-                plan.security,
-                projectInScope,
-              );
+              printRecommendedSetup(preview, modelPlan, plan.security, projectInScope);
               const choices = [
                 { title: "Yes, use recommended", value: "recommended" },
-                ...(modelPlan.hasExisting || hasSecurityChanges
-                  ? [{ title: "No, keep current", value: "keep" }]
-                  : []),
+                ...(modelPlan.hasExisting || hasSecurityChanges ? [{ title: "No, keep current", value: "keep" }] : []),
                 { title: "No, customize", value: "customize" },
               ];
               const answer = await askInstallChoice(prompt, {
-                type: "select",
-                name: "recommended-setup",
-                message: "Use the recommended setup?",
-                choices,
-                initial: 0,
-                hint: "Enter accepts the recommended setup",
+                type: "select", name: "recommended-setup", message: "Use the recommended setup?",
+                choices, initial: 0, hint: "Enter accepts the recommended setup",
               });
-              if (answer.cancelled) {
-                guidedCancelled = true;
-                return;
-              }
+              if (answer.cancelled) { guidedCancelled = true; return; }
               setupAnswer = answer.value;
             }
             if (setupAnswer === "customize" && modelHarnesses.length) {
               try {
-                customModelPlan = await setupModels(
-                  preview,
-                  await readAgents(),
-                  {
-                    harnesses: modelHarnesses,
-                    ask: prompt,
-                    isTTY: interactive,
-                    fromInstall: true,
-                    deferWrite: true,
-                  },
-                );
+                customModelPlan = await setupModels(preview, await readAgents(), {
+                  harnesses: modelHarnesses, ask: prompt, isTTY: interactive, fromInstall: true, deferWrite: true,
+                });
               } catch (err) {
                 if (/cancelled; nothing was written/.test(err.message)) {
                   console.error("Cancelled: nothing was installed.");
@@ -7746,100 +4793,51 @@ async function main(
                 }
                 throw err;
               }
-              if (customModelPlan?.cancelled) {
-                guidedCancelled = true;
-                return;
-              }
+              if (customModelPlan?.cancelled) { guidedCancelled = true; return; }
             }
             const securityDecision = plan.security
               ? setupAnswer === "default"
-                ? await reviewSecurity(preview, plan.security, {
-                    interactive:
-                      interactive && !flags.includes("--yes") && !ctx.dryRun,
-                    securityAnswer: givenSecurityAnswer,
-                    prompt,
-                  })
+                ? await reviewSecurity(preview, plan.security, { interactive: interactive && !flags.includes("--yes") && !ctx.dryRun, securityAnswer: givenSecurityAnswer, prompt })
                 : setupAnswer === "recommended"
-                  ? await reviewSecurity(preview, plan.security, {
-                      interactive: false,
-                      securityAnswer: "recommended",
-                      prompt,
-                    })
-                  : setupAnswer === "keep"
-                    ? await reviewSecurity(preview, plan.security, {
-                        interactive: false,
-                        securityAnswer: "keep",
-                        prompt,
-                      })
-                    : setupAnswer === "customize"
-                      ? await reviewSecurity(preview, plan.security, {
-                          interactive: true,
-                          securityAnswer: "customize",
-                          prompt,
-                        })
-                      : { securityAnswer: setupAnswer, selectedRows: [] }
+                  ? await reviewSecurity(preview, plan.security, { interactive: false, securityAnswer: "recommended", prompt })
+                : setupAnswer === "keep"
+                  ? await reviewSecurity(preview, plan.security, { interactive: false, securityAnswer: "keep", prompt })
+                : setupAnswer === "customize"
+                  ? await reviewSecurity(preview, plan.security, { interactive: true, securityAnswer: "customize", prompt })
+                  : { securityAnswer: setupAnswer, selectedRows: [] }
               : { securityAnswer: "default", selectedRows: [] };
             if (interactive && !ctx.dryRun) {
               printInstallSummary(preview, {
-                targets,
-                projectItems,
-                projectInScope,
-                modelPlan,
-                customModelPlan,
-                setupAnswer,
-                security: plan.security,
-                securityDecision,
+                targets, projectItems, projectInScope, modelPlan, customModelPlan,
+                setupAnswer, security: plan.security, securityDecision,
               });
               const confirmation = await askInstallChoice(prompt, {
-                type: "select",
-                name: "install-confirmation",
-                message: "Write these changes?",
+                type: "select", name: "install-confirmation", message: "Write these changes?",
                 choices: [
                   { title: "Yes, install", value: true },
                   { title: "No, cancel (nothing is written)", value: false },
-                ],
-                initial: 0,
-                hint: "Enter writes the changes listed above.",
+                ], initial: 0, hint: "Enter writes the changes listed above.",
               });
               if (confirmation.cancelled || !confirmation.value) {
-                if (!confirmation.cancelled)
-                  console.log("Cancelled: nothing was installed.");
+                if (!confirmation.cancelled) console.log("Cancelled: nothing was installed.");
                 guidedCancelled = true;
                 return;
               }
             }
             if (modelPlan && setupAnswer === "recommended") {
-              for (const row of modelPlan.rows)
-                if (row.marker !== "=")
-                  tracked.log(
-                    fitMenuLine(
-                      `${ctx.dryRun ? "would apply" : "Applying"} user model choice: ${rowText(row, { padded: false })}`,
-                    ),
-                  );
+              for (const row of modelPlan.rows) if (row.marker !== "=") tracked.log(fitMenuLine(`${ctx.dryRun ? "would apply" : "Applying"} user model choice: ${rowText(row, { padded: false })}`));
             }
             await plan.apply(securityDecision, {
-              userModelChoices:
-                modelPlan && setupAnswer === "recommended"
-                  ? modelPlan.document
-                  : customModelPlan?.userChoices,
-              userModelCatalog:
-                modelPlan && setupAnswer === "recommended"
-                  ? modelPlan.catalog
-                  : customModelPlan?.catalog,
+              userModelChoices: modelPlan && setupAnswer === "recommended" ? modelPlan.document : customModelPlan?.userChoices,
+              userModelCatalog: modelPlan && setupAnswer === "recommended" ? modelPlan.catalog : customModelPlan?.catalog,
             });
-            if (modelPlan && setupAnswer === "recommended" && !ctx.dryRun)
-              await modelPlan.apply();
+            if (modelPlan && setupAnswer === "recommended" && !ctx.dryRun) await modelPlan.apply();
             if (customModelPlan?.apply) await customModelPlan.apply();
-          } finally {
-            await plan.close();
-          }
+          } finally { await plan.close(); }
         });
         if (guidedCancelled) return 1;
         failed = false;
-        for (const name of [
-          ...projectItems.specialists,
-          ...projectItems.stacks,
-        ]) {
+        for (const name of [...projectItems.specialists, ...projectItems.stacks]) {
           try {
             const result = await changeProject(ctx, [name]);
             if (result) failed = true;
@@ -7852,9 +4850,7 @@ async function main(
           try {
             const result = await toolAdd(ctx, name, {
               yes: flags.includes("--yes"),
-              harness: projectItems.toolHarnesses[name]
-                ? [projectItems.toolHarnesses[name].join(",")]
-                : undefined,
+              harness: projectItems.toolHarnesses[name] ? [projectItems.toolHarnesses[name].join(",")] : undefined,
               interactive: false,
               confirmAction,
               compactInstall: !verbose,
@@ -7868,43 +4864,18 @@ async function main(
         if (projectTarget) {
           const after = await catalogReader({ project: projectTarget });
           remaining = {
-            tools: after.tools
-              .filter((item) => !item.active)
-              .map((item) => item.name),
-            specialists: after.specialists
-              .filter((item) => item.state !== "installed")
-              .map((item) => item.name),
-            stacks: after.stacks
-              .filter((item) => item.state !== "installed")
-              .map((item) => item.name),
+            tools: after.tools.filter((item) => !item.active).map((item) => item.name),
+            specialists: after.specialists.filter((item) => item.state !== "installed").map((item) => item.name),
+            stacks: after.stacks.filter((item) => item.state !== "installed").map((item) => item.name),
           };
-          if (verbose)
-            for (const line of renderRemainingItems(remaining)) ctx.log(line);
+          if (verbose) for (const line of renderRemainingItems(remaining)) ctx.log(line);
         }
       } finally {
         if (!verbose) {
-          const pkg = JSON.parse(
-            await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"),
-          );
-          console.log(
-            renderInstallReport(lines, {
-              dryRun: ctx.dryRun,
-              version: pkg.version,
-              changed,
-              failed,
-              remaining,
-              interactive,
-              cancelled: guidedCancelled,
-            }).join("\n"),
-          );
+          const pkg = JSON.parse(await readFile(path.join(PACKAGE_ROOT, "package.json"), "utf8"));
+          console.log(renderInstallReport(lines, { dryRun: ctx.dryRun, version: pkg.version, changed, failed, remaining, interactive, cancelled: guidedCancelled }).join("\n"));
         } else if (interactive) {
-          const title = guidedCancelled
-            ? "Installation cancelled"
-            : failed
-              ? "Installation incomplete"
-              : ctx.dryRun
-                ? "Dry run"
-                : "Installation complete";
+          const title = guidedCancelled ? "Installation cancelled" : failed ? "Installation incomplete" : ctx.dryRun ? "Dry run" : "Installation complete";
           console.log("");
           console.log(interactiveHeading(title));
         }
@@ -7913,22 +4884,7 @@ async function main(
     }
     case "uninstall":
       if (flags.includes("--project")) return uninstallProject(ctx);
-      if (
-        rest.length ||
-        flags.some(
-          (flag) =>
-            ![
-              "--dry-run",
-              "--claude",
-              "--codex",
-              "--opencode",
-              "--copilot",
-            ].includes(flag),
-        )
-      )
-        throw new Error(
-          "uninstall accepts only --dry-run and harness selection flags",
-        );
+      if (rest.length || flags.some((flag) => !["--dry-run", "--claude", "--codex", "--opencode", "--copilot"].includes(flag))) throw new Error("uninstall accepts only --dry-run and harness selection flags");
       return uninstallGlobal(ctx, flags);
     case "doctor":
       return doctor({ verbose: flags.includes("--verbose") });
@@ -7937,9 +4893,7 @@ async function main(
       // from scripts as often as by hand.
       {
         const targets = await chooseTargets(flags, { interactive: false });
-        await trackedGlobal(ctx, targets, (tracked) =>
-          syncReference(tracked, targets),
-        );
+        await trackedGlobal(ctx, targets, (tracked) => syncReference(tracked, targets));
       }
       return 0;
     case "add":
@@ -7949,22 +4903,15 @@ async function main(
         console.error(usage());
         return 1;
       }
-      return changeProject(ctx, rest, {
-        remove: command === "remove" || flags.includes("--remove"),
-      });
+      return changeProject(ctx, rest, { remove: command === "remove" || flags.includes("--remove") });
     case "list":
       await list(ctx);
       return 0;
     case "tool":
       return toolCommand(ctx, rest, flags, { harness, confirmAction });
     case "git-ignore-sandbox-files":
-      if (
-        rest.length ||
-        flags.some((flag) => !["--dry-run", "--remove"].includes(flag))
-      ) {
-        console.error(
-          "Usage: canonkit git-ignore-sandbox-files [--remove] [--dry-run]\n",
-        );
+      if (rest.length || flags.some((flag) => !["--dry-run", "--remove"].includes(flag))) {
+        console.error("Usage: canonkit git-ignore-sandbox-files [--remove] [--dry-run]\n");
         return 1;
       }
       return gitIgnoreSandboxFiles(ctx, { remove: flags.includes("--remove") });
@@ -7978,19 +4925,9 @@ async function main(
         return 1;
       }
       const agents = await readAgents();
-      if (sub === "refresh")
-        return refreshModels(ctx, {
-          harnesses: picked.length ? picked : TARGETS,
-        });
-      if (sub === "show")
-        return showModels(ctx, agents, {
-          json: flags.includes("--json"),
-          harnesses: picked.length ? picked : TARGETS,
-        });
-      return setupModels(ctx, agents, {
-        project: flags.includes("--project"),
-        harnesses: picked.length ? picked : ["claude"],
-      });
+      if (sub === "refresh") return refreshModels(ctx, { harnesses: picked.length ? picked : TARGETS });
+      if (sub === "show") return showModels(ctx, agents, { json: flags.includes("--json"), harnesses: picked.length ? picked : TARGETS });
+      return setupModels(ctx, agents, { project: flags.includes("--project"), harnesses: picked.length ? picked : ["claude"] });
     }
     default:
       console.error(`Unknown command: ${command}\n`);
@@ -8002,17 +4939,10 @@ async function main(
 // Only run when invoked as the CLI. The tests import applyBlock directly, and
 // an unguarded call here would install the team as a side effect of importing.
 const invokedDirectly =
-  process.argv[1] &&
-  (() => {
+  process.argv[1] && (() => {
     // npx and global installs launch through a link or shim: compare real paths,
     // or the CLI exits silently without running.
-    const real = (p) => {
-      try {
-        return realpathSync(p);
-      } catch {
-        return path.resolve(p);
-      }
-    };
+    const real = (p) => { try { return realpathSync(p); } catch { return path.resolve(p); } };
     return real(process.argv[1]) === real(fileURLToPath(import.meta.url));
   })();
 
