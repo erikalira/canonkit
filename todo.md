@@ -155,19 +155,26 @@ a handoff keep their details there; items without one carry them inline.
   (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
   `settings.json` was not checked. Confidence: low. Next step: check which
   files they read; if a user can empty one by hand, reuse `readSettingsText`.
-- [ ] **Shell-edit rule loses to the auto-mode prompt**: on 2026-11-17, in the
-  futlens project, Claude edited its scratchpad script with
-  `sed -i ... && bash ssr-check.sh`, which triggered a permission prompt. Both
+- [ ] **Shell-for-files rule loses to the auto-mode prompt** (edits and reads):
   `reference/agents-block.md` ("Dedicated tools, not the shell", "Temporary work
   outside the repository") and the Claude Code block ("File work uses Read, Edit
-  and Write") already forbid it. Likely cause: Claude Code's auto-mode system
-  prompt explicitly invites `sed`, heredocs and short scripts for small edits, and
-  the block never says it overrides that guidance, or that the scratchpad counts.
-  Confidence: medium (one occurrence; the harness prompt was not captured from
-  that session). Next step: run `learning-loop` on the transcript; if confirmed,
-  add one sentence to the Claude Code block: the rule holds in auto mode and in
-  the scratchpad, despite harness guidance. Do not widen the hook to ask on every
-  `sed -i`: it would add prompts, not remove them.
+  and Write") forbid shell edits and prefer the read/search tools over shell
+  reads. Occurrences, all 2026-11-17:
+  - futlens: Claude edited its scratchpad script with
+    `sed -i ... && bash ssr-check.sh`, which triggered a permission prompt;
+  - canonkit, session that archived `telemetry-sandbox-read`: the Bob subagent
+    tried `sed -i` on a test file and the sandbox denied it;
+  - same session: the lead ran `node -e` only to read and compare specs where
+    Read sufficed; the user rejected it.
+  Likely cause: Claude Code's auto-mode system prompt explicitly invites `cat`,
+  `sed -n`, `grep`, heredocs and short scripts for reads and small edits, and
+  the block never says it overrides that guidance, or that the scratchpad and
+  subagents count. Confidence: high (three occurrences in two projects, lead and
+  subagent, edit and read). Next step: run `learning-loop` on the transcripts;
+  if confirmed, add one sentence to the Claude Code block: the rule holds in
+  auto mode, in the scratchpad and for subagents, for reads as well as edits,
+  despite harness guidance. Do not widen the hook to ask on every `sed -i`: it
+  would add prompts, not remove them.
 - [ ] **Doctor flags Bash allow rules made redundant by the sandbox**:
   `assessClaude` in `bin/security.js` (the `saved-approvals` check) only counts
   `permissions.allow` rules. With the strict sandbox and
@@ -277,6 +284,11 @@ a handoff keep their details there; items without one carry them inline.
   receipt's owned `allowRead` items, which duplicates the later `checkTracked`
   receipt load. Confidence: low (cosmetic). Next step: read the receipt once
   and pass it to both.
+- [ ] **Doctor flattens nested `allowRead`**: `bin/cli.js` (~L2751) uses
+  `rawReads.flat()`, so a nested `[["~/.claude/canonkit-activity"]]` would
+  count as coverage. Unreachable today: `parseSecuritySettings`
+  (`bin/security.js` ~L190) rejects non-string items. Confidence: low. Next
+  step: harden only if the parser is relaxed.
 - [ ] **Known limitations accepted in 3.1.1** (Gard, cosmetic):
   - **NVM_DIR drift:** if `NVM_DIR` differs between install and doctor (or is a
     symlink), the kit-appended nvm item is no longer recognized as kit-owned,
