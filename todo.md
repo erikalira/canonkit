@@ -149,6 +149,17 @@ a handoff keep their details there; items without one carry them inline.
     `blockReadsOutsideWorkingDirectories`.
   - A project's `.claude/settings.local.json` starts as a 444 placeholder (see
     the item above).
+  - Second session (2026-11-17, VS Code extension): `sandbox.filesystem.allowRead`
+    in the **project's** `.claude/settings.json` never reached the sandbox, not
+    even after the settings hot-reloaded; the same entry in
+    `~/.claude/settings.json` took effect without a restart. Likely the
+    `strictAllowlist` lock ignoring project sandbox filesystem keys too
+    (unconfirmed). `additionalDirectories` in the project file reloaded live
+    (write list and placeholders appeared) but Bash still could not see the
+    folder, since `/home` stays read-masked without an `allowRead`; removing it
+    blocked the Read tool again at once. `/add-dir` answers "isn't available in
+    this environment" in the VS Code extension, so the doc must not offer it as
+    the session-only path there.
   Confidence: medium on the mechanics, high on the need. Next step: confirm the
   matrix (claude-code-guide or docs), then write it; Spencer reviews only if it
   lands in the install guide's security section.
