@@ -164,10 +164,25 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
   `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); in
   `definition-of-done` (the Stop gate blocked the turn), `files` (how many files)
   and `rules` (the rules of the gates that made it fire).
-- `agent_resume`: `to`, `has_message` (boolean) and `project`.
-- `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_end`,
-  also `resolved_model`, `mode`, `duration_ms`, `tool_uses`, `tokens` and
-  `report_chars`.
+- `agent_resume`: `to`, `has_message` (boolean), `message_chars` (length of the
+  resume message, `null` when absent; never its text) and `project`.
+- `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_start`,
+  also `brief_chars` (length of the dispatch prompt, `null` when absent; never its
+  text); in `agent_end`, also `resolved_model`, `mode`, `duration_ms`,
+  `tool_uses`, `tokens`, `report_chars` and, on background dispatches only,
+  `complete`.
+- `agent_end.tokens` carries, besides `api_calls`, `input`, `output`,
+  `cache_read`, `cache_creation` and `total`: `cache_creation_5m` and
+  `cache_creation_1h` (cache writes by lifetime; `null`, not 0, when no call in
+  the transcript reports the split, so `cache_creation` stays the sum when
+  present) and `first_call` (`input`, `cache_read`, `cache_creation`, `context` =
+  their sum), the first API call of the dispatch: its cold-start floor, which the
+  totals mix with every later call.
+- `complete` (background `agent_end`): `true` when the `SubagentHandback` entry
+  was in the transcript, `false` when it never appeared within the 1.5 s wait, so
+  the last API call may be missing from `tokens` and `report_chars` may come from
+  the fallback. Foreground lines omit it. Lines from before this field have the
+  race described below and no flag.
 
 Readers must accept absent `task` and `detail` fields. The dashboard already
 falls back to a generic dispatch label and omits absent command details. Agent
@@ -200,6 +215,17 @@ background, the report comes back through the `SubagentHandback` tool**, not as
 the last text message, so `report_chars` measures the `message` of the last
 `SubagentHandback` in the transcript and only falls back to
 `last_assistant_message` when there is none.
+
+**The final call can lag the stop.** At `SubagentStop` the last assistant entry
+(the `SubagentHandback` call) is sometimes not yet on disk; before 2026-11-18 that
+left `report_chars` null on about 60% of background lines and dropped the largest
+call from the totals, so earlier totals are underestimates. The hook now waits
+for it when it is missing: every 100 ms, for at most 1.5 s, rescanning only when
+the file grew, and never when the handback is already there. If it still does not
+appear, the line is written with `complete: false`. Foreground dispatches do not
+wait (their report comes from the `PostToolUse` payload); whether their totals
+suffer the same lag is unmeasured. `CANONKIT_HANDBACK_WAIT_MS` shortens the wait
+(capped at 1500) and exists for the test suite.
 
 ## Context contributors
 

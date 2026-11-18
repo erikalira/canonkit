@@ -4,8 +4,19 @@ Notable user-facing changes to CanonKit are recorded here.
 
 ## Unreleased
 
+### Fixed
+
+- Background dispatches no longer lose `report_chars` and their final API call
+  when the subagent's last transcript entry lands after `SubagentStop`: the hook
+  waits up to 1.5 s for it, only when it is missing, and marks the line
+  `complete: false` if it never appears. Earlier logged totals are underestimates.
+
 ### Added
 
+- Dispatch cost fields in the activity log: `tokens.cache_creation_5m` /
+  `cache_creation_1h`, `tokens.first_call` (the cold-start floor), `brief_chars`
+  on `agent_start`, `message_chars` on `agent_resume` and `complete` on background
+  `agent_end`. Lengths and numbers only, never text.
 - A local Execution Graph and filterable timeline for observed Claude Code
   dispatch and gate events, with a separate Activity overview and conditional
   LOW/MEDIUM/HIGH reference routes.
