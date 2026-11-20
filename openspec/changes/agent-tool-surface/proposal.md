@@ -30,9 +30,9 @@ None.
 
 ## Impact
 
-`bin/agent-access.js` (levels, shared denylist, citation detector), `bin/cli.js` (`models show` output), validation and tests, `agents/bob.md`, `agents/pipe.md`, `agents/virgo.md`, `docs/install.md`, `reference/agents-block.md` (access table), `CHANGELOG.md`.
+`bin/agent-access.js` (levels, shared denylist, citation detector), `bin/cli.js` (`models show` output), validation and tests, `agents/bob.md`, `agents/pipe.md`, `agents/virgo.md`, `docs/install.md`, `reference/agents-block.md` (access table), the next `docs/release-notes/X.Y.Z.md`.
 
-Compatibility: a source declaring `access: build` fails validation on an older canonkit (unknown level); the CHANGELOG says so. Installs by older canonkit of unchanged sources are unaffected.
+Compatibility: a source declaring `access: build` fails validation on an older canonkit (unknown level); the release notes say so. Installs by older canonkit of unchanged sources are unaffected.
 
 Risks: the gain is likely well below the measured ~16k, because `build` and `inspect` keep MCP tools and the harness already strips some of the denied tools from subagents. A connector rename (the Claude Docs prefix) silently stops matching; the signal is `first_call.context` rising for `build`/`inspect` agents.
 
@@ -46,5 +46,5 @@ Risks: the gain is likely well below the measured ~16k, because `build` and `ins
 6. `canonkit models show` prints, for allowlist agents, whether `Skill` is kept and the citation that kept it, and prints no token figures.
 7. `agents/bob.md`, `agents/pipe.md`, `agents/virgo.md` declare `access: build`; no source carries `tools`, `disallowedTools` or `skills`.
 8. The bogus-name check is recorded in `tasks.md` with its outcome before the constant is finalized: an unknown name in `disallowedTools` leaves the agent launching in foreground and in background, or the denylist is trimmed to tools the harness does not already filter.
-9. `docs/install.md` documents `build`, the citation convention and the access table; `reference/agents-block.md` access table and `CHANGELOG.md` (including the older-canonkit validation note) are updated.
+9. `docs/install.md` documents `build`, the citation convention and the access table; `reference/agents-block.md` access table and the next release notes (including the older-canonkit validation note) are updated.
 10. Measurement gate: after install, in a new session, one trivial dispatch per affected agent; `first_call.context` is compared with the handoff baseline table. No gain is claimed without it; if removing `Skill` saves less than about 1k, that part is reverted.

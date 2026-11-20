@@ -23,7 +23,7 @@ Owners: Bob implements `bin/agent-access.js`, validation and tests. Virgo change
 
 - [ ] 4.1 `docs/install.md`: `build` level, access table, the citation convention, the start-up cost re-measurement recipe still valid.
 - [ ] 4.2 `reference/agents-block.md` access table (Bob, Pipe, Virgo as `build`; Perry, Pixie as `inspect`).
-- [ ] 4.3 `CHANGELOG.md` Unreleased: new level, `inspect` now withholds coordination tools, `Skill` derived from citation; a source declaring `build` fails validation on older canonkit.
+- [ ] 4.3 Next `docs/release-notes/X.Y.Z.md` (create it if none exists): new level, `inspect` now withholds coordination tools, `Skill` derived from citation; a source declaring `build` fails validation on older canonkit.
 - [ ] 4.4 Spec Purpose wording (see design.md) corrected at sync.
 
 ## 5. Validation and review
@@ -34,7 +34,7 @@ Owners: Bob implements `bin/agent-access.js`, validation and tests. Virgo change
 ## 6. Measurement gate (no gain claimed without it)
 
 - [ ] 6.1 Install, then in a new session run one trivial dispatch per affected agent (Bob, Pipe, Virgo, Perry, Pixie, and Archie, Gard, Quinn, Scott, Spencer for `Skill`); read `first_call.context` from the `agent_end` events.
-- [ ] 6.2 Compare with the baseline table in `docs/plans/agent-tool-surface-handoff.md`; record the numbers here and in `CHANGELOG.md` only as measured.
+- [ ] 6.2 Compare with the baseline table in `docs/plans/agent-tool-surface-handoff.md`; record the numbers here and in the release notes only as measured.
 - [ ] 6.3 If removing `Skill` saves less than about 1k, revert that part. Denying `Skill` to `build`/`inspect` is a follow-up only if measured at about 1k or more.
 
 ## 7. Closure

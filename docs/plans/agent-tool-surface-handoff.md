@@ -49,5 +49,5 @@ Proposta a validar com o Archie: um nível novo `build` (denylist das ferramenta
 - **Bob** (sonnet/medium): `bin/agent-access.js`, validação e testes.
 - **Quinn** (sonnet/medium): revisão depois da última edição.
 - **Medição:** depois de instalar, numa sessão nova, uma dispatch trivial de cada agente afetado; comparar `first_call.context` com a tabela. Sem medição, não declarar ganho. Se o `Skill` render menos de ~1k, reverter essa parte.
-- **Docs:** delta da spec, `docs/install.md`, tabela de acesso do `reference/agents-block.md` e `CHANGELOG.md`.
+- **Docs:** delta da spec, `docs/install.md`, tabela de acesso do `reference/agents-block.md` e as próximas notas em `docs/release-notes/`.
 - A usuária quer ver o change escrito e aprovar **antes da implementação**.

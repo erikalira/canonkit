@@ -26,5 +26,5 @@ The harness already strips `AskUserQuestion`, `EnterPlanMode`, `ExitPlanMode` an
 
 - Gain likely well below ~16k: `build` and `inspect` keep MCP, and the harness already filters much. The measurement gate decides what is claimed.
 - A connector rename silently stops matching the Claude Docs prefix. Signal: `first_call.context` rising for `build`/`inspect` agents after a Claude Code update.
-- A source declaring `build` fails validation on older canonkit; CHANGELOG says so.
+- A source declaring `build` fails validation on older canonkit; the next release notes (`docs/release-notes/X.Y.Z.md`) say so.
 - The spec Purpose says "every other agent keeps its current behavior"; it becomes stale (see the conflicts reported with this change) and is corrected at sync, not by a delta requirement.

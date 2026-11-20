@@ -69,8 +69,10 @@ runtime data. Nodes in those reference routes stay unknown.
 The current hooks do not provide a stable project ID, worktree, branch, OpenSpec
 change link, Graphify freshness signal, or full Codex/OpenCode/Copilot execution
 stream. Those fields remain unavailable. In particular, a project basename is
-not used to merge sessions. This release does not add hooks, start sessions,
-scan OpenSpec/Graphify, or collect new telemetry. Runtime adapters, richer
+not used to merge sessions. The execution view adds no hooks, starts no sessions,
+scans no OpenSpec/Graphify data and collects no telemetry of its own (it reads
+the records the hook already writes; the new dispatch cost fields are described
+under [Stable fields](#stable-fields)). Runtime adapters, richer
 evidence links, and the future Agent Office remain roadmap work; the Agent Office
 is not implemented here.
 
