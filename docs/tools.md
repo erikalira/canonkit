@@ -152,6 +152,28 @@ calls still resolve as before.
 > another version manager, `install` reports the location and you add it yourself. The
 > setting affects sandboxed Bash only and applies to the next command; see the Claude
 > Code sandboxing docs.
+>
+> **The telemetry folder is opt-in.** The same denial hides `~/.claude/canonkit-activity/`,
+> the hook telemetry, so a sandboxed command that runs the dashboard or reads the
+> telemetry sees the folder as missing. Opening it is a trade-off:
+>
+> > Every sandboxed command could read your activity history: session IDs, project names, agent names, and the paths of files that gates flagged, including secret-looking files. Older records can also hold the first 80 characters of commands and dispatch descriptions. It holds no prompts and no tool output.
+>
+> So `canonkit install` asks only in the **No, customize** review, in its own question
+> with "Keep closed" preselected. **Yes**, **No, keep current**, `--recommended`,
+> `--yes`, a dry run and a run without a terminal never add it; they print the snippet
+> and point to customize. The entry is the exact folder, never `~/.claude`, and goes in
+> user settings for the same reason as above:
+>
+> ```json
+> "sandbox": { "filesystem": { "allowRead": ["~/.claude/canonkit-activity"] } }
+> ```
+>
+> The sandbox follows symbolic links, so if `~/.claude` or the folder is a link, the
+> entry could expose the link target: install then does not offer it, says why and
+> prints the snippet for you to add by hand. You need no exception at all to run the
+> dashboard from your own terminal, which is the documented way
+> ([telemetry.md](telemetry.md#sandboxed-commands)).
 
 With the binary present, `tool add`:
 

@@ -489,6 +489,45 @@ export function compileRuntimeReads(data, environment, { detected = { roots: [],
   return result;
 }
 
+/**
+ * The hook telemetry folder. Unlike the runtime reads above it is opt-in: it is never part of the
+ * recommended set, because opening it lets every sandboxed command read the activity history.
+ */
+export const TELEMETRY_READ_ITEM = "~/.claude/canonkit-activity";
+
+/** What opening the folder exposes. One sentence, used verbatim by the install menu and by doctor. */
+export const TELEMETRY_EXPOSURE = "Every sandboxed command could read your activity history: session IDs, project names, agent names, and the paths of files that gates flagged, including secret-looking files. Older records can also hold the first 80 characters of commands and dispatch descriptions. It holds no prompts and no tool output.";
+
+/**
+ * True when `~/.claude` or the telemetry folder is a symbolic link. The sandbox resolves links while
+ * normalizeReadPath is lexical, so an entry could expose the link's target. Absent paths are fine.
+ */
+export async function telemetryReadSymlink(home = os.homedir()) {
+  for (const target of [path.join(home, ".claude"), path.join(home, ".claude", "canonkit-activity")]) {
+    try { if ((await lstat(target)).isSymbolicLink()) return true; } catch { /* absent or unreadable: nothing to follow */ }
+  }
+  return false;
+}
+
+/**
+ * Whether to offer the telemetry folder as a read exception. Pure: `symlinked` comes from
+ * telemetryReadSymlink. Same gating and coverage as compileRuntimeReads (it is called with this one
+ * item), so a look-alike path never covers it. `proposed` is a boolean here.
+ */
+export function compileTelemetryRead(data, environment, { claudeInstalled = false, symlinked = false, home = os.homedir(), platform = environment.platform } = {}) {
+  const result = { proposed: false, covered: false, gaps: [] };
+  if (!claudeInstalled) return result;
+  const runtime = compileRuntimeReads(data, environment, { detected: { roots: [{ item: TELEMETRY_READ_ITEM, label: "canonkit activity history" }], unhandled: [] }, home, platform });
+  result.gaps = runtime.gaps;
+  result.covered = runtime.covered.length > 0;
+  result.conditional = runtime.conditional;
+  if (runtime.proposed.length) {
+    if (symlinked) result.gaps.push("telemetry-read-symlink");
+    else result.proposed = true;
+  }
+  return result;
+}
+
 /** Appends items after the existing allowRead entries; nothing existing is reordered or dropped. */
 export function applyRuntimeReads(data, items) {
   const out = structuredClone(data);
@@ -597,7 +636,7 @@ export function serializeSecurity(data, original = "") {
  */
 export function trustedOwnedAllowRead(items, { home = os.homedir(), env = process.env, platform = process.platform } = {}) {
   if (!Array.isArray(items) || items.some((item) => typeof item !== "string")) return [];
-  const producible = new Set(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx", MODELS_READ_ITEM]);
+  const producible = new Set(["~/.nvm", "~/.local/bin", "~/.local/share/pipx", "~/.local/pipx", MODELS_READ_ITEM, TELEMETRY_READ_ITEM]);
   if (env.NVM_DIR) {
     const rel = path.relative(home, path.resolve(env.NVM_DIR));
     if (rel && rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel)) producible.add(`~/${rel.split(path.sep).join("/")}`);

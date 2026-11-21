@@ -37,6 +37,18 @@ test("runtime read coverage rows are named in the grouped security summary", () 
   assert.match(out, /No check failed\. 2 warnings/);
 });
 
+test("the telemetry-read row is informational: a pass, never a warning or failure", () => {
+  const { lines, failed } = renderDoctorReport([
+    { status: "OK", check: "security environment", detail: "detected linux, WSL none; sandbox available-unverified", more: [] },
+    { status: "OK", check: "security claude telemetry-read", detail: "~/.claude/canonkit-activity is closed to sandboxed commands (opt-in, by choice)", more: [] },
+  ]);
+  const out = lines.join("\n");
+  assert.equal(failed, 0);
+  assert.match(out, /Security +2 ok · 0 to review/);
+  assert.match(out, /claude\s+✓\stelemetry-read/);
+  assert.match(out, /No check failed\.$/);
+});
+
 test("a covered runtime read row is a pass, not a warning", () => {
   const { lines } = renderDoctorReport([{ status: "OK", check: "security claude runtime-reads", detail: "configured: ~/.nvm covered by sandbox.filesystem.allowRead in user settings", more: [] }]);
   assert.match(lines.join("\n"), /claude\s+✓\sruntime-reads\sconfigured/);

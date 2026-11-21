@@ -3,7 +3,9 @@
 The Claude Code hook records numbers and metadata about what each session spends,
 including paths and identifiers in some event types. New records omit dispatch
 descriptions (`task`) and command fragments (`detail`); older records may retain
-them until rotation. No existing logs are rewritten or deleted by this change.
+them until rotation. New `gate` records still keep the `project` and, when a gate
+fired on a file, that `file` (secret-looking files included). No existing logs are
+rewritten or deleted by this change.
 Hook telemetry stays on your machine, in `~/.claude/canonkit-activity/`. Optional
 [Learning Loop contributions](learning-loop.md#contributing-a-general-improvement)
 send only user-reviewed, explicitly authorized sanitized issues, not raw logs.
@@ -20,9 +22,89 @@ node $HOME\.claude\canonkit-dashboard\serve.js          # Windows (PowerShell)
 PowerShell does not expand `~` in arguments to external programs: with `~/`, Node
 looks for the file inside the current folder and fails with `MODULE_NOT_FOUND`.
 
-Then open `http://localhost:4317`: besides the timeline, it groups dispatches by
-(model, effort) and by agent, with the number of dispatches, average tokens,
-average report size and average duration.
+Then open `http://127.0.0.1:4317`. The Activity overview groups dispatches by
+(model, effort) and by agent, with dispatch counts, average tokens, report size
+and duration.
+
+The main page is the **Execution Graph**. It shows observed Claude Code
+dispatches and gate events for a selected session, a detail inspector, and a
+filterable timeline. The separate Activity overview keeps the existing metrics
+and context-contributor views. From a source checkout, run
+`npm run dashboard:build` before starting the server; published packages contain
+the compiled assets. The frontend toolchain is a development dependency and the
+installed dashboard runs with Node alone.
+
+### Execution read model, schema version 1
+
+`/execution.json` projects retained hook records into a versioned, allowlisted
+read model. Its top level contains `schemaVersion`, `generatedAt`, `sessions`,
+`agents` and `observations`. Each observation carries a timestamp, runtime, source,
+confidence, optional session/dispatch/agent identifiers, event type and a small
+type-specific `data` object. `eventId` is `null` because the source log has no
+stable event ID; dispatch lifecycle records correlate by their observed session
+plus source dispatch ID. A stop event joins only when its runtime agent ID maps
+to exactly one dispatch in that session. Invalid identifiers, malformed timestamps, arbitrary event
+fields, prompt/task text, tool results, paths, project names and transcript
+content are omitted.
+
+The model only includes events the hook already emits: `prompt`, `gate`,
+`agent_start`, `agent_launch`, `agent_end`, `agent_stop` and `agent_resume`.
+Dispatch starts and ends use the session plus dispatch ID. A stop can close a
+dispatch only when its runtime agent ID identifies exactly one dispatch in that
+session. Resume targets do not carry an ID and therefore remain uncorrelated.
+Cumulative `agent_end` lines for one dispatch are read in timestamp order; the
+latest cumulative record wins, including when a measurement is missing. A
+stop/end means the execution ended, not that its work succeeded or passed
+review. Agent presence is projected only where a real
+runtime agent ID links to a dispatch; it describes an active or ended invocation,
+not code-writing activity, task quality or review.
+
+Execution state, workflow state and approval state are separate. Gate records
+are classified by their observed rule: some indicate an allow, some a block, and
+some a request for confirmation. The log does not record the user's response,
+so approval remains unknown. LOW, MEDIUM and HIGH routes are shown in a separate
+reference view as conditional CanonKit guidance; no route is selected from
+runtime data. Nodes in those reference routes stay unknown.
+
+The current hooks do not provide a stable project ID, worktree, branch, OpenSpec
+change link, Graphify freshness signal, or full Codex/OpenCode/Copilot execution
+stream. Those fields remain unavailable. In particular, a project basename is
+not used to merge sessions. The execution view adds no hooks, starts no sessions,
+scans no OpenSpec/Graphify data and collects no telemetry of its own (it reads
+the records the hook already writes; the new dispatch cost fields are described
+under [Stable fields](#stable-fields)). Runtime adapters, richer
+evidence links, and the future Agent Office remain roadmap work; the Agent Office
+is not implemented here.
+
+The dashboard binds to `127.0.0.1`, validates loopback `Host` and same-origin
+`Origin` headers, serves only compiled files under its static directory, and
+does not enable CORS. New JSON uses a `nosniff` response; the compiled page has a
+restrictive content policy. The older Activity page retains its inline script
+under a path-specific policy for compatibility.
+
+### Sandboxed commands
+
+The folder is yours to read: you, and anything you run outside the Claude Code
+sandbox, can read it, as can other local users if your file permissions allow.
+When the sandbox denies reads of your home directory, sandboxed commands (an
+agent that runs the dashboard, or the Learning Loop reading telemetry) cannot
+see it, and canonkit leaves it that way unless you opt in. Opening it means:
+
+> Every sandboxed command could read your activity history: session IDs, project names, agent names, and the paths of files that gates flagged, including secret-looking files. Older records can also hold the first 80 characters of commands and dispatch descriptions. It holds no prompts and no tool output.
+
+That includes a command run by an agent following injected instructions. The
+**No, customize** review of `canonkit install` offers the read exception, with
+"Keep closed" preselected; no other path adds it. When a loaded settings scope
+enables the sandbox and canonkit is installed for Claude Code, `canonkit doctor`
+shows the current state as an OK line, open or closed; otherwise it says nothing
+about it. The entry, its user-settings location and
+the symbolic-link rule are in [tools.md](tools.md).
+
+Running the dashboard from your own terminal needs no exception. Observed once,
+after opening the folder: a sandboxed `curl` could not reach a dashboard that
+another sandboxed command served on `127.0.0.1:4317`, while a browser outside the
+sandbox could. So an agent-run dashboard may not be reachable from other
+sandboxed commands; canonkit does not work around this.
 
 ## Engineering baseline coverage
 
@@ -84,10 +166,25 @@ On every line: `ts` (ms since the epoch), `session` and `event`. In
   `secret-path`, `strong`, `auth`, `migration`, `word`, `ambiguous`); in
   `definition-of-done` (the Stop gate blocked the turn), `files` (how many files)
   and `rules` (the rules of the gates that made it fire).
-- `agent_resume`: `to`, `has_message` (boolean) and `project`.
-- `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_end`,
-  also `resolved_model`, `mode`, `duration_ms`, `tool_uses`, `tokens` and
-  `report_chars`.
+- `agent_resume`: `to`, `has_message` (boolean), `message_chars` (length of the
+  resume message, `null` when absent; never its text) and `project`.
+- `agent_start`/`agent_end`: `id`, `agent`, `model`, `effort`; in `agent_start`,
+  also `brief_chars` (length of the dispatch prompt, `null` when absent; never its
+  text); in `agent_end`, also `resolved_model`, `mode`, `duration_ms`,
+  `tool_uses`, `tokens`, `report_chars` and, on background dispatches only,
+  `complete`.
+- `agent_end.tokens` carries, besides `api_calls`, `input`, `output`,
+  `cache_read`, `cache_creation` and `total`: `cache_creation_5m` and
+  `cache_creation_1h` (cache writes by lifetime; `null`, not 0, when no call in
+  the transcript reports the split, so `cache_creation` stays the sum when
+  present) and `first_call` (`input`, `cache_read`, `cache_creation`, `context` =
+  their sum), the first API call of the dispatch: its cold-start floor, which the
+  totals mix with every later call.
+- `complete` (background `agent_end`): `true` when the `SubagentHandback` entry
+  was in the transcript, `false` when it never appeared within the 1.5 s wait, so
+  the last API call may be missing from `tokens` and `report_chars` may come from
+  the fallback. Foreground lines omit it. Lines from before this field have the
+  race described below and no flag.
 
 Readers must accept absent `task` and `detail` fields. The dashboard already
 falls back to a generic dispatch label and omits absent command details. Agent
@@ -120,6 +217,17 @@ background, the report comes back through the `SubagentHandback` tool**, not as
 the last text message, so `report_chars` measures the `message` of the last
 `SubagentHandback` in the transcript and only falls back to
 `last_assistant_message` when there is none.
+
+**The final call can lag the stop.** At `SubagentStop` the last assistant entry
+(the `SubagentHandback` call) is sometimes not yet on disk; before 2026-11-18 that
+left `report_chars` null on about 60% of background lines and dropped the largest
+call from the totals, so earlier totals are underestimates. The hook now waits
+for it when it is missing: every 100 ms, for at most 1.5 s, rescanning only when
+the file grew, and never when the handback is already there. If it still does not
+appear, the line is written with `complete: false`. Foreground dispatches do not
+wait (their report comes from the `PostToolUse` payload); whether their totals
+suffer the same lag is unmeasured. `CANONKIT_HANDBACK_WAIT_MS` shortens the wait
+(capped at 1500) and exists for the test suite.
 
 ## Context contributors
 

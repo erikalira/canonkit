@@ -14,7 +14,7 @@
  */
 import { test, describe, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdtemp, rm, appendFile, mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -1485,7 +1485,12 @@ describe("dispatch metrics", () => {
     assert.equal(end.resolved_model, "claude-haiku-5-5");
     assert.equal(end.duration_ms, 9000);
     assert.equal(end.tool_uses, 4);
-    assert.deepEqual(end.tokens, { api_calls: 2, input: 5, output: 30, cache_read: 3000, cache_creation: 500, total: 3535 });
+    assert.deepEqual(end.tokens, {
+      api_calls: 2, input: 5, output: 30, cache_read: 3000, cache_creation: 500, total: 3535,
+      cache_creation_5m: null, cache_creation_1h: null, // this transcript carries no split
+      first_call: { input: 3, cache_read: 1000, cache_creation: 500, context: 1503 },
+    });
+    assert.equal(start.brief_chars, PROMPT.length);
     assert.equal(end.report_chars, RESULT.length, "the size of what returned to the caller, not its text");
 
     const raw = JSON.stringify(evs);
@@ -1516,7 +1521,7 @@ describe("dispatch metrics", () => {
     const stop = (stop_hook_active) => runHook({
       hook_event_name: "SubagentStop", session_id: S, agent_id: "abg1", agent_type: "gard", stop_hook_active,
       agent_transcript_path: path.join(dir, "agent-abg1.jsonl"), last_assistant_message: RESULT,
-    });
+    }, { CANONKIT_HANDBACK_WAIT_MS: "0" }); // this transcript has no handback: do not spend the real wait
     assert.equal(stop(false).stdout.trim(), "");
     stop(true); // the runtime fires SubagentStop again after a stop hook continues the agent
 
@@ -1531,6 +1536,7 @@ describe("dispatch metrics", () => {
     assert.equal(typeof end.duration_ms, "number");
     assert.equal(end.tokens.total, 3535);
     assert.equal(end.report_chars, RESULT.length);
+    assert.equal(end.complete, false, "no handback in the transcript: the last call may be missing");
     assert.equal(evs.filter((e) => e.event === "agent_stop").length, 1, "one agent finishing reads as one stop");
     const raw = JSON.stringify(evs);
     assert.ok(!raw.includes(PROMPT) && !raw.includes(RESULT), "prompt or result text reached the log");
@@ -1572,6 +1578,117 @@ describe("dispatch metrics", () => {
     assert.equal(end.tokens.api_calls, 2);
     assert.equal(end.tokens.output, 850, "the largest count per call, not the last entry's");
     assert.ok(!JSON.stringify(await logged(S)).includes(RESULT), "report text reached the log");
+  });
+
+  describe("final call, cache split, cold-start floor and sizes", () => {
+    const REPORT = "R".repeat(321);
+    const call = (id, output, content, extra = {}) => JSON.stringify({
+      type: "assistant", message: { id, content,
+        usage: { input_tokens: 1, output_tokens: output, cache_read_input_tokens: 100, cache_creation_input_tokens: 40, ...extra } },
+    });
+    const split = (m5, h1) => ({ cache_creation: { ephemeral_5m_input_tokens: m5, ephemeral_1h_input_tokens: h1 } });
+    const first = call("msg_1", 5, [{ type: "text", text: "x" }], split(10, 30));
+    const second = call("msg_2", 5, [{ type: "text", text: "Done." }], { cache_read_input_tokens: 900, ...split(0, 40) });
+    const handback = call("msg_2", 6, [{ type: "tool_use", name: "SubagentHandback", input: { message: REPORT } }], { cache_read_input_tokens: 900, ...split(0, 40) });
+
+    // Launches a background dispatch, returns what a SubagentStop needs.
+    async function launch(S, agentId, lines) {
+      const dir = path.join(HOME, "projects", "p", S, "subagents");
+      const file = path.join(dir, `agent-${agentId}.jsonl`);
+      await mkdir(dir, { recursive: true });
+      await writeFile(file, lines.map((l) => l + "\n").join(""));
+      decide({ ...pre("Agent", { ...ti, run_in_background: true }, S), tool_use_id: `toolu_${agentId}` });
+      runHook({
+        hook_event_name: "PostToolUse", session_id: S, tool_name: "Agent", tool_use_id: `toolu_${agentId}`,
+        tool_input: { ...ti, run_in_background: true },
+        tool_response: { status: "async_launched", agentId },
+      });
+      const stop = { hook_event_name: "SubagentStop", session_id: S, agent_id: agentId, stop_hook_active: false, agent_transcript_path: file };
+      return { file, stop };
+    }
+    const endOf = async (S) => (await logged(S)).filter((e) => e.event === "agent_end").at(-1);
+
+    test("cache writes are summed by lifetime and the first call is reported apart", async () => {
+      const S = "METRICS-SPLIT";
+      const { stop } = await launch(S, "asp1", [first, first, second, handback]);
+      runHook(stop);
+      const { tokens } = await endOf(S);
+      assert.equal(tokens.api_calls, 2, "a call split over entries counts once");
+      assert.equal(tokens.cache_creation_5m, 10);
+      assert.equal(tokens.cache_creation_1h, 70);
+      assert.deepEqual(tokens.first_call, { input: 1, cache_read: 100, cache_creation: 40, context: 141 });
+      assert.equal(tokens.cache_creation, 80, "the existing total keeps its meaning");
+    });
+
+    test("a transcript without the split logs null, not zero", async () => {
+      const S = "METRICS-NOSPLIT";
+      const plain = call("msg_1", 5, [{ type: "tool_use", name: "SubagentHandback", input: { message: REPORT } }]);
+      const { stop } = await launch(S, "asp2", [plain]);
+      runHook(stop);
+      const { tokens } = await endOf(S);
+      assert.equal(tokens.cache_creation_5m, null);
+      assert.equal(tokens.cache_creation_1h, null);
+    });
+
+    test("a handback already present is measured without waiting", async () => {
+      const S = "METRICS-PRESENT";
+      const { stop } = await launch(S, "apr1", [first, handback]);
+      const t0 = Date.now();
+      runHook(stop, { CANONKIT_HANDBACK_WAIT_MS: "1500" });
+      const end = await endOf(S);
+      assert.equal(end.complete, true);
+      assert.equal(end.report_chars, REPORT.length);
+      assert.equal(end.tokens.api_calls, 2);
+      assert.ok(Date.now() - t0 < 1400, "waited although the handback was there");
+    });
+
+    test("a handback that never arrives is flagged and the wait is bounded", async () => {
+      const S = "METRICS-NEVER";
+      const { stop } = await launch(S, "anv1", [first]);
+      const t0 = Date.now();
+      runHook(stop, { CANONKIT_HANDBACK_WAIT_MS: "300" });
+      const elapsed = Date.now() - t0;
+      const end = await endOf(S);
+      assert.equal(end.complete, false);
+      assert.equal(end.tokens.api_calls, 1);
+      assert.ok(elapsed >= 280, `returned after ${elapsed} ms, before the window ended`);
+      assert.ok(elapsed < 1500, `waited ${elapsed} ms for a 300 ms window`);
+    });
+
+    test("a handback written inside the window is counted", async () => {
+      const S = "METRICS-LATE";
+      const { file, stop } = await launch(S, "alt1", [first, second]);
+      const child = spawn(process.execPath, [HOOK], { env: hookEnv({ CANONKIT_HANDBACK_WAIT_MS: "1500" }), cwd: HOME });
+      const exited = new Promise((resolve) => child.on("close", resolve));
+      child.stdin.end(JSON.stringify(stop));
+      await new Promise((r) => setTimeout(r, 350)); // the runtime writes it after the stop fired
+      await appendFile(file, handback + "\n");
+      await exited;
+      const end = await endOf(S);
+      assert.equal(end.complete, true);
+      assert.equal(end.report_chars, REPORT.length);
+      assert.equal(end.tokens.api_calls, 2);
+      assert.equal(end.tokens.output, 11, "the late call's output (6) replaced the earlier count (5) for msg_2");
+      assert.ok(!JSON.stringify(await logged(S)).includes(REPORT));
+    });
+
+    test("brief_chars and message_chars are lengths, null when absent, never text", async () => {
+      const S = "METRICS-SIZES";
+      const MSG = "RESUME-TEXT-MUST-NOT-BE-LOGGED";
+      decide({ ...pre("Agent", { subagent_type: "gard", description: "d" }, S), tool_use_id: "toolu_nb" });
+      decide({ ...pre("Agent", ti, S), tool_use_id: "toolu_wb" });
+      decide(pre("SendMessage", { to: "gard", message: MSG }, S));
+      decide(pre("SendMessage", { to: "gard" }, S));
+      const evs = await logged(S);
+      const starts = evs.filter((e) => e.event === "agent_start");
+      assert.equal(starts[0].brief_chars, null);
+      assert.equal(starts[1].brief_chars, PROMPT.length);
+      const resumes = evs.filter((e) => e.event === "agent_resume");
+      assert.equal(resumes[0].message_chars, MSG.length);
+      assert.equal(resumes[1].message_chars, null);
+      const raw = JSON.stringify(evs);
+      assert.ok(!raw.includes(PROMPT) && !raw.includes(MSG), "text reached the log");
+    });
   });
 
   test("a foreground SubagentStop writes no agent_end of its own (PostToolUse does)", async () => {

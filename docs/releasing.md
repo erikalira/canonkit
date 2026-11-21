@@ -77,10 +77,11 @@ git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z
 ### 3. Review and approve the deployment
 
 ```sh
+npm ci --ignore-scripts && npm run dashboard:build
 npm pack --dry-run --ignore-scripts
 ```
 
-Wait for the CI matrix and secret scan; the workflow checks that the tag is on `main` and matches `package.json`, but this check runs from the tagged commit's own workflow copy and only catches mistakes. From a clean checkout of the exact tagged commit, review the command's output before approving the `npm` deployment on the Actions run; the publish job's package file list is logged only after approval and cannot serve as the pre-approval review.
+Wait for the CI matrix and secret scan; the workflow checks that the tag is on `main` and matches `package.json`, but this check runs from the tagged commit's own workflow copy and only catches mistakes. From a clean checkout of the exact tagged commit, review the command's output before approving the `npm` deployment on the Actions run; the publish job's package file list is logged only after approval and cannot serve as the pre-approval review. The tarball ships the compiled dashboard, which is gitignored, so the listing must include `dashboard/dist/index.html`; the build step above produces it locally (`--ignore-scripts` skips `prepack`).
 
 ### 4. Create the GitHub release
 
@@ -91,6 +92,18 @@ gh release create vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md
 
 After publish succeeds, the `github-release` job creates the tag's release using `docs/release-notes/X.Y.Z.md`, or generated notes if that file is missing; if the job fails, re-run it or run the command above by hand. This job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
 
+### How the dashboard reaches the tarball
+
+`dashboard/dist` is built, not committed. Three jobs, in order:
+
+1. `build-dashboard` (`contents: read` only: no `id-token`, no environment, no secrets) checks out the tagged commit, runs `npm ci --ignore-scripts` and `vite build`, and uploads only `dashboard/dist` as the `dashboard-dist` artifact (1 day of retention). It outputs the commit SHA and a sha256 over the sorted per-file manifest of `dist`.
+2. `publish` installs and builds nothing. It fails unless the SHA equals `$GITHUB_SHA`, downloads the artifact into `dashboard/dist`, fails unless the recomputed manifest hash equals the build job's, and fails unless `npm pack --dry-run --json` lists `dashboard/dist/index.html` and no `node_modules`, `.map` or `.env` file. Then `npm publish --provenance --ignore-scripts`.
+3. `github-release` is unchanged.
+
+What this does and does not prove: provenance attests the published bytes and the workflow run that published them, not how `dist` was built. The SHA and hash checks tie `dist` to the commit and to the unprivileged job; they do not stop a compromised devDependency (vite, esbuild, react) from emitting malicious output in the build job. That risk is bounded by pinned versions in `package-lock.json`, `--ignore-scripts`, and the approval step: review the tarball listing (step 3) and, for a release that changes dependencies, the lockfile diff. Never publish from another workflow's artifact or cache, and never add `cache: npm`, an install or a build to the `publish` job.
+
+The two artifact actions are pinned by commit SHA like the rest of the file; update them with the same care as any pin.
+
 ## When it fails
 
 ### Before publishing: transient runner or network failure
@@ -99,7 +112,7 @@ After publish succeeds, the `github-release` job creates the tag's release using
 # Warning: Tests, secret scan, and tag checks run before publishing; nothing has reached npm at that point.
 ```
 
-Re-run the workflow.
+Re-run the workflow. A failed `dist matches the build job's manifest hash` or `dist was built from this commit` check means the artifact is not what the build job made: do not bypass it; re-run the whole workflow so `build-dashboard` runs again.
 
 ### Before publishing: code problem
 

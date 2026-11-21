@@ -61,6 +61,17 @@ a handoff keep their details there; items without one carry them inline.
   antes/depois"). Waits for enough post-3.2.1 review dispatches; until then the
   effect of proposals 1 and 2 is UNMEASURED. Checked 2026-11-16: the two
   telemetry files are absent in this environment; keep this item open.
+- [ ] **Suggest OpenSpec when work starts, not only once a change exists**
+  (raised 2026-11-17). The "OpenSpec change lifecycle" in
+  `skills/orchestrate/SKILL.md` (~L245) and the block in `tools/openspec.md`
+  cover only an already selected change; nothing says when to open one.
+  Proposal: when the project already uses OpenSpec and the work is MEDIUM/HIGH
+  and spans sessions or has acceptance criteria and decisions worth keeping, the
+  agent asks (`AskUserQuestion`): explore first (`/opsx:explore`) when the
+  problem is still ambiguous, or propose the change (`/opsx:propose`) when the
+  scope is clear. Never starts on its own; LOW never; projects without OpenSpec
+  stay without it. MEDIUM (team configuration for every project): Virgo
+  implements.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
 - [x] **Skill for the one-backlog-item-per-session cycle**: done in 3.2.1
@@ -85,6 +96,73 @@ a handoff keep their details there; items without one carry them inline.
   required.
 
 ### P3 — improvements without urgency
+
+- [ ] **Learning-loop: two browser-evidence lessons from futlens**
+  (user, 2026-11-17).
+  1. **Stale build**: the preview was served with `--no-build` from a `.output`
+     older than the edits. Only Perry asks for a fresh production build
+     (`agents/perry.md`); Pixie and `stack-packs/ui-review/SKILL.md` don't
+     require confirming the served build is newer than the last edit.
+  2. **Locked Chrome profile**: chrome-devtools MCP failed with "The browser is
+     already running for .../chrome-devtools-mcp/chrome-profile" (an automated
+     Chrome from an earlier session held the profile). The subagent reported it
+     correctly without working around it, but nobody told the user what to
+     close.
+  Next step: run `learning-loop`; locate the rules (pixie, perry, ui-review,
+  orchestrate), decide kit vs project for each, propose narrow changes.
+  First read: both look generic. Confidence: medium.
+- [ ] **Sandbox placeholders still clutter the editor after
+  `git-ignore-sandbox-files`** (user, 2026-11-17). Git is clean, but the
+  worktree still holds ~20 0-byte files and `.cc-writes/` dirs (`.bashrc`,
+  `.zshrc`, `.gitconfig`, `.mcp.json`, `.idea`, `.claude/agents`,
+  `.claude/settings.local.json`…, plus `dashboard/.claude/.cc-writes` and
+  `openspec/.claude/.cc-writes`), all shown in the VS Code explorer. The command
+  then prints "No 0-byte untracked sandbox placeholders to hide", which reads as
+  "nothing to fix" while the user still sees them. Two gaps:
+  1. **Editor noise**: offer an opt-in `files.exclude` for the same static names
+     (where: `.vscode/settings.json` is shared, user settings are not per
+     project — decide), or at least document it. The sandbox recreates the
+     files, so deleting them does not stick.
+  2. **Read-only trap**: the placeholder is mode 444; saving into it fails in
+     VS Code ("File is read-only… Overwrite"). Document that it is safe to
+     replace (`chmod 644` from the user's own terminal, or Overwrite), that the
+     sandbox still blocks writes to it afterwards, and that a file with real
+     content stays hidden by the exclude block until a reconcile.
+  Also reword the "nothing to hide" message to say git already ignores them and
+  the files stay on disk by design. Confidence: high (observed in this
+  worktree). Next step: decide the editor option; docs part is LOW.
+- [ ] **Doc: giving a session access to another folder or repository**
+  (user, 2026-11-17; asked repeatedly). One table in `docs/install.md`
+  (sandbox section) covering: read only vs read-write; file tools (Read/Edit)
+  vs Bash; one project vs every project (project `settings.local.json` vs
+  `~/.claude/settings.json`); session-only (`/add-dir`). Observed this session
+  (Claude Code, WSL, strict sandbox) — verify each against the current docs
+  and version before publishing:
+  - `permissions.additionalDirectories` makes it a working directory: file
+    tools read and write (add `deny` `Edit(//path/**)`/`Write(//path/**)` for
+    read-only); the sandbox allows Bash writes there and then protects that
+    repo's `.claude/*`, `.mcp.json`… paths, so **placeholders appear in the
+    other repo too**. Bash read was not granted in the config shown. The Read
+    tool kept refusing until a restart (unconfirmed).
+  - `sandbox.filesystem.allowRead` (user settings) gives Bash read only, no
+    working directory, no placeholders; file tools stay blocked by
+    `blockReadsOutsideWorkingDirectories`.
+  - A project's `.claude/settings.local.json` starts as a 444 placeholder (see
+    the item above).
+  - Second session (2026-11-17, VS Code extension): `sandbox.filesystem.allowRead`
+    in the **project's** `.claude/settings.json` never reached the sandbox, not
+    even after the settings hot-reloaded; the same entry in
+    `~/.claude/settings.json` took effect without a restart. Likely the
+    `strictAllowlist` lock ignoring project sandbox filesystem keys too
+    (unconfirmed). `additionalDirectories` in the project file reloaded live
+    (write list and placeholders appeared) but Bash still could not see the
+    folder, since `/home` stays read-masked without an `allowRead`; removing it
+    blocked the Read tool again at once. `/add-dir` answers "isn't available in
+    this environment" in the VS Code extension, so the doc must not offer it as
+    the session-only path there.
+  Confidence: medium on the mechanics, high on the need. Next step: confirm the
+  matrix (claude-code-guide or docs), then write it; Spencer reviews only if it
+  lands in the install guide's security section.
 
 - [ ] **`docs/install.md` names only `orchestrate` among the shipped skills**
   (Spencer, 2026-11-15). The paragraph "Alongside the blocks goes the
@@ -144,6 +222,26 @@ a handoff keep their details there; items without one carry them inline.
   (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
   `settings.json` was not checked. Confidence: low. Next step: check which
   files they read; if a user can empty one by hand, reuse `readSettingsText`.
+- [ ] **Shell-for-files rule loses to the auto-mode prompt** (edits and reads):
+  `reference/agents-block.md` ("Dedicated tools, not the shell", "Temporary work
+  outside the repository") and the Claude Code block ("File work uses Read, Edit
+  and Write") forbid shell edits and prefer the read/search tools over shell
+  reads. Occurrences, all 2026-11-17:
+  - futlens: Claude edited its scratchpad script with
+    `sed -i ... && bash ssr-check.sh`, which triggered a permission prompt;
+  - canonkit, session that archived `telemetry-sandbox-read`: the Bob subagent
+    tried `sed -i` on a test file and the sandbox denied it;
+  - same session: the lead ran `node -e` only to read and compare specs where
+    Read sufficed; the user rejected it.
+  Likely cause: Claude Code's auto-mode system prompt explicitly invites `cat`,
+  `sed -n`, `grep`, heredocs and short scripts for reads and small edits, and
+  the block never says it overrides that guidance, or that the scratchpad and
+  subagents count. Confidence: high (three occurrences in two projects, lead and
+  subagent, edit and read). Next step: run `learning-loop` on the transcripts;
+  if confirmed, add one sentence to the Claude Code block: the rule holds in
+  auto mode, in the scratchpad and for subagents, for reads as well as edits,
+  despite harness guidance. Do not widen the hook to ask on every `sed -i`: it
+  would add prompts, not remove them.
 - [ ] **Doctor flags Bash allow rules made redundant by the sandbox**:
   `assessClaude` in `bin/security.js` (the `saved-approvals` check) only counts
   `permissions.allow` rules. With the strict sandbox and
@@ -169,6 +267,45 @@ a handoff keep their details there; items without one carry them inline.
      model config, security settings).
   3. Add an `npm run typecheck` script (`tsc -p . --noEmit`) and include it in
      `validate`/CI.
+- [ ] **Adopt Prettier project-wide** (decided 2026-11-17). Today the repo has
+  no formatter config, so an editor's format-on-save rewrites a whole file: on
+  2026-11-16 one Ctrl+S turned a 51-line change to `bin/cli.js` into a
+  5,200-line diff (`be964ea`, undone in `4c23dd7`). To do: add a
+  `.prettierrc` matching the current style (double quotes, wide lines) and a
+  `.prettierignore` (`graphify-out/`, `dashboard/dist/`, generated files);
+  `prettier` as a devDependency only (the published CLI stays dependency-light);
+  `npm run format` / `format:check`, with the check in `validate`/CI. Reformat
+  in one dedicated commit and list it in `.git-blame-ignore-revs`. Watch: the
+  post-preflight tests in `test/e2e/` count exact source strings in
+  `bin/cli.js`, so reformatting breaks them; make them format-independent
+  first. Confidence: high (cause confirmed by the user). MEDIUM (shared tooling
+  and CI): Pipe for CI.
+- [ ] **Telemetry read: LOW notes from the 6.2 review** (Gard and Quinn,
+  2026-11-17; OpenSpec `telemetry-sandbox-read`, approved without blockers).
+  Any code change here touches sandbox permissions: Bob implements, Gard
+  reviews.
+  - **Doctor silent cases only unit-tested** (Quinn): ambiguous `allowRead`,
+    unknown or below-floor version and a symlinked folder are proven only by
+    `compileTelemetryRead` tests; the doctor wiring (`bin/cli.js` ~L2758-2765)
+    is not. Add one e2e case (Claude 2.1.301, sandbox on, expect no row).
+  - **"Already covered" does not check bytes** (Quinn): the e2e test asserts the
+    entry is kept, not that `settings.json` is byte-identical.
+  - **Test-only export** (Quinn): `applySecurityAnswer` is exported only for a
+    test; mark it with a comment.
+  - **Loose regex** (Quinn): the first telemetry e2e test's output regex has a
+    broad `|` alternative. Harmless; tighten it.
+  - **Symlink check before the prompts** (Gard): `telemetryReadSymlink` runs at
+    plan time (`bin/cli.js` ~L637), not at write time. Needs same-user write
+    access to `~/.claude`. Option: re-check right before applying.
+  - **lstat errors fail open** (Gard): `telemetryReadSymlink` (`bin/security.js`
+    ~L507) treats any error as "not a link"; only ENOENT is clearly benign.
+    Option: treat other errors as `telemetry-read-symlink`.
+  - **Exposure sentence omits usage metadata** (Gard): the folder also holds
+    tool names, token and size counts, models and timestamps. Optional
+    rewording of `TELEMETRY_EXPOSURE` (and the docs that quote it verbatim).
+  - **Offered when the sandbox is off** (Gard): install offers the read even
+    when no scope sets `sandbox.enabled`, where it has no effect. Confusing, not
+    harmful. Confidence: medium.
 - [ ] **Graphify/OpenSpec pins and hooks**: waits for your decision and the
   ADR 0001 stability window ([handoff](docs/plans/tool-pins-update-handoff.md)).
 - [ ] **Deferred ECC decisions**: generic gate for destructive commands or
@@ -187,6 +324,26 @@ a handoff keep their details there; items without one carry them inline.
   receipt so `uninstall` removes the rules and `doctor` does not count them as
   `saved-approvals` (bin/security.js:617); update the README and
   `docs/install.md`. MEDIUM: implementation by Bob, review by Gard.
+
+- [ ] **Trim subagent startup context, step 1: measure** (discussed
+  2026-11-17). `access` cut the tool-schema share; what is left is the agent
+  body (6–11 KB per file in `agents/`) and the inherited instructions,
+  including the managed block (`reference/agents-block.md`, ~13.8 KB) and
+  CLAUDE.md. `events.jsonl` has no dispatch token counts yet. Measure one
+  `read` and one `full` dispatch, split into agent body, inherited block and
+  tools, before acting on either item below. Rejected: per-dispatch tool lists
+  (the `Agent` tool takes no tools parameter) and moving whole agent bodies
+  into skills (each skill load is a tool call that resends the context).
+  - [ ] **Rare sections into on-demand references.** Move long procedures used
+    by few dispatches (e.g. Perry's measurement detail, Pipe's checklists) into
+    files the agent reads only when the task needs them, as `orchestrate` does.
+    The core role, risk scale and report format stay in the agent file.
+  - [ ] **Orchestrator-only rules out of what subagents inherit.** Much of the
+    managed block only serves the lead (dispatch rules, branches, new session,
+    images). Check whether Claude Code lets a subagent skip the inherited
+    instructions, or move those rules into the `orchestrate` skill so the cut
+    applies to every dispatch. Changes a managed block: Virgo implements, and
+    Spencer checks for doc drift.
 
 ### P4 — evaluations, user actions and cosmetics
 
@@ -214,6 +371,11 @@ a handoff keep their details there; items without one carry them inline.
   receipt's owned `allowRead` items, which duplicates the later `checkTracked`
   receipt load. Confidence: low (cosmetic). Next step: read the receipt once
   and pass it to both.
+- [ ] **Doctor flattens nested `allowRead`**: `bin/cli.js` (~L2751) uses
+  `rawReads.flat()`, so a nested `[["~/.claude/canonkit-activity"]]` would
+  count as coverage. Unreachable today: `parseSecuritySettings`
+  (`bin/security.js` ~L190) rejects non-string items. Confidence: low. Next
+  step: harden only if the parser is relaxed.
 - [ ] **Known limitations accepted in 3.1.1** (Gard, cosmetic):
   - **NVM_DIR drift:** if `NVM_DIR` differs between install and doctor (or is a
     symlink), the kit-appended nvm item is no longer recognized as kit-owned,

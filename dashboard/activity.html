@@ -1,0 +1,297 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>canonkit · Activity</title>
+<style>
+  :root {
+    --bg: #0e0f12; --panel: #16181d; --line: #23262e;
+    --txt: #e7e9ee; --dim: #8b909b; --faint: #5a5f6a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font: 14px/1.5 ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+    padding: 32px clamp(16px, 5vw, 64px);
+  }
+  header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+  h1 { font-size: 16px; font-weight: 600; letter-spacing: .04em; margin: 0; }
+  h1 .o { color: var(--faint); font-weight: 400; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: #57c46b; box-shadow: 0 0 0 0 #57c46b88; animation: p 2s infinite; }
+  @keyframes p { 0% { box-shadow: 0 0 0 0 #57c46b66; } 70% { box-shadow: 0 0 0 7px #57c46b00; } 100% { box-shadow: 0 0 0 0 #57c46b00; } }
+  .updated { color: var(--faint); font-size: 12px; margin-left: auto; }
+  .stats { display: flex; gap: 28px; margin: 18px 0 26px; color: var(--dim); font-size: 12px; }
+  .stats b { color: var(--txt); font-size: 18px; font-weight: 600; display: block; }
+  .label { color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: .12em; margin: 22px 0 10px; }
+  .active { display: flex; flex-wrap: wrap; gap: 10px; min-height: 34px; }
+  .chip {
+    display: flex; align-items: center; gap: 9px; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px 7px 11px;
+  }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; animation: p 1.6s infinite; }
+  .chip .who { font-weight: 600; }
+  .chip .task { color: var(--dim); max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .empty { color: var(--faint); font-style: italic; }
+  .feed { border-top: 1px solid var(--line); }
+  .row { display: flex; gap: 12px; align-items: baseline; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .row .t { color: var(--faint); font-size: 12px; min-width: 64px; }
+  .row .ic { min-width: 16px; text-align: center; }
+  .row .body { flex: 1; }
+  .row .who { font-weight: 600; }
+  .row .task, .row .meta { color: var(--dim); }
+  .gate { color: #e2a44e; }
+  .gate.block { color: #e2574e; }
+  .stop { color: var(--faint); }
+  .note { color: var(--faint); font-size: 12px; margin: -4px 0 10px; }
+  .wrap { overflow-x: auto; }
+  table { border-collapse: collapse; min-width: 520px; width: 100%; }
+  th, td { padding: 7px 12px 7px 0; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--faint); font-size: 11px; font-weight: 400; text-transform: uppercase; letter-spacing: .1em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  td.dim { color: var(--dim); }
+  select { color: var(--txt); background: var(--panel); border: 1px solid var(--line); padding: 6px; max-width: 100%; }
+  #context-total { margin: 10px 0; }
+  .app-nav { border-bottom: 1px solid var(--line); padding: 10px 0; margin-bottom: 16px; display: flex; gap: 18px; font-size: 11px; }
+  .app-nav a { color: #91d6dc; text-decoration: none; }
+  .app-nav span { color: var(--dim); }
+</style>
+
+<header>
+  <span class="pulse" id="pulse"></span>
+  <h1>canonkit <span class="o">· activity</span></h1>
+  <span class="updated" id="updated">—</span>
+</header>
+<nav class="app-nav" aria-label="Dashboard views"><a href="/">Execution Graph ↗</a><span>Activity overview</span></nav>
+
+<div class="stats">
+  <span><b id="s-agents">0</b> dispatches started</span>
+  <span><b id="s-gates">0</b> gates fired</span>
+  <span><b id="s-prompts">0</b> prompts</span>
+</div>
+<div class="note" id="window-recent">Recent events: the last 300 timeline lines (tool results excluded).</div>
+<div class="note" id="window-retained">Retained history: every finished dispatch still in events.jsonl and its one rotated file.</div>
+<div class="note">The counters above count dispatches <em>started</em> in the recent window; the tables count dispatches <em>finished</em> in the whole retained history. They differ when history is longer than 300 events, when a dispatch is still running, or when its start was rotated out.</div>
+
+<div class="label">Active now</div>
+<div class="active" id="active"><span class="empty">idle</span></div>
+
+<div class="label">By model · effort <span id="retained-n"></span></div>
+<div class="note">Window: retained history. Tokens are what the API counted, summed over every call of a dispatch: each call re-sends the whole context, so cache reads are counted again on every call. Σ total is processing volume, not new tokens and not cost. Output is a lower bound (the transcript often keeps only the count from the start of a call's stream); input and cache numbers are complete. Cache read % = cache read ÷ (input + cache read + cache write), summed over the dispatches with tokens. “with tokens” is how many dispatches the averages cover (a transcript that could not be read has none). Effort “inherited” means the dispatch passed none.</div>
+<div class="wrap" id="by-model"><span class="empty">no finished dispatches yet</span></div>
+
+<div class="label">By agent</div>
+<div class="wrap" id="by-agent"><span class="empty">no finished dispatches yet</span></div>
+
+<h2 class="label">Context contributors</h2>
+<div class="note">Characters of tool-result text in the hook payload (Read, Grep, Glob, Bash, PowerShell) — observed volume, not tokens and not exact context growth. Formatting, images, other tools, unknown payloads and tool failures are not measured. Main thread and subagents are separate contexts: a subagent's results land in its own context, and only its report (“Agents”) comes back to main. Sessions logged before subagents were measured show “insufficient data”, not zero.</div>
+<label for="context-session">Window</label>
+<select id="context-session" disabled><option value="">No measured sessions</option></select>
+<p id="context-total" class="note"></p>
+<div class="wrap" id="context-threads"></div>
+<div class="label">Main thread context</div>
+<div class="wrap" id="context-contributors"><span class="empty">no measured results yet</span></div>
+<div class="label">Subagents</div>
+<div class="wrap" id="context-agents"></div>
+
+<div class="label">Timeline</div>
+<div class="feed" id="feed"></div>
+
+<script>
+  const AGENTS = {
+    archie:  { name: 'Archie',  c: '#e6c84f' }, bob:    { name: 'Bob',     c: '#57c46b' },
+    scott:   { name: 'Scott',   c: '#e08a3c' }, pixie:  { name: 'Pixie',   c: '#d9b34a' },
+    quinn:   { name: 'Quinn',   c: '#46c7d4' }, gard:   { name: 'Gard',    c: '#e2574e' },
+    iris:    { name: 'Iris',    c: '#9b6bd4' }, spencer:{ name: 'Spencer', c: '#e58bbf' },
+    pipe:    { name: 'Pipe',    c: '#4f86d6' }, virgo:  { name: 'Virgo',   c: '#d8d8d8' },
+    perry:   { name: 'Perry',   c: '#7fb3e8' },
+  };
+  // Explicit lookups: a hyphenated id ("s-agents") never becomes a global, and
+  // reading one that way threw on every render, which the catch below reported
+  // as "disconnected".
+  const $ = (id) => document.getElementById(id);
+  const s_agents = $('s-agents'), s_gates = $('s-gates'), s_prompts = $('s-prompts');
+  const activeEl = $('active'), feedEl = $('feed'), byModel = $('by-model'), byAgent = $('by-agent');
+  const pulse = $('pulse'), updated = $('updated');
+  const contextSession = $('context-session'), contextTotal = $('context-total'), contributorsEl = $('context-contributors');
+  const threadsEl = $('context-threads'), agentsEl = $('context-agents');
+  const windowRecent = $('window-recent'), windowRetained = $('window-retained'), retainedN = $('retained-n');
+  const since = (ts) => new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const meta = (slug) => AGENTS[(slug || '').split('-')[0]] || { name: slug || 'agent', c: '#7c8088' };
+  const clock = (ts) => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const esc = (s) => (s || '').replace(/[&<>]/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m]));
+
+  const tok = (n) => n >= 1e6 ? (n / 1e6).toFixed(2) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n));
+  const dur = (ms) => ms >= 60000 ? `${Math.floor(ms / 60000)}m ${String(Math.round(ms % 60000 / 1000)).padStart(2, '0')}s` : (ms / 1000).toFixed(1) + 's';
+  const modelOf = (e) => (e.resolved_model || e.model || '—').replace(/^claude-/, '');
+  const effortOf = (e) => e.effort || 'inherited';
+
+  // One row per group: dispatch count, and averages over the dispatches that
+  // carry the number — a dispatch whose transcript could not be read has no
+  // tokens, and counting it as zero would drag the average down. Sums are over
+  // the same dispatches; the "with tokens" column says how many that is.
+  function table(ds, keyOf, heads) {
+    const groups = new Map();
+    for (const d of ds) {
+      const k = keyOf(d), g = groups.get(k.join('\u0000')) || { k, n: 0, t: [], ms: [], rc: [] };
+      g.n++;
+      if (d.tokens) g.t.push(d.tokens);
+      if (typeof d.duration_ms === 'number') g.ms.push(d.duration_ms);
+      // What came back into the caller's context, which re-reads it every turn.
+      if (typeof d.report_chars === 'number') g.rc.push(d.report_chars);
+      groups.set(k.join('\u0000'), g);
+    }
+    const sum = (xs, f) => xs.reduce((s, x) => s + num(f(x)), 0);
+    const avg = (xs, f) => sum(xs, f) / xs.length;
+    const dash = '<span class="dim">—</span>';
+    const rows = [...groups.values()].sort((a, b) => sum(b.t, (x) => x.total) - sum(a.t, (x) => x.total) || b.n - a.n).map((g) => {
+      const t = g.t, has = t.length > 0;
+      const fed = sum(t, (x) => x.input) + sum(t, (x) => x.cache_read) + sum(t, (x) => x.cache_creation);
+      const cells = has ? [
+        tok(sum(t, (x) => x.total)), tok(avg(t, (x) => x.total)), tok(avg(t, (x) => x.input)), '≥' + tok(avg(t, (x) => x.output)),
+        tok(avg(t, (x) => x.cache_read)), tok(avg(t, (x) => x.cache_creation)),
+        fed ? (sum(t, (x) => x.cache_read) / fed * 100).toFixed(1) + '%' : dash, avg(t, (x) => x.api_calls).toFixed(1),
+      ] : Array(8).fill(dash);
+      const m = g.ms.length ? dur(avg(g.ms, (x) => x)) : '—';
+      const r = g.rc.length ? `<span title="avg over ${g.rc.length} of ${g.n} · ~${tok(avg(g.rc, (x) => x) / 4)} tok">${tok(avg(g.rc, (x) => x))} ch</span>` : dash;
+      return `<tr>${g.k.map((c, i) => `<td class="${i ? 'dim' : ''}">${esc(c)}</td>`).join('')}<td class="n">${g.n}</td><td class="n">${t.length}</td>${cells.map((c) => `<td class="n">${c}</td>`).join('')}<td class="n">${r}</td><td class="n">${m}</td></tr>`;
+    }).join('');
+    const cols = ['dispatches', 'with tokens', 'Σ total', 'avg total', 'avg input', 'avg output', 'avg cache read', 'avg cache write', 'cache read %', 'avg API calls', 'avg report', 'avg duration'];
+    return `<table><thead><tr>${heads.map((h) => `<th>${h}</th>`).join('')}${cols.map((h) => `<th class="n">${h}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table>`;
+  }
+  const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+
+  function renderDispatches(ds) {
+    if (!ds.length) return;
+    const first = ds.reduce((m, d) => Math.min(m, d.ts || Infinity), Infinity);
+    retainedN.textContent = `· retained history, ${ds.length} finished`;
+    windowRetained.textContent = `Retained history: ${ds.length} finished dispatches in events.jsonl and its one rotated file${first < Infinity ? `, since ${since(first)}` : ''}.`;
+    byModel.innerHTML = table(ds, (d) => [modelOf(d), effortOf(d)], ['model', 'effort']);
+    byAgent.innerHTML = table(ds, (d) => [meta(d.agent).name], ['agent']);
+  }
+
+  const avgOf = (g) => (g.calls ? tok(g.chars / g.calls) : '—');
+  const insufficient = '<span class="dim">insufficient data</span>';
+  const STATUS = {
+    measured: 'measured', 'no-tool-use': 'no tool use',
+    'not-instrumented': 'insufficient data — logged before subagents were measured',
+    unmeasured: 'no measured result — only other tools, an unknown payload, or still running',
+  };
+  function toolTable(contributors, first = 'tool') {
+    return `<table><thead><tr><th scope="col">${first}</th>${['chars', 'share', 'calls', 'avg chars', 'max chars'].map((h) => `<th scope="col" class="n">${h}</th>`).join('')}</tr></thead><tbody>${contributors.map((g) =>
+      `<tr><th scope="row">${esc(g.tool)}</th><td class="n">${tok(g.chars)}</td><td class="n">${(g.share * 100).toFixed(1)}%</td><td class="n">${g.calls}</td><td class="n">${tok(g.avg_chars)}</td><td class="n">${tok(g.max_chars)}</td></tr>`
+    ).join('')}</tbody></table>`;
+  }
+  // Tool results only, on every side: main's "Agents" reports are context but
+  // not tool results. Subagents with nothing measurable say so, not "0".
+  function threadsTable(t, subInsufficient) {
+    const row = (label, g, missing) => `<tr><th scope="row">${label}</th>${missing ? `<td class="n" colspan="3">${insufficient}</td>` : `<td class="n">${tok(g.chars)}</td><td class="n">${g.calls}</td><td class="n">${avgOf(g)}</td>`}</tr>`;
+    return `<table><thead><tr><th scope="col">tool results received by</th><th scope="col" class="n">chars</th><th scope="col" class="n">calls</th><th scope="col" class="n">avg chars</th></tr></thead><tbody>${
+      row('main thread', t.main) + row('subagents', t.subagents, subInsufficient) + (t.unknown.calls ? row('unidentified (agent_id present but invalid)', t.unknown) : '')
+    }</tbody></table>`;
+  }
+  // One block per agent: a summary row, then its tools indented under it.
+  function agentsTable(agents, perType) {
+    if (!agents.length) return '<span class="empty">no subagent dispatched in this window</span>';
+    const heads = perType ? ['agent', 'dispatches', 'measured'] : ['agent', 'dispatch', 'status'];
+    const body = agents.map((a) => {
+      const name = esc(meta(a.agent).name);
+      const lead = perType ? [name, a.dispatches, a.measured_dispatches]
+        : [name, `<span title="${esc(a.agent_id)}">${esc((a.dispatch || a.agent_id).slice(-8))}</span>`, esc(STATUS[a.status] || a.status) + (a.tool_uses != null ? ` · ${a.tool_uses} tool uses` : '')];
+      const measured = perType ? a.calls > 0 : a.status === 'measured';
+      const head = `<tr><th scope="row">${lead[0]}</th><td class="dim">${lead[1]}</td><td class="dim">${lead[2]}</td>${measured ? `<td class="n">${tok(a.chars)}</td><td class="n">${a.calls}</td><td class="n">${avgOf(a)}</td><td></td>` : `<td class="n" colspan="4">${perType ? insufficient : '<span class="dim">—</span>'}</td>`}</tr>`;
+      return head + a.contributors.map((g) => `<tr><td class="dim" style="padding-left:16px">${esc(g.tool)}</td><td></td><td></td><td class="n">${tok(g.chars)}</td><td class="n">${g.calls}</td><td class="n">${tok(g.avg_chars)}</td><td class="n">${tok(g.max_chars)}</td></tr>`).join('');
+    }).join('');
+    return `<table><thead><tr>${heads.map((h) => `<th scope="col">${h}</th>`).join('')}${['chars', 'calls', 'avg chars', 'max chars'].map((h) => `<th scope="col" class="n">${h}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  const ALL = '*';
+  let contextData = { sessions: [], retained: null };
+  function renderContext(data) {
+    // Older servers answered with the bare session list.
+    if (Array.isArray(data)) data = { sessions: data, retained: null };
+    contextData = data;
+    const { sessions, retained } = data;
+    const selected = contextSession.value;
+    // DOM option creation avoids interpolating session IDs into attributes.
+    contextSession.replaceChildren();
+    const option = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; contextSession.append(o); };
+    if (retained && sessions.length) option(ALL, `Retained history · all ${sessions.length} sessions`);
+    for (const s of sessions) option(s.session, `Session ${s.session}${s.instrumented ? '' : ' · no subagent telemetry'}`);
+    contextSession.disabled = !sessions.length;
+    const valid = (v) => (v === ALL && retained && sessions.length) || sessions.some((s) => s.session === v);
+    contextSession.value = valid(selected) ? selected : sessions.at(-1)?.session || '';
+    if (contextSession.value === ALL) {
+      const r = retained;
+      contextTotal.textContent = `Retained history: ${r.sessions} sessions, ${r.instrumented_sessions} with subagent telemetry. Subagents are grouped by agent type; sessions without telemetry add dispatches but no volume.`;
+      threadsEl.innerHTML = threadsTable(r, r.instrumented_sessions === 0 && r.agents.length > 0);
+      contributorsEl.innerHTML = r.main.contributors.length ? toolTable(r.main.contributors) : '<span class="empty">no measured results yet</span>';
+      agentsEl.innerHTML = agentsTable(r.agents, true);
+      return;
+    }
+    const s = sessions.find((s) => s.session === contextSession.value);
+    if (!s) {
+      contextTotal.textContent = '';
+      threadsEl.innerHTML = agentsEl.innerHTML = '';
+      contributorsEl.innerHTML = '<span class="empty">no measured results yet</span>';
+      return;
+    }
+    contextTotal.textContent = `Selected session: ${tok(s.total_chars)} chars measured in the main thread's context (tool results + agent reports)` +
+      (s.instrumented ? '.' : '. Subagent tool results: insufficient data — this session was logged before they were measured.');
+    threadsEl.innerHTML = s.threads ? threadsTable(s.threads, !s.instrumented && s.agents.length > 0) : '';
+    contributorsEl.innerHTML = s.contributors.length ? toolTable(s.contributors) : '<span class="empty">no measured main-thread results</span>';
+    agentsEl.innerHTML = agentsTable(s.agents || [], false);
+  }
+  contextSession.addEventListener('change', () => renderContext(contextData));
+
+  function render(events) {
+    let agents = 0, gates = 0, prompts = 0;
+    // Dispatches logged with an id close on their own agent_end. Older lines
+    // have no id and keep the old first-in, first-out pairing with agent_stop.
+    const open = new Map(), legacy = [];
+    for (const e of events) {
+      if (e.event === 'agent_start') { agents++; e.id ? open.set(e.id, e) : legacy.push(e); }
+      else if (e.event === 'agent_end') open.delete(e.id);
+      else if (e.event === 'agent_stop' && !('agent_id' in e)) legacy.shift();
+      else if (e.event === 'gate' && e.kind !== 'excluded-by-config') gates++; // a silenced gate did not fire
+      else if (e.event === 'prompt') prompts++;
+    }
+    const active = [...legacy, ...open.values()];
+    s_agents.textContent = agents; s_gates.textContent = gates; s_prompts.textContent = prompts;
+    if (events.length && events[0].ts) windowRecent.textContent = `Recent events: the last ${events.length} timeline lines (tool results excluded), since ${since(events[0].ts)}. Counters and the timeline use this window.`;
+
+    activeEl.innerHTML = active.length ? active.map((e) => {
+      const m = meta(e.agent);
+      return `<span class="chip"><span class="dot" style="background:${m.c}"></span>
+        <span class="who" style="color:${m.c}">${esc(m.name)}</span>
+        <span class="task">${esc(e.task) || '…'}</span></span>`;
+    }).join('') : '<span class="empty">idle — no agent running</span>';
+
+    feedEl.innerHTML = events.slice(-80).reverse().map((e) => {
+      const t = `<span class="t">${clock(e.ts)}</span>`;
+      if (e.event === 'prompt') return `<div class="row">${t}<span class="ic">▸</span><span class="body meta">user prompt · ${esc(e.project)}</span></div>`;
+      if (e.event === 'agent_start') { const m = meta(e.agent);
+        return `<div class="row">${t}<span class="ic" style="color:${m.c}">●</span><span class="body"><span class="who" style="color:${m.c}">${esc(m.name)}</span> <span class="task">${esc(e.task) || 'dispatched'}</span></span></div>`; }
+      if (e.event === 'agent_end') { const m = meta(e.agent);
+        const bits = [modelOf(e), effortOf(e), typeof e.duration_ms === 'number' ? dur(e.duration_ms) : '', e.tokens ? tok(e.tokens.total) + ' tok' : ''].filter(Boolean).join(' · ');
+        return `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop"><span style="color:${m.c}">${esc(m.name)}</span> finished · ${esc(bits)}</span></div>`; }
+      if (e.event === 'agent_stop') return 'agent_id' in e ? '' : `<div class="row">${t}<span class="ic stop">✓</span><span class="body stop">subagent finished</span></div>`;
+      if (e.event === 'gate' && e.kind === 'excluded-by-config') {
+        return `<div class="row">${t}<span class="ic stop">∅</span><span class="body stop">silenced by .claude/canonkit.json · ${esc(e.file || '')}${e.glob ? ' · exclude ' + esc(e.glob) : ''}</span></div>`; }
+      if (e.event === 'gate') { const block = e.kind === 'secret-block' || e.kind === 'git-bypass';
+        return `<div class="row">${t}<span class="ic gate ${block ? 'block' : ''}">${block ? '⛔' : '⚠'}</span><span class="body gate ${block ? 'block' : ''}">gate · ${esc(e.kind)}${e.file ? ' · ' + esc(e.file) : ''}${e.detail ? ' · ' + esc(e.detail) : ''}</span></div>`; }
+      return '';
+    }).join('');
+  }
+
+  async function tick() {
+    try {
+      const r = await fetch('/events.json', { cache: 'no-store' });
+      render(await r.json());
+      const d = await fetch('/dispatches.json', { cache: 'no-store' });
+      renderDispatches(await d.json());
+      const c = await fetch('/context.json', { cache: 'no-store' });
+      renderContext(await c.json());
+      updated.textContent = 'updated ' + clock(Date.now());
+      pulse.style.background = '#57c46b';
+    } catch (_) { pulse.style.background = '#e2574e'; updated.textContent = 'disconnected'; }
+  }
+  tick(); setInterval(tick, 2000);
+</script>
