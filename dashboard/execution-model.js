@@ -127,11 +127,20 @@ function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
   }
   const generatedAt = Date.now();
   for (const session of sessions.values()) {
+    // Observations are sorted, so the last one is the session's latest activity.
+    // Computed from the full list: the emitted observations are capped below.
+    session.lastObservedAt = session.observations.at(-1).timestamp;
     const dispatches = [...session.dispatches.values()];
+    // A dispatch with no end stays active only while the session shows later
+    // activity; otherwise nothing proves it is still running.
+    for (const d of dispatches)
+      if (d.executionState === 'active' && !(d.startedAt != null && session.lastObservedAt > d.startedAt)) d.executionState = 'unknown';
     for (let i = 0; i < dispatches.length; i++) for (let j = i + 1; j < dispatches.length; j++) {
       const a = dispatches[i], b = dispatches[j];
       if (a.startedAt == null || b.startedAt == null) continue;
-      const aEnd = a.endedAt ?? generatedAt, bEnd = b.endedAt ?? generatedAt;
+      // An unended dispatch is assumed to run until the session's last
+      // observation, never until "now". endedAt itself stays null.
+      const aEnd = a.endedAt ?? session.lastObservedAt, bEnd = b.endedAt ?? session.lastObservedAt;
       if (Math.max(a.startedAt, b.startedAt) < Math.min(aEnd, bEnd)) a.parallel = b.parallel = true;
     }
   }

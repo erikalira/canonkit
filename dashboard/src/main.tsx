@@ -21,12 +21,15 @@ type Dispatch = {
 type Session = {
   sessionId: string; runtime: string; projectId: string | null; worktreeId: string | null;
   branch: string | null; telemetry: string; dispatches: Dispatch[]; observations: Observation[];
+  lastObservedAt: number;
 };
 type AgentPresence = { agentId: string; sessionId: string; executionId: string; runtime: string; activity: 'working' | 'waiting' | 'blocked' | 'finished' | 'unknown'; updatedAt: number | null; observedActivity: string | null };
 type Snapshot = { schemaVersion: number; generatedAt: number; sessions: Session[]; agents: AgentPresence[]; observations: Observation[] };
 type GraphNode = Node<{ title: string; subtitle: string; state: string; kind: string; source?: string; context?: string }>;
 
 const initial: Snapshot = { schemaVersion: 1, generatedAt: 0, sessions: [], agents: [], observations: [] };
+// Default session: the one with the most recent observation, not the last one started.
+const latestSession = (sessions: Session[]) => sessions.reduce<Session | undefined>((best, s) => !best || s.lastObservedAt >= best.lastObservedAt ? s : best, undefined);
 const fmtTime = (ts?: number | null) => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
 const fmtDate = (ts?: number | null) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
 const short = (s: string, n = 8) => s.length > n ? `${s.slice(0, n)}…` : s;
@@ -187,7 +190,7 @@ function App() {
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [flow, setFlow] = useState<ReactFlowInstance<GraphNode, Edge> | null>(null);
-  const activeSession = snapshot.sessions.find((s) => s.sessionId === sessionId) ?? snapshot.sessions.at(-1);
+  const activeSession = snapshot.sessions.find((s) => s.sessionId === sessionId) ?? latestSession(snapshot.sessions);
   const graph = useMemo(() => graphFor(activeSession, graphView), [activeSession, graphView]);
   const graphSignature = JSON.stringify(graph.nodes.map((n) => [n.id, n.data]));
 
@@ -200,7 +203,7 @@ function App() {
         const data = await response.json() as Snapshot;
         if (!alive) return;
         setSnapshot(data); setConnected(true); setUpdated(Date.now());
-        setSessionId((current) => data.sessions.some((s) => s.sessionId === current) ? current : data.sessions.at(-1)?.sessionId ?? '');
+        setSessionId((current) => data.sessions.some((s) => s.sessionId === current) ? current : latestSession(data.sessions)?.sessionId ?? '');
       } catch { if (alive) setConnected(false); }
     };
     void refresh(); const timer = window.setInterval(refresh, 2000);

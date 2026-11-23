@@ -105,6 +105,43 @@ test("parallel lanes require overlapping observed dispatch intervals", () => {
   ]);
 });
 
+test("an unended dispatch is active only while its session shows later activity", () => {
+  const snap = (events) => executionSnapshot(events).sessions;
+  // (a) later activity in the session keeps it active.
+  const [a] = snap([
+    { ts: 1, session: "s", event: "agent_start", id: "d" },
+    { ts: 2, session: "s", event: "prompt" },
+  ]);
+  assert.deepEqual([a.dispatches[0].executionState, a.dispatches[0].endedAt], ["active", null]);
+  // (b) nothing after its start: unknown, and the agent activity follows.
+  const [b] = snap([{ ts: 1, session: "s", event: "agent_launch", id: "d", agent_id: "a1" }]);
+  assert.equal(b.dispatches[0].executionState, "unknown");
+  assert.equal(executionSnapshot([{ ts: 1, session: "s", event: "agent_launch", id: "d", agent_id: "a1" }]).agents[0].activity, "unknown");
+  // (c) a dispatch that starts at the session's last observation does not overlap
+  // the unended one; "now" is never used as its end.
+  const [c] = snap([
+    { ts: 1, session: "s", event: "agent_start", id: "a" },
+    { ts: 3, session: "s", event: "prompt" },
+    { ts: 5, session: "s", event: "agent_start", id: "b" },
+  ]);
+  assert.deepEqual(c.dispatches.map((d) => d.parallel), [false, false]);
+  const [overlap] = snap([
+    { ts: 1, session: "s", event: "agent_start", id: "a" },
+    { ts: 2, session: "s", event: "agent_start", id: "b" },
+    { ts: 4, session: "s", event: "agent_end", id: "b" },
+  ]);
+  assert.deepEqual(overlap.dispatches.map((d) => d.parallel), [true, true]);
+});
+
+test("sessions expose lastObservedAt, which the dashboard uses to pick its default session", () => {
+  const sessions = executionSnapshot([
+    { ts: 1, session: "old", event: "prompt" },
+    { ts: 2, session: "new", event: "prompt" },
+    { ts: 9, session: "old", event: "prompt" },
+  ], 1).sessions;
+  assert.deepEqual(sessions.map((s) => [s.sessionId, s.lastObservedAt]), [["old", 9], ["new", 2]]);
+});
+
 test("dashboard request validation rejects non-local hosts and cross-origin requests", () => {
   assert.equal(localHost("127.0.0.1:4317"), true);
   assert.equal(localHost("localhost:4317"), true);
