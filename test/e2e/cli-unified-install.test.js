@@ -436,6 +436,10 @@ describe("unified install catalog and target", () => {
     const bin = path.join(root, "bin"), script = path.join(root, "claude.cjs");
     await writeFile(script, `if (process.argv[2] === "--version") console.log("2.1.314"); else if (process.argv[2] === "--help") { console.log("  --model <model> Select a model ('opus', 'sonnet', 'haiku')"); console.log("  --effort <effort> Set effort (low, medium, high)"); } else process.exit(2);\n`);
     await writeCommand(bin, "claude", script);
+    // Sandbox available on Linux too, as it always is on macOS: the screen must
+    // not depend on which runner the test lands on (Windows never has it).
+    await writeCommand(bin, "bwrap", script);
+    await writeCommand(bin, "socat", script);
     const asked = [], visible = [];
     const result = await runInstall(["install", "--claude", "--no-reference"], {
       home, cwd: project, env: { PATH: bin }, interactive: true, verbose: false,
@@ -470,7 +474,12 @@ describe("unified install catalog and target", () => {
     assert.match(result.out, /Installation complete/);
     assert.doesNotMatch(result.out, /\u001b\[/);
     const block = result.out.slice(result.out.indexOf("Recommended setup"), result.out.indexOf("Review installation"));
-    assert.ok(block.split("\n").every((line) => line.length <= 78), block);
+    // The telemetry-read opt-in hint follows the screen wherever the sandbox exists;
+    // it is a copyable log line, not part of the 78-column menu screen.
+    const hint = block.indexOf("RECOMMENDATION security telemetry-read");
+    if (process.platform !== "win32") assert.ok(hint >= 0, block);
+    const screen = hint >= 0 ? block.slice(0, hint) : block;
+    assert.ok(screen.split("\n").every((line) => line.length <= 78), screen);
     assert.ok(asked.flatMap((question) => question.choices ?? []).every((choice) =>
       (choice.title?.length ?? 0) <= 78 && (choice.description?.length ?? 0) <= 78));
     const choices = JSON.parse((await readFile(path.join(home, ".canonkit", "models.json"))).toString("utf8"));
@@ -624,6 +633,9 @@ describe("unified install catalog and target", () => {
     const { root, home, project } = await scratch("unified-recommended-no-security-changes");
     await repository(project);
     const bin = await stubClaude(root);
+    // Sandbox available on Linux too, as on macOS (see the screen test above).
+    await writeCommand(bin, "bwrap", path.join(root, "claude.cjs"));
+    await writeCommand(bin, "socat", path.join(root, "claude.cjs"));
     await mkdir(path.join(home, ".canonkit"), { recursive: true });
     await writeFile(path.join(home, ".canonkit", "models.json"), JSON.stringify({ version: 1, harnesses: { claude: { levels: {
       deep: { model: "opus", effort: "medium" }, standard: { model: "sonnet", effort: "medium" }, light: { model: "haiku", effort: "low" },
@@ -657,7 +669,9 @@ describe("unified install catalog and target", () => {
     if (/Already at the recommended profile/.test(screen)) assert.match(screen, /PROJECT · Security/);
     if (/Claude Code deep\s+opus\/medium\s+=/.test(screen)) assert.match(result.out, /Models: unchanged/);
     else assert.match(screen, /!.*model discovery is unknown/);
-    assert.doesNotMatch(screen, /permissions\.|sandbox\./);
+    // No security setting rows. The telemetry-read opt-in hint may name
+    // sandbox.filesystem.allowRead in prose; it is not a row.
+    assert.doesNotMatch(screen, /^\s+(permissions|sandbox)\./m);
   });
 
   test("a no-selector non-interactive install does not read the project catalog", async () => {
