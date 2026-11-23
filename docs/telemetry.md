@@ -43,7 +43,10 @@ confidence, optional session/dispatch/agent identifiers, event type and a small
 type-specific `data` object. `eventId` is `null` because the source log has no
 stable event ID; dispatch lifecycle records correlate by their observed session
 plus source dispatch ID. A stop event joins only when its runtime agent ID maps
-to exactly one dispatch in that session. Invalid identifiers, malformed timestamps, arbitrary event
+to exactly one dispatch in that session. Dispatch state is derived from every
+retained event, but the emitted `observations` arrays (top level and per session)
+keep only the latest 300, as `/events.json` does; each session also reports
+`observationCount` and `omittedObservations`. Invalid identifiers, malformed timestamps, arbitrary event
 fields, prompt/task text, tool results, paths, project names and transcript
 content are omitted.
 

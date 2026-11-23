@@ -330,7 +330,7 @@ function App() {
       {timeline.length ? <div className="timeline-list">{timeline.map((e, i) => <button className="timeline-row" key={`${e.timestamp}-${e.type}-${i}`} onClick={() => selectObservation(e)}>
         <time>{fmtTime(e.timestamp)}</time><span className={`event-mark mark-${e.type === 'gate' ? 'gate' : e.type.includes('end') || e.type.includes('stop') ? 'done' : 'agent'}`}>{e.type === 'gate' ? '⚑' : e.type.includes('end') || e.type.includes('stop') ? '✓' : '◇'}</span><span className="timeline-main"><strong>{human(e.type)}</strong><span>{typeof e.data.agent === 'string' ? human(e.data.agent) : e.dispatchId ? `Dispatch ${short(e.dispatchId)}` : e.data.kind ? human(String(e.data.kind)) : 'Runtime event'}</span></span><span className="timeline-source">{e.source} · {e.confidence}</span><span className="row-arrow">↗</span>
       </button>)}</div> : <div className="timeline-empty">No events match this session and filter.</div>}
-      <div className="retention-note">Showing {timeline.length} normalized observations available in retained logs. Older or rotated events may no longer be present.</div>
+      <div className="retention-note">Showing {timeline.length} normalized observations available in retained logs (latest 300 per session). Older or rotated events may no longer be present.</div>
     </section>
     <footer><span>CANONKIT OBSERVATORY <i>·</i> LOCAL TELEMETRY</span><span>Workflow and approval state require direct evidence.</span></footer>
   </main>;

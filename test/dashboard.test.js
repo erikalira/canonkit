@@ -69,6 +69,28 @@ test("execution status follows ordered dispatch signals and keeps parallel and r
   assert.deepEqual([cumulative.durationMs, cumulative.tokens], [null, null], "the latest cumulative end can clear missing measurements");
 });
 
+test("execution snapshot caps emitted observations but derives dispatch state from the full list", () => {
+  const events = [
+    { ts: 1, session: "s", event: "agent_start", id: "early", agent: "bob" },
+    { ts: 2, session: "s", event: "agent_start", id: "other", agent: "quinn" },
+    ...Array.from({ length: 10 }, (_, i) => ({ ts: 10 + i, session: "s", event: "prompt" })),
+    { ts: 30, session: "s", event: "agent_end", id: "early", duration_ms: 5 },
+    { ts: 40, session: "t", event: "prompt" },
+  ];
+  const snapshot = executionSnapshot(events, 4);
+  const s = snapshot.sessions.find((x) => x.sessionId === "s");
+  const early = s.dispatches.find((d) => d.executionId === "early");
+  assert.deepEqual([early.startedAt, early.endedAt, early.executionState, early.parallel], [1, 30, "completed", true]);
+  assert.equal(s.dispatches.find((d) => d.executionId === "other").executionState, "active");
+  assert.equal(s.observations.length, 4);
+  assert.deepEqual(s.observations.map((o) => o.timestamp), [17, 18, 19, 30]);
+  assert.deepEqual([s.observationCount, s.omittedObservations], [13, 9]);
+  assert.equal(snapshot.observations.length, 4);
+  assert.deepEqual(snapshot.observations.map((o) => o.timestamp), [18, 19, 30, 40]);
+  assert.equal(snapshot.agents.length, 0);
+  assert.equal(executionSnapshot(events).observations.length, 14, "default cap does not trim small logs");
+});
+
 test("parallel lanes require overlapping observed dispatch intervals", () => {
   const snapshot = executionSnapshot([
     { ts: 1, session: "s", event: "agent_start", id: "a" },

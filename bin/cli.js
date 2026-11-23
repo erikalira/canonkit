@@ -67,7 +67,15 @@ const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
 
+// dashboard/dist is gitignored and built by `npm run dashboard:build` (prepack
+// in a published package). Missing, it is not skipped: the catalog built from
+// this list authorizes install and removal, so a silently shorter list would
+// strand installed files. Fail with the fix instead of readdir's ENOENT.
 async function dashboardDistributionFiles() {
+  if (!existsSync(path.join(DASHBOARD_DIR, "dist", "index.html"))) {
+    throw new Error(`The dashboard is not built: ${path.join(DASHBOARD_DIR, "dist", "index.html")} is missing. ` +
+      "In a source checkout, run `npm run dashboard:build` first; in an installed package, reinstall canonkit.");
+  }
   return ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", ...
     (await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) => path.join("dist", file))];
 }

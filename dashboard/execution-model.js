@@ -61,7 +61,10 @@ function normalizeEvent(e) {
   };
 }
 
-function executionSnapshot(events) {
+// Same cap as /events.json: bounds the 2 s poll payload for long sessions.
+const MAX_OBSERVATIONS = 300;
+
+function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
   const observations = [];
   for (const e of events) {
     const normalized = normalizeEvent(e);
@@ -132,7 +135,12 @@ function executionSnapshot(events) {
       if (Math.max(a.startedAt, b.startedAt) < Math.min(aEnd, bEnd)) a.parallel = b.parallel = true;
     }
   }
-  const sessionList = [...sessions.values()].map((s) => ({ ...s, dispatches: [...s.dispatches.values()] }));
+  // Dispatch state above uses the full list. Only the emitted arrays are capped.
+  const tail = (list) => list.length > limit ? list.slice(list.length - limit) : list;
+  const sessionList = [...sessions.values()].map((s) => ({
+    ...s, dispatches: [...s.dispatches.values()], observations: tail(s.observations),
+    observationCount: s.observations.length, omittedObservations: Math.max(0, s.observations.length - limit),
+  }));
   const agents = sessionList.flatMap((session) => session.dispatches.filter((dispatch) => dispatch.agentId).map((dispatch) => ({
     agentId: dispatch.agentId,
     sessionId: session.sessionId,
@@ -147,8 +155,8 @@ function executionSnapshot(events) {
     generatedAt,
     sessions: sessionList,
     agents,
-    observations,
+    observations: tail(observations),
   };
 }
 
-module.exports = { SCHEMA_VERSION, normalizeEvent, executionSnapshot };
+module.exports = { SCHEMA_VERSION, MAX_OBSERVATIONS, normalizeEvent, executionSnapshot };
