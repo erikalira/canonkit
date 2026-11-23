@@ -164,14 +164,52 @@ const transcriptUsage = (file) => scanTranscript(file).tokens;
 function usageTotals(calls) {
   if (!calls.size) return null;
   const t = { api_calls: calls.size, input: 0, output: 0, cache_read: 0, cache_creation: 0 };
+  // Cache writes by lifetime (usage.cache_creation): null while no call reports a
+  // number, so a Claude Code without the split is not read as "zero 1-hour writes".
+  let c5m = null;
+  let c1h = null;
   for (const u of calls.values()) {
     t.input += num(u.input_tokens);
     t.output += num(u.output_tokens);
     t.cache_read += num(u.cache_read_input_tokens);
     t.cache_creation += num(u.cache_creation_input_tokens);
+    const split = u.cache_creation && typeof u.cache_creation === 'object' ? u.cache_creation : null;
+    if (split && typeof split.ephemeral_5m_input_tokens === 'number') c5m = num(c5m) + num(split.ephemeral_5m_input_tokens);
+    if (split && typeof split.ephemeral_1h_input_tokens === 'number') c1h = num(c1h) + num(split.ephemeral_1h_input_tokens);
   }
   t.total = t.input + t.output + t.cache_read + t.cache_creation;
+  t.cache_creation_5m = c5m;
+  t.cache_creation_1h = c1h;
+  // The cold-start floor: the first call (Map keeps insertion order, and a call
+  // split over entries is one key) is the context every dispatch pays before it
+  // does any work, which the totals above mix with every later call.
+  const f = calls.values().next().value;
+  const first = { input: num(f.input_tokens), cache_read: num(f.cache_read_input_tokens), cache_creation: num(f.cache_creation_input_tokens) };
+  t.first_call = { ...first, context: first.input + first.cache_read + first.cache_creation };
   return t;
+}
+
+// At SubagentStop the final assistant entry (the SubagentHandback call, which
+// carries the report and the largest-context API call) is not always on disk yet:
+// measured 2026-11-18, it lands 130-520 ms after the hook reads the file. Wait,
+// synchronously like the rest of the hook, in 100 ms steps up to budgetMs, and
+// rescan only when the file grew. Never called when the handback is present.
+const HANDBACK_WAIT_MAX_MS = 1500;
+function handbackBudget(raw) {
+  const n = Number(raw);
+  return raw === undefined || raw === '' || !Number.isFinite(n) ? HANDBACK_WAIT_MAX_MS : Math.min(Math.max(n, 0), HANDBACK_WAIT_MAX_MS);
+}
+function awaitHandback(file, scan, budgetMs) {
+  const size = () => { try { return fs.statSync(file).size; } catch (_) { return -1; } };
+  let seen = size();
+  if (seen < 0) return scan; // nothing to watch: an unreadable transcript will not grow
+  const sleep = new Int32Array(new SharedArrayBuffer(4));
+  for (let waited = 0; waited < budgetMs && scan.handback == null; waited += 100) {
+    Atomics.wait(sleep, 0, 0, Math.min(100, budgetMs - waited));
+    const now = size();
+    if (now !== seen) { seen = now; scan = scanTranscript(file); }
+  }
+  return scan;
 }
 
 // The report a dispatch hands back is re-read by the caller on every later turn,
@@ -1208,7 +1246,8 @@ function decide(evt, env, logs) {
       const launch = evs.filter((e) => e.event === 'agent_launch' && e.agent_id === agentId).pop();
       if (launch) {
         const start = evs.filter((e) => e.event === 'agent_start' && e.id === launch.id).pop() || {};
-        const scan = scanTranscript(evt.agentTranscriptPath);
+        let scan = scanTranscript(evt.agentTranscriptPath);
+        if (scan.handback == null) scan = awaitHandback(evt.agentTranscriptPath, scan, handbackBudget(env.handbackWaitMs));
         log({
           event: 'agent_end',
           id: launch.id,
@@ -1222,6 +1261,9 @@ function decide(evt, env, logs) {
           tool_uses: null,
           tokens: scan.tokens,
           report_chars: scan.handback ?? reportChars(evt.lastAssistantMessage),
+          // false: the handback never reached the transcript, so the last API call
+          // may be missing from tokens (and report_chars may come from the fallback).
+          complete: scan.handback != null,
           project,
         });
       }
@@ -1295,6 +1337,8 @@ function decide(evt, env, logs) {
       // nobody can audit; empty means the dispatch inherited the default.
       model: ti.model || '',
       effort: ti.effort || '',
+      // The size of the brief, never its text (UTF-16 units, like report_chars).
+      brief_chars: typeof ti.prompt === 'string' ? ti.prompt.length : null,
       project,
     });
     return allow(); // dispatching a subagent is always allowed
@@ -1303,7 +1347,7 @@ function decide(evt, env, logs) {
     // Resuming an agent is always allowed. Who it went to and whether it carried
     // a message, never what the message said.
     const message = ti.message;
-    log({ event: 'agent_resume', to: cap(ti.to), has_message: typeof message === 'string' && message.trim() !== '', project });
+    log({ event: 'agent_resume', to: cap(ti.to), has_message: typeof message === 'string' && message.trim() !== '', message_chars: typeof message === 'string' ? message.length : null, project });
     return allow();
   }
 
@@ -1441,6 +1485,8 @@ function claudeEnv() {
     projectDir: process.env.CLAUDE_PROJECT_DIR,
     home,
     contextBands: process.env.CANONKIT_CONTEXT_BANDS ?? process.env.MEU_TIME_CONTEXT_BANDS,
+    // Test-only: shortens the SubagentStop wait for the handback (ms, capped at 1500).
+    handbackWaitMs: process.env.CANONKIT_HANDBACK_WAIT_MS,
   };
 }
 

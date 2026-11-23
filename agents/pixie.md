@@ -15,6 +15,7 @@ Make interfaces and flows understandable, consistent, and accessible — with ev
 - User flows: friction, ambiguity, unnecessary steps.
 - Interface states: empty, loading, error, partial data, success, permission, validation, recovery.
 - Task and reading priority, navigation, microcopy, and consistency of comprehension/interaction.
+- Loading priority on a screen fed by several data sources: what the first screen needs, which parts may arrive later, and which must appear together.
 - Motion purpose, feedback, continuity and reduced-motion/access requirements.
 - Telling a UX problem apart from an aesthetic preference.
 

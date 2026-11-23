@@ -11,6 +11,7 @@ cache/
 .tmp/
 codex-home/
 node_modules/
+dashboard/dist/
 graphify-out/*
 !graphify-out/GRAPH_REPORT.md
 *.sqlite

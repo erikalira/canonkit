@@ -306,8 +306,11 @@ async function validatePackage(reporter) {
   const manifestPath = path.join(REPO_ROOT, "package.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   const shipped = new Set(manifest.files ?? []);
+  // A directory may be shipped whole or, like dashboard/, only through entries
+  // inside it (its sources are built into dashboard/dist and not published).
+  const ships = (directory) => shipped.has(directory) || [...shipped].some((entry) => entry.startsWith(`${directory}/`));
   for (const directory of ["bin", "agents", "reference", "hooks", "dashboard", "skills", "stack-packs", "tools"]) {
-    if (!shipped.has(directory)) reporter.fail(`package.json files[] omits ${directory}/ — the published CLI would not find it`);
+    if (!ships(directory)) reporter.fail(`package.json files[] omits ${directory}/ — the published CLI would not find it`);
   }
   if (manifest.bin?.canonkit !== "bin/cli.js") reporter.fail("package.json bin does not point at bin/cli.js");
   if (!manifest.license) reporter.fail("package.json has no license");

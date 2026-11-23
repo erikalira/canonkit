@@ -38,7 +38,7 @@ import { HARNESSES as DISCOVERABLE, readCatalog, catalogPath } from "./model-dis
 import { accessProblem, claudeRestriction, reservedKeyOf } from "./agent-access.js";
 import { HONORED_FIELDS, userConfigPath, projectConfigPath, projectRoot, readChoices, resolve as resolveChoice } from "./model-config.js";
 import { createHash } from "node:crypto";
-import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, withModelsRead, MODELS_READ_ITEM, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
+import { SECURITY_VERSION_FLOORS, collectEnvironment, repositoryRoot, safePath, projectStateDir, readSecurityBytes, parseSecuritySettings, readSettingsText, parseProjectLocalSandboxSettings, compileSecurity, compileNetworkSecurity, compileRuntimeReads, applyRuntimeReads, trustedOwnedAllowRead, detectRuntimeRoots, withModelsRead, MODELS_READ_ITEM, TELEMETRY_READ_ITEM, TELEMETRY_EXPOSURE, compileTelemetryRead, telemetryReadSymlink, SECURITY_SETTINGS, undoSecurity, undoNetworkSecurity, projectSecurityOwnership, networkSecurityOwnership, isSandboxNullPlaceholder, isNullDeviceStat, anyNullPlaceholder, directoryBlocker, serializeSecurity, assessClaude, inspectCodex, inspectOpencode } from "./security.js";
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const AGENTS_DIR = path.join(PACKAGE_ROOT, "agents");
@@ -66,6 +66,19 @@ const OPENCODE_PLUGIN = Object.freeze({ from: "opencode-plugin.mjs", to: "plugin
 const DASHBOARD_DIR = path.join(PACKAGE_ROOT, "dashboard");
 const SKILLS_DIR = path.join(PACKAGE_ROOT, "skills");
 const TOOLS_DIR = path.join(PACKAGE_ROOT, "tools");
+
+// dashboard/dist is gitignored and built by `npm run dashboard:build` (prepack
+// in a published package). Missing, it is not skipped: the catalog built from
+// this list authorizes install and removal, so a silently shorter list would
+// strand installed files. Fail with the fix instead of readdir's ENOENT.
+async function dashboardDistributionFiles() {
+  if (!existsSync(path.join(DASHBOARD_DIR, "dist", "index.html"))) {
+    throw new Error(`The dashboard is not built: ${path.join(DASHBOARD_DIR, "dist", "index.html")} is missing. ` +
+      "In a source checkout, run `npm run dashboard:build` first; in an installed package, reinstall canonkit.");
+  }
+  return ["serve.js", "package.json", "execution-model.js", "activity.html", "THIRD_PARTY_NOTICES.md", ...
+    (await filesUnder(path.join(DASHBOARD_DIR, "dist"))).map((file) => path.join("dist", file))];
+}
 
 // Every event each hook must be registered under, with the matcher it needs
 // there (null: no matcher). Checked per event, not per file: a hook wired to
@@ -628,6 +641,8 @@ async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope
     path: `sandbox.filesystem.allowRead:${root.item}`, scope: "user", current: null, recommended: root.item,
     marker: "+", reason: `${root.label} needs this runtime read location`, answerKey: `runtime:${root.item}`, selectable: true,
   });
+  // The telemetry read is opt-in: kept off `rows` and `runtimeReads`, so no recommended path can apply it.
+  globalPlan.telemetryRead = compileTelemetryRead(migration?.data ?? userSettings, evidence, { claudeInstalled: true, symlinked: await telemetryReadSymlink() });
   if (migration?.removed.length) globalPlan.changes.push("hooks.legacyCanonkit");
   let project = null;
   if (root) {
@@ -657,6 +672,8 @@ async function prepareSecurity(ctx, targets, { wireHooks = false, projectInScope
   return { evidence, global: globalPlan, project };
 }
 
+const TELEMETRY_ANSWER = "telemetry:~/.claude/canonkit-activity";
+const TELEMETRY_SNIPPET = `  "sandbox": { "filesystem": { "allowRead": ["${TELEMETRY_READ_ITEM}"] } }`;
 const AUTO_APPROVAL = "sandbox.autoAllowBashIfSandboxed";
 const settingReason = (key) => SECURITY_SETTINGS.find((row) => row.key === key)?.reason ?? "";
 const fitMenuLine = (value, width = 78) => value.length <= width ? value : `${value.slice(0, width - 1)}…`;
@@ -747,6 +764,12 @@ function applySecurityAnswer(security, { securityAnswer = "default", selectedRow
     global.data = applyRuntimeReads(global.data, runtimeItems.map((root) => root.item));
     if (!global.changes.includes("sandbox.filesystem.allowRead")) global.changes.push("sandbox.filesystem.allowRead");
   }
+  // Opt-in only: the customize menu's own answer. Never through checked() (which "recommended" satisfies) and never by path.
+  if (securityAnswer === "customize" && global.telemetryRead?.proposed && selectedRows.includes(TELEMETRY_ANSWER)) {
+    global.data = applyRuntimeReads(global.data, [TELEMETRY_READ_ITEM]);
+    global.telemetryApplied = true;
+    if (!global.changes.includes("sandbox.filesystem.allowRead")) global.changes.push("sandbox.filesystem.allowRead");
+  }
   return security;
 }
 
@@ -766,7 +789,19 @@ async function reviewSecurity(ctx, security, { interactive = false, securityAnsw
     ctx.log(`WARN security project-local: ${entry.path} is ${entry.current} in this project's .claude/settings.local.json; set it to ${entry.recommended} there (${settingReason(entry.path)}). canonkit does not write that file`);
   }
   const proposed = runtime?.proposed ?? [];
+  const telemetry = security.global.telemetryRead;
+  if (telemetry?.gaps.includes("telemetry-read-symlink")) {
+    ctx.log(`WARN security telemetry-read: not offered: ~/.claude or ${TELEMETRY_READ_ITEM} is a symbolic link, and the sandbox follows links, so the entry could expose the link target. To let sandboxed commands read it anyway, add this to sandbox.filesystem.allowRead in user Claude settings yourself:`);
+    ctx.log(TELEMETRY_SNIPPET);
+  }
+  // Every path that cannot ask (Yes, keep current, --recommended, --yes, no terminal, dry run) says how to opt in.
+  const telemetryHint = () => {
+    if (!telemetry?.proposed) return;
+    ctx.log(`RECOMMENDATION security telemetry-read: not added (opt-in, closed to sandboxed commands). To add it, choose "No, customize" in canonkit install, or put this in sandbox.filesystem.allowRead of user Claude settings:${telemetry.conditional ? ` (conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run)` : ""}`);
+    ctx.log(TELEMETRY_SNIPPET);
+  };
   if (!interactive && !securityAnswer) {
+    telemetryHint();
     if (proposed.length) {
       const snippet = `  "sandbox": { "filesystem": { "allowRead": ${JSON.stringify(proposed.map((root) => root.item))} } }`;
       ctx.log(`RECOMMENDATION security runtime-reads: add these to sandbox.filesystem.allowRead in user Claude settings (${ctx.dryRun ? "dry run" : "no terminal"}: not written; use canonkit install --recommended to apply them${runtime.conditional ? `; conditional on Claude >= ${SECURITY_VERSION_FLOORS.sandbox}, version not probed in dry run` : ""}):`);
@@ -788,6 +823,7 @@ async function reviewSecurity(ctx, security, { interactive = false, securityAnsw
         ctx.log(snippet);
       }
     }
+    telemetryHint();
     return { securityAnswer, selectedRows: [] };
   }
   if (securityAnswer !== "customize") throw new Error(`Unknown security answer: ${securityAnswer}`);
@@ -807,6 +843,21 @@ async function reviewSecurity(ctx, security, { interactive = false, securityAnsw
       ], initial: 0, hint: "Enter adds the listed runtime reads",
     });
     if (add) selectedRows.push(...proposed.map((root) => `runtime:${root.item}`));
+  }
+  if (telemetry?.proposed) {
+    // Its own question, default off. The long text goes through ctx.log: menu messages are cut to one line.
+    ctx.log(TELEMETRY_EXPOSURE);
+    ctx.log("Alternative: run the dashboard from your own terminal, which needs no exception.");
+    const result = await askInstallChoice(ask, {
+      type: "select", name: "security-telemetry-read", message: `Let sandboxed commands read ${TELEMETRY_READ_ITEM}?`,
+      choices: [
+        { title: "Keep closed (recommended)", value: false },
+        { title: `Add ${TELEMETRY_READ_ITEM} to allowRead`, value: true },
+      ], initial: 0, hint: "Enter keeps it closed",
+    }, { report: false });
+    // Closed input declines; Ctrl-C aborts like every other security menu.
+    if (result.cancelled && !result.eof) throw Object.assign(new Error(result.message), { code: "INSTALL_CANCELLED" });
+    if (!result.cancelled && result.value === true) selectedRows.push(TELEMETRY_ANSWER);
   }
   const changes = allSecurityRows(security).filter((row) => row.selectable && row.marker !== "=" && !row.answerKey.startsWith("runtime:"));
   if (changes.length) {
@@ -846,6 +897,7 @@ async function applyClaudeUserPlan(ctx) {
   if (ctx.recommendedSetup) {
     const rows = (plan.rows ?? []).filter((row) => row.marker !== "=" && plan.changes.some((key) => row.path === key || row.path.startsWith(`${key}:`)));
     for (const row of rows) ctx.log(actionRowText(`${ctx.dryRun ? "would apply" : "Applying"} user security:`, row));
+    if (plan.telemetryApplied) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: sandbox.filesystem.allowRead += ${TELEMETRY_READ_ITEM}`);
   } else {
     for (const key of plan.changes) ctx.log(`${ctx.dryRun ? "would apply" : "Applying"} user Claude setting: ${key} (native modes and personal permissions preserved)`);
   }
@@ -1100,6 +1152,7 @@ function printInstallSummary(ctx, { targets, projectItems, projectInScope, model
     printLegend();
     for (const row of visibleUserSecurity) ctx.log(fitMenuLine(`  ${rowText({ ...row, label: row.path }, { limit: 76 })}`));
   } else if (!modelPlan?.rows.length) ctx.log("  Models: unchanged");
+  if (setupAnswer === "customize" && selected.has(TELEMETRY_ANSWER)) ctx.log(`  + sandbox.filesystem.allowRead: ${TELEMETRY_READ_ITEM} (sandboxed commands can read your activity history)`);
 
   ctx.log("");
   ctx.log("PROJECT");
@@ -1420,7 +1473,7 @@ async function installHooks(ctx, dest, { wire = false } = {}) {
  */
 async function installDashboard(ctx, dest) {
   if (!existsSync(DASHBOARD_DIR)) return;
-  const files = (await readdir(DASHBOARD_DIR)).sort();
+  const files = await dashboardDistributionFiles();
   await copyKeepingLocal(ctx, DASHBOARD_DIR, dest, files);
   const serve = path.join(dest, "serve.js").split(path.sep).join("/");
   ctx.log(`Installed dashboard -> ${dest}  (run: node ${serve})`);
@@ -2701,7 +2754,9 @@ async function securityDiagnosis() {
   }
   const userSources = sources.filter((source) => ["user", "user-local"].includes(source.label));
   if (userSources.length && !userSources.some((source) => source.error)) {
-    const allowRead = userSources.flatMap((source) => source.data?.sandbox?.filesystem?.allowRead ?? []);
+    // A non-array value stays raw so compileRuntimeReads flags it ambiguous (flatMap would wrap a string into a valid-looking entry).
+    const rawReads = userSources.map((source) => source.data?.sandbox?.filesystem?.allowRead).filter((value) => value != null);
+    const allowRead = rawReads.find((value) => !Array.isArray(value)) ?? rawReads.flat();
     const detected = evidence.sandboxCapability === "available-unverified" ? withModelsRead(detectRuntimeRoots({ cwd: root ?? process.cwd(), windowsRoots: readWindowsRoots() })) : undefined;
     const runtime = compileRuntimeReads({ sandbox: { filesystem: { allowRead } } }, evidence, { detected });
     // This warning is a hint when any loaded scope enables sandboxing; settings precedence is left to the install flow.
@@ -2710,6 +2765,14 @@ async function securityDiagnosis() {
     for (const entry of runtime.broad) add("WARN", "security claude runtime-reads", `partial: a sandbox.filesystem.allowRead entry (${entry}) covers the whole home directory, so shell reads of home are reopened and shell read coverage stays partial; replace it with the specific runtime folders`);
     const uncoveredRuntime = runtime.proposed.filter((entry) => entry.item !== MODELS_READ_ITEM);
     if (runtime.covered.length && !uncoveredRuntime.length && !runtime.broad.length) add("OK", "security claude runtime-reads", `configured: ${runtime.covered.map((item) => item.item).join(", ")} covered by sandbox.filesystem.allowRead in user settings`);
+    // Informational and always OK: leaving the folder closed is a valid choice. Silent unless the sandbox is on and canonkit is installed for Claude.
+    const claudeInstalled = existsSync(path.join(claudeHome(), "canonkit-dashboard")) || userSources.some((source) =>
+      Object.values(isObject(source.data?.hooks) ? source.data.hooks : {}).flat().some((group) => Array.isArray(group?.hooks) && group.hooks.some((hook) => isCanonicalClaudeHook(hook, claudeHome()))));
+    if (claudeInstalled && sources.some((source) => source.data?.sandbox?.enabled === true)) {
+      const telemetry = compileTelemetryRead({ sandbox: { filesystem: { allowRead } } }, evidence, { claudeInstalled, symlinked: await telemetryReadSymlink() });
+      if (telemetry.covered) add("OK", "security claude telemetry-read", `${TELEMETRY_READ_ITEM} is readable by sandboxed commands. The history holds session IDs, project names, agent names and the paths of files that gates flagged (see docs/telemetry.md)`);
+      else if (telemetry.proposed) add("OK", "security claude telemetry-read", `${TELEMETRY_READ_ITEM} is closed to sandboxed commands (opt-in, by choice). ${TELEMETRY_EXPOSURE} The customize review of canonkit install offers it; doctor did not edit settings`);
+    }
   }
   if (evidence.container === "indicated") add("WARN", "security container", "unknown: exposed mounts, privilege, host sockets and egress have not been verified; a container marker is not containment evidence");
   add("WARN", "security remediation", "partial: reapply supported native controls with canonkit install --claude from the project; update Claude for newer controls. Optional WSL2 or a validated container can provide a stronger shell boundary after separate preparation and verification; no provisioning or direct-launch interception is performed");
@@ -4148,7 +4211,12 @@ async function sandboxPlaceholderDiagnosis() {
 // Before retiring a distributed artifact, retain its descriptor here (including
 // owners/markers/undo). Old receipts must remain readable; never learn a path
 // from the manifest to compensate for a removed package file.
-const RETIRED_GLOBAL_ARTIFACTS = [];
+const RETIRED_GLOBAL_ARTIFACTS = [
+  // Pre-build dashboard versions installed dashboard/index.html. Keep its
+  // descriptor so existing manifests remain valid; the running server now
+  // serves the compiled dist/index.html, and this legacy copy is left intact.
+  { id: "claude:file:canonkit-dashboard/index.html", root: "claude", relative: "canonkit-dashboard/index.html", kind: "file", owners: ["claude"], public: true },
+];
 async function installCatalog(agents) {
   const roots = { home: path.resolve(os.homedir()), claude: claudeHome(),
     codex: codexHome(), opencode: path.resolve(opencodeDir()), copilot: copilotHome(),
@@ -4165,7 +4233,7 @@ async function installCatalog(agents) {
   }
   add("opencode", OPENCODE_PLUGIN.to, "file", ["opencode"], { plugin: true });
   add("claude", "hooks/meu-time-hook.js", "file", ["claude"]);
-  for (const file of await filesUnder(DASHBOARD_DIR)) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
+  for (const file of await dashboardDistributionFiles()) add("claude", `canonkit-dashboard/${file}`, "file", ["claude"]);
   for (const name of (await readdir(SKILLS_DIR, { withFileTypes: true })).filter((entry) => entry.isDirectory()).map((entry) => entry.name)) {
     if (!existsSync(path.join(SKILLS_DIR, name, "SKILL.md"))) continue;
     for (const file of await filesUnder(path.join(SKILLS_DIR, name))) {
@@ -4924,4 +4992,5 @@ export {
   parseTool,
   chooseHarness,
   toolAdd,
+  applySecurityAnswer,
 };

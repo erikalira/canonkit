@@ -118,7 +118,7 @@ node ~/.claude/canonkit-dashboard/serve.js
 node $HOME\.claude\canonkit-dashboard\serve.js
 ```
 
-The dashboard runs locally and shows dispatches, tokens and gates recorded by the optional hooks; without those registrations, it does not create new dispatch telemetry. Open `http://localhost:4317`. [What it records](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
+The dashboard runs locally and shows an Execution Graph and Timeline from events recorded by the optional hooks; the Activity overview keeps dispatch and token summaries. Without those registrations, it does not create new execution telemetry. Open `http://localhost:4317`. From a source checkout, compile the static frontend first with `npm run dashboard:build`; published packages include the compiled files. The graph keeps risk routes separate from observed events, so an unobserved classification or approval stays unknown. [What it records and its limits](https://github.com/erikalira/canonkit/blob/main/docs/telemetry.md).
 
 <!-- canonkit:security-settings:start -->
 ## Recommended security settings

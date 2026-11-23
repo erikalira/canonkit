@@ -70,6 +70,8 @@ risk/defect using existing debugging/regression methods.
   device list or size limits.
 - Observe loading/layout stability as fallback becomes content or assets,
   counters/labels change, with or without animation. Preserve reading and targets.
+  For a route with deferred data, check essential content renders first, each later
+  part shows its own fallback, dependent content appears together and a failed part stays local.
 - Relate relevant missing assets and console/network failures to the user outcome.
   Distinguish expected failure requests exercising recovery from unintended breakage.
 
