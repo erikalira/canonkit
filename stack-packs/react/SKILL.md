@@ -1,6 +1,6 @@
 ---
 name: canonkit-react
-description: "Use for React component and hook behavior, state/effect lifetimes, hydration and configured framework boundaries. TypeScript-only diagnostics belong to the TypeScript pack."
+description: "Use for React component and hook behavior, state/effect lifetimes, hydration, route data loading and configured framework boundaries. TypeScript-only diagnostics belong to the TypeScript pack."
 ---
 
 # React
@@ -33,6 +33,10 @@ not require or install the TypeScript pack.
   server actions as actual endpoints, following existing owner routing.
 - Prefer semantic controls, labels and reachable interaction states. Verify
   keyboard interaction and loading/error/empty behavior for the flow changed.
+- For progressive route rendering, return deferred or streamed loader data with
+  a Suspense and an error boundary per deferred part where the framework supports
+  it, otherwise fetch that part on the client; lazy-load non-essential heavy
+  components (charts, 3D, rich editors). Keep SSR for the essential data.
 - Memoization is a measured optimization, not a default correctness fix. Follow
   the installed compiler/framework behavior and locate a meaningful cost first.
 

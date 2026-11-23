@@ -1252,6 +1252,57 @@
       }
     },
     {
+      "id": "pixie-lean-states",
+      "agent": "pixie",
+      "kind": "positive",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/ui/states.jsx": "export const Loading = () => <div className=\"skeleton-list\" role=\"status\" aria-label=\"Loading\" />;\nexport const Empty = ({ action }) => <div className=\"empty\">{action}</div>;\n",
+        "src/routes/orders.jsx": "import { Loading, Empty } from \"../ui/states\";\n\nexport function Orders({ state, items }) {\n  if (state === \"loading\") return <Loading />;\n  if (!items.length) return <Empty action={<a href=\"/orders/new\">New order</a>} />;\n  return <OrderList items={items} />;\n}\n",
+        "src/routes/invoices.jsx": "export function Invoices({ items }) {\n  return <InvoiceList items={items} />;\n}\n"
+      },
+      "change": {
+        "src/routes/invoices.jsx": "export function Invoices({ state, items, retry }) {\n  if (state === \"loading\") return <p className=\"muted\">Loading your invoices, please wait…</p>;\n  if (state === \"error\") return (\n    <div role=\"alert\">\n      <p>We could not load your invoices.</p>\n      <button onClick={retry}>Try again</button>\n    </div>\n  );\n  if (!items.length) return (\n    <section>\n      <h2>No invoices yet</h2>\n      <p>This page lists all of your invoices.</p>\n      <p>Invoices you create will appear here once they have been created.</p>\n      <a href=\"/invoices/new\">New invoice</a>\n    </section>\n  );\n  return <InvoiceList items={items} />;\n}\n"
+      },
+      "prompt": "Review the invoices screen states (git diff) before it ships.",
+      "expect": {
+        "says": [
+          "(?:reuse|shared|existing|same|consistent)[^\\n]{0,60}(?:<Loading\\s*/?>|\\bLoading\\b(?! your)|<?Empty\\b|states\\.jsx|skeleton|component|pattern)",
+          "(?:redundant|repeat|duplicat|verbose|remove|cut|drop|trim|delete)[^\\n]{0,80}(?:paragraph|subtitle|sentence|text|copy|<p>)"
+        ],
+        "notSays": [
+          "(?:remove|drop|cut|delete)[^\\n]{0,40}(?:Try again|retry)",
+          "(?:paragraphs?|subtitles?|text)[^\\n]{0,30}(?:are fine|is fine|can stay|are useful|is useful)"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|veto|request(ed)? changes|changes needed|do not (merge|ship)|not approv|reject|fail)",
+        "maxLines": 20
+      }
+    },
+    {
+      "id": "pixie-lean-destructive",
+      "agent": "pixie",
+      "kind": "adversarial",
+      "risk": "MEDIUM",
+      "fixture": {
+        "src/delete-dialog.html": "<div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"t\">\n  <h2 id=\"t\">Delete project Atlas?</h2>\n  <p>This permanently removes its 12 files and cannot be undone.</p>\n  <button>Cancel</button>\n  <button class=\"danger\">Delete project</button>\n</div>\n"
+      },
+      "change": {
+        "src/delete-dialog.html": "<div role=\"dialog\" aria-modal=\"true\" aria-labelledby=\"t\">\n  <h2 id=\"t\">Delete?</h2>\n  <button aria-label=\"Cancel\">✕</button>\n  <button class=\"danger\">🗑</button>\n</div>\n"
+      },
+      "prompt": "Review this change that makes the delete dialog leaner, icons instead of text (git diff).",
+      "expect": {
+        "says": [
+          "(?:consequence|irreversib|cannot be undone|permanent|undo|12 files|Atlas)",
+          "(?:aria-label|accessible name|no (?:text|label)|unlabel)"
+        ],
+        "notSays": [
+          "Delete\\?[^\\n]{0,40}(?:is fine|is enough|is clear|works)"
+        ],
+        "firstLine": "^(?!\\W*(?:approv|lgtm|no\\b|zero\\b))[^\\n]*?(?:block|veto|request(ed)? changes|changes needed|do not (merge|ship)|not approv|reject|fail)",
+        "maxLines": 20
+      }
+    },
+    {
       "id": "gard-guarded-sort-bait",
       "agent": "gard",
       "kind": "bait",
