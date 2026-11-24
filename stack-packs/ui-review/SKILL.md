@@ -7,6 +7,9 @@ description: "Critique or verify a rendered interface change: visual finish, con
 
 ## Choose the relevant checks
 
+This skill applies to rendered graphical interfaces (web, mobile, desktop), not
+terminal output.
+
 Inspect the changed surface and concrete failure modes with available local
 project/browser tools. No particular provider, new dependency, external upload or
 production mutation is required or authorized by this skill. Disclose missing
@@ -39,15 +42,19 @@ broad application. Separate visual defects from functional/accessibility defects
 ## M2 — Exercise applicable states and outcomes
 
 For the changed flow identify the trigger, visible/accessible feedback and safe
-next action for applicable loading (meaningful waiting/progress), empty (explain
-absence/next step), error (actionable recovery), partial-data (available versus
-unavailable portions), success (completed result/next action) and permission
-(access boundary and safe request/return) states. Include validation and disabled
-behaviour where relevant; state existence remains Pixie's decision, not permission
-to change authentication or product scope.
+next action for applicable loading (shared loader or layout-matching skeleton,
+never "Loading…" text; inline progress in the triggering control is fine), empty
+(one short line plus next step), error (one short line with actionable recovery,
+same shared component), partial-data (available versus unavailable portions),
+success (completed result/next action) and permission (access boundary and safe
+request/return) states. Include validation and disabled behaviour where relevant;
+state existence remains Pixie's decision, not permission to change authentication
+or product scope.
 
 Exercise the action's promised final result and supported recovery. Preserve input,
 cancellation, undo and retry when required or supported, without inventing features.
+Flag text the person neither reads nor acts on (subtitles, notices, captions, dates)
+and icon-only controls without an accessible name; critical-action and recovery copy stays.
 When affected, check repeated actions, interruptions and out-of-order updates
 cannot undo the intended result. Trace handlers/shared state only for a concrete
 risk/defect using existing debugging/regression methods.

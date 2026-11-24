@@ -17,6 +17,9 @@ established requirements can still be implemented. Never install an agent or
 another pack implicitly. A game menu/form/HUD layout is ordinary UI unless
 game-specific art or gameplay meaning is actually involved.
 
+This skill applies to rendered graphical interfaces (web, mobile, desktop), not
+terminal output.
+
 Select the steps affected by the request. LOW copy, colour or spacing fixes in
 an established direction need only focused fit/access checks, no new brief, token
 audit, full journey or state × viewport × theme × locale matrix.
@@ -46,9 +49,9 @@ format, reference quota, style ban or universal score is required.
 For the changed flow, identify applicable states with **trigger, visible or
 accessible feedback, and safe next action**:
 
-- Loading: meaningful waiting/progress while work is pending.
-- Empty: explain absence and an available next step.
-- Error: actionable recovery, with input retained where supported or required.
+- Loading: the shared loader or a skeleton built from the real layout, never a "Loading…" line (inline progress in the triggering control is fine); the route waits only for what the first screen needs, and secondary data (prices, images, rankings, extra stats) gets its own skeleton in place.
+- Empty: one short line plus the available next step.
+- Error: actionable recovery from the shared component, with input retained where supported or required.
 - Partial data: distinguish available content from unavailable portions.
 - Success: confirm the completed result promised by the action and what follows.
 - Permission: explain the access boundary and safe request/return path.
@@ -58,7 +61,11 @@ states, authentication changes, cancellation, undo or retry features merely to
 complete a checklist. Define the actual final result and relevant recovery;
 check repeated actions, interruption or out-of-order completion when they can undo
 that result. Trace handlers/shared state only for a concrete risk/defect, using
-existing Bob/Quinn debugging and regression methods.
+existing Bob/Quinn debugging and regression methods. Show only what the person
+reads or uses: no explanatory subtitles, notices, captions or dates unless asked;
+an icon or image where the meaning is obvious (with an accessible name), short
+labels for app concepts. Critical or destructive actions and error recovery keep
+clear copy.
 
 ## M3 — Design for actual content and operation
 
