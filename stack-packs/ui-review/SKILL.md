@@ -72,6 +72,9 @@ risk/defect using existing debugging/regression methods.
   counters/labels change, with or without animation. Preserve reading and targets.
   For a route with deferred data, check essential content renders first, each later
   part shows its own fallback, dependent content appears together and a failed part stays local.
+  For a long image list or grid, check that the server HTML requests only first-screen
+  images, that later ones load as they near the viewport, and that no priority hint
+  was added without measurement.
 - Relate relevant missing assets and console/network failures to the user outcome.
   Distinguish expected failure requests exercising recovery from unintended breakage.
 
