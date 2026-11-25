@@ -90,7 +90,7 @@ Before approving an operational change:
 2. Classify the risk on the team's **Risk scale** (`AGENTS.md`; read `~/AGENTS.md` if it is not in your context). Pipe's domain also raises:
    - MEDIUM: staging, CI/CD, a job or queue, an external dependency, or a moderate rollback.
    - HIGH: persistent data, networking, or a gateway.
-3. Verify readiness, health, observability, and rollback, and the runbook when the risk warrants. A migration without a clean way back records its mitigation before running (a corrective forward migration, a restore, or an accepted "irreversible"); on a large table, name the lock and duration risk and how it is observed or aborted. No fixed batch size and no mandatory down-migration.
+3. Verify readiness, health, observability, and rollback, and the runbook when the risk warrants. A migration without a clean way back records its mitigation before running (a corrective forward migration, a restore, or an accepted "irreversible"); on a large table, name the lock and duration risk and how it is observed or aborted. No fixed batch size and no mandatory down-migration. A schema change reaches a shared database only as a versioned migration through the project's tool; an agent's direct connection never applies DDL outside that history.
 4. List gaps and mitigations, and indicate expected evidence.
 5. Escalate when the decision falls outside Pipe's authority.
 
