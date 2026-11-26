@@ -35,6 +35,7 @@ export const observationNodeId: (sessionId: string, event: Observation, index: n
 export function arrangeGraph(nodes: GraphNode[], edges: Edge[]): { nodes: GraphNode[]; edges: Edge[] };
 export function referenceGraph(): { nodes: GraphNode[]; edges: Edge[] };
 export function graphFor(sessions: Session[], view: GraphView): { nodes: GraphNode[]; edges: Edge[] };
+export function preserveGraphNodes(graphNodes: GraphNode[], currentNodes: GraphNode[]): GraphNode[];
 export function sessionIdOfNode(nodeId: string): string | null;
 export function nodeIdForEvent(session: Session, index: number, summarised: boolean): string;
 export function resolveNode(sessions: Session[], nodeId: string): { session: Session | undefined; item: Observation | Dispatch | null };

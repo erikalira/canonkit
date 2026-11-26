@@ -717,6 +717,49 @@ test("graph model: several sessions get unique IDs, separate lanes and no cross-
   assert.equal(graphFor(sessions.slice(0, 1), "observed").nodes.some((n) => n.id.startsWith("signals:") || n.type === "lane"), false);
 });
 
+test("graph model: new nodes stay in their lane when an earlier lane grows during polling", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const initial = executionSnapshot([
+    { ts: 1, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 2, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+  ], undefined, 10);
+  const previous = graphFor(initial.sessions, "observed");
+  const movedPosition = { x: 525, y: previous.nodes.find((n) => n.id === "dispatch:sb:b1").position.y + 40 };
+  const keptNodes = previous.nodes.map((n) => n.id === "dispatch:sb:b1"
+    ? { ...n, position: movedPosition, selected: true }
+    : n);
+
+  // The first lane gains dispatches, so the generated graph places the second
+  // lane much lower. Polling must still anchor new nodes to its kept lane node.
+  const next = executionSnapshot([
+    { ts: 1, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 3, session: "sa", event: "agent_start", id: "a2", agent: "bob" },
+    { ts: 4, session: "sa", event: "agent_start", id: "a3", agent: "bob" },
+    { ts: 5, session: "sa", event: "agent_start", id: "a4", agent: "bob" },
+    { ts: 2, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 6, session: "sb", event: "agent_start", id: "b2", agent: "quinn" },
+  ], undefined, 10);
+  const currentGraph = graphFor(next.sessions, "observed");
+  const nodes = preserveGraphNodes(currentGraph.nodes, keptNodes);
+  const secondLane = nodes.find((n) => n.id === "lane:sb");
+  const newNode = nodes.find((n) => n.id === "dispatch:sb:b2");
+  assert.ok(secondLane && newNode);
+  assert.ok(newNode.position.y >= secondLane.position.y, "new node starts below its own lane top");
+  assert.ok(newNode.position.y + 130 <= secondLane.position.y + secondLane.style.height,
+    "new node remains within its own lane after an earlier lane grows");
+  assert.ok(newNode.position.x >= secondLane.position.x && newNode.position.x + 280 <= secondLane.position.x + secondLane.style.width,
+    "new node remains within the lane width when a moved node blocks vertical slots");
+  assert.ok(newNode.position.x > currentGraph.nodes.find((n) => n.id === "dispatch:sb:b2").position.x,
+    "when the moved node blocks vertical slots, the new node uses a free column");
+  const movedNode = nodes.find((n) => n.id === "dispatch:sb:b1");
+  assert.ok(Math.abs(newNode.position.x - movedNode.position.x) >= 300 || Math.abs(newNode.position.y - movedNode.position.y) >= 140,
+    "the new node does not overlap the moved node in its own lane");
+  assert.equal(nodes.find((n) => n.id === "lane:sb").position.y, previous.nodes.find((n) => n.id === "lane:sb").position.y,
+    "polling keeps the lane position");
+  assert.deepEqual(nodes.find((n) => n.id === "dispatch:sb:b1").position, movedPosition, "polling keeps a moved node in place");
+  assert.equal(nodes.find((n) => n.id === "dispatch:sb:b1").selected, true, "polling keeps the selected node");
+});
+
 test("graph model: selection transitions", async () => {
   const { shownSessionIds, toggleSelection, addSelection, showAllRecent, pruneSelection, recentSelection, stableLaneOrder, panelEntries } = await graphModel();
   const snap = executionSnapshot([

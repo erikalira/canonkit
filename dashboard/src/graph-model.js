@@ -179,6 +179,68 @@ export function graphFor(sessions, view) {
   return { nodes, edges };
 }
 
+// Preserve React Flow's user-owned positions across data-only polls. In a
+// multi-session graph, new nodes are translated with their kept lane and only
+// checked against nodes in that same lane. A growing earlier lane must not
+// move new nodes in a later lane away from its kept background.
+export function preserveGraphNodes(graphNodes, currentNodes) {
+  const kept = new Map(currentNodes.map((node) => [node.id, node]));
+  const graphLanes = new Map(graphNodes.filter((node) => node.type === 'lane').map((node) => [node.id, node]));
+  const placed = new Map();
+  const laneWidths = new Map();
+  for (const node of currentNodes) {
+    if (node.type === 'lane') continue;
+    const sid = sessionIdOfNode(node.id) ?? '';
+    const list = placed.get(sid) ?? [];
+    list.push(node.position);
+    placed.set(sid, list);
+  }
+  return graphNodes.map((node) => {
+    const prior = kept.get(node.id);
+    if (prior) {
+      if (node.type === 'lane' && prior.style?.width != null)
+        return { ...node, style: { ...node.style, width: Math.max(Number(node.style?.width ?? 0), Number(prior.style.width)) }, position: prior.position, selected: prior.selected };
+      return { ...node, position: prior.position, selected: prior.selected };
+    }
+    const position = { ...node.position };
+    if (node.type === 'lane') return { ...node, position };
+    const sid = sessionIdOfNode(node.id) ?? '';
+    const graphLane = graphLanes.get(`lane:${sid}`);
+    const keptLane = kept.get(`lane:${sid}`);
+    if (graphLane && keptLane) position.y += keptLane.position.y - graphLane.position.y;
+    const laneNodes = placed.get(sid) ?? [];
+    if (graphLane) {
+      const laneTop = keptLane?.position.y ?? graphLane.position.y;
+      const laneBottom = laneTop + Number(graphLane.style?.height ?? 0);
+      const baseY = position.y;
+      const collides = (x, y) => laneNodes.some((p) => Math.abs(p.x - x) < 300 && Math.abs(p.y - y) < 140);
+      let found = false;
+      const maxRows = Math.ceil((laneBottom - laneTop) / 145) + 1;
+      for (let column = 0; !found; column++) {
+        const x = position.x + column * 320;
+        for (let row = 0; row <= maxRows; row++) {
+          const step = Math.ceil(row / 2) * 145 * (row % 2 === 0 ? 1 : -1);
+          const y = baseY + step;
+          if (y < laneTop || y + LANE_NODE_HEIGHT > laneBottom || collides(x, y)) continue;
+          position.x = x; position.y = y; found = true; break;
+        }
+        if (x + LANE_NODE_WIDTH > Number(graphLane.style?.width ?? 0))
+          laneWidths.set(sid, Math.max(laneWidths.get(sid) ?? 0, x + LANE_NODE_WIDTH + 40));
+      }
+    } else {
+      while (laneNodes.some((p) => Math.abs(p.x - position.x) < 300 && Math.abs(p.y - position.y) < 140)) position.y += 145;
+    }
+    laneNodes.push(position);
+    placed.set(sid, laneNodes);
+    return { ...node, position };
+  }).map((node) => {
+    if (node.type !== 'lane') return node;
+    const sid = sessionIdOfNode(node.id);
+    const width = sid ? laneWidths.get(sid) : undefined;
+    return width ? { ...node, style: { ...node.style, width: Math.max(Number(node.style?.width ?? 0), width) } } : node;
+  });
+}
+
 // Session a node ID belongs to, or null for IDs that are not per-session.
 export function sessionIdOfNode(nodeId) {
   const [kind, sid] = nodeId.split(':');

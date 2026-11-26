@@ -8,7 +8,7 @@ import {
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {
-  addSelection, fmtDate, graphFor, human, mergedTimeline, nodeIdForEvent, panelEntries, pruneSelection, recentSelection,
+  addSelection, fmtDate, graphFor, human, mergedTimeline, nodeIdForEvent, panelEntries, preserveGraphNodes, pruneSelection, recentSelection,
   resolveNode, shownSessionIds, short, showAllRecent, stableLaneOrder, timelineAgents, toggleSelection,
   type Dispatch, type GraphNode, type GraphView, type Observation, type RecentActivity, type Selection, type Session, type TimelineRow,
 } from './graph-model.js';
@@ -90,21 +90,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    setNodes((current) => {
-      // Polling keeps the user's layout and selection. Nodes seen for the first
-      // time take their arranged slot, moved down past any kept node they would cover.
-      const kept = new Map(current.map((n) => [n.id, n]));
-      const placed = graph.nodes.flatMap((n) => kept.has(n.id) && n.type !== 'lane' ? [kept.get(n.id)!.position] : []);
-      return graph.nodes.map((n) => {
-        const prior = kept.get(n.id);
-        if (prior) return { ...n, position: prior.position, selected: prior.selected };
-        const position = { ...n.position };
-        if (n.type === 'lane') return { ...n, position };
-        while (placed.some((p) => Math.abs(p.x - position.x) < 300 && Math.abs(p.y - position.y) < 140)) position.y += 145;
-        placed.push(position);
-        return { ...n, position };
-      });
-    });
+    setNodes((current) => preserveGraphNodes(graph.nodes, current));
     setEdges(graph.edges);
   }, [graphSignature, graph.edges.map((e) => e.id).join('|'), setNodes, setEdges]);
   useEffect(() => {
