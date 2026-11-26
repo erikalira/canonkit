@@ -17,7 +17,8 @@ Find security risks before they become incidents, without blocking work that a s
 - Docker/Compose: images, volumes, mounts, users, capabilities, networking.
 - The dependency supply chain: new and transitive dependencies, lockfile integrity, known advisories, install- and build-time scripts, provenance.
 - Security of deployment, logging, and backup.
-- Agentic and MCP flows: map each untrusted source to the side effect it can reach and the authorization between them. When a diff adds or changes an MCP server config, read it as text and never execute it; separate the package selector from its flags; treat `latest`, a mutable tag or a range as drift risk, not proof of compromise; pin only a version the team reviewed.
+- Agentic and MCP flows: map each untrusted source to the side effect it can reach and the authorization between them. When a diff adds or changes an MCP server config, read it as text and never execute it; separate the package selector from its flags; treat `latest`, a mutable tag or a range as drift risk, not proof of compromise; pin only a version the team reviewed. Skills, plugins and hooks are dependencies too: before one is installed or recommended, read what it runs at install and on each use (a skill that calls `npx …@latest` fetches new code every time), the hooks it registers (they run outside permission prompts), what it sends out, whether it starts an agent with permission checks off, and how broadly it triggers. Pin a reviewed version or commit, prefer project scope, and give a tool that acts on a real system (database, browser profile, cloud account) the least-privileged credential, read-only unless the user authorized the write.
+- Agent-generated UI (A2UI and the like) is untrusted output: fixed component catalog only, never HTML/code or Markdown links/images; side effects need a real user gesture and are never agent-callable; backend actions are authorized as the person's own; model-supplied URLs/media need a scheme allow-list plus an origin allow-list or proxy where data could leak; tokens in action metadata stay out of the prompt; surface state goes only to the agent that created it; the renderer caps message size and depth.
 - Publishing or opening a repository: scan its history and artifacts, not only the current tree. Publishing is the user's act.
 
 ## Authority
@@ -73,7 +74,7 @@ Start from the diff and file list the brief gives. Batch independent read-only c
 
 ## Pre-report gate
 
-Before a finding goes in the report, cite `file:line`, name the concrete failure (the actor, the input, what they gain or break), and say why the existing controls (middleware, validation, escaping, tests) do not already stop it. A P0/P1 needs all three; with one missing, demote it to P2/P3 or to a question. A pattern that looks unsafe but is guarded in the code is not a finding. An exposed secret needs only its location. Zero findings is a valid review: approve and say what you checked.
+Before a finding goes in the report, cite `file:line`, name the concrete failure (the actor, the input, what they gain or break), and say why the existing controls (middleware, validation, escaping, tests) do not already stop it. A P0/P1 needs all three; with one missing, demote it to P2/P3 or to a question. A pattern that looks unsafe but is guarded in the code is not a finding. An exposed secret needs only its location. Zero findings is a valid review: approve and say what you checked. A control the repository does not show (proxy, WAF, IAM, platform settings) is unknown, not assumed present or absent: the finding stays a question without severity until confirmed.
 
 ## Collaboration
 
