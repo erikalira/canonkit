@@ -15,7 +15,7 @@ The snapshot SHALL identify the sessions whose latest observation falls within a
 
 #### Scenario: Dispatch without an end signal
 - **WHEN** a dispatch in a recently active session has started but has no observed end and no later session activity
-- **THEN** that dispatch's agent is not listed as working, and the session reports it among dispatches without an end signal
+- **THEN** that dispatch's agent is not listed among the agents with an active dispatch, and the session counts it among dispatches without an end signal
 
 #### Scenario: Agent type is not observed
 - **WHEN** an active dispatch has no observed agent type

@@ -47,9 +47,9 @@ const reducedMotion = () => typeof window.matchMedia === 'function' && window.ma
 const motion = (ms: number) => reducedMotion() ? 0 : ms;
 // Ages are measured from the snapshot's own clock, so they freeze with the last
 // snapshot when the connection drops instead of growing as if re-checked.
-const ago = (from: number, to: number) => {
+const ago = (from: number, to: number, suffix = 'ago') => {
   const s = Math.max(0, Math.floor((to - from) / 1000));
-  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ago`;
+  return `${s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h`} ${suffix}`;
 };
 // Screen readers announce each node by this name instead of its concatenated card text.
 const labelled = (nodes: GraphNode[]) => nodes.map((n) => ({ ...n, ariaLabel: `${human(n.data.kind)}: ${n.data.title}. ${human(n.data.state)}. ${n.data.subtitle}` }));
@@ -308,7 +308,7 @@ function App() {
       </select></div>
     </nav>
     {!connected && updated && <div className="stale-banner" role="status"><span>Connection lost.</span> Showing the last observed snapshot from {fmtDate(updated)}. The dashboard will retry automatically.</div>}
-    <SessionOverview snapshot={snapshot} openId={activeSession?.sessionId ?? ''} onOpen={setSessionId} />
+    <SessionOverview snapshot={snapshot} connected={connected} openId={activeSession?.sessionId ?? ''} onOpen={setSessionId} />
     <section className="overview-strip">
       <div><span className="eyebrow">RUNTIME</span><strong>{activeSession ? 'Claude Code' : 'Not instrumented'}</strong></div>
       <div><span className="eyebrow">OBSERVED DISPATCHES</span><strong>{activeSession?.dispatches.length ?? 0}</strong></div>
@@ -352,24 +352,24 @@ function App() {
   </main>;
 }
 
-function SessionOverview({ snapshot, openId, onOpen }: { snapshot: Snapshot; openId: string; onOpen: (id: string) => void }) {
+function SessionOverview({ snapshot, connected, openId, onOpen }: { snapshot: Snapshot; connected: boolean; openId: string; onOpen: (id: string) => void }) {
   const recent = snapshot.recentActivity;
   // Nothing to say before the first snapshot or when the server predates this field.
   if (!recent || !snapshot.generatedAt) return null;
   const minutes = Math.round(recent.windowMs / 60000);
   return <section className="session-overview" aria-labelledby="session-overview-title">
-    <div className="session-overview-head"><span className="eyebrow" id="session-overview-title">SESSIONS</span><span>Recent activity · last {minutes} min</span></div>
+    <div className="session-overview-head"><h2 id="session-overview-title">Recent sessions</h2><span>{plural(recent.sessions.length, 'session', 'sessions')}</span><span>Recent activity · last {minutes} min{!connected && ` · as of ${fmtDate(snapshot.generatedAt)}`}</span></div>
     {recent.sessions.length ? <div className="session-cards">{recent.sessions.map((s) => {
       const open = s.sessionId === openId;
       const names = s.workingAgents.map((a) => a.agent ? human(a.agent) : 'Unidentified agent');
-      return <button key={s.sessionId} type="button" className={`session-card ${open ? 'open' : ''}`} aria-pressed={open} onClick={() => onOpen(s.sessionId)}>
-        <span className="session-card-top"><strong>{short(s.sessionId, 12)}</strong>{open && <span className="session-open-mark">✓ Open</span>}</span>
-        <span className="session-card-meta">{s.projectId ?? 'Project not identified'} / {s.branch ?? 'Unavailable from runtime hooks'}</span>
-        <span>{names.length ? `Working agents: ${names.join(', ')}` : 'No agent with an observed active dispatch'}</span>
-        <span>{plural(s.unendedDispatches, 'dispatch', 'dispatches')} without end signal</span>
-        <span>Last event: {human(s.lastObservedType)} · {ago(s.lastObservedAt, snapshot.generatedAt)}</span>
+      return <button key={s.sessionId} type="button" className={`session-card ${open ? 'open' : ''}`} aria-current={open ? 'true' : undefined} title={s.sessionId} onClick={() => onOpen(s.sessionId)}>
+        <span className="session-card-top"><strong>{short(s.sessionId, 12)}</strong>{open && <span className="session-open-mark">▸ Viewing</span>}</span>
+        <span className="session-card-meta">Project: {s.projectId ?? 'not identified'} · Branch: {s.branch ?? 'unavailable'}</span>
+        <span>{names.length ? `Agents with an open dispatch: ${names.join(', ')}` : 'No agent with an open dispatch'}</span>
+        <span>Dispatches with no end seen: {s.unendedDispatches}</span>
+        <span>Last event: {human(s.lastObservedType)} · {ago(s.lastObservedAt, snapshot.generatedAt, connected ? 'ago' : 'before last update')}</span>
       </button>;
-    })}</div> : <p className="session-empty">No session had activity in the last {minutes} minutes. Older sessions are available in the SESSION selector.</p>}
+    })}</div> : <p className="session-empty">{snapshot.sessions.length === 0 ? 'No sessions observed yet.' : <>No session had activity in the last {minutes} minutes. Older sessions are available in the SESSION selector.</>}</p>}
   </section>;
 }
 
