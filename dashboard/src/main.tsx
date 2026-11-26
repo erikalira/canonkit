@@ -1,45 +1,23 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Background, Controls, Handle, MiniMap, Position, ReactFlow,
-  type Edge, type Node, type NodeProps, type ReactFlowInstance,
+  type Edge, type NodeProps, type ReactFlowInstance,
   useEdgesState, useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './style.css';
+import {
+  addSelection, fmtDate, graphFor, human, mergedTimeline, nodeIdForEvent, panelEntries, pruneSelection, recentSelection,
+  resolveNode, shownSessionIds, short, showAllRecent, stableLaneOrder, timelineAgents, toggleSelection,
+  type Dispatch, type GraphNode, type GraphView, type Observation, type RecentActivity, type Selection, type Session, type TimelineRow,
+} from './graph-model.js';
 
-type Observation = {
-  schemaVersion: number; timestamp: number; runtime: string; source: string; confidence: string;
-  sessionId: string | null; eventId: string | null; dispatchId: string | null; agentId: string | null;
-  type: string; data: Record<string, unknown>;
-};
-type Dispatch = {
-  executionId: string; agentId: string | null; agent: string | null; startedAt: number | null;
-  endedAt: number | null; executionState: string; workflowState: string; approvalState: string;
-  telemetryState: string; evidence: string[]; parallel: boolean; durationMs: number | null; tokens: Record<string, number> | null;
-};
-type Session = {
-  sessionId: string; runtime: string; projectId: string | null; worktreeId: string | null;
-  branch: string | null; telemetry: string; dispatches: Dispatch[]; observations: Observation[];
-  lastObservedAt: number;
-};
 type AgentPresence = { agentId: string; sessionId: string; executionId: string; runtime: string; activity: 'working' | 'waiting' | 'blocked' | 'finished' | 'unknown'; updatedAt: number | null; observedActivity: string | null };
-type RecentSession = {
-  sessionId: string; runtime: string; projectId: string | null; branch: string | null;
-  lastObservedAt: number; lastObservedType: string;
-  workingAgents: { executionId: string; agent: string | null }[]; unendedDispatches: number;
-};
-type RecentActivity = { windowMs: number; sessions: RecentSession[] };
 type Snapshot = { schemaVersion: number; generatedAt: number; sessions: Session[]; agents: AgentPresence[]; observations: Observation[]; recentActivity?: RecentActivity };
-type GraphNode = Node<{ title: string; subtitle: string; state: string; kind: string; source?: string; context?: string }>;
 
 const initial: Snapshot = { schemaVersion: 1, generatedAt: 0, sessions: [], agents: [], observations: [] };
-// Default session: the one with the most recent observation, not the last one started.
-const latestSession = (sessions: Session[]) => sessions.reduce<Session | undefined>((best, s) => !best || s.lastObservedAt >= best.lastObservedAt ? s : best, undefined);
 const fmtTime = (ts?: number | null) => ts ? new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—';
-const fmtDate = (ts?: number | null) => ts ? new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
-const short = (s: string, n = 8) => s.length > n ? `${s.slice(0, n)}…` : s;
-const human = (s: string) => s.replaceAll('_', ' ').replace(/\b\w/g, (x) => x.toUpperCase());
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 // Programmatic camera moves and scrolling honour the reduced-motion preference;
 // the stylesheet only covers CSS transitions and animations.
@@ -51,8 +29,6 @@ const ago = (from: number, to: number, suffix = 'ago') => {
   const s = Math.max(0, Math.floor((to - from) / 1000));
   return `${s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h`} ${suffix}`;
 };
-// Screen readers announce each node by this name instead of its concatenated card text.
-const labelled = (nodes: GraphNode[]) => nodes.map((n) => ({ ...n, ariaLabel: `${human(n.data.kind)}: ${n.data.title}. ${human(n.data.state)}. ${n.data.subtitle}` }));
 
 function StudioNode({ data, selected }: NodeProps<GraphNode>) {
   const icon = data.kind === 'session' ? '◉' : data.kind === 'gate' ? '⚑' : data.kind === 'decision' ? '⌘' : data.kind === 'reference' ? '↳' : '◇';
@@ -64,147 +40,38 @@ function StudioNode({ data, selected }: NodeProps<GraphNode>) {
     <Handle type="source" position={Position.Right} />
   </div>;
 }
-const nodeTypes = { studio: StudioNode };
-
-function graphFor(session: Session | undefined, view: 'observed' | 'reference'): { nodes: GraphNode[]; edges: Edge[] } {
-  if (view === 'reference') {
-    const reference = referenceGraph();
-    const arranged = arrangeGraph(reference.nodes, reference.edges);
-    return { nodes: labelled(arranged.nodes), edges: arranged.edges };
-  }
-  if (!session) return { nodes: [], edges: [] };
-  const dispatches = session.dispatches;
-  const gates = session.observations.filter((e) => e.type === 'gate');
-  const width = 280;
-  const nodes: GraphNode[] = [{
-    id: `session:${session.sessionId}`, type: 'studio', position: { x: 50, y: Math.max(40, (Math.max(dispatches.length, gates.length, 1) - 1) * 105) },
-    data: { title: `Session ${short(session.sessionId, 12)}`, subtitle: 'Observed runtime session', state: 'observed', kind: 'session', source: 'Claude Code hook' },
-  }];
-  const edges: Edge[] = [];
-  dispatches.forEach((d, i) => {
-    const id = `dispatch:${session.sessionId}:${d.executionId}`;
-    const when = d.startedAt ? fmtDate(d.startedAt) : 'Start not observed';
-    nodes.push({ id, type: 'studio', position: { x: 410, y: 40 + i * 150 }, data: {
-      title: d.agent ? human(d.agent) : `Dispatch ${short(d.executionId)}`,
-      subtitle: `${when} · ${short(d.executionId)}${d.parallel ? ' · overlapping dispatch' : ''}`,
-      state: d.executionState, kind: 'dispatch', source: d.evidence.map(human).join(' / '),
-    } });
-    edges.push({ id: `session-dispatch-${i}`, source: `session:${session.sessionId}`, target: id, type: 'smoothstep', animated: d.executionState === 'active', label: 'dispatch' });
-  });
-  gates.forEach((g, i) => {
-    const id = `gate:${session.sessionId}:${g.timestamp}:${i}`;
-    const kind = typeof g.data.kind === 'string' ? g.data.kind : 'gate';
-    // The pill shows the gate's decision; "completed" or "unknown" would misstate
-    // an allow or a confirmation request.
-    const decision = ['allowed', 'confirmation-requested', 'blocked'].includes(String(g.data.decision)) ? String(g.data.decision) : 'unknown';
-    const state = decision.replaceAll('-', '_');
-    nodes.push({ id, type: 'studio', position: { x: 410 + width, y: 40 + i * 130 }, data: {
-      title: human(kind), subtitle: `${fmtDate(g.timestamp)} · gate decision`,
-      state, kind: 'gate', source: 'CanonKit hook',
-    } });
-    edges.push({ id: `session-gate-${i}`, source: `session:${session.sessionId}`, target: id, type: 'smoothstep', label: 'gate observed' });
-  });
-  session.observations.forEach((event, index) => {
-    const unlinkedRuntimeSignal = ['prompt', 'agent_resume', 'agent_stop'].includes(event.type) ||
-      (['agent_start', 'agent_launch', 'agent_end'].includes(event.type) && !event.dispatchId);
-    if (!unlinkedRuntimeSignal || event.dispatchId) return;
-    const id = observationNodeId(session.sessionId, event, index);
-    nodes.push({ id, type: 'studio', position: { x: 410 + width * 2, y: 40 + index * 110 }, data: {
-      title: human(event.type), subtitle: `${fmtDate(event.timestamp)} · no dispatch link observed`,
-      state: 'unknown', kind: 'observation', source: 'Runtime signal · uncorrelated',
-    } });
-    edges.push({ id: `session-signal-${index}`, source: `session:${session.sessionId}`, target: id, type: 'smoothstep', label: 'session membership' });
-  });
-  const arranged = arrangeGraph(nodes, edges);
-  return { nodes: labelled(arranged.nodes), edges: arranged.edges };
+// A lane is only a background: it groups one session's nodes and implies no relation.
+function LaneNode({ data }: NodeProps<GraphNode>) {
+  return <div className="lane-bg" aria-hidden="true"><span className="lane-label">{data.title}</span></div>;
 }
-
-const observationNodeId = (sessionId: string, event: Observation, index: number) => `observation:${sessionId}:${event.timestamp}:${event.type}:${index}`;
-
-function arrangeGraph(nodes: GraphNode[], edges: Edge[]): { nodes: GraphNode[]; edges: Edge[] } {
-  const depth = new Map<string, number>();
-  const incoming = new Map(nodes.map((node) => [node.id, 0]));
-  const outgoing = new Map<string, string[]>();
-  for (const edge of edges) {
-    incoming.set(edge.target, (incoming.get(edge.target) ?? 0) + 1);
-    const next = outgoing.get(edge.source) ?? []; next.push(edge.target); outgoing.set(edge.source, next);
-  }
-  const queue = nodes.filter((node) => incoming.get(node.id) === 0).map((node) => node.id).sort();
-  for (const id of queue) depth.set(id, 0);
-  while (queue.length) {
-    const id = queue.shift()!;
-    for (const target of outgoing.get(id) ?? []) {
-      depth.set(target, Math.max(depth.get(target) ?? 0, (depth.get(id) ?? 0) + 1));
-      const degree = (incoming.get(target) ?? 1) - 1; incoming.set(target, degree);
-      if (degree === 0) queue.push(target);
-    }
-  }
-  // Cycles are not expected in this observational graph, but remain visible in
-  // the deterministic fallback column instead of being discarded.
-  const maxDepth = Math.max(0, ...depth.values());
-  const columns = new Map<number, GraphNode[]>();
-  for (const node of nodes) {
-    const level = depth.get(node.id) ?? maxDepth + 1;
-    const list = columns.get(level) ?? []; list.push(node); columns.set(level, list);
-  }
-  const tallest = Math.max(1, ...[...columns.values()].map((column) => column.length));
-  const positioned = new Map<string, { x: number; y: number }>();
-  for (const [level, column] of columns) {
-    column.sort((a, b) => a.id.localeCompare(b.id));
-    const offset = (tallest - column.length) * 72;
-    column.forEach((node, index) => positioned.set(node.id, { x: 40 + level * 320, y: 32 + offset + index * 145 }));
-  }
-  return { nodes: nodes.map((node) => ({ ...node, position: positioned.get(node.id)! })), edges };
-}
-
-function referenceGraph(): { nodes: GraphNode[]; edges: Edge[] } {
-  const nodes: GraphNode[] = [{
-    id: 'reference:request', type: 'studio', position: { x: 20, y: 235 },
-    data: { title: 'Request', subtitle: 'Reference entry point', state: 'unknown', kind: 'reference', source: 'CanonKit guidance' },
-  }, {
-    id: 'reference:risk', type: 'studio', position: { x: 300, y: 235 },
-    data: { title: 'Classify risk', subtitle: 'No classification observed', state: 'unknown', kind: 'decision', source: 'CanonKit guidance' },
-  }];
-  const edges: Edge[] = [{ id: 'reference-request-risk', source: 'reference:request', target: 'reference:risk', type: 'smoothstep', label: 'request' }];
-  const routes = [
-    { risk: 'LOW', y: 25, label: 'Direct · proportionate verification', steps: ['Implement', 'Verify proportionately', 'Close'] },
-    { risk: 'MEDIUM', y: 205, label: 'Plan when needed · proportional review', steps: ['Plan when needed', 'Implement', 'Verify + review', 'Close'] },
-    { risk: 'HIGH', y: 385, label: 'Risk analysis · independent review · controlled close', steps: ['Spec + acceptance when applicable', 'Analyze risks', 'Implement', 'Verify', 'Independent review', 'Integrate', 'Controlled close'] },
-  ];
-  for (const route of routes) {
-    let previous = 'reference:risk';
-    let x = 620;
-    for (let i = 0; i < route.steps.length; i++) {
-      const id = `reference:${route.risk.toLowerCase()}:${i}`;
-      nodes.push({ id, type: 'studio', position: { x, y: route.y }, data: {
-        title: route.steps[i], subtitle: `${route.risk} route · ${route.label}`, state: 'unknown', kind: 'reference',
-        source: 'Reference path · not a session record',
-        context: 'This conditional route is CanonKit guidance. It is not selected by observed session data.',
-      } });
-      edges.push({ id: `reference-${route.risk}-${i}`, source: previous, target: id, type: 'smoothstep', label: i === 0 ? `if ${route.risk}` : undefined });
-      previous = id; x += 205;
-    }
-  }
-  return { nodes, edges };
-}
+const nodeTypes = { studio: StudioNode, lane: LaneNode };
 
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
-  const [sessionId, setSessionId] = useState('');
+  const [selection, setSelection] = useState<Selection>(recentSelection);
   const [connected, setConnected] = useState(false);
   const [updated, setUpdated] = useState<number | null>(null);
   const [selected, setSelected] = useState<Observation | Dispatch | null>(null);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [filter, setFilter] = useState('all');
   const [agentFilter, setAgentFilter] = useState('all');
-  const [graphView, setGraphView] = useState<'observed' | 'reference'>('observed');
+  const [graphView, setGraphView] = useState<GraphView>('observed');
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [selectedGraphNode, setSelectedGraphNode] = useState<GraphNode | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<GraphNode>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [flow, setFlow] = useState<ReactFlowInstance<GraphNode, Edge> | null>(null);
-  const activeSession = snapshot.sessions.find((s) => s.sessionId === sessionId) ?? latestSession(snapshot.sessions);
-  const graph = useMemo(() => graphFor(activeSession, graphView), [activeSession, graphView]);
+  const laneOrder = useRef<string[]>([]);
+  const shownIds = useMemo(() => shownSessionIds(selection, snapshot.sessions, snapshot.recentActivity), [selection, snapshot]);
+  const shownSessions = useMemo(() => {
+    laneOrder.current = stableLaneOrder(laneOrder.current, shownIds);
+    return laneOrder.current.flatMap((id) => snapshot.sessions.find((s) => s.sessionId === id) ?? []);
+  }, [shownIds, snapshot.sessions]);
+  const multi = shownSessions.length > 1;
+  const graph = useMemo(() => graphFor(shownSessions, graphView), [shownSessions, graphView]);
   const graphSignature = JSON.stringify(graph.nodes.map((n) => [n.id, n.data]));
+  const dispatchTotal = shownSessions.reduce((sum, s) => sum + s.dispatches.length, 0);
+  const gateTotal = shownSessions.reduce((sum, s) => sum + s.observations.filter((e) => e.type === 'gate').length, 0);
 
   useEffect(() => {
     let alive = true;
@@ -215,7 +82,7 @@ function App() {
         const data = await response.json() as Snapshot;
         if (!alive) return;
         setSnapshot(data); setConnected(true); setUpdated(Date.now());
-        setSessionId((current) => data.sessions.some((s) => s.sessionId === current) ? current : latestSession(data.sessions)?.sessionId ?? '');
+        setSelection((current) => pruneSelection(current, data.sessions));
       } catch { if (alive) setConnected(false); }
     };
     void refresh(); const timer = window.setInterval(refresh, 2000);
@@ -227,11 +94,12 @@ function App() {
       // Polling keeps the user's layout and selection. Nodes seen for the first
       // time take their arranged slot, moved down past any kept node they would cover.
       const kept = new Map(current.map((n) => [n.id, n]));
-      const placed = graph.nodes.flatMap((n) => kept.has(n.id) ? [kept.get(n.id)!.position] : []);
+      const placed = graph.nodes.flatMap((n) => kept.has(n.id) && n.type !== 'lane' ? [kept.get(n.id)!.position] : []);
       return graph.nodes.map((n) => {
         const prior = kept.get(n.id);
         if (prior) return { ...n, position: prior.position, selected: prior.selected };
         const position = { ...n.position };
+        if (n.type === 'lane') return { ...n, position };
         while (placed.some((p) => Math.abs(p.x - position.x) < 300 && Math.abs(p.y - position.y) < 140)) position.y += 145;
         placed.push(position);
         return { ...n, position };
@@ -247,18 +115,16 @@ function App() {
     void flow.fitView({ nodes: [target], duration: motion(260), padding: 0.55 });
     setFocusNodeId(null);
   }, [focusNodeId, nodes, flow, setNodes]);
-  useEffect(() => { setSelectedGraphNode(null); setSelected(null); }, [graphView, sessionId]);
+  // Only the user's own choices clear the inspector; a poll leaves `selection` as it was.
+  useEffect(() => { setSelectedGraphNode(null); setSelected(null); setSelectedSessionId(null); }, [graphView, selection]);
 
   const inspectNode = useCallback((node: GraphNode) => {
-    const dispatchKey = node.id.startsWith('dispatch:') ? node.id.split(':').slice(2).join(':') : '';
-    const gateTime = node.id.startsWith('gate:') ? Number(node.id.split(':').at(-2)) : 0;
-    const item = activeSession?.dispatches.find((d) => d.executionId === dispatchKey) ??
-      activeSession?.observations.find((o) => o.type === 'gate' && o.timestamp === gateTime) ??
-      (node.id.startsWith('observation:') ? activeSession?.observations[Number(node.id.split(':').at(-1))] ?? null : null);
-    setSelected(item ?? (node.id.startsWith('session:') ? activeSession?.observations.at(-1) ?? null : null));
+    const { session, item } = resolveNode(snapshot.sessions, node.id);
+    setSelected(item);
+    setSelectedSessionId(session?.sessionId ?? null);
     setSelectedGraphNode(node);
     setNodes((current) => current.map((n) => ({ ...n, selected: n.id === node.id })));
-  }, [activeSession]);
+  }, [snapshot.sessions]);
   const onNodeClick = useCallback((_event: React.MouseEvent, node: GraphNode) => inspectNode(node), [inspectNode]);
   // React Flow selects a focused node on Enter/Space but only reports mouse clicks,
   // so keyboard users would otherwise never reach the inspector.
@@ -271,30 +137,31 @@ function App() {
   // Dispatch details follow the latest snapshot, so an open inspector does not
   // keep showing a superseded state or measurement.
   const inspected = selected && !('type' in selected)
-    ? activeSession?.dispatches.find((d) => d.executionId === selected.executionId) ?? selected
+    ? snapshot.sessions.find((s) => s.sessionId === selectedSessionId)?.dispatches.find((d) => d.executionId === selected.executionId) ?? selected
     : selected;
 
-  const agents = [...new Set((activeSession?.observations ?? []).map((e) => typeof e.data.agent === 'string' ? e.data.agent : '').filter(Boolean))];
-  const timeline = (activeSession?.observations ?? []).filter((e) => (filter === 'all' || e.type === filter) &&
-    (agentFilter === 'all' || e.data.agent === agentFilter)).slice().reverse();
-  const selectObservation = (e: Observation) => {
-    setSelected(e);
+  const agents = timelineAgents(shownSessions);
+  const timeline = mergedTimeline(shownSessions, { type: filter, agent: agentFilter }).reverse();
+  const selectObservation = (row: TimelineRow) => {
+    setSelected(row.event);
+    setSelectedSessionId(row.sessionId);
     setSelectedGraphNode(null);
-    let id = e.dispatchId ? `dispatch:${activeSession?.sessionId}:${e.dispatchId}` : '';
-    if (e.type === 'gate') {
-      const index = activeSession?.observations.filter((o) => o.type === 'gate').findIndex((o) => o === e) ?? -1;
-      id = index >= 0 ? `gate:${activeSession?.sessionId}:${e.timestamp}:${index}` : '';
-    } else if (!id && activeSession) id = observationNodeId(activeSession.sessionId, e, activeSession.observations.indexOf(e));
+    const session = shownSessions.find((s) => s.sessionId === row.sessionId);
+    const id = session ? nodeIdForEvent(session, row.index, multi) : '';
     if (id) {
       if (graphView === 'reference') setGraphView('observed');
       setFocusNodeId(id);
     }
   };
+  const addable = snapshot.sessions.filter((s) => !shownIds.includes(s.sessionId));
+  const only = shownSessions.length === 1 ? shownSessions[0] : undefined;
 
   return <main className="app-shell">
     <header className="topbar">
       <a className="brand" href="/"><span className="brand-mark">C</span><span>canonkit<span className="brand-muted"> / observatory</span></span></a>
-      <div className="header-context"><span className="context-label">PROJECT</span><strong>{activeSession?.projectId ?? 'Project not identified'}</strong><span className="context-sep">/</span><span className="context-label">BRANCH</span><span>{activeSession?.branch ?? 'Unavailable from runtime hooks'}</span></div>
+      <div className="header-context">{multi
+        ? <strong>{shownSessions.length} sessions</strong>
+        : <><span className="context-label">PROJECT</span><strong>{only?.projectId ?? 'Project not identified'}</strong><span className="context-sep">/</span><span className="context-label">BRANCH</span><span>{only?.branch ?? 'Unavailable from runtime hooks'}</span></>}</div>
       <div className="connection"><span className={`connection-dot ${connected ? 'online' : ''}`} />{connected ? 'Dashboard online' : 'Disconnected'}<span className="updated">{updated ? `Updated ${fmtTime(updated)}` : 'Waiting for observations'}</span></div>
     </header>
     <nav className="main-nav" aria-label="Dashboard views">
@@ -302,83 +169,95 @@ function App() {
       <a className="nav-item active" href="/">Execution graph</a>
       <button className="nav-item" onClick={() => document.getElementById('timeline')?.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth' })}>Timeline</button>
       <span className="nav-item future" aria-disabled="true">Agent Office <small>FUTURE</small></span>
-      <div className="session-picker"><label htmlFor="session-select">SESSION</label><select id="session-select" value={activeSession?.sessionId ?? ''} onChange={(e) => setSessionId(e.target.value)} disabled={!snapshot.sessions.length}>
-        {!snapshot.sessions.length && <option value="">No observed sessions</option>}
-        {snapshot.sessions.map((s) => <option key={s.sessionId} value={s.sessionId}>{s.runtime} · {short(s.sessionId, 12)}</option>)}
+      <div className="session-picker"><label htmlFor="session-select">ADD SESSION</label><select id="session-select" value="" onChange={(e) => { const id = e.target.value; if (id) setSelection((current) => addSelection(current, id, shownIds)); }} disabled={!addable.length}>
+        <option value="">{!snapshot.sessions.length ? 'No observed sessions' : addable.length ? 'Choose a session…' : 'All sessions are in the graph'}</option>
+        {addable.map((s) => <option key={s.sessionId} value={s.sessionId}>{s.runtime} · {short(s.sessionId, 12)}</option>)}
       </select></div>
     </nav>
     {!connected && updated && <div className="stale-banner" role="status"><span>Connection lost.</span> Showing the last observed snapshot from {fmtDate(updated)}. The dashboard will retry automatically.</div>}
-    <SessionOverview snapshot={snapshot} connected={connected} openId={activeSession?.sessionId ?? ''} onOpen={setSessionId} />
+    <SessionOverview snapshot={snapshot} connected={connected} manual={selection.mode === 'manual'} shownIds={shownIds}
+      onToggle={(id) => setSelection((current) => toggleSelection(current, id, shownIds))} onShowRecent={() => setSelection(showAllRecent())} />
     <section className="overview-strip">
-      <div><span className="eyebrow">RUNTIME</span><strong>{activeSession ? 'Claude Code' : 'Not instrumented'}</strong></div>
-      <div><span className="eyebrow">OBSERVED DISPATCHES</span><strong>{activeSession?.dispatches.length ?? 0}</strong></div>
-      <div><span className="eyebrow">WORKFLOW / APPROVAL</span><strong className="unknown-text">{activeSession ? 'Unknown unless evidenced' : 'No observations'}</strong></div>
+      <div><span className="eyebrow">RUNTIME</span><strong>{shownSessions.length ? 'Claude Code' : 'Not instrumented'}</strong></div>
+      <div><span className="eyebrow">OBSERVED DISPATCHES</span><strong>{dispatchTotal}</strong></div>
+      <div><span className="eyebrow">WORKFLOW / APPROVAL</span><strong className="unknown-text">{shownSessions.length ? 'Unknown unless evidenced' : 'No observations'}</strong></div>
       <div className="coverage-note"><span className="coverage-icon">i</span><span>Sessions without runtime events, project identity, branch or worktree data stay undisclosed.</span></div>
     </section>
     <section className="workspace">
       <div className="canvas-column">
-        <div className="section-heading"><div><span className="eyebrow">LIVE EXECUTION</span><h1>{graphView === 'observed' ? 'Observed activity graph' : 'Canonical risk routes'}</h1><p>{graphView === 'observed' ? 'Dispatches and gates from this session. Connections show session membership, not inferred workflow order.' : 'Conditional LOW, MEDIUM and HIGH paths from CanonKit guidance. No route is selected by runtime evidence.'}</p></div><div className="canvas-actions"><button onClick={() => { setNodes((current) => { const chosen = new Set(current.filter((n) => n.selected).map((n) => n.id)); return arrangeGraph(graph.nodes, graph.edges).nodes.map((n) => ({ ...n, selected: chosen.has(n.id) })); }); void flow?.fitView({ duration: motion(280), padding: 0.22 }); }}>Auto layout</button><button onClick={() => void flow?.fitView({ duration: motion(280), padding: 0.22 })}>Fit view</button><span className="legend"><i className="legend-dot active-dot" /> Active</span><span className="legend"><i className="legend-dot done-dot" /> End observed</span><span className="legend"><i className="legend-dot unknown-dot" /> Unknown</span></div></div>
+        <div className="section-heading"><div><span className="eyebrow">LIVE EXECUTION</span><h1>{graphView === 'observed' ? 'Observed activity graph' : 'Canonical risk routes'}</h1><p>{graphView === 'observed' ? `Dispatches and gates from ${multi ? 'the selected sessions, one lane each' : 'this session'}. Connections show session membership, not inferred workflow order${multi ? ', and nothing is inferred between sessions' : ''}.` : 'Conditional LOW, MEDIUM and HIGH paths from CanonKit guidance. No route is selected by runtime evidence.'}</p></div><div className="canvas-actions"><button onClick={() => { setNodes((current) => { const chosen = new Set(current.filter((n) => n.selected).map((n) => n.id)); return graph.nodes.map((n) => ({ ...n, selected: chosen.has(n.id) })); }); void flow?.fitView({ duration: motion(280), padding: 0.22 }); }}>Auto layout</button><button onClick={() => void flow?.fitView({ duration: motion(280), padding: 0.22 })}>Fit view</button><span className="legend"><i className="legend-dot active-dot" /> Active</span><span className="legend"><i className="legend-dot done-dot" /> End observed</span><span className="legend"><i className="legend-dot unknown-dot" /> Unknown</span></div></div>
         <div className="graph-tabs" role="group" aria-label="Graph view"><button className={graphView === 'observed' ? 'chosen' : ''} aria-pressed={graphView === 'observed'} onClick={() => setGraphView('observed')}>Observed execution</button><button className={graphView === 'reference' ? 'chosen' : ''} aria-pressed={graphView === 'reference'} onClick={() => setGraphView('reference')}>LOW / MEDIUM / HIGH routes</button></div>
         <div className="graph-frame">
           {graph.nodes.length ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onKeyDown={onGraphKeyDown} onInit={setFlow} fitView fitViewOptions={{ padding: 0.22 }} minZoom={0.2} maxZoom={1.6}
             deleteKeyCode={null} edgesFocusable={false}
             ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to show this node in the details panel. Arrow keys move the selected node within the layout.' }}>
-            <Background color="#26313d" gap={24} size={1} /><MiniMap nodeColor={(node) => node.type === 'studio' ? '#49637b' : '#23303d'} maskColor="rgba(8,12,18,.7)" /><Controls showInteractive={false} />
-          </ReactFlow> : <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No execution events observed</h2><p>The dashboard reads existing local CanonKit hook records. It does not start an agent or create a session to collect activity.</p><a href="/activity.html">Open Activity overview <span>↗</span></a></div>}
-          <div className="canvas-foot"><span>SESSION MEMBERSHIP</span><span>{activeSession ? `${plural(activeSession.dispatches.length, 'dispatch', 'dispatches')} · ${plural(activeSession.observations.filter((e) => e.type === 'gate').length, 'gate', 'gates')}` : 'Waiting for telemetry'}</span></div>
+            <Background color="#26313d" gap={24} size={1} /><MiniMap nodeColor={(node) => node.type === 'studio' ? '#49637b' : '#1b2631'} maskColor="rgba(8,12,18,.7)" /><Controls showInteractive={false} />
+          </ReactFlow> : graphView === 'observed' && snapshot.sessions.length ? <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No session is selected</h2><p>Press a session card above, or use Add session, to show it here. “Show all recent” returns to the sessions with recent activity.</p></div>
+            : <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No execution events observed</h2><p>The dashboard reads existing local CanonKit hook records. It does not start an agent or create a session to collect activity.</p><a href="/activity.html">Open Activity overview <span>↗</span></a></div>}
+          <div className="canvas-foot"><span>SESSION MEMBERSHIP</span><span>{shownSessions.length ? `${plural(dispatchTotal, 'dispatch', 'dispatches')} · ${plural(gateTotal, 'gate', 'gates')}` : 'Waiting for telemetry'}</span></div>
         </div>
       </div>
       <aside className="detail-panel" aria-label="Selected observation details">
-        <div className="panel-heading"><div><span className="eyebrow">INSPECTOR</span><h2>{selected ? 'Observation details' : 'Session details'}</h2></div><span className="panel-menu">···</span></div>
-        {selectedGraphNode?.data.kind === 'reference' || selectedGraphNode?.data.kind === 'decision' ? <ReferenceDetail node={selectedGraphNode} /> : inspected ? <Detail item={inspected} /> : activeSession ? <>
+        <div className="panel-heading"><div><span className="eyebrow">INSPECTOR</span><h2>{selected ? 'Observation details' : multi ? 'Shown sessions' : 'Session details'}</h2></div><span className="panel-menu">···</span></div>
+        {selectedGraphNode?.data.kind === 'reference' || selectedGraphNode?.data.kind === 'decision' ? <ReferenceDetail node={selectedGraphNode} /> : inspected ? <Detail item={inspected} sessionId={multi ? selectedSessionId ?? undefined : undefined} /> : only ? <>
           <div className="detail-hero"><span className="hero-icon">◉</span><div><strong>Runtime session</strong><span>Claude Code · observed</span></div></div>
-          <DetailRow label="Session ID" value={activeSession.sessionId} mono />
+          <DetailRow label="Session ID" value={only.sessionId} mono />
           <DetailRow label="Project identity" value="Unknown · basename is not a stable ID" />
           <DetailRow label="Worktree / branch" value="Not instrumented" />
           <DetailRow label="Workflow status" value="Unknown · no milestone source" />
           <DetailRow label="Approval status" value="Unknown · no approval event" />
           <div className="panel-callout"><strong>Evidence quality</strong><span>Runtime hook events · observed</span><p>Presence and end events describe execution. They do not confirm task success or review approval.</p></div>
+        </> : multi ? <>
+          <div className="detail-hero"><span className="hero-icon">◉</span><div><strong>{shownSessions.length} sessions in the graph</strong><span>One lane each · nothing inferred between sessions</span></div></div>
+          {shownSessions.map((s) => <DetailRow key={s.sessionId} label={plural(s.dispatches.length, 'dispatch', 'dispatches')} value={s.sessionId} mono />)}
+          <div className="panel-callout"><strong>Evidence quality</strong><span>Runtime hook events · observed</span><p>Select a node or a timeline event to inspect it.</p></div>
         </> : <div className="empty-inspector"><span>◇</span><p>Select an observed node to inspect its evidence and state.</p></div>}
       </aside>
     </section>
     <section className="timeline-section" id="timeline">
       <div className="timeline-header"><div><span className="eyebrow">SESSION HISTORY</span><h2>Timeline</h2></div><div className="filters"><label><span>TYPE</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All events</option>{['prompt', 'agent_start', 'agent_launch', 'agent_end', 'agent_stop', 'agent_resume', 'gate'].map((v) => <option key={v} value={v}>{human(v)}</option>)}</select></label><label><span>AGENT</span><select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}><option value="all">All agents</option>{agents.map((a) => <option key={a} value={a}>{human(a)}</option>)}</select></label></div></div>
-      {timeline.length ? <div className="timeline-list">{timeline.map((e, i) => <button className="timeline-row" key={`${e.timestamp}-${e.type}-${i}`} onClick={() => selectObservation(e)}>
-        <time>{fmtTime(e.timestamp)}</time><span className={`event-mark mark-${e.type === 'gate' ? 'gate' : e.type.includes('end') || e.type.includes('stop') ? 'done' : 'agent'}`}>{e.type === 'gate' ? '⚑' : e.type.includes('end') || e.type.includes('stop') ? '✓' : '◇'}</span><span className="timeline-main"><strong>{human(e.type)}</strong><span>{typeof e.data.agent === 'string' ? human(e.data.agent) : e.dispatchId ? `Dispatch ${short(e.dispatchId)}` : e.data.kind ? human(String(e.data.kind)) : 'Runtime event'}</span></span><span className="timeline-source">{e.source} · {e.confidence}</span><span className="row-arrow">↗</span>
-      </button>)}</div> : <div className="timeline-empty">No events match this session and filter.</div>}
+      {timeline.length ? <div className="timeline-list">{timeline.map((row) => { const e = row.event; return <button className="timeline-row" key={`${row.sessionId}-${row.index}`} onClick={() => selectObservation(row)}>
+        <time>{fmtTime(e.timestamp)}</time><span className={`event-mark mark-${e.type === 'gate' ? 'gate' : e.type.includes('end') || e.type.includes('stop') ? 'done' : 'agent'}`}>{e.type === 'gate' ? '⚑' : e.type.includes('end') || e.type.includes('stop') ? '✓' : '◇'}</span><span className="timeline-main"><span className="timeline-session" title={row.sessionId}>{short(row.sessionId, 8)}</span><strong>{human(e.type)}</strong><span>{typeof e.data.agent === 'string' ? human(e.data.agent) : e.dispatchId ? `Dispatch ${short(e.dispatchId)}` : e.data.kind ? human(String(e.data.kind)) : 'Runtime event'}</span></span><span className="timeline-source">{e.source} · {e.confidence}</span><span className="row-arrow">↗</span>
+      </button>; })}</div> : <div className="timeline-empty">{shownSessions.length ? 'No events match these sessions and filter.' : 'No session is selected.'}</div>}
       <div className="retention-note">Showing {timeline.length} normalized observations available in retained logs (latest 300 per session). Older or rotated events may no longer be present.</div>
     </section>
     <footer><span>CANONKIT OBSERVATORY <i>·</i> LOCAL TELEMETRY</span><span>Workflow and approval state require direct evidence.</span></footer>
   </main>;
 }
 
-function SessionOverview({ snapshot, connected, openId, onOpen }: { snapshot: Snapshot; connected: boolean; openId: string; onOpen: (id: string) => void }) {
+function SessionOverview({ snapshot, connected, manual, shownIds, onToggle, onShowRecent }: {
+  snapshot: Snapshot; connected: boolean; manual: boolean; shownIds: string[]; onToggle: (id: string) => void; onShowRecent: () => void;
+}) {
   const recent = snapshot.recentActivity;
   // Nothing to say before the first snapshot or when the server predates this field.
   if (!recent || !snapshot.generatedAt) return null;
   const minutes = Math.round(recent.windowMs / 60000);
+  const entries = panelEntries(snapshot.sessions, recent, shownIds);
   return <section className="session-overview" aria-labelledby="session-overview-title">
-    <div className="session-overview-head"><h2 id="session-overview-title">Recent sessions</h2><span>{plural(recent.sessions.length, 'session', 'sessions')}</span><span>Recent activity · last {minutes} min{!connected && ` · as of ${fmtDate(snapshot.generatedAt)}`}</span></div>
-    {recent.sessions.length ? <div className="session-cards">{recent.sessions.map((s) => {
-      const open = s.sessionId === openId;
+    <div className="session-overview-head"><h2 id="session-overview-title">Recent sessions</h2><span>{plural(recent.sessions.length, 'session', 'sessions')}</span><span>Recent activity · last {minutes} min{!connected && ` · as of ${fmtDate(snapshot.generatedAt)}`}</span>{manual && <button type="button" className="session-showall" onClick={onShowRecent}>Show all recent</button>}</div>
+    {!recent.sessions.length && <p className="session-empty">{snapshot.sessions.length === 0 ? 'No sessions observed yet.' : <>No session had activity in the last {minutes} minutes. Older sessions can be added with Add session.</>}</p>}
+    {entries.length > 0 && <div className="session-cards">{entries.map(({ session: s, outsideWindow, shown }) => {
       const names = s.workingAgents.map((a) => a.agent ? human(a.agent) : 'Unidentified agent');
-      return <button key={s.sessionId} type="button" className={`session-card ${open ? 'open' : ''}`} aria-current={open ? 'true' : undefined} title={s.sessionId} onClick={() => onOpen(s.sessionId)}>
-        <span className="session-card-top"><strong>{short(s.sessionId, 12)}</strong>{open && <span className="session-open-mark">▸ Viewing</span>}</span>
+      return <button key={s.sessionId} type="button" className={`session-card ${shown ? 'open' : ''}`} aria-pressed={shown} title={s.sessionId} onClick={() => onToggle(s.sessionId)}>
+        <span className="session-card-top"><strong>{short(s.sessionId, 12)}</strong>{shown && <span className="session-open-mark">▸ In graph</span>}</span>
+        {outsideWindow && <span className="session-outside">Outside {minutes}-min window</span>}
         <span className="session-card-meta">Project: {s.projectId ?? 'not identified'} · Branch: {s.branch ?? 'unavailable'}</span>
         <span>{names.length ? `Agents with an open dispatch: ${names.join(', ')}` : 'No agent with an open dispatch'}</span>
         <span>Dispatches with no end seen: {s.unendedDispatches}</span>
         <span>Last event: {human(s.lastObservedType)} · {ago(s.lastObservedAt, snapshot.generatedAt, connected ? 'ago' : 'before last update')}</span>
       </button>;
-    })}</div> : <p className="session-empty">{snapshot.sessions.length === 0 ? 'No sessions observed yet.' : <>No session had activity in the last {minutes} minutes. Older sessions are available in the SESSION selector.</>}</p>}
+    })}</div>}
   </section>;
 }
 
 function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return <div className="detail-row"><span>{label}</span><strong className={mono ? 'mono' : ''}>{value}</strong></div>;
 }
-function Detail({ item }: { item: Observation | Dispatch }) {
+function Detail({ item, sessionId }: { item: Observation | Dispatch; sessionId?: string }) {
+  const session = sessionId ? <DetailRow label="Session" value={sessionId} mono /> : null;
   if ('type' in item) return <>
     <div className="detail-hero"><span className="hero-icon">{item.type === 'gate' ? '⚑' : '◇'}</span><div><strong>{human(item.type)}</strong><span>{item.source} · {item.confidence}</span></div></div>
+    {session}
     <DetailRow label="Observed at" value={fmtDate(item.timestamp)} />
     <DetailRow label="Runtime" value={human(item.runtime)} />
     {item.dispatchId && <DetailRow label="Dispatch ID" value={item.dispatchId} mono />}
@@ -391,6 +270,7 @@ function Detail({ item }: { item: Observation | Dispatch }) {
   </>;
   return <>
     <div className="detail-hero"><span className="hero-icon">◇</span><div><strong>{item.agent ? human(item.agent) : 'Agent dispatch'}</strong><span>{human(item.executionState)} · runtime event</span></div></div>
+    {session}
     <DetailRow label="Dispatch ID" value={item.executionId} mono />
     <DetailRow label="Agent ID" value={item.agentId ?? 'Unavailable'} mono />
     <DetailRow label="Started" value={fmtDate(item.startedAt)} />

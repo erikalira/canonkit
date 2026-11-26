@@ -292,8 +292,16 @@ A card lists the agents with an observed active dispatch, the dispatches without
 an end signal, and the last event with its age. Recent activity does not mean a
 session is running: the runtime emits no session-end signal, and a quiet session
 can still be open. Sessions outside the window leave the panel but stay in the
-SESSION selector. Project and branch show as unavailable, since the hooks do not
-record them.
+Add session selector. Project and branch show as unavailable, since the hooks do
+not record them.
+
+You choose which sessions the graph shows. Each card is a toggle; by default the
+graph shows every session with recent activity, and "Show all recent" returns to
+that after a manual choice. Each shown session has its own lane, and the timeline
+merges their events in time order, labelled by session. Nothing is inferred
+between sessions: no edge or order connects one lane to another. With several
+sessions, prompts, resumes and stops without a dispatch link collapse into one
+"Runtime signals" node per session; the timeline still lists each one.
 
 The **Context contributors** section has a "retained history" window (all
 sessions, subagents grouped by agent type) and one per session. In each: tool

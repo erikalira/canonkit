@@ -665,3 +665,105 @@ test("token tables separate input, output, cache and calls, and label the window
   runInNewContext("render(evs)", ctx);
   assert.match(el("window-recent").textContent, /last 1 timeline lines/);
 });
+
+// Graph, selection and timeline logic is plain ESM, imported without a build.
+const graphModel = () => import(new URL("../dashboard/src/graph-model.js", import.meta.url));
+const twoSessions = () => executionSnapshot([
+  { ts: 100, session: "sa", event: "prompt" },
+  { ts: 110, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+  { ts: 120, session: "sa", event: "gate", kind: "high-risk-surface", files: 1, rules: ["auth"] },
+  { ts: 130, session: "sa", event: "agent_stop", agent_id: "zz" },
+  { ts: 105, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+  { ts: 110, session: "sb", event: "prompt" },
+  { ts: 140, session: "sb", event: "agent_end", id: "b1", duration_ms: 5 },
+], undefined, 150);
+
+test("graph model: a single session keeps its node IDs, positions and per-signal nodes", async () => {
+  const { graphFor } = await graphModel();
+  const snap = executionSnapshot([
+    { ts: 1, session: "s1", event: "agent_start", id: "d1", agent: "bob" },
+  ], undefined, 10);
+  const { nodes, edges } = graphFor(snap.sessions, "observed");
+  assert.deepEqual(nodes.map((n) => [n.id, n.position.x, n.position.y]), [["session:s1", 40, 32], ["dispatch:s1:d1", 360, 32]]);
+  assert.deepEqual(edges.map((e) => e.id), ["session-dispatch-s1-0"]);
+  assert.ok(nodes.every((n) => n.type === "studio" && n.ariaLabel));
+  const withSignals = graphFor(executionSnapshot([{ ts: 1, session: "s1", event: "prompt" }, { ts: 2, session: "s1", event: "prompt" }], undefined, 10).sessions, "observed");
+  assert.equal(withSignals.nodes.filter((n) => n.data.kind === "observation").length, 2, "one node per signal with one session");
+  assert.deepEqual(graphFor([], "observed"), { nodes: [], edges: [] });
+});
+
+test("graph model: several sessions get unique IDs, separate lanes and no cross-session edge", async () => {
+  const { graphFor } = await graphModel();
+  const { sessions } = twoSessions();
+  const { nodes, edges } = graphFor(sessions, "observed");
+  const ids = nodes.map((n) => n.id);
+  assert.equal(new Set(ids).size, ids.length, "node IDs are unique");
+  assert.equal(new Set(edges.map((e) => e.id)).size, edges.length, "edge IDs are unique");
+  const sessionOf = (id) => id.split(":")[1];
+  for (const e of edges) assert.equal(sessionOf(e.source), sessionOf(e.target), "no edge joins two sessions");
+  const lanes = nodes.filter((n) => n.type === "lane");
+  assert.equal(lanes.length, 2);
+  assert.ok(lanes.every((l) => l.selectable === false && l.draggable === false && l.focusable === false));
+  lanes.sort((a, b) => a.position.y - b.position.y);
+  assert.ok(lanes[0].position.y + lanes[0].style.height <= lanes[1].position.y, "lanes do not overlap vertically");
+  for (const lane of lanes) {
+    const own = nodes.filter((n) => n.type === "studio" && sessionOf(n.id) === sessionOf(lane.id));
+    assert.ok(own.every((n) => n.position.y >= lane.position.y && n.position.y + 130 <= lane.position.y + lane.style.height), "nodes stay in their lane");
+  }
+  const summaries = nodes.filter((n) => n.id.startsWith("signals:"));
+  assert.deepEqual(summaries.map((n) => n.id).sort(), ["signals:sa", "signals:sb"]);
+  assert.match(summaries.find((n) => n.id === "signals:sa").data.subtitle, /^2 uncorrelated/);
+  assert.ok(!nodes.some((n) => n.id.startsWith("observation:")), "no per-signal nodes with several sessions");
+  assert.equal(graphFor(sessions.slice(0, 1), "observed").nodes.some((n) => n.id.startsWith("signals:") || n.type === "lane"), false);
+});
+
+test("graph model: selection transitions", async () => {
+  const { shownSessionIds, toggleSelection, addSelection, showAllRecent, pruneSelection, recentSelection, stableLaneOrder, panelEntries } = await graphModel();
+  const snap = executionSnapshot([
+    { ts: 1000, session: "old", event: "prompt" }, { ts: 2000000, session: "sa", event: "prompt" }, { ts: 2000100, session: "sb", event: "prompt" },
+  ], undefined, 2000200);
+  const { sessions, recentActivity: recent } = snap;
+  const derived = shownSessionIds(recentSelection(), sessions, recent);
+  assert.deepEqual(derived, ["sb", "sa"], "recent mode follows the recent sessions, newest first");
+  const none = { windowMs: recent.windowMs, sessions: [] };
+  assert.deepEqual(shownSessionIds(recentSelection(), sessions, none), ["sb"], "falls back to the latest session");
+  assert.deepEqual(shownSessionIds(recentSelection(), [], none), []);
+  const removed = toggleSelection(recentSelection(), "sa", derived);
+  assert.deepEqual(removed, { mode: "manual", ids: ["sb"] });
+  assert.deepEqual(shownSessionIds(removed, sessions, recent), ["sb"], "manual no longer follows recent activity");
+  assert.deepEqual(toggleSelection(removed, "sb", derived), { mode: "manual", ids: [] });
+  assert.deepEqual(shownSessionIds({ mode: "manual", ids: [] }, sessions, recent), [], "empty selection does not fall back");
+  assert.deepEqual(addSelection(removed, "old", derived).ids, ["sb", "old"]);
+  assert.deepEqual(addSelection(recentSelection(), "old", derived).ids, ["sb", "sa", "old"]);
+  assert.deepEqual(showAllRecent(), { mode: "recent" });
+  assert.equal(pruneSelection(removed, sessions), removed, "an unchanged selection keeps its identity");
+  assert.deepEqual(pruneSelection({ mode: "manual", ids: ["sb", "gone"] }, sessions), { mode: "manual", ids: ["sb"] });
+  assert.equal(pruneSelection(recentSelection(), []).mode, "recent");
+  assert.deepEqual(stableLaneOrder(["sa", "sb"], ["sb", "sc", "sa"]), ["sa", "sb", "sc"]);
+  const entries = panelEntries(sessions, recent, ["sb", "old"]);
+  assert.deepEqual(entries.map((e) => [e.session.sessionId, e.outsideWindow, e.shown]), [["sb", false, true], ["sa", false, false], ["old", true, true]]);
+});
+
+test("graph model: timeline merge order and node resolution across sessions", async () => {
+  const { mergedTimeline, nodeIdForEvent, resolveNode, sessionIdOfNode, timelineAgents } = await graphModel();
+  const { sessions } = twoSessions();
+  const rows = mergedTimeline(sessions);
+  assert.deepEqual(rows.map((r) => [r.event.timestamp, r.sessionId]), [[100, "sa"], [105, "sb"], [110, "sa"], [110, "sb"], [120, "sa"], [130, "sa"], [140, "sb"]]);
+  assert.deepEqual(mergedTimeline(sessions, { type: "prompt" }).map((r) => r.sessionId), ["sa", "sb"]);
+  assert.deepEqual(timelineAgents(sessions).sort(), ["bob", "quinn"]);
+  const sa = sessions.find((s) => s.sessionId === "sa");
+  const sb = sessions.find((s) => s.sessionId === "sb");
+  assert.equal(nodeIdForEvent(sa, 0, true), "signals:sa", "a prompt maps to its session's summary node");
+  assert.match(nodeIdForEvent(sa, 0, false), /^observation:sa:100:prompt:0$/);
+  assert.equal(nodeIdForEvent(sa, 1, true), "dispatch:sa:a1");
+  assert.equal(nodeIdForEvent(sa, 2, true), "gate:sa:120:0");
+  assert.equal(nodeIdForEvent(sb, 2, true), "dispatch:sb:b1");
+  assert.equal(sessionIdOfNode("dispatch:sb:b1"), "sb");
+  assert.equal(sessionIdOfNode("reference:risk"), null);
+  const dispatch = resolveNode(sessions, "dispatch:sb:b1");
+  assert.equal(dispatch.session.sessionId, "sb"); assert.equal(dispatch.item.executionId, "b1");
+  assert.equal(resolveNode(sessions, "dispatch:sa:b1").item, null, "a dispatch is looked up only in its own session");
+  assert.equal(resolveNode(sessions, "gate:sa:120:0").item.type, "gate");
+  assert.equal(resolveNode(sessions, "signals:sb").item.type, "prompt");
+  assert.equal(resolveNode(sessions, "reference:risk").session, undefined);
+});
