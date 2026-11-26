@@ -64,7 +64,12 @@ function normalizeEvent(e) {
 // Same cap as /events.json: bounds the 2 s poll payload for long sessions.
 const MAX_OBSERVATIONS = 300;
 
-function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
+// A session has "recent activity" when its latest observation is within this
+// window of the snapshot time. The runtime emits no session-end signal, so this
+// never means a session is running.
+const RECENT_ACTIVITY_WINDOW_MS = 15 * 60 * 1000;
+
+function executionSnapshot(events, limit = MAX_OBSERVATIONS, now = Date.now()) {
   const observations = [];
   for (const e of events) {
     const normalized = normalizeEvent(e);
@@ -125,7 +130,7 @@ function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
       if (!dispatch.evidence.includes(event.type)) dispatch.evidence.push(event.type);
     }
   }
-  const generatedAt = Date.now();
+  const generatedAt = now;
   for (const session of sessions.values()) {
     // Observations are sorted, so the last one is the session's latest activity.
     // Computed from the full list: the emitted observations are capped below.
@@ -144,6 +149,20 @@ function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
       if (Math.max(a.startedAt, b.startedAt) < Math.min(aEnd, bEnd)) a.parallel = b.parallel = true;
     }
   }
+  // Runs after the state pass so it sees the final executionState and the full
+  // observation list (lastObservedType is not limited by the emitted tail).
+  const recentSessions = [...sessions.values()]
+    .filter((s) => generatedAt - s.lastObservedAt <= RECENT_ACTIVITY_WINDOW_MS)
+    .map((s) => {
+      const dispatches = [...s.dispatches.values()];
+      return {
+        sessionId: s.sessionId, runtime: s.runtime, projectId: s.projectId, branch: s.branch,
+        lastObservedAt: s.lastObservedAt, lastObservedType: s.observations.at(-1).type,
+        workingAgents: dispatches.filter((d) => d.executionState === 'active').map((d) => ({ executionId: d.executionId, agent: d.agent })),
+        unendedDispatches: dispatches.filter((d) => d.endedAt == null && d.executionState !== 'active').length,
+      };
+    })
+    .sort((a, b) => b.lastObservedAt - a.lastObservedAt);
   // Dispatch state above uses the full list. Only the emitted arrays are capped.
   const tail = (list) => list.length > limit ? list.slice(list.length - limit) : list;
   const sessionList = [...sessions.values()].map((s) => ({
@@ -165,7 +184,8 @@ function executionSnapshot(events, limit = MAX_OBSERVATIONS) {
     sessions: sessionList,
     agents,
     observations: tail(observations),
+    recentActivity: { windowMs: RECENT_ACTIVITY_WINDOW_MS, sessions: recentSessions },
   };
 }
 
-module.exports = { SCHEMA_VERSION, MAX_OBSERVATIONS, normalizeEvent, executionSnapshot };
+module.exports = { SCHEMA_VERSION, MAX_OBSERVATIONS, RECENT_ACTIVITY_WINDOW_MS, normalizeEvent, executionSnapshot };

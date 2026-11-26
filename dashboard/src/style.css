@@ -8,3 +8,11 @@
 .react-flow__node:focus-visible{outline:none}.react-flow__node:focus-visible .flow-card,.timeline-row:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.timeline-row:focus-visible{outline-offset:-2px}
 .state-allowed .state-pill{background:#193a31;color:#8fdeb9}.state-confirmation_requested .state-pill{background:#493b27;color:#f1cb81}
 @media(max-width:760px){.main-nav{flex-wrap:wrap;height:auto;row-gap:0;overflow-x:visible}.main-nav .nav-item{min-height:44px}.session-picker{flex-basis:100%;margin-left:0;padding:0 0 10px}.session-picker select{max-width:100%;flex:1}.react-flow__minimap{display:none}}
+.session-overview{padding:16px 0;border-bottom:1px solid var(--line)}.session-overview-head{display:flex;align-items:baseline;gap:12px;margin-bottom:10px;font-size:11px;color:#8795a5}
+.session-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;max-height:300px;overflow-y:auto;padding:3px}
+.session-card{display:flex;flex-direction:column;gap:5px;text-align:left;padding:11px 12px;background:#111a23;border:1px solid #2a3744;border-radius:7px;color:#a9b7c4;font-size:11px;line-height:1.4;cursor:pointer;transition:border-color .15s,background-color .15s}
+.session-card:hover{border-color:#527c83;background:#141f29}
+.session-card.open{border:2px solid var(--cyan);padding:10px 11px;background:#17282d;color:#c3d3dc}
+.session-card:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.session-card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}.session-card-top strong{font-family:var(--mono);font-size:12px;color:#e1e9ef}.session-open-mark{font:10px var(--mono);color:#8be0db;letter-spacing:.04em}
+.session-card-meta{color:#8795a5;overflow-wrap:anywhere}.session-empty{margin:0;font-size:11px;color:#8795a5}

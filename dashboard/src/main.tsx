@@ -24,7 +24,13 @@ type Session = {
   lastObservedAt: number;
 };
 type AgentPresence = { agentId: string; sessionId: string; executionId: string; runtime: string; activity: 'working' | 'waiting' | 'blocked' | 'finished' | 'unknown'; updatedAt: number | null; observedActivity: string | null };
-type Snapshot = { schemaVersion: number; generatedAt: number; sessions: Session[]; agents: AgentPresence[]; observations: Observation[] };
+type RecentSession = {
+  sessionId: string; runtime: string; projectId: string | null; branch: string | null;
+  lastObservedAt: number; lastObservedType: string;
+  workingAgents: { executionId: string; agent: string | null }[]; unendedDispatches: number;
+};
+type RecentActivity = { windowMs: number; sessions: RecentSession[] };
+type Snapshot = { schemaVersion: number; generatedAt: number; sessions: Session[]; agents: AgentPresence[]; observations: Observation[]; recentActivity?: RecentActivity };
 type GraphNode = Node<{ title: string; subtitle: string; state: string; kind: string; source?: string; context?: string }>;
 
 const initial: Snapshot = { schemaVersion: 1, generatedAt: 0, sessions: [], agents: [], observations: [] };
@@ -39,6 +45,12 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 // the stylesheet only covers CSS transitions and animations.
 const reducedMotion = () => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const motion = (ms: number) => reducedMotion() ? 0 : ms;
+// Ages are measured from the snapshot's own clock, so they freeze with the last
+// snapshot when the connection drops instead of growing as if re-checked.
+const ago = (from: number, to: number) => {
+  const s = Math.max(0, Math.floor((to - from) / 1000));
+  return s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ago`;
+};
 // Screen readers announce each node by this name instead of its concatenated card text.
 const labelled = (nodes: GraphNode[]) => nodes.map((n) => ({ ...n, ariaLabel: `${human(n.data.kind)}: ${n.data.title}. ${human(n.data.state)}. ${n.data.subtitle}` }));
 
@@ -296,6 +308,7 @@ function App() {
       </select></div>
     </nav>
     {!connected && updated && <div className="stale-banner" role="status"><span>Connection lost.</span> Showing the last observed snapshot from {fmtDate(updated)}. The dashboard will retry automatically.</div>}
+    <SessionOverview snapshot={snapshot} openId={activeSession?.sessionId ?? ''} onOpen={setSessionId} />
     <section className="overview-strip">
       <div><span className="eyebrow">RUNTIME</span><strong>{activeSession ? 'Claude Code' : 'Not instrumented'}</strong></div>
       <div><span className="eyebrow">OBSERVED DISPATCHES</span><strong>{activeSession?.dispatches.length ?? 0}</strong></div>
@@ -337,6 +350,27 @@ function App() {
     </section>
     <footer><span>CANONKIT OBSERVATORY <i>·</i> LOCAL TELEMETRY</span><span>Workflow and approval state require direct evidence.</span></footer>
   </main>;
+}
+
+function SessionOverview({ snapshot, openId, onOpen }: { snapshot: Snapshot; openId: string; onOpen: (id: string) => void }) {
+  const recent = snapshot.recentActivity;
+  // Nothing to say before the first snapshot or when the server predates this field.
+  if (!recent || !snapshot.generatedAt) return null;
+  const minutes = Math.round(recent.windowMs / 60000);
+  return <section className="session-overview" aria-labelledby="session-overview-title">
+    <div className="session-overview-head"><span className="eyebrow" id="session-overview-title">SESSIONS</span><span>Recent activity · last {minutes} min</span></div>
+    {recent.sessions.length ? <div className="session-cards">{recent.sessions.map((s) => {
+      const open = s.sessionId === openId;
+      const names = s.workingAgents.map((a) => a.agent ? human(a.agent) : 'Unidentified agent');
+      return <button key={s.sessionId} type="button" className={`session-card ${open ? 'open' : ''}`} aria-pressed={open} onClick={() => onOpen(s.sessionId)}>
+        <span className="session-card-top"><strong>{short(s.sessionId, 12)}</strong>{open && <span className="session-open-mark">✓ Open</span>}</span>
+        <span className="session-card-meta">{s.projectId ?? 'Project not identified'} / {s.branch ?? 'Unavailable from runtime hooks'}</span>
+        <span>{names.length ? `Working agents: ${names.join(', ')}` : 'No agent with an observed active dispatch'}</span>
+        <span>{plural(s.unendedDispatches, 'dispatch', 'dispatches')} without end signal</span>
+        <span>Last event: {human(s.lastObservedType)} · {ago(s.lastObservedAt, snapshot.generatedAt)}</span>
+      </button>;
+    })}</div> : <p className="session-empty">No session had activity in the last {minutes} minutes. Older sessions are available in the SESSION selector.</p>}
+  </section>;
 }
 
 function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {

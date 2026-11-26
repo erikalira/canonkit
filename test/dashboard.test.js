@@ -142,6 +142,75 @@ test("sessions expose lastObservedAt, which the dashboard uses to pick its defau
   assert.deepEqual(sessions.map((s) => [s.sessionId, s.lastObservedAt]), [["old", 9], ["new", 2]]);
 });
 
+const { RECENT_ACTIVITY_WINDOW_MS } = createRequire(import.meta.url)(fileURLToPath(new URL("../dashboard/execution-model.js", import.meta.url)));
+const NOW = 10_000_000;
+const recent = (events, limit) => executionSnapshot(events, limit, NOW).recentActivity;
+
+test("recent activity: inside, exactly at, and outside the window; outside stays in sessions[]", () => {
+  const W = RECENT_ACTIVITY_WINDOW_MS;
+  assert.equal(W, 15 * 60 * 1000);
+  const snap = executionSnapshot([
+    { ts: NOW - 1000, session: "in", event: "prompt" },
+    { ts: NOW - W, session: "edge", event: "prompt" },
+    { ts: NOW - W - 1, session: "out", event: "prompt" },
+  ], undefined, NOW);
+  assert.equal(snap.generatedAt, NOW);
+  assert.equal(snap.recentActivity.windowMs, W);
+  assert.deepEqual(snap.recentActivity.sessions.map((s) => s.sessionId), ["in", "edge"]);
+  assert.deepEqual(snap.sessions.map((s) => s.sessionId).sort(), ["edge", "in", "out"]);
+  const entry = snap.recentActivity.sessions[0];
+  assert.deepEqual([entry.lastObservedAt, entry.lastObservedType, entry.projectId, entry.branch], [NOW - 1000, "prompt", null, null]);
+});
+
+test("recent activity: unended dispatch with no later activity is unended, not working", () => {
+  const [s] = recent([{ ts: NOW - 5000, session: "s", event: "agent_start", id: "d1", agent: "bob" }]).sessions;
+  assert.deepEqual(s.workingAgents, []);
+  assert.equal(s.unendedDispatches, 1);
+});
+
+test("recent activity: active dispatch lists its agent, or null when the type is not observed", () => {
+  const [s] = recent([
+    { ts: NOW - 9000, session: "s", event: "agent_start", id: "d1", agent: "bob" },
+    { ts: NOW - 8000, session: "s", event: "agent_launch", id: "d2" },
+    { ts: NOW - 1000, session: "s", event: "prompt" },
+  ]).sessions;
+  assert.deepEqual(s.workingAgents, [{ executionId: "d1", agent: "bob" }, { executionId: "d2", agent: null }]);
+  assert.equal(s.unendedDispatches, 0);
+});
+
+test("recent activity: lastObservedType comes from the full list, beyond the observation cap", () => {
+  const events = [];
+  for (let i = 0; i < 5; i++) events.push({ ts: NOW - 10000 + i, session: "s", event: "prompt" });
+  events.push({ ts: NOW - 100, session: "s", event: "agent_resume" });
+  const snap = executionSnapshot(events, 2, NOW);
+  assert.equal(snap.sessions[0].observations.length, 2);
+  assert.equal(snap.recentActivity.sessions[0].lastObservedType, "agent_resume");
+});
+
+test("recent activity: entries are ordered by lastObservedAt descending", () => {
+  const ids = recent([
+    { ts: NOW - 3000, session: "a", event: "prompt" },
+    { ts: NOW - 1000, session: "b", event: "prompt" },
+    { ts: NOW - 2000, session: "c", event: "prompt" },
+  ]).sessions.map((s) => s.sessionId);
+  assert.deepEqual(ids, ["b", "c", "a"]);
+});
+
+test("snapshot keeps schemaVersion 1 and existing fields unchanged by the recentActivity addition", () => {
+  const events = [
+    { ts: 1000, session: "s", event: "prompt" },
+    { ts: 2000, session: "s", event: "agent_start", id: "d1", agent_id: "a1", agent: "bob" },
+    { ts: 3000, session: "s", event: "agent_end", id: "d1", agent_id: "a1", agent: "bob", duration_ms: 500 },
+  ];
+  const { recentActivity, ...rest } = executionSnapshot(events, undefined, 5000);
+  assert.equal(rest.schemaVersion, 1);
+  assert.deepEqual(Object.keys(rest).sort(), ["agents", "generatedAt", "observations", "schemaVersion", "sessions"]);
+  assert.deepEqual(Object.keys(rest.sessions[0]).sort(), ["branch", "dispatches", "lastObservedAt", "observationCount", "observations", "omittedObservations", "projectId", "runtime", "sessionId", "telemetry", "worktreeId"]);
+  assert.deepEqual(rest.agents.map((a) => [a.agentId, a.activity, a.updatedAt]), [["a1", "finished", 3000]]);
+  assert.equal(rest.sessions[0].dispatches[0].executionState, "completed");
+  assert.ok(recentActivity);
+});
+
 test("dashboard request validation rejects non-local hosts and cross-origin requests", () => {
   assert.equal(localHost("127.0.0.1:4317"), true);
   assert.equal(localHost("localhost:4317"), true);

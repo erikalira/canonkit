@@ -285,6 +285,16 @@ or failure is not inferred from stderr. Tool failures that only produce
 
 ### In the dashboard
 
+The **session overview** panel on the Execution graph page shows one card for
+every session with **recent activity**: at least one observation within 15
+minutes of the snapshot's `generatedAt` (`recentActivity` in `execution.json`).
+A card lists the agents with an observed active dispatch, the dispatches without
+an end signal, and the last event with its age. Recent activity does not mean a
+session is running: the runtime emits no session-end signal, and a quiet session
+can still be open. Sessions outside the window leave the panel but stay in the
+SESSION selector. Project and branch show as unavailable, since the hooks do not
+record them.
+
 The **Context contributors** section has a "retained history" window (all
 sessions, subagents grouped by agent type) and one per session. In each: tool
 results received by the main thread × subagents × unidentified (chars, calls,

@@ -44,7 +44,7 @@ The only consumer is the bundled dashboard, and no existing field changes. This 
 
 A new `SessionOverview` component renders the cards as `<button>` elements with `aria-pressed` set for the open session, inside a labelled region. A click calls the existing `setSessionId`. That already resets the inspector (`main.tsx:238`) and keeps the selector in sync. The polling effect already keeps a selected session that is no longer recent, because it checks `data.sessions`, not the recent list. A session that leaves the window therefore stays open.
 
-The relative times are computed from `snapshot.generatedAt`, not `Date.now()`. When the connection drops, the ages freeze at the last snapshot, and the existing stale banner explains why. The microcopy uses "Recent activity · last 15 min", "Last event 3 min ago" and "No session had activity in the last 15 minutes", and never "running", "live" or "online". Missing project and branch reuse the current wording, "Project not identified" and "Branch unavailable".
+The relative times are computed from `snapshot.generatedAt`, not `Date.now()`. When the connection drops, the ages freeze at the last snapshot, and the existing stale banner explains why. The microcopy uses "Recent activity · last 15 min", "Last event 3 min ago" and "No session had activity in the last 15 minutes", and never "running", "live" or "online". Missing project and branch reuse the header's current wording, "Project not identified" and "Unavailable from runtime hooks".
 
 *Alternative:* replace the selector with the panel. It was rejected because sessions older than 15 minutes would become unreachable.
 
