@@ -122,7 +122,9 @@ async function refuseProjectLinks(file) {
 /**
  * The choices in `file`, or an empty version-1 document when it does not
  * exist. `project: true` refuses links; the user's own file may be one (a
- * dotfile manager), but it must still be a small regular file.
+ * dotfile manager), but it must still be a small regular file. A leading
+ * U+FEFF is ignored, and a file that is empty or only whitespace/BOM counts
+ * as missing.
  */
 async function readChoices(file, { project = false } = {}) {
   if (project) await refuseProjectLinks(file);
@@ -135,7 +137,9 @@ async function readChoices(file, { project = false } = {}) {
   }
   if (!info.isFile()) throw new Error(`${file}: not a regular file`);
   if (info.size > MAX_BYTES) throw new Error(`${file}: larger than ${MAX_BYTES} bytes; not a model choices file`);
-  const text = await readFile(file, "utf8");
+  let text = await readFile(file, "utf8");
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  if (text.trim() === "") return empty();
   let data;
   try {
     data = JSON.parse(text);

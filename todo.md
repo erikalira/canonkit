@@ -143,12 +143,6 @@ a handoff keep their details there; items without one carry them inline.
     U+2028/2029 pass through into reported paths. Cosmetic.
   - **`windowsOnlyHits` not injectable** in `collectEnvironment`, unlike
     `resolve` and `version`. Harmless while the default roots are `[]`.
-- [ ] **Empty-file rule in other JSON readers**: `bin/model-discovery.js`
-  (~L299) and `bin/model-config.js` (L141) parse JSON files and may not apply
-  the 3.1.1 rule that an empty, whitespace-only or BOM-only file reads as `{}`
-  (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
-  `settings.json` was not checked. Confidence: low. Next step: check which
-  files they read; if a user can empty one by hand, reuse `readSettingsText`.
 - [ ] **Always-loaded context over its 3,000-word ceiling** (found 2026-11-28).
   Default profile ≈ 3,331 words (`wc -w`): agents block 2,208, Claude block
   731, agent descriptions 363, model-invocable skill descriptions 50; the
@@ -231,10 +225,12 @@ a handoff keep their details there; items without one carry them inline.
     broad `|` alternative. Harmless; tighten it.
   - **Symlink check before the prompts** (Gard): `telemetryReadSymlink` runs at
     plan time (`bin/cli.js` ~L637), not at write time. Needs same-user write
-    access to `~/.claude`. Option: re-check right before applying.
-  - **lstat errors fail open** (Gard): `telemetryReadSymlink` (`bin/security.js`
-    ~L507) treats any error as "not a link"; only ENOENT is clearly benign.
-    Option: treat other errors as `telemetry-read-symlink`.
+    access to `~/.claude`. Option: re-check right before applying. Same class
+    (Gard, 2026-11-28, confidence medium): only `~/.claude` and the telemetry
+    folder are checked, not whether the home folder or a parent is a link.
+  - **Fail-closed test covers ENOTDIR only** (Gard, P3, confidence low):
+    `telemetryReadSymlink` has no test for EACCES or an error without `code`
+    (hard to produce as root or on Windows).
   - **Exposure sentence omits usage metadata** (Gard): the folder also holds
     tool names, token and size counts, models and timestamps. Optional
     rewording of `TELEMETRY_EXPOSURE` (and the docs that quote it verbatim).

@@ -500,12 +500,14 @@ export const TELEMETRY_READ_ITEM = "~/.claude/canonkit-activity";
 export const TELEMETRY_EXPOSURE = "Every sandboxed command could read your activity history: session IDs, project names, agent names, and the paths of files that gates flagged, including secret-looking files. Older records can also hold the first 80 characters of commands and dispatch descriptions. It holds no prompts and no tool output.";
 
 /**
- * True when `~/.claude` or the telemetry folder is a symbolic link. The sandbox resolves links while
- * normalizeReadPath is lexical, so an entry could expose the link's target. Absent paths are fine.
+ * True when `~/.claude` or the telemetry folder is a symbolic link, or could not be checked. The
+ * sandbox resolves links while normalizeReadPath is lexical, so an entry could expose the link's
+ * target. Only an absent path (ENOENT) is fine; any other lstat error (ENOTDIR, EACCES, ...) fails
+ * closed, so the entry is not offered.
  */
 export async function telemetryReadSymlink(home = os.homedir()) {
   for (const target of [path.join(home, ".claude"), path.join(home, ".claude", "canonkit-activity")]) {
-    try { if ((await lstat(target)).isSymbolicLink()) return true; } catch { /* absent or unreadable: nothing to follow */ }
+    try { if ((await lstat(target)).isSymbolicLink()) return true; } catch (err) { if (err?.code !== "ENOENT") return true; }
   }
   return false;
 }

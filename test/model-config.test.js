@@ -24,6 +24,21 @@ describe("choices files", () => {
     }
   });
 
+  test("an empty, whitespace-only or BOM-only file reads as missing; a BOM before valid JSON parses", async () => {
+    const dir = await tempDir();
+    try {
+      const file = path.join(dir, "models.json");
+      for (const text of ["", "  \n\t", "﻿", "﻿ \n"]) {
+        await writeFile(file, text);
+        assert.deepEqual(await readChoices(file), { version: 1, harnesses: {} }, JSON.stringify(text));
+      }
+      await writeFile(file, `﻿${JSON.stringify({ version: 1, harnesses: { claude: { levels: { deep: { model: "opus" } } } } })}`);
+      assert.deepEqual(await readChoices(file), { version: 1, harnesses: { claude: { levels: { deep: { model: "opus" } } } } });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("round-trips and preserves keys this version does not know", async () => {
     const dir = await tempDir();
     try {

@@ -791,7 +791,7 @@ async function reviewSecurity(ctx, security, { interactive = false, securityAnsw
   const proposed = runtime?.proposed ?? [];
   const telemetry = security.global.telemetryRead;
   if (telemetry?.gaps.includes("telemetry-read-symlink")) {
-    ctx.log(`WARN security telemetry-read: not offered: ~/.claude or ${TELEMETRY_READ_ITEM} is a symbolic link, and the sandbox follows links, so the entry could expose the link target. To let sandboxed commands read it anyway, add this to sandbox.filesystem.allowRead in user Claude settings yourself:`);
+    ctx.log(`WARN security telemetry-read: not offered: ~/.claude or ${TELEMETRY_READ_ITEM} is a symbolic link or could not be checked, and the sandbox follows links, so the entry could expose the link target. To let sandboxed commands read it anyway, add this to sandbox.filesystem.allowRead in user Claude settings yourself:`);
     ctx.log(TELEMETRY_SNIPPET);
   }
   // Every path that cannot ask (Yes, keep current, --recommended, --yes, no terminal, dry run) says how to opt in.

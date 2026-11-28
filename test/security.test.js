@@ -622,3 +622,10 @@ test("telemetryReadSymlink sees a linked ~/.claude or telemetry folder and ignor
   await symlink(elsewhere, path.join(home, ".claude"));
   assert.equal(await telemetryReadSymlink(home), true, "linked ~/.claude");
 });
+
+test("telemetryReadSymlink fails closed on an lstat error other than ENOENT", { skip: process.platform === "win32" && "POSIX ENOTDIR" }, async (t) => {
+  const root = await fixture(t), home = path.join(root, "home");
+  await mkdir(home);
+  await writeFile(path.join(home, ".claude"), "not a folder");
+  assert.equal(await telemetryReadSymlink(home), true, ".claude is a file: lstat of the telemetry folder gives ENOTDIR");
+});
