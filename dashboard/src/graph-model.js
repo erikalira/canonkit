@@ -191,6 +191,22 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
   const kept = new Map(currentNodes.map((node) => [node.id, node]));
   const laneList = graphNodes.filter((node) => node.type === 'lane');
   const graphLanes = new Map(laneList.map((node) => [node.id, node]));
+  // Kept nodes per session, and the generated nodes of each session.
+  const graphIds = new Set(graphNodes.map((n) => n.id));
+  const keptBySession = new Map();
+  for (const node of currentNodes) {
+    if (node.type === 'lane' || !graphIds.has(node.id)) continue;
+    const sid = sessionIdOfNode(node.id) ?? '';
+    keptBySession.set(sid, [...(keptBySession.get(sid) ?? []), node]);
+  }
+  const bounds = (list) => ({
+    minX: Math.min(...list.map((n) => n.position.x)), minY: Math.min(...list.map((n) => n.position.y)),
+    maxX: Math.max(...list.map((n) => n.position.x)), maxY: Math.max(...list.map((n) => n.position.y)),
+  });
+  // A lane that is new while its session's nodes are kept (the single-session graph
+  // becoming a multi-session one) moves those nodes into it as a block, keeping
+  // their arrangement; a kept lane never moves its nodes.
+  const shift = new Map();
   const laneGeometry = new Map();
   for (let i = 0; i < laneList.length; i++) {
     const lane = laneList[i];
@@ -199,12 +215,27 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
     const left = prior?.position.x ?? Math.max(lane.position.x, previous ? previous.left + previous.width + LANE_GAP : lane.position.x);
     const top = prior?.position.y ?? lane.position.y;
     let width = Math.max(Number(lane.style?.width ?? 0), Number(prior?.style?.width ?? 0));
-    const height = Math.max(Number(lane.style?.height ?? 0), Number(prior?.style?.height ?? 0));
+    let height = Math.max(Number(lane.style?.height ?? 0), Number(prior?.style?.height ?? 0));
+    const sid = sessionIdOfNode(lane.id) ?? '';
+    const orphans = prior ? undefined : keptBySession.get(sid);
+    if (orphans?.length) {
+      const generated = bounds(graphNodes.filter((n) => n.type !== 'lane' && (sessionIdOfNode(n.id) ?? '') === sid));
+      const own = bounds(orphans);
+      const dx = left + generated.minX - lane.position.x - own.minX;
+      const dy = top + generated.minY - lane.position.y - own.minY;
+      shift.set(sid, { dx, dy });
+      width = Math.max(width, own.maxX + dx + LANE_NODE_WIDTH + 40 - left);
+      height = Math.max(height, own.maxY + dy + LANE_NODE_HEIGHT + LANE_PAD - top);
+    }
     const next = laneList[i + 1];
     const nextPrior = next && kept.get(next.id);
     if (nextPrior) width = Math.min(width, Math.max(0, nextPrior.position.x - left - LANE_GAP));
     laneGeometry.set(lane.id, { left, top, height, width });
   }
+  const keptPosition = (node) => {
+    const delta = shift.get(sessionIdOfNode(node.id) ?? '');
+    return delta ? { x: node.position.x + delta.dx, y: node.position.y + delta.dy } : node.position;
+  };
   const placed = new Map();
   const laneWidths = new Map();
   const laneHeights = new Map();
@@ -212,7 +243,7 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
     if (node.type === 'lane') continue;
     const sid = sessionIdOfNode(node.id) ?? '';
     const list = placed.get(sid) ?? [];
-    list.push(node.position);
+    list.push(keptPosition(node));
     placed.set(sid, list);
   }
   return graphNodes.map((node) => {
@@ -222,7 +253,7 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
         const geometry = laneGeometry.get(node.id);
         return { ...node, style: { ...node.style, width: geometry?.width, height: geometry?.height }, position: { x: geometry?.left ?? prior.position.x, y: geometry?.top ?? prior.position.y }, selected: prior.selected };
       }
-      return { ...node, position: prior.position, selected: prior.selected };
+      return { ...node, position: keptPosition(prior), selected: prior.selected };
     }
     const position = { ...node.position };
     if (node.type === 'lane') {
@@ -399,16 +430,21 @@ export function stabilizeSnapshot(previous, next) {
   return out;
 }
 
+// Fields React Flow itself adds to nodes and edges; every other field is ours.
+const RUNTIME_KEYS = new Set(['measured', 'selected', 'dragging', 'resizing']);
+
 // Items of `next` that equal their counterpart in `previous` (same id, every field
-// of the new item equal; extra fields React Flow added, such as `measured`, are
-// ignored) are replaced by that previous object, so React skips them. Returns
-// `previous` itself when nothing changed, which makes a state update a no-op.
+// of the new item equal, and no field of ours dropped; fields React Flow added,
+// such as `measured`, are ignored) are replaced by that previous object, so React
+// skips them. A dropped field counts: an ended dispatch's edge loses `className`.
+// Returns `previous` itself when nothing changed, which makes a state update a no-op.
 export function reuseUnchanged(next, previous) {
   const before = new Map(previous.map((item) => [item.id, item]));
   let same = next.length === previous.length;
   const result = next.map((item, i) => {
     const old = before.get(item.id);
-    const equal = old && Object.keys(item).every((k) => sameValue(item[k], old[k]));
+    const equal = old && Object.keys(item).every((k) => sameValue(item[k], old[k])) &&
+      Object.keys(old).every((k) => k in item || RUNTIME_KEYS.has(k) || old[k] === undefined);
     if (!equal || previous[i] !== old) same = false;
     return equal ? old : item;
   });

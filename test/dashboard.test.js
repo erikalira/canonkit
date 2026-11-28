@@ -796,6 +796,35 @@ test("graph model: a new lane is placed after kept lanes when the upper lane was
     "new lane content remains inside the new background horizontally");
 });
 
+test("graph model: a session's kept nodes move into its lane when the single-session graph gains lanes again", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const snapshot = executionSnapshot([
+    { ts: 3, session: "a", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 2, session: "b", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 4, session: "b", event: "agent_start", id: "b2", agent: "pixie" },
+  ], undefined, 10);
+  const byIds = (ids) => ids.map((id) => snapshot.sessions.find((s) => s.sessionId === id));
+  const both = preserveGraphNodes(graphFor(byIds(["a", "b"]), "observed").nodes, []);
+  const alone = preserveGraphNodes(graphFor(byIds(["b"]), "observed").nodes, both);
+  assert.ok(!alone.some((n) => n.type === "lane"), "one session has no lane");
+  const again = preserveGraphNodes(graphFor(byIds(["b", "a"]), "observed").nodes, alone);
+  const sessionOf = (id) => id.split(":")[1];
+  const laneB = again.find((n) => n.id === "lane:b");
+  const laneA = again.find((n) => n.id === "lane:a");
+  assert.ok(laneB.position.x + laneB.style.width + 40 <= laneA.position.x, "lanes do not overlap");
+  for (const lane of [laneA, laneB]) {
+    for (const n of again.filter((n) => n.type === "studio" && sessionOf(n.id) === sessionOf(lane.id))) {
+      assert.ok(n.position.x >= lane.position.x && n.position.x + 280 <= lane.position.x + lane.style.width, `${n.id} stays inside its lane horizontally`);
+      assert.ok(n.position.y >= lane.position.y && n.position.y + 130 <= lane.position.y + lane.style.height, `${n.id} stays inside its lane vertically`);
+    }
+  }
+  const pos = (nodes, id) => nodes.find((n) => n.id === id).position;
+  const before = [pos(alone, "dispatch:b:b1"), pos(alone, "dispatch:b:b2")];
+  const after = [pos(again, "dispatch:b:b1"), pos(again, "dispatch:b:b2")];
+  assert.deepEqual({ x: after[1].x - after[0].x, y: after[1].y - after[0].y }, { x: before[1].x - before[0].x, y: before[1].y - before[0].y },
+    "the session's nodes keep their arrangement as they move");
+});
+
 test("graph model: placement terminates when a lane has less than one node of horizontal room", async () => {
   const { preserveGraphNodes } = await graphModel();
   const lane = { id: "lane:s", type: "lane", position: { x: 0, y: 0 }, style: { width: 200, height: 400 }, data: { title: "Session s" } };
@@ -874,6 +903,20 @@ test("graph model: an active dispatch edge is statically dashed by class, never 
   const done = graphFor(executionSnapshot([{ ts: 1, session: "s1", event: "agent_start", id: "d1", agent: "bob" }, { ts: 2, session: "s1", event: "agent_end", id: "d1" }], undefined, 10).sessions, "observed");
   assert.ok(done.edges.every((e) => !e.className), "an ended dispatch edge has no active class");
   assert.match(await readFile(new URL("../dashboard/src/style.css", import.meta.url), "utf8"), /\.edge-active[^{]*\{[^}]*stroke-dasharray/);
+});
+
+test("graph model: an edge that loses its active class on a later poll is not reused", async () => {
+  const { graphFor, reuseUnchanged } = await graphModel();
+  const start = { ts: 110, session: "s1", event: "agent_start", id: "d1", agent: "bob" };
+  const later = { ts: 120, session: "s1", event: "prompt" }; // an unended dispatch is active only with later activity
+  const running = graphFor(executionSnapshot([start, later], undefined, 150).sessions, "observed").edges;
+  assert.equal(running.find((e) => e.target === "dispatch:s1:d1").className, "edge-active");
+  const live = running.map((e) => ({ ...e, selected: false })); // what React Flow adds
+  const ended = graphFor(executionSnapshot([start, later, { ts: 140, session: "s1", event: "agent_end", id: "d1" }], undefined, 150).sessions, "observed").edges;
+  const next = reuseUnchanged(ended, live);
+  assert.notEqual(next, live);
+  assert.equal(next.find((e) => e.target === "dispatch:s1:d1").className, undefined, "the ended dispatch's edge drops the active class");
+  assert.equal(reuseUnchanged(running, live), live, "a field React Flow added does not count as a change");
 });
 
 test("graph model: unchanged polls keep identities, so nothing re-renders", async () => {
