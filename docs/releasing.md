@@ -85,19 +85,14 @@ Wait for the CI matrix and secret scan; the workflow checks that the tag is on `
 
 ### 4. Confirm the GitHub release
 
-After publish succeeds, the `github-release` job creates the tag's release from `docs/release-notes/X.Y.Z.md`, or from generated notes if that file is missing. Nothing to run by hand; confirm it exists:
-
 ```sh
+# Expected: the release exists. The github-release job creates it after publish succeeds, from docs/release-notes/X.Y.Z.md (generated notes if that file is missing).
 gh release view vX.Y.Z
-```
-
-If the job failed, the package is already on npm: re-run the job, or create the release by hand:
-
-```sh
+# Warning: Only if that job failed; the package is already on npm. Re-run the job, or create the release by hand:
 gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md
 ```
 
-This job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
+The job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
 
 ### How the dashboard reaches the tarball
 
