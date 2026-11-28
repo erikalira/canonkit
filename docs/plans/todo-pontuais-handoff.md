@@ -1,32 +1,9 @@
 # Handoff: fix/todo-pontuais
 
 Branch `fix/todo-pontuais` (published, upstream `origin/fix/todo-pontuais`, not
-main). One item per session with the `backlog-cycle` skill.
-
-## Done
-
-- Shell-for-files rule vs auto mode: commit `e6f76d5` (Virgo implemented,
-  Spencer approved). The behavioral effect is unmeasured; the closed item was
-  removed from `todo.md` with the other done items.
-- Output and labels (LOW, inline, 2026-11-28): `core.hooksPath` through
-  `plain()`; `tildeText()` in `bin/install-report.js` replaces every home
-  occurrence at a path boundary (case-insensitive only for a Windows home); a
-  project-local `claude` now reports `project-local-binary-ignored` (doctor
-  shows it in the generic line); test renamed. Subitems removed from `todo.md`.
-  Committed in `7e94e6c`.
-- Doc (LOW, inline, 2026-11-28): one sentence in `docs/install.md` (~L1206)
-  says `context-tune`, `learning-loop` and `backlog-cycle` install like
-  `orchestrate`; item removed from `todo.md`. The misplaced-heading finding
-  went to `todo.md` (P3).
-
-## Remaining scope, in order (user-approved 2026-11-28)
-
-3. **lstat fail-open + empty JSON**: `telemetryReadSymlink` (`bin/security.js`
-   ~L507) and `bin/model-discovery.js` / `bin/model-config.js`. Investigate
-   first; touches sandbox permissions → Bob implements, Gard reviews.
-4. **WSL git + FIFO reads** (MEDIUM): `sandboxGit` without `toolExec()`;
-   `readFile`/`readFileSync` skipping `readRegularSync` in `tool add/remove`
-   and doctor. Bob implements, Gard reviews after the last edit.
+main). All four approved items are done (last: WSL git + FIFO reads,
+2026-11-28, Bob implemented, Gard approved after the last edit); their
+findings are in `todo.md`. This file now only keeps release text.
 
 ## Held for the next release (no release in progress; never invent a version)
 
@@ -43,10 +20,14 @@ Spencer's proposed release-notes entry, for `docs/release-notes/<next>.md`:
 Also for the next release notes (fixes): `tool add graphify` filters control
 characters from `core.hooksPath` in its refusal; the install summary shows `~`
 for every home-folder path in a note; `doctor` reports a `claude` found inside
-the project as `project-local-binary-ignored` instead of blaming a Windows copy.
+the project as `project-local-binary-ignored` instead of blaming a Windows copy;
+install no longer offers the activity-history read when `~/.claude` or that
+folder cannot be checked (not only when it is a link); an empty, whitespace-only
+or BOM-prefixed `models.json` no longer aborts with "not valid JSON";
+`tool add`, `tool remove` and `doctor` refuse a FIFO (or other non-regular
+file) as `AGENTS.md` or as a Codex/OpenCode hook file instead of hanging; on
+WSL the git calls behind `tool add` no longer pick a Windows `git` from PATH.
 
-## Notes
+## Closing condition
 
-- `npm run validate` warns that Bash syntax validation was not run: the sandbox
-  denies `registry.npmjs.org`. Not a failure.
-- Delete this handoff when the four items above are done or moved.
+Delete this file once the next release's notes include the text above.

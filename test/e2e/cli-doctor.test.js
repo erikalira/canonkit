@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { rm, mkdir, writeFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { REPO } from "../helpers/cli-harness.js";
+import { REPO, CLI, isolatedEnv } from "../helpers/cli-harness.js";
 import { scratch, run, opencodeOnPath, snapshot, read, runIn, claudeDir, settingsOf, commandsIn, ours, FORWARDER, legacyEntry } from "../helpers/cli-fixtures.js";
 import { applyBlock, readAgents, replaceProjectBlock, readProjectBlock, copilotAgent } from "../../bin/cli.js";
 
@@ -187,6 +187,18 @@ describe("doctor", () => {
       const { out, status } = doctor({ home, cwd: project });
       assert.equal(status, 1);
       assert.match(codexLine(out, "files"), /^FAIL .*canonkit-hook\.js.*install --codex/);
+    });
+
+    test("a FIFO where a hook file belongs counts as missing, without hanging", { skip: process.platform === "win32" }, async (t) => {
+      const { home, project } = await ready("doctor-codex-fifo");
+      const f = codexDir(home, "canonkit", "canonkit-hook.js");
+      await rm(f);
+      if (spawnSync("mkfifo", [f]).status !== 0) return t.skip("mkfifo is not available");
+      // Not runIn: a regression blocks forever, so this child has a timeout.
+      const r = spawnSync(process.execPath, [CLI, "doctor", "--verbose"], { cwd: project, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL", env: isolatedEnv(home, { CLAUDE_PROJECT_DIR: undefined }) });
+      assert.equal(r.error, undefined, `doctor did not terminate: ${r.error?.message}`);
+      assert.equal(r.status, 1);
+      assert.match(codexLine(r.stdout, "files"), /^FAIL .*missing.*canonkit-hook\.js/);
     });
 
     test("a file that differs from the package's FAILs", async () => {

@@ -130,15 +130,22 @@ a handoff keep their details there; items without one carry them inline.
   (fsmonitor/`GIT_*` in `tool add` git calls, FIFO reads in `tool add` and the
   legacy-hook migration, nested write roots). Close the issue once these are
   done or moved here for good. Still open:
-  - **`sandboxGit` without the WSL filter:** `resolveBin("git", { cwd })` in
-    `bin/cli.js` (`sandboxGit`) passes no `windowsRoots`, so on WSL it may pick
-    an extensionless Windows `git` and run it through interop. Fix: spread
-    `toolExec()`. Confidence: suspected reachability, confirmed from the code.
-  - **FIFO reads outside the 3.2.1 scope:** `readFile` of `AGENTS.md` in
-    `tool add` (dry run and after setup) and `tool remove`, and the doctor's
-    Codex/OpenCode hook `readFileSync` checks, still skip `readRegularSync`.
-    Confidence: confirmed from the code; the doctor reads are under the user's
-    own folders.
+  - **FIFO reads in install and `tool list`** (found 2026-11-28, Bob): the
+    `AGENTS.md` reads in `rebuildProjectBlock` and `readInstallCatalog`
+    (`bin/cli.js`, the latter also reached by `tool list`) still use
+    `existsSync` + `readFile`, so a FIFO there hangs. `tool add/remove` and
+    doctor were fixed on `fix/todo-pontuais`. Confidence: medium, not run.
+  - **WSL "git is not on PATH" message** (Gard, P3, 2026-11-28):
+    `gitIgnoreSandboxFiles` says "git is not on PATH (or only inside the
+    project)" also when only a Windows git exists, now that `sandboxGit` skips
+    it. Consider "or only as a Windows copy". Confidence: high.
+  - **No seam to test `sandboxGit`'s WSL filter** (Bob/Gard, 2026-11-28):
+    `readWindowsRoots()` reads `/proc/self/mounts` and the CLI never injects
+    it; add a seam if that code is touched again.
+  - **Dangling `AGENTS.md` symlink** (Gard, 2026-11-28): read as ENOENT, so
+    `tool add/remove` treat it as empty and write through `writeAtomic`;
+    unchanged behavior, `writeAtomic` on a dangling link not verified.
+    Confidence: medium.
   - **`plain()` keeps bidi and line separators:** U+202A–202E, U+2066–2069,
     U+2028/2029 pass through into reported paths. Cosmetic.
   - **`windowsOnlyHits` not injectable** in `collectEnvironment`, unlike

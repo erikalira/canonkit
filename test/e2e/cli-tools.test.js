@@ -1093,6 +1093,22 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.deepEqual(await s.calls(), [["graphify", "--version"]]);
   });
 
+  test("a FIFO AGENTS.md is refused without hanging by tool add, add --dry-run and remove", { skip: WIN || !gitDir, timeout: 90000 }, async (t) => {
+    for (const args of [["add", "graphify", "--yes"], ["add", "graphify", "--dry-run"], ["remove", "graphify"]]) {
+      const s = await setup(`fifo-agents-${args.join("-").replace(/\W+/g, "")}`, { git: true });
+      const agents = path.join(s.project, "AGENTS.md");
+      if (!mkfifo(agents)) return t.skip("mkfifo is not available");
+      const r = timedTool(s, args);
+      assert.equal(r.error, undefined, `${args.join(" ")} did not terminate: ${r.error?.message}`);
+      assert.equal(r.status, 1, r.stdout + r.stderr);
+      assert.match(r.stderr, /AGENTS\.md is not a regular file; canonkit did not touch it\./);
+      assert.doesNotMatch(r.stderr, /\n\s+at /, "no stack trace");
+      assert.equal((await lstat(agents)).isFIFO(), true);
+      assert.deepEqual(await s.calls(), []);
+      assert.equal(existsSync(path.join(s.project, ".gitignore")), false, "nothing written");
+    }
+  });
+
   test("a symlinked directory below a real write root is refused naming it, with nothing run", { skip: WIN }, async () => {
     const s = await setup("h-nested-link");
     await mkdir(path.join(s.project, ".claude"));

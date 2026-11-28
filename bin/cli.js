@@ -2943,7 +2943,7 @@ async function doctor({ verbose = false } = {}) {
   // not text: the files are copies, and any difference is not this package's code.
   const codexDir = codexHooksDir();
   if (existsSync(codexDir)) {
-    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const bytes = (p) => { try { return readRegularSync(p); } catch { return null; } };
     const cxMissing = [], cxStale = [];
     for (const f of HOOK_FILES.codex) {
       const b = bytes(path.join(codexDir, f));
@@ -2977,7 +2977,7 @@ async function doctor({ verbose = false } = {}) {
   const ocHooks = opencodeHooksDir();
   const ocPlugin = opencodePluginPath();
   if (existsSync(ocHooks) || existsSync(ocPlugin)) {
-    const bytes = (p) => { try { return readFileSync(p); } catch { return null; } };
+    const bytes = (p) => { try { return readRegularSync(p); } catch { return null; } };
     const files = [
       ...HOOK_FILES.opencode.map((f) => [`canonkit/${f}`, path.join(ocHooks, f), path.join(HOOKS_DIR, f)]),
       [OPENCODE_PLUGIN.to, ocPlugin, path.join(HOOKS_DIR, OPENCODE_PLUGIN.from)],
@@ -3335,9 +3335,22 @@ ${entries}
 Managed by canonkit: \`npx canonkit tool add|remove <name>\` changes this list.`;
 }
 
+// The project's AGENTS.md, "" when absent. A FIFO or directory there is refused
+// (code ENOTREG) rather than read: existsSync is true for both and a read of a
+// FIFO blocks forever.
+function readProjectAgents(project) {
+  try {
+    return readRegularText(path.join(project, "AGENTS.md"));
+  } catch (err) {
+    if (err.code === "ENOENT") return "";
+    const why = err.code === "ENOTREG" ? "AGENTS.md is not a regular file" : `AGENTS.md is not a regular file or cannot be read (${err.code ?? "unknown"})`;
+    throw Object.assign(new Error(`${why}; canonkit did not touch it.`), { code: "ENOTREG" });
+  }
+}
+
 async function writeToolsBlock(ctx, project, tools, active) {
   const target = path.join(project, "AGENTS.md");
-  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
+  const raw = readProjectAgents(project);
   const { text, had } = replaceProjectBlock(raw, PROJECT_TOOLS, active.size ? toolsBlockBody(tools, active) : null);
   if (text === raw) return ctx.log(active.size || !had ? "already current: AGENTS.md" : "No tools block in AGENTS.md");
   await ctx.writeAtomic(target, text);
@@ -3741,6 +3754,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
   // Before setup runs: a .gitignore that cannot be read is found now, not after the tool wrote.
   try {
     gitignorePlan(project, tool);
+    readProjectAgents(project);
   } catch (err) {
     if (err.code !== "ENOTREG") throw err;
     console.error(`${err.message} Nothing was run.`);
@@ -3833,8 +3847,7 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
   }
 
   if (ctx.dryRun) {
-    const raw = existsSync(path.join(project, "AGENTS.md")) ? await readFile(path.join(project, "AGENTS.md"), "utf8") : "";
-    const active = activeTools(raw, tools);
+    const active = activeTools(readProjectAgents(project), tools);
     const ignore = gitignorePlan(project, tool);
     if (ignore?.own) log(".gitignore already has its own rules for them; would leave it as is");
     else if (ignore) log(ignore.text === ignore.raw ? ".gitignore block already current" : `would ${ignore.had ? "update" : "add"} the ${tool.name} block in .gitignore`);
@@ -3879,11 +3892,16 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
   await writeGitignore(ctx, project, tool);
 
   // Read again: the setup above may have rewritten AGENTS.md.
-  const target = path.join(project, "AGENTS.md");
-  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
-  const active = activeTools(raw, tools);
-  active.add(name);
-  await writeToolsBlock(ctx, project, tools, active);
+  let active;
+  try {
+    active = activeTools(readProjectAgents(project), tools);
+    active.add(name);
+    await writeToolsBlock(ctx, project, tools, active);
+  } catch (err) {
+    if (err.code !== "ENOTREG") throw err;
+    console.error(`${err.message} The setup above already ran.`);
+    return 1;
+  }
   if (compactInstall) {
     const graph = /\[graphify watch\] Rebuilt: ([^\r\n]+)/.exec(compactOutput);
     const openspecCounts = /(\d+ skills and \d+ commands in [^\r\n]+)/.exec(compactOutput);
@@ -3913,16 +3931,20 @@ async function toolAdd(ctx, name, { yes = false, withGitHooks = false, harness: 
 async function toolRemove(ctx, name) {
   const { tools, tool } = await getTool(name);
   const project = toolProject();
-  const target = path.join(project, "AGENTS.md");
-  const raw = existsSync(target) ? await readFile(target, "utf8") : "";
-  const active = activeTools(raw, tools);
-
-  if (!active.has(name)) {
-    ctx.log(`Not active in this project: ${name}`);
-    return 0;
+  let active;
+  try {
+    active = activeTools(readProjectAgents(project), tools);
+    if (!active.has(name)) {
+      ctx.log(`Not active in this project: ${name}`);
+      return 0;
+    }
+    active.delete(name);
+    await writeToolsBlock(ctx, project, tools, active);
+  } catch (err) {
+    if (err.code !== "ENOTREG") throw err;
+    console.error(`${err.message} Nothing was changed.`);
+    return 1;
   }
-  active.delete(name);
-  await writeToolsBlock(ctx, project, tools, active);
 
   // The harnesses chosen are not recorded, so every one's files are listed.
   ctx.log(tool.harness ? `Files ${tool.name} may have written (depending on the harnesses chosen) are left as they are:` : `Files ${tool.name} wrote are left as they are:`);
@@ -4007,11 +4029,12 @@ const SANDBOX_PLACEHOLDERS = [
  * fsmonitor stays off and the environment stays filtered.
  */
 function sandboxGit(project, { keepHooksPath = false } = {}) {
-  const git = resolveBin("git", { cwd: project });
+  const exec = toolExec();
+  const git = resolveBin("git", { cwd: project, ...exec });
   if (!git) return null;
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith("GIT_")));
   const config = ["-c", "core.fsmonitor=false", ...(keepHooksPath ? [] : ["-c", "core.hooksPath=/dev/null"])];
-  return (args) => runBin(git, [...config, ...args], { cwd: project, capture: true, timeout: 30 * 1000, env });
+  return (args) => runBin(git, [...config, ...args], { cwd: project, capture: true, timeout: 30 * 1000, env, ...exec });
 }
 
 /**
