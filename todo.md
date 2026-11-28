@@ -115,12 +115,8 @@ a handoff keep their details there; items without one carry them inline.
   silently. Fix: a check in `scripts/validate-python.py`. Confidence: medium;
   impact low.
 
-- [ ] **`tool add` leftovers from the issue #36 review** (Gard, 2026-11-14).
-  Both predate 3.2.1 and neither blocks it.
-  - **Raw `core.hooksPath` in output:** `gitHooksPreflight` in `bin/cli.js`
-    prints the repository's `core.hooksPath` unfiltered in "core.hooksPath is
-    set (…)"; a hostile value could carry terminal escape sequences. Fix: pass
-    it through `plain()`. Confidence: medium.
+- [ ] **`tool add` leftover from the issue #36 review** (Gard, 2026-11-14).
+  Predates 3.2.1 and does not block it.
   - **Top-level file targets not walked:** `unsafeWriteRoot` only checks touch
     paths that contain a `/`, so a literal top-level target (e.g. `AGENTS.md`)
     that is a symlink is not refused. Today `AGENTS.md` is written through on
@@ -140,20 +136,10 @@ a handoff keep their details there; items without one carry them inline.
     Codex/OpenCode hook `readFileSync` checks, still skip `readRegularSync`.
     Confidence: confirmed from the code; the doctor reads are under the user's
     own folders.
-  - **Misleading label for a project-local `claude`:** `collectEnvironment` in
-    `bin/security.js` sets it to null, so a Windows copy on PATH yields
-    `windows-binary-ignored` although the project-local copy is the cause. Same
-    result (version unknown); only the message is wrong.
   - **`plain()` keeps bidi and line separators:** U+202A–202E, U+2066–2069,
     U+2028/2029 pass through into reported paths. Cosmetic.
   - **`windowsOnlyHits` not injectable** in `collectEnvironment`, unlike
     `resolve` and `version`. Harmless while the default roots are `[]`.
-  - **No `~` in the install summary's Windows-copy warning**
-    (`bin/install-report.js`); the generic branch replaces only the first
-    occurrence, case-sensitively. Cosmetic.
-  - **Misleading test name:** "an injected run bypasses the Windows filter
-    entirely" in `test/model-discovery.test.js` only shows the injected run is
-    used.
 - [ ] **Empty-file rule in other JSON readers**: `bin/model-discovery.js`
   (~L299) and `bin/model-config.js` (L141) parse JSON files and may not apply
   the 3.1.1 rule that an empty, whitespace-only or BOM-only file reads as `{}`
