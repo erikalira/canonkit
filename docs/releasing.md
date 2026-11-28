@@ -83,14 +83,16 @@ npm pack --dry-run --ignore-scripts
 
 Wait for the CI matrix and secret scan; the workflow checks that the tag is on `main` and matches `package.json`, but this check runs from the tagged commit's own workflow copy and only catches mistakes. From a clean checkout of the exact tagged commit, review the command's output before approving the `npm` deployment on the Actions run; the publish job's package file list is logged only after approval and cannot serve as the pre-approval review. The tarball ships the compiled dashboard, which is gitignored, so the listing must include `dashboard/dist/index.html`; the build step above produces it locally (`--ignore-scripts` skips `prepack`).
 
-### 4. Create the GitHub release
+### 4. Confirm the GitHub release
 
 ```sh
-# Warning: If this job fails, the package is already on npm.
-gh release create vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md
+# Expected: the release exists. The github-release job creates it after publish succeeds, from docs/release-notes/X.Y.Z.md (generated notes if that file is missing).
+gh release view vX.Y.Z
+# Warning: Only if that job failed; the package is already on npm. Re-run the job, or create the release by hand:
+gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file docs/release-notes/X.Y.Z.md
 ```
 
-After publish succeeds, the `github-release` job creates the tag's release using `docs/release-notes/X.Y.Z.md`, or generated notes if that file is missing; if the job fails, re-run it or run the command above by hand. This job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
+The job needs `contents: write`, which the publish job must not hold; the run page summary shows the npm link.
 
 ### How the dashboard reaches the tarball
 
