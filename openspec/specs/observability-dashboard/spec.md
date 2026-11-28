@@ -126,6 +126,14 @@ A new snapshot SHALL NOT reset the user's selection of sessions, moved nodes, se
 - **WHEN** a snapshot adds an event to one selected session while the user has moved nodes and selected one in another lane
 - **THEN** the new node takes a free position in its own lane, and the moved nodes, selected node and inspector stay as they were
 
+#### Scenario: Graph goes from one session to several again
+- **WHEN** the selection drops to one session and a second session is added again later
+- **THEN** each session's nodes, including ones the user moved, appear inside that session's own lane with their arrangement kept, and no lane overlaps another
+
+#### Scenario: Dispatch ends between polls
+- **WHEN** a snapshot records the end of a dispatch that was shown as active
+- **THEN** its node and its edge stop showing the active state on that poll
+
 #### Scenario: Session leaves the window while manually selected
 - **WHEN** a manually selected session's latest event becomes older than 15 minutes
 - **THEN** it stays in the graph and its card stays in the panel, marked as outside the window
