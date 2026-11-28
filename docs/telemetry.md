@@ -27,9 +27,10 @@ Then open `http://127.0.0.1:4317`. The Activity overview groups dispatches by
 and duration.
 
 The main page is the **Execution Graph**. It shows observed Claude Code
-dispatches and gate events for a selected session, a detail inspector, and a
-filterable timeline. The separate Activity overview keeps the existing metrics
-and context-contributor views. From a source checkout, run
+dispatches and gate events for the selected sessions, each in its own lane, with
+a detail inspector and a filterable timeline merged across those sessions. The
+separate Activity overview keeps the existing metrics and context-contributor
+views. From a source checkout, run
 `npm run dashboard:build` before starting the server; published packages contain
 the compiled assets. The frontend toolchain is a development dependency and the
 installed dashboard runs with Node alone.
@@ -284,6 +285,24 @@ or failure is not inferred from stderr. Tool failures that only produce
 `PostToolUseFailure` are outside this phase.
 
 ### In the dashboard
+
+The **session overview** panel on the Execution graph page shows one card for
+every session with **recent activity**: at least one observation within 15
+minutes of the snapshot's `generatedAt` (`recentActivity` in `execution.json`).
+A card lists the agents with an observed active dispatch, the dispatches without
+an end signal, and the last event with its age. Recent activity does not mean a
+session is running: the runtime emits no session-end signal, and a quiet session
+can still be open. Sessions outside the window leave the panel but stay in the
+Add session selector. Project and branch show as unavailable, since the hooks do
+not record them.
+
+You choose which sessions the graph shows. Each card is a toggle; by default the
+graph shows every session with recent activity, and "Show all recent" returns to
+that after a manual choice. Each shown session has its own lane, and the timeline
+merges their events in time order, labelled by session. Nothing is inferred
+between sessions: no edge or order connects one lane to another. With several
+sessions, prompts, resumes and stops without a dispatch link collapse into one
+"Runtime signals" node per session; the timeline still lists each one.
 
 The **Context contributors** section has a "retained history" window (all
 sessions, subagents grouped by agent type) and one per session. In each: tool

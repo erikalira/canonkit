@@ -142,6 +142,75 @@ test("sessions expose lastObservedAt, which the dashboard uses to pick its defau
   assert.deepEqual(sessions.map((s) => [s.sessionId, s.lastObservedAt]), [["old", 9], ["new", 2]]);
 });
 
+const { RECENT_ACTIVITY_WINDOW_MS } = createRequire(import.meta.url)(fileURLToPath(new URL("../dashboard/execution-model.js", import.meta.url)));
+const NOW = 10_000_000;
+const recent = (events, limit) => executionSnapshot(events, limit, NOW).recentActivity;
+
+test("recent activity: inside, exactly at, and outside the window; outside stays in sessions[]", () => {
+  const W = RECENT_ACTIVITY_WINDOW_MS;
+  assert.equal(W, 15 * 60 * 1000);
+  const snap = executionSnapshot([
+    { ts: NOW - 1000, session: "in", event: "prompt" },
+    { ts: NOW - W, session: "edge", event: "prompt" },
+    { ts: NOW - W - 1, session: "out", event: "prompt" },
+  ], undefined, NOW);
+  assert.equal(snap.generatedAt, NOW);
+  assert.equal(snap.recentActivity.windowMs, W);
+  assert.deepEqual(snap.recentActivity.sessions.map((s) => s.sessionId), ["in", "edge"]);
+  assert.deepEqual(snap.sessions.map((s) => s.sessionId).sort(), ["edge", "in", "out"]);
+  const entry = snap.recentActivity.sessions[0];
+  assert.deepEqual([entry.lastObservedAt, entry.lastObservedType, entry.projectId, entry.branch], [NOW - 1000, "prompt", null, null]);
+});
+
+test("recent activity: unended dispatch with no later activity is unended, not working", () => {
+  const [s] = recent([{ ts: NOW - 5000, session: "s", event: "agent_start", id: "d1", agent: "bob" }]).sessions;
+  assert.deepEqual(s.workingAgents, []);
+  assert.equal(s.unendedDispatches, 1);
+});
+
+test("recent activity: active dispatch lists its agent, or null when the type is not observed", () => {
+  const [s] = recent([
+    { ts: NOW - 9000, session: "s", event: "agent_start", id: "d1", agent: "bob" },
+    { ts: NOW - 8000, session: "s", event: "agent_launch", id: "d2" },
+    { ts: NOW - 1000, session: "s", event: "prompt" },
+  ]).sessions;
+  assert.deepEqual(s.workingAgents, [{ executionId: "d1", agent: "bob" }, { executionId: "d2", agent: null }]);
+  assert.equal(s.unendedDispatches, 0);
+});
+
+test("recent activity: lastObservedType comes from the full list, beyond the observation cap", () => {
+  const events = [];
+  for (let i = 0; i < 5; i++) events.push({ ts: NOW - 10000 + i, session: "s", event: "prompt" });
+  events.push({ ts: NOW - 100, session: "s", event: "agent_resume" });
+  const snap = executionSnapshot(events, 2, NOW);
+  assert.equal(snap.sessions[0].observations.length, 2);
+  assert.equal(snap.recentActivity.sessions[0].lastObservedType, "agent_resume");
+});
+
+test("recent activity: entries are ordered by lastObservedAt descending", () => {
+  const ids = recent([
+    { ts: NOW - 3000, session: "a", event: "prompt" },
+    { ts: NOW - 1000, session: "b", event: "prompt" },
+    { ts: NOW - 2000, session: "c", event: "prompt" },
+  ]).sessions.map((s) => s.sessionId);
+  assert.deepEqual(ids, ["b", "c", "a"]);
+});
+
+test("snapshot keeps schemaVersion 1 and existing fields unchanged by the recentActivity addition", () => {
+  const events = [
+    { ts: 1000, session: "s", event: "prompt" },
+    { ts: 2000, session: "s", event: "agent_start", id: "d1", agent_id: "a1", agent: "bob" },
+    { ts: 3000, session: "s", event: "agent_end", id: "d1", agent_id: "a1", agent: "bob", duration_ms: 500 },
+  ];
+  const { recentActivity, ...rest } = executionSnapshot(events, undefined, 5000);
+  assert.equal(rest.schemaVersion, 1);
+  assert.deepEqual(Object.keys(rest).sort(), ["agents", "generatedAt", "observations", "schemaVersion", "sessions"]);
+  assert.deepEqual(Object.keys(rest.sessions[0]).sort(), ["branch", "dispatches", "lastObservedAt", "observationCount", "observations", "omittedObservations", "projectId", "runtime", "sessionId", "telemetry", "worktreeId"]);
+  assert.deepEqual(rest.agents.map((a) => [a.agentId, a.activity, a.updatedAt]), [["a1", "finished", 3000]]);
+  assert.equal(rest.sessions[0].dispatches[0].executionState, "completed");
+  assert.ok(recentActivity);
+});
+
 test("dashboard request validation rejects non-local hosts and cross-origin requests", () => {
   assert.equal(localHost("127.0.0.1:4317"), true);
   assert.equal(localHost("localhost:4317"), true);
@@ -595,4 +664,287 @@ test("token tables separate input, output, cache and calls, and label the window
   ctx.evs = [{ ts: 5, event: "prompt", project: "p" }];
   runInNewContext("render(evs)", ctx);
   assert.match(el("window-recent").textContent, /last 1 timeline lines/);
+});
+
+// Graph, selection and timeline logic is plain ESM, imported without a build.
+const graphModel = () => import(new URL("../dashboard/src/graph-model.js", import.meta.url));
+const twoSessions = () => executionSnapshot([
+  { ts: 100, session: "sa", event: "prompt" },
+  { ts: 110, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+  { ts: 120, session: "sa", event: "gate", kind: "high-risk-surface", files: 1, rules: ["auth"] },
+  { ts: 130, session: "sa", event: "agent_stop", agent_id: "zz" },
+  { ts: 105, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+  { ts: 110, session: "sb", event: "prompt" },
+  { ts: 140, session: "sb", event: "agent_end", id: "b1", duration_ms: 5 },
+], undefined, 150);
+
+test("graph model: a single session keeps its node IDs, positions and per-signal nodes", async () => {
+  const { graphFor } = await graphModel();
+  const snap = executionSnapshot([
+    { ts: 1, session: "s1", event: "agent_start", id: "d1", agent: "bob" },
+  ], undefined, 10);
+  const { nodes, edges } = graphFor(snap.sessions, "observed");
+  assert.deepEqual(nodes.map((n) => [n.id, n.position.x, n.position.y]), [["session:s1", 40, 32], ["dispatch:s1:d1", 360, 32]]);
+  assert.deepEqual(edges.map((e) => e.id), ["session-dispatch-s1-0"]);
+  assert.ok(nodes.every((n) => n.type === "studio" && n.ariaLabel));
+  const withSignals = graphFor(executionSnapshot([{ ts: 1, session: "s1", event: "prompt" }, { ts: 2, session: "s1", event: "prompt" }], undefined, 10).sessions, "observed");
+  assert.equal(withSignals.nodes.filter((n) => n.data.kind === "observation").length, 2, "one node per signal with one session");
+  assert.deepEqual(graphFor([], "observed"), { nodes: [], edges: [] });
+});
+
+test("graph model: several sessions get unique IDs, separate lanes and no cross-session edge", async () => {
+  const { graphFor } = await graphModel();
+  const { sessions } = twoSessions();
+  const { nodes, edges } = graphFor(sessions, "observed");
+  const ids = nodes.map((n) => n.id);
+  assert.equal(new Set(ids).size, ids.length, "node IDs are unique");
+  assert.equal(new Set(edges.map((e) => e.id)).size, edges.length, "edge IDs are unique");
+  const sessionOf = (id) => id.split(":")[1];
+  for (const e of edges) assert.equal(sessionOf(e.source), sessionOf(e.target), "no edge joins two sessions");
+  const lanes = nodes.filter((n) => n.type === "lane");
+  assert.equal(lanes.length, 2);
+  assert.ok(lanes.every((l) => l.selectable === false && l.draggable === false && l.focusable === false));
+  lanes.sort((a, b) => a.position.x - b.position.x);
+  assert.deepEqual(lanes.map((l) => l.position.y), [0, 0], "lanes share one row");
+  assert.ok(lanes[0].position.x + lanes[0].style.width + 40 <= lanes[1].position.x, "lanes do not overlap horizontally and keep the gap");
+  assert.deepEqual(lanes.map((l) => l.id), ["lane:sa", "lane:sb"], "lanes keep the order of the sessions given");
+  for (const lane of lanes) {
+    const own = nodes.filter((n) => n.type === "studio" && sessionOf(n.id) === sessionOf(lane.id));
+    assert.ok(own.every((n) => n.position.y >= lane.position.y && n.position.y + 130 <= lane.position.y + lane.style.height), "nodes stay in their lane vertically");
+    assert.ok(own.every((n) => n.position.x >= lane.position.x && n.position.x + 280 <= lane.position.x + lane.style.width), "nodes stay in their lane horizontally");
+  }
+  const summaries = nodes.filter((n) => n.id.startsWith("signals:"));
+  assert.deepEqual(summaries.map((n) => n.id).sort(), ["signals:sa", "signals:sb"]);
+  assert.match(summaries.find((n) => n.id === "signals:sa").data.subtitle, /^2 uncorrelated/);
+  assert.ok(!nodes.some((n) => n.id.startsWith("observation:")), "no per-signal nodes with several sessions");
+  assert.equal(graphFor(sessions.slice(0, 1), "observed").nodes.some((n) => n.id.startsWith("signals:") || n.type === "lane"), false);
+});
+
+test("graph model: new nodes stay in their lane when a neighbouring lane grows during polling", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const initial = executionSnapshot([
+    { ts: 2, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 1, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+  ], undefined, 10);
+  const byLane = (sessions) => [...sessions].sort((a, b) => ["sa", "sb"].indexOf(a.sessionId) - ["sa", "sb"].indexOf(b.sessionId));
+  const previous = graphFor(byLane(initial.sessions), "observed");
+  const b1 = previous.nodes.find((n) => n.id === "dispatch:sb:b1");
+  const movedPosition = { x: b1.position.x - 40, y: b1.position.y + 40 };
+  const keptNodes = previous.nodes.map((n) => n.id === "dispatch:sb:b1"
+    ? { ...n, position: movedPosition, selected: true }
+    : n);
+
+  // The first lane gains dispatches and grows taller. Polling must keep the
+  // second lane where it is and anchor its new node inside it.
+  const next = executionSnapshot([
+    { ts: 1, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 3, session: "sa", event: "agent_start", id: "a2", agent: "bob" },
+    { ts: 4, session: "sa", event: "agent_start", id: "a3", agent: "bob" },
+    { ts: 5, session: "sa", event: "agent_start", id: "a4", agent: "bob" },
+    { ts: 2, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 6, session: "sb", event: "agent_start", id: "b2", agent: "quinn" },
+  ], undefined, 10);
+  const currentGraph = graphFor(byLane(next.sessions), "observed");
+  const nodes = preserveGraphNodes(currentGraph.nodes, keptNodes);
+  const firstLane = nodes.find((n) => n.id === "lane:sa");
+  const secondLane = nodes.find((n) => n.id === "lane:sb");
+  const newNode = nodes.find((n) => n.id === "dispatch:sb:b2");
+  assert.ok(firstLane && secondLane && newNode);
+  assert.ok(firstLane.position.x + firstLane.style.width + 40 <= secondLane.position.x,
+    "lanes do not overlap horizontally when one grows taller");
+  assert.ok(firstLane.style.height > previous.nodes.find((n) => n.id === "lane:sa").style.height, "the lane that gained nodes grew downward");
+  for (const id of ["dispatch:sa:a2", "dispatch:sa:a3", "dispatch:sa:a4"]) {
+    const upperNode = nodes.find((n) => n.id === id);
+    assert.ok(upperNode.position.y >= firstLane.position.y && upperNode.position.y + 130 <= firstLane.position.y + firstLane.style.height,
+      `${id} remains within its own lane vertically`);
+    assert.ok(upperNode.position.x >= firstLane.position.x && upperNode.position.x + 280 <= firstLane.position.x + firstLane.style.width, `${id} remains within lane width`);
+  }
+  assert.ok(newNode.position.y >= secondLane.position.y, "new node starts at or below its own lane top");
+  assert.ok(newNode.position.y + 130 <= secondLane.position.y + secondLane.style.height,
+    "new node remains within its own lane, which grew to hold it");
+  assert.ok(newNode.position.x >= secondLane.position.x && newNode.position.x + 280 <= secondLane.position.x + secondLane.style.width,
+    "new node remains within the lane width");
+  const movedNode = nodes.find((n) => n.id === "dispatch:sb:b1");
+  assert.ok(Math.abs(newNode.position.x - movedNode.position.x) >= 300 || Math.abs(newNode.position.y - movedNode.position.y) >= 140,
+    "the new node does not overlap the moved node in its own lane");
+  assert.deepEqual(secondLane.position, previous.nodes.find((n) => n.id === "lane:sb").position, "polling keeps the lane position");
+  assert.deepEqual(nodes.find((n) => n.id === "dispatch:sb:b1").position, movedPosition, "polling keeps a moved node in place");
+  assert.equal(nodes.find((n) => n.id === "dispatch:sb:b1").selected, true, "polling keeps the selected node");
+});
+
+test("graph model: a new lane is placed after kept lanes when the upper lane was removed", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const snapshot = executionSnapshot([
+    { ts: 3, session: "a", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 2, session: "b", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 1, session: "c", event: "agent_start", id: "c1", agent: "pixie" },
+  ], undefined, 10);
+  const byIds = (ids) => ids.map((id) => snapshot.sessions.find((s) => s.sessionId === id));
+  const previous = graphFor(byIds(["a", "b"]), "observed");
+  const afterSelectionChange = graphFor(byIds(["b", "c"]), "observed");
+  const nodes = preserveGraphNodes(afterSelectionChange.nodes, previous.nodes);
+  const keptLane = nodes.find((n) => n.id === "lane:b");
+  const addedLane = nodes.find((n) => n.id === "lane:c");
+  const addedNode = nodes.find((n) => n.id === "dispatch:c:c1");
+  assert.ok(keptLane && addedLane && addedNode);
+  assert.ok(keptLane.position.x + keptLane.style.width + 40 <= addedLane.position.x,
+    "the appended lane starts after the kept lane and its gap");
+  assert.equal(keptLane.position.x, previous.nodes.find((n) => n.id === "lane:b").position.x, "the kept lane does not move left when the first lane is removed");
+  assert.ok(addedNode.position.y >= addedLane.position.y && addedNode.position.y + 130 <= addedLane.position.y + addedLane.style.height,
+    "new lane content remains inside the new background vertically");
+  assert.ok(addedNode.position.x >= addedLane.position.x && addedNode.position.x + 280 <= addedLane.position.x + addedLane.style.width,
+    "new lane content remains inside the new background horizontally");
+});
+
+test("graph model: a session's kept nodes move into its lane when the single-session graph gains lanes again", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const snapshot = executionSnapshot([
+    { ts: 3, session: "a", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 2, session: "b", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 4, session: "b", event: "agent_start", id: "b2", agent: "pixie" },
+  ], undefined, 10);
+  const byIds = (ids) => ids.map((id) => snapshot.sessions.find((s) => s.sessionId === id));
+  const both = preserveGraphNodes(graphFor(byIds(["a", "b"]), "observed").nodes, []);
+  const alone = preserveGraphNodes(graphFor(byIds(["b"]), "observed").nodes, both);
+  assert.ok(!alone.some((n) => n.type === "lane"), "one session has no lane");
+  const again = preserveGraphNodes(graphFor(byIds(["b", "a"]), "observed").nodes, alone);
+  const sessionOf = (id) => id.split(":")[1];
+  const laneB = again.find((n) => n.id === "lane:b");
+  const laneA = again.find((n) => n.id === "lane:a");
+  assert.ok(laneB.position.x + laneB.style.width + 40 <= laneA.position.x, "lanes do not overlap");
+  for (const lane of [laneA, laneB]) {
+    for (const n of again.filter((n) => n.type === "studio" && sessionOf(n.id) === sessionOf(lane.id))) {
+      assert.ok(n.position.x >= lane.position.x && n.position.x + 280 <= lane.position.x + lane.style.width, `${n.id} stays inside its lane horizontally`);
+      assert.ok(n.position.y >= lane.position.y && n.position.y + 130 <= lane.position.y + lane.style.height, `${n.id} stays inside its lane vertically`);
+    }
+  }
+  const pos = (nodes, id) => nodes.find((n) => n.id === id).position;
+  const before = [pos(alone, "dispatch:b:b1"), pos(alone, "dispatch:b:b2")];
+  const after = [pos(again, "dispatch:b:b1"), pos(again, "dispatch:b:b2")];
+  assert.deepEqual({ x: after[1].x - after[0].x, y: after[1].y - after[0].y }, { x: before[1].x - before[0].x, y: before[1].y - before[0].y },
+    "the session's nodes keep their arrangement as they move");
+});
+
+test("graph model: placement terminates when a lane has less than one node of horizontal room", async () => {
+  const { preserveGraphNodes } = await graphModel();
+  const lane = { id: "lane:s", type: "lane", position: { x: 0, y: 0 }, style: { width: 200, height: 400 }, data: { title: "Session s" } };
+  const session = { id: "session:s", type: "studio", position: { x: 40, y: 32 }, data: { title: "Session s" } };
+  const keptDispatch = { id: "dispatch:s:d1", type: "studio", position: { x: 360, y: 32 }, data: { title: "Dispatch 1" } };
+  const newDispatch = { id: "dispatch:s:d2", type: "studio", position: { x: 360, y: 177 }, data: { title: "Dispatch 2" } };
+  const nodes = preserveGraphNodes([lane, session, keptDispatch, newDispatch], [lane, session, keptDispatch]);
+  const resultLane = nodes.find((n) => n.id === "lane:s");
+  const resultNode = nodes.find((n) => n.id === "dispatch:s:d2");
+  assert.ok(resultNode);
+  assert.ok(resultNode.position.x >= resultLane.position.x && resultNode.position.x + 280 <= resultLane.position.x + resultLane.style.width,
+    "the finite fallback widens a too-narrow lane to contain the new node");
+  assert.ok(resultNode.position.y + 130 <= resultLane.position.y + resultLane.style.height, "and the lane is tall enough for it");
+});
+
+test("graph model: selection transitions", async () => {
+  const { shownSessionIds, toggleSelection, addSelection, showAllRecent, pruneSelection, recentSelection, stableLaneOrder, panelEntries } = await graphModel();
+  const snap = executionSnapshot([
+    { ts: 1000, session: "old", event: "prompt" }, { ts: 2000000, session: "sa", event: "prompt" }, { ts: 2000100, session: "sb", event: "prompt" },
+  ], undefined, 2000200);
+  const { sessions, recentActivity: recent } = snap;
+  const derived = shownSessionIds(recentSelection(), sessions, recent);
+  assert.deepEqual(derived, ["sb", "sa"], "recent mode follows the recent sessions, newest first");
+  const none = { windowMs: recent.windowMs, sessions: [] };
+  assert.deepEqual(shownSessionIds(recentSelection(), sessions, none), ["sb"], "falls back to the latest session");
+  assert.deepEqual(shownSessionIds(recentSelection(), [], none), []);
+  const removed = toggleSelection(recentSelection(), "sa", derived);
+  assert.deepEqual(removed, { mode: "manual", ids: ["sb"] });
+  assert.deepEqual(shownSessionIds(removed, sessions, recent), ["sb"], "manual no longer follows recent activity");
+  assert.deepEqual(toggleSelection(removed, "sb", derived), { mode: "manual", ids: [] });
+  assert.deepEqual(shownSessionIds({ mode: "manual", ids: [] }, sessions, recent), [], "empty selection does not fall back");
+  assert.deepEqual(addSelection(removed, "old", derived).ids, ["sb", "old"]);
+  assert.deepEqual(addSelection(recentSelection(), "old", derived).ids, ["sb", "sa", "old"]);
+  assert.deepEqual(showAllRecent(), { mode: "recent" });
+  assert.equal(pruneSelection(removed, sessions), removed, "an unchanged selection keeps its identity");
+  assert.deepEqual(pruneSelection({ mode: "manual", ids: ["sb", "gone"] }, sessions), { mode: "manual", ids: ["sb"] });
+  assert.equal(pruneSelection(recentSelection(), []).mode, "recent");
+  assert.deepEqual(stableLaneOrder(["sa", "sb"], ["sb", "sc", "sa"]), ["sa", "sb", "sc"]);
+  const entries = panelEntries(sessions, recent, ["sb", "old"]);
+  assert.deepEqual(entries.map((e) => [e.session.sessionId, e.outsideWindow, e.shown]), [["sb", false, true], ["sa", false, false], ["old", true, true]]);
+});
+
+test("graph model: timeline merge order and node resolution across sessions", async () => {
+  const { mergedTimeline, nodeIdForEvent, resolveNode, sessionIdOfNode, timelineAgents } = await graphModel();
+  const { sessions } = twoSessions();
+  const rows = mergedTimeline(sessions);
+  assert.deepEqual(rows.map((r) => [r.event.timestamp, r.sessionId]), [[100, "sa"], [105, "sb"], [110, "sa"], [110, "sb"], [120, "sa"], [130, "sa"], [140, "sb"]]);
+  assert.deepEqual(mergedTimeline(sessions, { type: "prompt" }).map((r) => r.sessionId), ["sa", "sb"]);
+  assert.deepEqual(timelineAgents(sessions).sort(), ["bob", "quinn"]);
+  const sa = sessions.find((s) => s.sessionId === "sa");
+  const sb = sessions.find((s) => s.sessionId === "sb");
+  assert.equal(nodeIdForEvent(sa, 0, true), "signals:sa", "a prompt maps to its session's summary node");
+  assert.match(nodeIdForEvent(sa, 0, false), /^observation:sa:100:prompt:0$/);
+  assert.equal(nodeIdForEvent(sa, 1, true), "dispatch:sa:a1");
+  assert.equal(nodeIdForEvent(sa, 2, true), "gate:sa:120:0");
+  assert.equal(nodeIdForEvent(sb, 2, true), "dispatch:sb:b1");
+  assert.equal(sessionIdOfNode("dispatch:sb:b1"), "sb");
+  assert.equal(sessionIdOfNode("reference:risk"), null);
+  const dispatch = resolveNode(sessions, "dispatch:sb:b1");
+  assert.equal(dispatch.session.sessionId, "sb"); assert.equal(dispatch.item.executionId, "b1");
+  assert.equal(resolveNode(sessions, "dispatch:sa:b1").item, null, "a dispatch is looked up only in its own session");
+  assert.equal(resolveNode(sessions, "gate:sa:120:0").item.type, "gate");
+  assert.equal(resolveNode(sessions, "signals:sb").item.type, "prompt");
+  assert.equal(resolveNode(sessions, "reference:risk").session, undefined);
+});
+
+test("graph model: an active dispatch edge is statically dashed by class, never React Flow's animated edge", async () => {
+  const { graphFor } = await graphModel();
+  const { sessions } = twoSessions();
+  const { edges } = graphFor(sessions, "observed");
+  assert.ok(edges.every((e) => !("animated" in e)), "no edge uses the continuous dash animation");
+  const active = sessions.flatMap((s) => s.dispatches.filter((d) => d.executionState === "active").map((d) => `${s.sessionId}`));
+  const classed = edges.filter((e) => e.className === "edge-active");
+  assert.ok(active.length > 0, "the fixture has an active dispatch");
+  assert.equal(classed.length, active.length, "exactly the active dispatches get the class");
+  const done = graphFor(executionSnapshot([{ ts: 1, session: "s1", event: "agent_start", id: "d1", agent: "bob" }, { ts: 2, session: "s1", event: "agent_end", id: "d1" }], undefined, 10).sessions, "observed");
+  assert.ok(done.edges.every((e) => !e.className), "an ended dispatch edge has no active class");
+  assert.match(await readFile(new URL("../dashboard/src/style.css", import.meta.url), "utf8"), /\.edge-active[^{]*\{[^}]*stroke-dasharray/);
+});
+
+test("graph model: an edge that loses its active class on a later poll is not reused", async () => {
+  const { graphFor, reuseUnchanged } = await graphModel();
+  const start = { ts: 110, session: "s1", event: "agent_start", id: "d1", agent: "bob" };
+  const later = { ts: 120, session: "s1", event: "prompt" }; // an unended dispatch is active only with later activity
+  const running = graphFor(executionSnapshot([start, later], undefined, 150).sessions, "observed").edges;
+  assert.equal(running.find((e) => e.target === "dispatch:s1:d1").className, "edge-active");
+  const live = running.map((e) => ({ ...e, selected: false })); // what React Flow adds
+  const ended = graphFor(executionSnapshot([start, later, { ts: 140, session: "s1", event: "agent_end", id: "d1" }], undefined, 150).sessions, "observed").edges;
+  const next = reuseUnchanged(ended, live);
+  assert.notEqual(next, live);
+  assert.equal(next.find((e) => e.target === "dispatch:s1:d1").className, undefined, "the ended dispatch's edge drops the active class");
+  assert.equal(reuseUnchanged(running, live), live, "a field React Flow added does not count as a change");
+});
+
+test("graph model: unchanged polls keep identities, so nothing re-renders", async () => {
+  const { graphFor, preserveGraphNodes, reuseUnchanged, selectOnly, stabilizeSnapshot } = await graphModel();
+  const a = { generatedAt: 1, sessions: [{ id: "x", list: [1, 2] }], agents: [] };
+  const same = stabilizeSnapshot(a, { generatedAt: 2, sessions: [{ id: "x", list: [1, 2] }], agents: [] });
+  assert.equal(same.generatedAt, 2);
+  assert.equal(same.sessions, a.sessions); assert.equal(same.agents, a.agents);
+  const changed = stabilizeSnapshot(a, { generatedAt: 3, sessions: [{ id: "x", list: [1, 3] }], agents: [] });
+  assert.notEqual(changed.sessions, a.sessions); assert.equal(changed.agents, a.agents);
+
+  const { sessions } = twoSessions();
+  const first = preserveGraphNodes(graphFor(sessions, "observed").nodes, []);
+  const live = first.map((n) => ({ ...n, measured: { width: 245, height: 96 } })); // what React Flow adds
+  const again = reuseUnchanged(preserveGraphNodes(graphFor(sessions, "observed").nodes, live), live);
+  assert.equal(again, live, "an identical rebuild returns the current array");
+  const edges = graphFor(sessions, "observed").edges;
+  assert.equal(reuseUnchanged(graphFor(sessions, "observed").edges, edges), edges);
+
+  const dispatch = live.find((n) => n.id.startsWith("dispatch:sa"));
+  const edited = live.map((n) => n === dispatch ? { ...n, data: { ...n.data, state: "completed" } } : n);
+  const next = reuseUnchanged(preserveGraphNodes(graphFor(sessions, "observed").nodes, edited), edited);
+  assert.notEqual(next, edited, "a changed node produces a new array");
+  assert.equal(next.filter((n, i) => n !== edited[i]).length, 1, "only the changed node is a new object");
+
+  const picked = selectOnly(live, dispatch.id);
+  assert.equal(picked.filter((n, i) => n !== live[i]).length, 1, "selecting changes only the newly selected node");
+  assert.equal(selectOnly(picked, dispatch.id), picked, "re-selecting the same node is a no-op");
+  const moved = selectOnly(picked, "session:sb");
+  assert.equal(moved.filter((n, i) => n !== picked[i]).length, 2, "moving the selection touches the old and the new node");
 });
