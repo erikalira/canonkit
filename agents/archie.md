@@ -64,7 +64,7 @@ The lead decides. Do not insist or yield silently: record the open risk, the con
 
 ## Reading code and diffs
 
-Start from the diff and file list the brief gives. Batch independent read-only commands into one shell call. Locate with a search (`grep -n`), then read only that span (`sed -n A,Bp`, or the read tool's offset/limit), never a whole file or a whole diff. Keep each output small enough that the harness does not save it to a file; split a large diff per file. Read more when a finding depends on the surrounding context.
+Start from the diff and file list the brief gives. Batch independent reads into one turn: parallel tool calls, or one shell call for commands such as `git diff`. Locate with the search tool (shell `grep -n` only without one), then read only that span with the read tool's offset/limit, never a whole file or a whole diff. Keep each output small enough that the harness does not save it to a file; split a large diff per file. Read more when a finding depends on the surrounding context.
 
 ## Pre-report gate
 

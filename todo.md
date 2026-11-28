@@ -222,7 +222,29 @@ a handoff keep their details there; items without one carry them inline.
   (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
   `settings.json` was not checked. Confidence: low. Next step: check which
   files they read; if a user can empty one by hand, reuse `readSettingsText`.
-- [ ] **Shell-for-files rule loses to the auto-mode prompt** (edits and reads):
+- [x] **Shell-for-files rule loses to the auto-mode prompt**: done on
+  `fix/todo-pontuais` (2026-11-28; Virgo implemented, Spencer checked drift).
+  Cause confirmed from the auto-mode system prompt itself ("read files with
+  cat… small changes with sed, heredocs… The choice is yours"); the activity
+  logs carry no command text, so the frequency stays unmeasured. "Dedicated
+  tools, not the shell" in `reference/agents-block.md` now covers reads, the
+  scratch folder and subagents, holds where the harness's prompt invites the
+  shell, and keeps `grep`/`find` only without a search tool. The reviewers'
+  `## Reading code and diffs` (Quinn, Gard, Archie, Perry) now point to the
+  search and read tools too. The +18 words were offset by tightening
+  `reference/routing-block.md`: the two blocks went 2,940 → 2,939 by whole-file
+  `wc -w`, so the profile stays over its ceiling (item below). Behavioral effect
+  UNMEASURED: the quality runner cannot measure a managed block. Original
+  notes below.
+- [ ] **Always-loaded context over its 3,000-word ceiling** (found 2026-11-28).
+  Default profile ≈ 3,331 words (`wc -w`): agents block 2,208, Claude block
+  731, agent descriptions 363, model-invocable skill descriptions 50; the
+  rubric's calibration was 1,993 (1.1.5). Pre-existing, not caused by the item
+  above. Next step: a consolidation pass on `reference/agents-block.md`
+  (largest share), measured before/after; Virgo implements, Spencer checks
+  drift. Overlaps the "Trim subagent startup context" item. Confidence: medium
+  (counted by a script mirroring the rubric's method, not `rubric.mjs`).
+- Original notes, shell-for-files item (edits and reads):
   `reference/agents-block.md` ("Dedicated tools, not the shell", "Temporary work
   outside the repository") and the Claude Code block ("File work uses Read, Edit
   and Write") forbid shell edits and prefer the read/search tools over shell

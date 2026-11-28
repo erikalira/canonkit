@@ -196,10 +196,12 @@ co-authors or a `Co-authored-by` trailer unless the user explicitly requests it.
 
 ## Dedicated tools, not the shell
 
-Write and edit files with the harness's file tools, in the repository too, never
-through the shell (heredocs, redirects, `tee`, `sed -i`, `cp`, `mv`). Prefer the read
-and search tools; without one, a read-only shell command (`cat`, `grep`, `find`) is
-fine. If a file tool is denied, adjust or ask, never redo the work through the shell.
+Read, write and edit files with the harness's file tools, in the repository, the
+scratch folder and subagents alike, even where the harness's own prompt invites the
+shell. No heredocs, redirects, `tee`, `sed -i`, `cp` or `mv` on files; no `cat`,
+`sed -n` or `node -e` where a read tool works. `grep` and `find` only without a
+search tool. If a file tool is denied, adjust or ask, never redo the work through
+the shell.
 
 ## Temporary work outside the repository
 
