@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
-import { renderInstallReport, shortPath } from "../bin/install-report.js";
+import { renderInstallReport, shortPath, tildeText } from "../bin/install-report.js";
 
 const home = path.resolve("/tmp/h");
 const j = (...p) => path.join(home, ...p);
@@ -28,6 +28,13 @@ const run = [
 test("shortPath shows the home folder as ~", () => {
   assert.equal(shortPath(j(".claude", "agents"), home), "~/.claude/agents");
   assert.equal(shortPath(home, home), "~");
+});
+
+test("tildeText replaces every home occurrence at a path boundary only", () => {
+  assert.equal(tildeText("/home/me/a and /home/me/b", "/home/me"), "~/a and ~/b");
+  assert.equal(tildeText("/home/meow/a (/home/me)", "/home/me"), "/home/meow/a (~)");
+  assert.equal(tildeText("C:\\Users\\Me\\x and c:/users/me/y", "C:\\Users\\Me"), "~\\x and ~/y");
+  assert.equal(tildeText("/home/Me/x", "/home/me"), "/home/Me/x");
 });
 
 test("interactive result headings name dry runs and failures without ANSI on piped output", () => {
@@ -123,5 +130,10 @@ test("an ignored Windows claude has a warning marker and does not inflate the se
   // Without the line the summary is what it was.
   const without = renderInstallReport(base, { home }).join("\n");
   assert.doesNotMatch(without, /Windows copy/);
+  // A copy under the home folder is shown with `~`.
+  const underHome = warn.replace("/mnt/c/Users/me/npm/claude", j("npm", "claude"));
+  const shown = renderInstallReport([underHome], { home }).join("\n");
+  assert.match(shown, /a Windows copy at ~[\\/]npm[\\/]claude was ignored/);
+  assert.doesNotMatch(shown, new RegExp(home.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&")));
   assert.match(without, /Security .*1 note\b/);
 });

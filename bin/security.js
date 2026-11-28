@@ -100,20 +100,21 @@ export async function collectEnvironment({ cwd = process.cwd(), env = process.en
   const bwrap = platform === "linux" ? resolve("bwrap", options) : null;
   const socat = platform === "linux" ? resolve("socat", options) : null;
   const evidence = classifyEnvironment({ platform, release, procVersion, env, dockerMarker: platform === "linux" && exists("/.dockerenv"), bwrap, socat });
-  let claude = resolve("claude", options);
+  let claude = resolve("claude", options), projectLocal = false;
   if (claude) {
     try {
       const executable = realpathSync.native(claude), project = realpathSync.native(cwd);
       const relative = path.relative(project, executable);
-      if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) claude = null;
+      if (!relative || (!relative.startsWith(`..${path.sep}`) && relative !== ".." && !path.isAbsolute(relative))) { claude = null; projectLocal = true; }
     } catch (err) { if (!["ENOENT", "EACCES", "EPERM"].includes(err.code)) throw err; claude = null; }
   }
   const probeEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !LOADER_ENV.test(key)));
-  const ignored = !dryRun && !claude ? windowsOnlyHits("claude", options)[0] : undefined;
+  // A project-local claude is the reason, not a Windows copy further down PATH.
+  const ignored = !dryRun && !claude && !projectLocal ? windowsOnlyHits("claude", options)[0] : undefined;
   return {
     ...evidence,
     claudeVersion: !dryRun && claude ? version(claude, { project: cwd, env: probeEnv, platform, windowsRoots }) : null,
-    versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : ignored ? "windows-binary-ignored" : "binary-unavailable",
+    versionEvidence: dryRun ? "not-probed-dry-run" : claude ? "trusted-binary-version" : projectLocal ? "project-local-binary-ignored" : ignored ? "windows-binary-ignored" : "binary-unavailable",
     ...(ignored ? { ignoredWindowsBinary: ignored } : {}),
   };
 }

@@ -3452,7 +3452,7 @@ function gitHooksPreflight(project, { withGitHooks = false } = {}) {
   ];
   const hooksPath = out(["config", "core.hooksPath"]);
   if (withGitHooks && hooksPath.status === 0 && hooksPath.stdout.trim()) {
-    return fail([`core.hooksPath is set (${hooksPath.stdout.trim()}): git hooks are managed elsewhere, so canonkit installs none.`, ...chain]);
+    return fail([`core.hooksPath is set (${plain(hooksPath.stdout.trim())}): git hooks are managed elsewhere, so canonkit installs none.`, ...chain]);
   }
   if (hooksPath.status !== 1 && hooksPath.status !== 0) return fail([`git config core.hooksPath failed: ${hooksPath.stderr.trim() || hooksPath.error}`]);
 

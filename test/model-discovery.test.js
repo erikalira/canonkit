@@ -315,7 +315,7 @@ describe("system runner", () => {
     }
   });
 
-  test("an injected run bypasses the Windows filter entirely", async () => {
+  test("an injected run is used instead of the system runner", async () => {
     const dir = await tempDir();
     try {
       const seen = [];

@@ -69,6 +69,15 @@ test("windowsRoots reach every resolve and the version probe; a Windows-only cla
   const ok = await collectEnvironment({ ...base, windowsRoots: [win], resolve: (n) => (n === "claude" ? path.join(root, "claude") : null), version: (_f, o) => { opts.push(o.windowsRoots); return "2.1.314"; } });
   assert.deepEqual(opts, [[win]]);
   assert.equal(ok.versionEvidence, "trusted-binary-version");
+  // A project-local claude is named as the cause, even with a Windows copy on PATH.
+  const local = path.join(project, "claude");
+  await writeFile(local, "fixture");
+  const before = probes;
+  const inProject = await collectEnvironment({ ...base, windowsRoots: [win], resolve: (n) => (n === "claude" ? local : null) });
+  assert.equal(inProject.versionEvidence, "project-local-binary-ignored");
+  assert.equal("ignoredWindowsBinary" in inProject, false);
+  assert.equal(inProject.claudeVersion, null);
+  assert.equal(probes, before);
 });
 
 test("native project controls preserve modes, personal grants, hooks and unsupported version boundaries", () => {

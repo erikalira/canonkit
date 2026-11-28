@@ -1008,6 +1008,15 @@ if (bin === "openspec" && argv[0] === "init") fs.mkdirSync("openspec", { recursi
     assert.deepEqual(await calls(), [["graphify", "--version"]]);
   });
 
+  test("a core.hooksPath with control characters is printed filtered", { skip: !gitDir }, async () => {
+    const { project, tool, env } = await setup("graphify-hookspath-escape", { git: true });
+    spawnSync("git", ["-C", project, "config", "core.hooksPath", "hooks\x1b[31mred"], { env: env() });
+    const r = tool(["add", "graphify", "--with-git-hooks", "--yes"]);
+    assert.equal(r.status, 1);
+    assert.match(r.out, /core\.hooksPath is set \(hooks\?\[31mred\)/);
+    assert.doesNotMatch(r.out, /\x1b/);
+  });
+
   // A FIFO read with readFileSync blocks forever: the child gets a timeout so a regression fails instead of hanging the suite.
   const timedTool = (s, args, extra) => spawnSync(process.execPath, [CLI, "tool", ...args], { cwd: s.project, encoding: "utf8", timeout: 30000, killSignal: "SIGKILL", env: isolatedEnv(s.home, s.env(extra)) });
   const mkfifo = (file) => spawnSync("mkfifo", [file]).status === 0;

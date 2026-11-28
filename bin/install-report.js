@@ -19,6 +19,19 @@ export function shortPath(p, home = os.homedir()) {
   return norm(p) === h ? "~" : norm(p).startsWith(`${h}/`) ? `~${n.slice(n.length - (norm(p).length - h.length))}` : n;
 }
 
+/**
+ * Every occurrence of the home folder in a free-text line becomes `~`, in both
+ * slash forms. A match must end at a path boundary, so `/home/me` leaves
+ * `/home/meow` alone. Case is ignored only for a Windows home (`C:\...`).
+ */
+export function tildeText(text, home = os.homedir()) {
+  if (!home) return text;
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const forms = [...new Set([home, home.replace(/\\/g, "/")])].map(esc).join("|");
+  const flags = /^[A-Za-z]:/.test(home) ? "gi" : "g";
+  return text.replace(new RegExp(`(?:${forms})(?=$|[\\\\/\\s)'"\`,;:])`, flags), "~");
+}
+
 function harnessOfDir(dir, home) {
   const d = norm(dir);
   if (d.includes("/.claude/")) return "claude";
@@ -105,7 +118,7 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
       security.applied.push(m[1]);
     } else if (/^WARN security claude: a Windows copy at /.test(line)) {
       // A security setting that was not written and why: shown as its own line, not folded into the note count.
-      addNote(line.replace(/^WARN /, ""), "warning");
+      addNote(tildeText(line.replace(/^WARN /, ""), home), "warning");
     } else if ((m = /^WARN security (\w+)(?: |:)/.exec(line))) {
       security.notes.push(line.replace(/^WARN /, ""));
     } else if ((m = /^WARN tool ([\w-]+): (.+)$/.exec(line))) {
@@ -135,7 +148,7 @@ export function renderInstallReport(lines, { dryRun = false, version = "", chang
     } else if (/^Security version\/runtime checks not executed/.test(line)) {
       addNote(line, "warning");
     } else {
-      const text = line.trim().replace(home, "~").replace(home.replace(/\\/g, "/"), "~");
+      const text = tildeText(line.trim(), home);
       const kind = /^(?:WARN(?:ING)?\b|ERROR\b|Failed\b|Refusing\b|Partial installation\b)/i.test(text) ? "warning" : "info";
       addNote(text, kind);
     }
