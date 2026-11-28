@@ -19,4 +19,6 @@
 .session-outside{font:10px var(--mono);color:#d5b784;letter-spacing:.03em}
 .session-showall{margin-left:auto;background:#141e27;border:1px solid #2b3a47;border-radius:5px;color:#99aab8;padding:5px 8px;font-size:10px;cursor:pointer}.session-showall:hover{color:#e2ecef;border-color:#65858c}.session-showall:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .react-flow__node.lane-node{pointer-events:none}.lane-bg{width:100%;height:100%;border:1px dashed #2f4150;border-radius:10px;background:#101a2380}.lane-label{display:block;padding:7px 12px;font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:#6f8394}
+/* Active dispatch edge: static dashes, so "active" does not depend on colour or motion. */
+.react-flow__edge.edge-active .react-flow__edge-path{stroke:#54aeb8;stroke-dasharray:6 4}
 .timeline-main .timeline-session{flex:none;font:9px var(--mono);color:#7ac8d1;border:1px solid #2a3f4a;border-radius:3px;padding:1px 4px}

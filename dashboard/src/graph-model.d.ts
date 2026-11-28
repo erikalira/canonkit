@@ -46,6 +46,9 @@ export function addSelection(selection: Selection, id: string, derivedIds: strin
 export const showAllRecent: () => Selection;
 export function pruneSelection(selection: Selection, sessions: Session[]): Selection;
 export const stableLaneOrder: (previous: string[], shown: string[]) => string[];
+export function stabilizeSnapshot<T extends object>(previous: T, next: T): T;
+export function reuseUnchanged<T extends { id: string }>(next: T[], previous: T[]): T[];
+export function selectOnly<T extends { id: string; selected?: boolean }>(nodes: T[], id: string | null): T[];
 export function summariseSession(session: Session): RecentSession;
 export function panelEntries(sessions: Session[], recent: RecentActivity | undefined, shownIds: string[]): PanelEntry[];
 export function mergedTimeline(sessions: Session[], filters?: { type?: string; agent?: string }): TimelineRow[];

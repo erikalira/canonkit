@@ -2,14 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client';
 import {
   Background, Controls, Handle, MiniMap, Position, ReactFlow,
-  type Edge, type NodeProps, type ReactFlowInstance,
+  type Edge, type NodeProps, type OnEdgesChange, type OnNodesChange, type ReactFlowInstance,
   useEdgesState, useNodesState,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import './style.css';
 import {
   addSelection, fmtDate, graphFor, human, mergedTimeline, nodeIdForEvent, panelEntries, preserveGraphNodes, pruneSelection, recentSelection,
-  resolveNode, shownSessionIds, short, showAllRecent, stableLaneOrder, timelineAgents, toggleSelection,
+  resolveNode, reuseUnchanged, selectOnly, shownSessionIds, short, showAllRecent, stabilizeSnapshot, stableLaneOrder, timelineAgents, toggleSelection,
   type Dispatch, type GraphNode, type GraphView, type Observation, type RecentActivity, type Selection, type Session, type TimelineRow,
 } from './graph-model.js';
 
@@ -30,7 +30,7 @@ const ago = (from: number, to: number, suffix = 'ago') => {
   return `${s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min` : `${Math.floor(s / 3600)} h`} ${suffix}`;
 };
 
-function StudioNode({ data, selected }: NodeProps<GraphNode>) {
+const StudioNode = React.memo(function StudioNode({ data, selected }: NodeProps<GraphNode>) {
   const icon = data.kind === 'session' ? '◉' : data.kind === 'gate' ? '⚑' : data.kind === 'decision' ? '⌘' : data.kind === 'reference' ? '↳' : '◇';
   return <div className={`flow-card ${data.kind} state-${data.state} ${selected ? 'selected' : ''}`} title={data.context}>
     <Handle type="target" position={Position.Left} />
@@ -39,12 +39,41 @@ function StudioNode({ data, selected }: NodeProps<GraphNode>) {
     {data.source && <span className="flow-source">{data.source}</span>}
     <Handle type="source" position={Position.Right} />
   </div>;
-}
+});
 // A lane is only a background: it groups one session's nodes and implies no relation.
-function LaneNode({ data }: NodeProps<GraphNode>) {
+const LaneNode = React.memo(function LaneNode({ data }: NodeProps<GraphNode>) {
   return <div className="lane-bg" aria-hidden="true"><span className="lane-label">{data.title}</span></div>;
-}
+});
 const nodeTypes = { studio: StudioNode, lane: LaneNode };
+// Module-level so the memoised canvas below gets the same props on every render.
+const fitViewOptions = { padding: 0.22 };
+const ariaLabelConfig = { 'node.a11yDescription.default': 'Press Enter or Space to show this node in the details panel. Arrow keys move the selected node within the layout.' };
+const miniMapColor = (node: GraphNode) => node.type === 'studio' ? '#49637b' : '#1b2631';
+
+type CanvasProps = {
+  nodes: GraphNode[]; edges: Edge[]; onNodesChange: OnNodesChange<GraphNode>; onEdgesChange: OnEdgesChange<Edge>;
+  onNodeClick: (event: React.MouseEvent, node: GraphNode) => void; onKeyDown: (event: React.KeyboardEvent) => void;
+  onInit: (instance: ReactFlowInstance<GraphNode, Edge>) => void;
+};
+// Memoised: a poll that changes nothing re-renders App (the "Updated" clock) but not the graph.
+const Canvas = React.memo(function Canvas({ nodes, edges, onNodesChange, onEdgesChange, onNodeClick, onKeyDown, onInit }: CanvasProps) {
+  return <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onKeyDown={onKeyDown} onInit={onInit} fitView fitViewOptions={fitViewOptions} minZoom={0.2} maxZoom={1.6}
+    deleteKeyCode={null} edgesFocusable={false} ariaLabelConfig={ariaLabelConfig}>
+    <Background color="#26313d" gap={24} size={1} /><MiniMap nodeColor={miniMapColor} maskColor="rgba(8,12,18,.7)" /><Controls showInteractive={false} />
+  </ReactFlow>;
+});
+
+type TimelineListProps = { rows: TimelineRow[]; onSelect: (row: TimelineRow) => void };
+const TimelineButton = React.memo(function TimelineButton({ row, onSelect }: { row: TimelineRow; onSelect: (row: TimelineRow) => void }) {
+  const e = row.event;
+  return <button className="timeline-row" onClick={() => onSelect(row)}>
+    <time>{fmtTime(e.timestamp)}</time><span className={`event-mark mark-${e.type === 'gate' ? 'gate' : e.type.includes('end') || e.type.includes('stop') ? 'done' : 'agent'}`}>{e.type === 'gate' ? '⚑' : e.type.includes('end') || e.type.includes('stop') ? '✓' : '◇'}</span><span className="timeline-main"><span className="timeline-session" title={row.sessionId}>{short(row.sessionId, 8)}</span><strong>{human(e.type)}</strong><span>{typeof e.data.agent === 'string' ? human(e.data.agent) : e.dispatchId ? `Dispatch ${short(e.dispatchId)}` : e.data.kind ? human(String(e.data.kind)) : 'Runtime event'}</span></span><span className="timeline-source">{e.source} · {e.confidence}</span><span className="row-arrow">↗</span>
+  </button>;
+}, (a, b) => a.onSelect === b.onSelect && a.row.event === b.row.event && a.row.sessionId === b.row.sessionId && a.row.index === b.row.index);
+// Up to 300 rows per session: a click or poll must not re-render rows that did not change.
+const TimelineList = React.memo(function TimelineList({ rows, onSelect }: TimelineListProps) {
+  return <div className="timeline-list">{rows.map((row) => <TimelineButton key={`${row.sessionId}-${row.index}`} row={row} onSelect={onSelect} />)}</div>;
+});
 
 function App() {
   const [snapshot, setSnapshot] = useState<Snapshot>(initial);
@@ -62,14 +91,21 @@ function App() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [flow, setFlow] = useState<ReactFlowInstance<GraphNode, Edge> | null>(null);
   const laneOrder = useRef<string[]>([]);
-  const shownIds = useMemo(() => shownSessionIds(selection, snapshot.sessions, snapshot.recentActivity), [selection, snapshot]);
+  // `sessions` and `recentActivity` keep their identity across a poll that changed
+  // nothing (stabilizeSnapshot), so everything derived from them is skipped.
+  const { sessions, recentActivity } = snapshot;
+  const derivedIds = useMemo(() => shownSessionIds(selection, sessions, recentActivity), [selection, sessions, recentActivity]);
+  // A new array on every poll would defeat the memos below; keep the old one while the IDs match.
+  const shownIdsRef = useRef<string[]>([]);
+  if (shownIdsRef.current.length !== derivedIds.length || shownIdsRef.current.some((id, i) => id !== derivedIds[i])) shownIdsRef.current = derivedIds;
+  const shownIds = shownIdsRef.current;
   const shownSessions = useMemo(() => {
     laneOrder.current = stableLaneOrder(laneOrder.current, shownIds);
-    return laneOrder.current.flatMap((id) => snapshot.sessions.find((s) => s.sessionId === id) ?? []);
-  }, [shownIds, snapshot.sessions]);
+    return laneOrder.current.flatMap((id) => sessions.find((s) => s.sessionId === id) ?? []);
+  }, [shownIds, sessions]);
   const multi = shownSessions.length > 1;
   const graph = useMemo(() => graphFor(shownSessions, graphView), [shownSessions, graphView]);
-  const graphSignature = JSON.stringify(graph.nodes.map((n) => [n.id, n.data]));
+  const graphSignature = useMemo(() => JSON.stringify([graph.nodes.map((n) => [n.id, n.data]), graph.edges]), [graph]);
   const dispatchTotal = shownSessions.reduce((sum, s) => sum + s.dispatches.length, 0);
   const gateTotal = shownSessions.reduce((sum, s) => sum + s.observations.filter((e) => e.type === 'gate').length, 0);
 
@@ -81,7 +117,7 @@ function App() {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json() as Snapshot;
         if (!alive) return;
-        setSnapshot(data); setConnected(true); setUpdated(Date.now());
+        setSnapshot((previous) => stabilizeSnapshot(previous, data)); setConnected(true); setUpdated(Date.now());
         setSelection((current) => pruneSelection(current, data.sessions));
       } catch { if (alive) setConnected(false); }
     };
@@ -90,14 +126,15 @@ function App() {
   }, []);
 
   useEffect(() => {
-    setNodes((current) => preserveGraphNodes(graph.nodes, current));
-    setEdges(graph.edges);
-  }, [graphSignature, graph.edges.map((e) => e.id).join('|'), setNodes, setEdges]);
+    // Unchanged nodes and edges keep their identity, so only what differs re-renders.
+    setNodes((current) => reuseUnchanged(preserveGraphNodes(graph.nodes, current), current));
+    setEdges((current) => reuseUnchanged(graph.edges, current));
+  }, [graphSignature, setNodes, setEdges]);
   useEffect(() => {
     if (!focusNodeId || !flow) return;
     const target = nodes.find((node) => node.id === focusNodeId);
     if (!target) return; // A new observation may render before React Flow has its node store updated.
-    setNodes((current) => current.map((node) => ({ ...node, selected: node.id === focusNodeId })));
+    setNodes((current) => selectOnly(current, focusNodeId));
     void flow.fitView({ nodes: [target], duration: motion(260), padding: 0.55 });
     setFocusNodeId(null);
   }, [focusNodeId, nodes, flow, setNodes]);
@@ -105,12 +142,12 @@ function App() {
   useEffect(() => { setSelectedGraphNode(null); setSelected(null); setSelectedSessionId(null); }, [graphView, selection]);
 
   const inspectNode = useCallback((node: GraphNode) => {
-    const { session, item } = resolveNode(snapshot.sessions, node.id);
+    const { session, item } = resolveNode(sessions, node.id);
     setSelected(item);
     setSelectedSessionId(session?.sessionId ?? null);
     setSelectedGraphNode(node);
-    setNodes((current) => current.map((n) => ({ ...n, selected: n.id === node.id })));
-  }, [snapshot.sessions]);
+    setNodes((current) => selectOnly(current, node.id));
+  }, [sessions, setNodes]);
   const onNodeClick = useCallback((_event: React.MouseEvent, node: GraphNode) => inspectNode(node), [inspectNode]);
   // React Flow selects a focused node on Enter/Space but only reports mouse clicks,
   // so keyboard users would otherwise never reach the inspector.
@@ -123,12 +160,12 @@ function App() {
   // Dispatch details follow the latest snapshot, so an open inspector does not
   // keep showing a superseded state or measurement.
   const inspected = selected && !('type' in selected)
-    ? snapshot.sessions.find((s) => s.sessionId === selectedSessionId)?.dispatches.find((d) => d.executionId === selected.executionId) ?? selected
+    ? sessions.find((s) => s.sessionId === selectedSessionId)?.dispatches.find((d) => d.executionId === selected.executionId) ?? selected
     : selected;
 
-  const agents = timelineAgents(shownSessions);
-  const timeline = mergedTimeline(shownSessions, { type: filter, agent: agentFilter }).reverse();
-  const selectObservation = (row: TimelineRow) => {
+  const agents = useMemo(() => timelineAgents(shownSessions), [shownSessions]);
+  const timeline = useMemo(() => mergedTimeline(shownSessions, { type: filter, agent: agentFilter }).reverse(), [shownSessions, filter, agentFilter]);
+  const selectObservation = useCallback((row: TimelineRow) => {
     setSelected(row.event);
     setSelectedSessionId(row.sessionId);
     setSelectedGraphNode(null);
@@ -138,8 +175,8 @@ function App() {
       if (graphView === 'reference') setGraphView('observed');
       setFocusNodeId(id);
     }
-  };
-  const addable = snapshot.sessions.filter((s) => !shownIds.includes(s.sessionId));
+  }, [shownSessions, multi, graphView]);
+  const addable = sessions.filter((s) => !shownIds.includes(s.sessionId));
   const only = shownSessions.length === 1 ? shownSessions[0] : undefined;
 
   return <main className="app-shell">
@@ -174,11 +211,7 @@ function App() {
         <div className="section-heading"><div><span className="eyebrow">LIVE EXECUTION</span><h1>{graphView === 'observed' ? 'Observed activity graph' : 'Canonical risk routes'}</h1><p>{graphView === 'observed' ? `Dispatches and gates from ${multi ? 'the selected sessions, one lane each' : 'this session'}. Connections show session membership, not inferred workflow order${multi ? ', and nothing is inferred between sessions' : ''}.` : 'Conditional LOW, MEDIUM and HIGH paths from CanonKit guidance. No route is selected by runtime evidence.'}</p></div><div className="canvas-actions"><button onClick={() => { setNodes((current) => { const chosen = new Set(current.filter((n) => n.selected).map((n) => n.id)); return graph.nodes.map((n) => ({ ...n, selected: chosen.has(n.id) })); }); void flow?.fitView({ duration: motion(280), padding: 0.22 }); }}>Auto layout</button><button onClick={() => void flow?.fitView({ duration: motion(280), padding: 0.22 })}>Fit view</button><span className="legend"><i className="legend-dot active-dot" /> Active</span><span className="legend"><i className="legend-dot done-dot" /> End observed</span><span className="legend"><i className="legend-dot unknown-dot" /> Unknown</span></div></div>
         <div className="graph-tabs" role="group" aria-label="Graph view"><button className={graphView === 'observed' ? 'chosen' : ''} aria-pressed={graphView === 'observed'} onClick={() => setGraphView('observed')}>Observed execution</button><button className={graphView === 'reference' ? 'chosen' : ''} aria-pressed={graphView === 'reference'} onClick={() => setGraphView('reference')}>LOW / MEDIUM / HIGH routes</button></div>
         <div className="graph-frame">
-          {graph.nodes.length ? <ReactFlow nodes={nodes} edges={edges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onKeyDown={onGraphKeyDown} onInit={setFlow} fitView fitViewOptions={{ padding: 0.22 }} minZoom={0.2} maxZoom={1.6}
-            deleteKeyCode={null} edgesFocusable={false}
-            ariaLabelConfig={{ 'node.a11yDescription.default': 'Press Enter or Space to show this node in the details panel. Arrow keys move the selected node within the layout.' }}>
-            <Background color="#26313d" gap={24} size={1} /><MiniMap nodeColor={(node) => node.type === 'studio' ? '#49637b' : '#1b2631'} maskColor="rgba(8,12,18,.7)" /><Controls showInteractive={false} />
-          </ReactFlow> : graphView === 'observed' && snapshot.sessions.length ? <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No session is selected</h2><p>Press a session card above, or use Add session, to show it here. “Show all recent” returns to the sessions with recent activity.</p></div>
+          {graph.nodes.length ? <Canvas nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={onNodeClick} onKeyDown={onGraphKeyDown} onInit={setFlow} /> : graphView === 'observed' && snapshot.sessions.length ? <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No session is selected</h2><p>Press a session card above, or use Add session, to show it here. “Show all recent” returns to the sessions with recent activity.</p></div>
             : <div className="empty-graph"><div className="empty-symbol">◎</div><h2>No execution events observed</h2><p>The dashboard reads existing local CanonKit hook records. It does not start an agent or create a session to collect activity.</p><a href="/activity.html">Open Activity overview <span>↗</span></a></div>}
           <div className="canvas-foot"><span>SESSION MEMBERSHIP</span><span>{shownSessions.length ? `${plural(dispatchTotal, 'dispatch', 'dispatches')} · ${plural(gateTotal, 'gate', 'gates')}` : 'Waiting for telemetry'}</span></div>
         </div>
@@ -202,9 +235,7 @@ function App() {
     </section>
     <section className="timeline-section" id="timeline">
       <div className="timeline-header"><div><span className="eyebrow">SESSION HISTORY</span><h2>Timeline</h2></div><div className="filters"><label><span>TYPE</span><select value={filter} onChange={(e) => setFilter(e.target.value)}><option value="all">All events</option>{['prompt', 'agent_start', 'agent_launch', 'agent_end', 'agent_stop', 'agent_resume', 'gate'].map((v) => <option key={v} value={v}>{human(v)}</option>)}</select></label><label><span>AGENT</span><select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)}><option value="all">All agents</option>{agents.map((a) => <option key={a} value={a}>{human(a)}</option>)}</select></label></div></div>
-      {timeline.length ? <div className="timeline-list">{timeline.map((row) => { const e = row.event; return <button className="timeline-row" key={`${row.sessionId}-${row.index}`} onClick={() => selectObservation(row)}>
-        <time>{fmtTime(e.timestamp)}</time><span className={`event-mark mark-${e.type === 'gate' ? 'gate' : e.type.includes('end') || e.type.includes('stop') ? 'done' : 'agent'}`}>{e.type === 'gate' ? '⚑' : e.type.includes('end') || e.type.includes('stop') ? '✓' : '◇'}</span><span className="timeline-main"><span className="timeline-session" title={row.sessionId}>{short(row.sessionId, 8)}</span><strong>{human(e.type)}</strong><span>{typeof e.data.agent === 'string' ? human(e.data.agent) : e.dispatchId ? `Dispatch ${short(e.dispatchId)}` : e.data.kind ? human(String(e.data.kind)) : 'Runtime event'}</span></span><span className="timeline-source">{e.source} · {e.confidence}</span><span className="row-arrow">↗</span>
-      </button>; })}</div> : <div className="timeline-empty">{shownSessions.length ? 'No events match these sessions and filter.' : 'No session is selected.'}</div>}
+      {timeline.length ? <TimelineList rows={timeline} onSelect={selectObservation} /> : <div className="timeline-empty">{shownSessions.length ? 'No events match these sessions and filter.' : 'No session is selected.'}</div>}
       <div className="retention-note">Showing {timeline.length} normalized observations available in retained logs (latest 300 per session). Older or rotated events may no longer be present.</div>
     </section>
     <footer><span>CANONKIT OBSERVATORY <i>·</i> LOCAL TELEMETRY</span><span>Workflow and approval state require direct evidence.</span></footer>

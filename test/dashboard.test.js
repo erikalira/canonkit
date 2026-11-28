@@ -855,3 +855,47 @@ test("graph model: timeline merge order and node resolution across sessions", as
   assert.equal(resolveNode(sessions, "signals:sb").item.type, "prompt");
   assert.equal(resolveNode(sessions, "reference:risk").session, undefined);
 });
+
+test("graph model: an active dispatch edge is statically dashed by class, never React Flow's animated edge", async () => {
+  const { graphFor } = await graphModel();
+  const { sessions } = twoSessions();
+  const { edges } = graphFor(sessions, "observed");
+  assert.ok(edges.every((e) => !("animated" in e)), "no edge uses the continuous dash animation");
+  const active = sessions.flatMap((s) => s.dispatches.filter((d) => d.executionState === "active").map((d) => `${s.sessionId}`));
+  const classed = edges.filter((e) => e.className === "edge-active");
+  assert.ok(active.length > 0, "the fixture has an active dispatch");
+  assert.equal(classed.length, active.length, "exactly the active dispatches get the class");
+  const done = graphFor(executionSnapshot([{ ts: 1, session: "s1", event: "agent_start", id: "d1", agent: "bob" }, { ts: 2, session: "s1", event: "agent_end", id: "d1" }], undefined, 10).sessions, "observed");
+  assert.ok(done.edges.every((e) => !e.className), "an ended dispatch edge has no active class");
+  assert.match(await readFile(new URL("../dashboard/src/style.css", import.meta.url), "utf8"), /\.edge-active[^{]*\{[^}]*stroke-dasharray/);
+});
+
+test("graph model: unchanged polls keep identities, so nothing re-renders", async () => {
+  const { graphFor, preserveGraphNodes, reuseUnchanged, selectOnly, stabilizeSnapshot } = await graphModel();
+  const a = { generatedAt: 1, sessions: [{ id: "x", list: [1, 2] }], agents: [] };
+  const same = stabilizeSnapshot(a, { generatedAt: 2, sessions: [{ id: "x", list: [1, 2] }], agents: [] });
+  assert.equal(same.generatedAt, 2);
+  assert.equal(same.sessions, a.sessions); assert.equal(same.agents, a.agents);
+  const changed = stabilizeSnapshot(a, { generatedAt: 3, sessions: [{ id: "x", list: [1, 3] }], agents: [] });
+  assert.notEqual(changed.sessions, a.sessions); assert.equal(changed.agents, a.agents);
+
+  const { sessions } = twoSessions();
+  const first = preserveGraphNodes(graphFor(sessions, "observed").nodes, []);
+  const live = first.map((n) => ({ ...n, measured: { width: 245, height: 96 } })); // what React Flow adds
+  const again = reuseUnchanged(preserveGraphNodes(graphFor(sessions, "observed").nodes, live), live);
+  assert.equal(again, live, "an identical rebuild returns the current array");
+  const edges = graphFor(sessions, "observed").edges;
+  assert.equal(reuseUnchanged(graphFor(sessions, "observed").edges, edges), edges);
+
+  const dispatch = live.find((n) => n.id.startsWith("dispatch:sa"));
+  const edited = live.map((n) => n === dispatch ? { ...n, data: { ...n.data, state: "completed" } } : n);
+  const next = reuseUnchanged(preserveGraphNodes(graphFor(sessions, "observed").nodes, edited), edited);
+  assert.notEqual(next, edited, "a changed node produces a new array");
+  assert.equal(next.filter((n, i) => n !== edited[i]).length, 1, "only the changed node is a new object");
+
+  const picked = selectOnly(live, dispatch.id);
+  assert.equal(picked.filter((n, i) => n !== live[i]).length, 1, "selecting changes only the newly selected node");
+  assert.equal(selectOnly(picked, dispatch.id), picked, "re-selecting the same node is a no-op");
+  const moved = selectOnly(picked, "session:sb");
+  assert.equal(moved.filter((n, i) => n !== picked[i]).length, 2, "moving the selection touches the old and the new node");
+});

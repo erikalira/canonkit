@@ -104,7 +104,9 @@ function sessionGraph(session, summarise) {
       subtitle: `${when} · ${short(d.executionId)}${d.parallel ? ' · overlapping dispatch' : ''}`,
       state: d.executionState, kind: 'dispatch', source: d.evidence.map(human).join(' / '),
     } });
-    edges.push({ id: `session-dispatch-${sid}-${i}`, source: `session:${sid}`, target: id, type: 'smoothstep', animated: d.executionState === 'active', label: 'dispatch' });
+    // An active dispatch is a static dashed edge (see `.edge-active` in style.css), not
+    // React Flow's `animated` one: its endless stroke animation kept the main thread busy.
+    edges.push({ id: `session-dispatch-${sid}-${i}`, source: `session:${sid}`, target: id, type: 'smoothstep', label: 'dispatch', ...(d.executionState === 'active' ? { className: 'edge-active' } : {}) });
   });
   gates.forEach((g, i) => {
     const id = `gate:${sid}:${g.timestamp}:${i}`;
@@ -373,6 +375,52 @@ export const stableLaneOrder = (previous, shown) => [
   ...previous.filter((id) => shown.includes(id)),
   ...shown.filter((id) => !previous.includes(id)),
 ];
+
+const sameValue = (a, b) => {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b || Array.isArray(a) !== Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => sameValue(a[k], b[k]));
+};
+
+// A poll rebuilds the snapshot, but only `generatedAt` moves when nothing was
+// observed. Parts that are equal to the previous ones keep their identity, so
+// everything memoised on them is skipped.
+export function stabilizeSnapshot(previous, next) {
+  const out = { ...next };
+  for (const key of Object.keys(next)) {
+    if (key !== 'generatedAt' && key in previous && sameValue(previous[key], next[key])) out[key] = previous[key];
+  }
+  return out;
+}
+
+// Items of `next` that equal their counterpart in `previous` (same id, every field
+// of the new item equal; extra fields React Flow added, such as `measured`, are
+// ignored) are replaced by that previous object, so React skips them. Returns
+// `previous` itself when nothing changed, which makes a state update a no-op.
+export function reuseUnchanged(next, previous) {
+  const before = new Map(previous.map((item) => [item.id, item]));
+  let same = next.length === previous.length;
+  const result = next.map((item, i) => {
+    const old = before.get(item.id);
+    const equal = old && Object.keys(item).every((k) => sameValue(item[k], old[k]));
+    if (!equal || previous[i] !== old) same = false;
+    return equal ? old : item;
+  });
+  return same ? previous : result;
+}
+
+// Marks only `id` as selected. Nodes whose selection does not change keep their
+// identity, so a click re-renders two nodes instead of all of them.
+export function selectOnly(nodes, id) {
+  let changed = false;
+  const result = nodes.map((node) => {
+    if (!!node.selected === (node.id === id)) return node;
+    changed = true;
+    return { ...node, selected: node.id === id };
+  });
+  return changed ? result : nodes;
+}
 
 export function summariseSession(session) {
   return {
