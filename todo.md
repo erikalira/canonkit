@@ -6,56 +6,14 @@ Updated 2026-11-14 from the handoffs in `docs/plans/` and the findings
 collected along the way. P0 = do now, P4 = when there is room. Items backed by
 a handoff keep their details there; items without one carry them inline.
 
-### P0 — security
-
-- [x] **Issue #36: WSL security follow-ups**: done in 3.2.1 (OpenSpec
-  `wsl-security-follow-ups`, archived; Gard approved). Two pre-existing gaps
-  Gard noted went to P3 below.
-
-### P1 — high gain, low cost
-
-- [x] **Review brief with the diff scope resolved**: done in 3.2.1 (OpenSpec
-  `review-brief-diff-scope`, archived; Quinn approved). New `## Briefing a
-  review` in `skills/orchestrate/SKILL.md`.
-- [x] **Broken links** to `plans/learning-loop-design.md` (removed in `d1cf49d`):
-  done in 3.2.1. `docs/evals.md` now points to the skill's "Evaluate and
-  decide" section; the design-note clause in `docs/learning-loop.md` was dropped.
-- [x] **Housekeeping**: done in 3.2.1. Deleted
-  `docs/plans/release-3.1.0-handoff.md`; OpenSpec `install-guided-setup` was
-  already archived (`2026-11-14-install-guided-setup`); dropped the `~/.agents`
-  item from the [improvements handoff](docs/plans/canonkit-improvements-handoff.md).
-
 ### P2 — consistency and pending decisions
 
-- [x] **User/project terminology** in `doctor`, `uninstall`, `models` and
-  security diagnostics: done in 3.2.1 (Pixie approved). Wording in `41968ef`;
-  the short `doctor` report now groups general checks under "User level" and
-  "This project" (rows carry an optional `scope`; `--verbose` unchanged). The
-  follow-up note was deleted.
-- [x] **User/project terminology in the docs prose**: done in 3.2.1 (Spencer
-  approved). README, `docs/install.md` and `docs/hooks.md` say "user level" /
-  "project"; "Git repository" stays only for the validation precondition.
-  `SECURITY_SETTINGS` uses `scope: "project"` and project wording in its
-  reasons. The section is "Native security, per project"; the old
-  `#native-security-per-repository` anchor is kept. Remaining "global" uses in
-  `docs/install.md` (e.g. heading "Global reference blocks and skills", L95,
-  183, 906-907, 1132-1134, 1181, 1301, 1316) were left: low priority, and the
-  heading may be a link target.
-- [x] **Install guidance for a selected tool that is not installed**: done in
-  3.2.1 (Pixie approved). A missing recommended tool starts unselected as
-  `(recommended, not installed)`; selecting it prints the guidance before any
-  write and skips it, which does not count as a failure. The review screen lists
-  it as skipped. Explicit `--tool` flags are unchanged.
 - [ ] **Alternative Canonkit installation channels** (target a near-term
   release). Alongside the documented `npx canonkit install`, document global
   npm installation and evaluate Homebrew, WinGet and a standalone installer
   script. Keep every channel on the same CLI implementation and version/update
   path; account for platform and runtime requirements and ongoing manifest
   maintenance.
-- [x] **Economical reading for reviewer agents**: done in 3.2.1 (`697ef43`;
-  Quinn approved). Quinn, Gard, Archie and Perry have a `## Reading code and
-  diffs` section before the Pre-report gate. No baseline was taken (user's
-  choice); the measurement is the item below.
 - [ ] **Measure review speed before/after via telemetry**
   ([handoff](docs/plans/review-speed-handoff.md), proposal 3, "Medição
   antes/depois"). Waits for enough post-3.2.1 review dispatches; until then the
@@ -74,26 +32,6 @@ a handoff keep their details there; items without one carry them inline.
   implements.
 - [ ] **Decisions** ([handoff](docs/plans/canonkit-improvements-handoff.md)):
   keep `skills/context-tune` in core or not; unknown keys WARN or FAIL.
-- [x] **Skill for the one-backlog-item-per-session cycle**: done in 3.2.1
-  (OpenSpec `backlog-cycle-skill`, archived). Core skill
-  `skills/backlog-cycle/`, user-invoked only (`disable-model-invocation`,
-  Codex `allow_implicit_invocation: false`), reads the backlog the project
-  already uses. Its handoff was removed after the first real cycle.
-- [x] **Incidental findings go to the project's backlog, not GitHub issues by
-  default**: done in 3.2.1. The destination is the backlog the project already
-  uses (a file such as `todo.md`, or its tracker); GitHub issues only when that
-  is the project's backlog; no backlog means the notes stay in the report.
-  Changed `skills/orchestrate/out-of-scope-issues.md`, `SKILL.md`,
-  `## Incidental findings` in `reference/agents-block.md` and
-  `docs/out-of-scope-issues.md`; vulnerabilities and secrets keep the private
-  channel. The backlog-cycle skill can now point to it.
-- [x] **`npx canonkit models show` fails inside the Claude Code sandbox**:
-  addressed in 3.2.1. Install offers a narrow read grant for
-  `~/.canonkit/models.json`, so the sandbox can see user model choices. When
-  `npx` cannot run, the managed blocks and `orchestrate` use the installed agent
-  file's model and effort without guessing. The agent reports project overrides
-  it cannot verify through the CLI. No global install or wider network grant is
-  required.
 
 ### P3 — improvements without urgency
 
@@ -222,20 +160,6 @@ a handoff keep their details there; items without one carry them inline.
   (`readSettingsText` in `bin/security.js`). Whether either reads a Claude
   `settings.json` was not checked. Confidence: low. Next step: check which
   files they read; if a user can empty one by hand, reuse `readSettingsText`.
-- [x] **Shell-for-files rule loses to the auto-mode prompt**: done on
-  `fix/todo-pontuais` (2026-11-28; Virgo implemented, Spencer checked drift).
-  Cause confirmed from the auto-mode system prompt itself ("read files with
-  cat… small changes with sed, heredocs… The choice is yours"); the activity
-  logs carry no command text, so the frequency stays unmeasured. "Dedicated
-  tools, not the shell" in `reference/agents-block.md` now covers reads, the
-  scratch folder and subagents, holds where the harness's prompt invites the
-  shell, and keeps `grep`/`find` only without a search tool. The reviewers'
-  `## Reading code and diffs` (Quinn, Gard, Archie, Perry) now point to the
-  search and read tools too. The +18 words were offset by tightening
-  `reference/routing-block.md`: the two blocks went 2,940 → 2,939 by whole-file
-  `wc -w`, so the profile stays over its ceiling (item below). Behavioral effect
-  UNMEASURED: the quality runner cannot measure a managed block. Original
-  notes below.
 - [ ] **Always-loaded context over its 3,000-word ceiling** (found 2026-11-28).
   Default profile ≈ 3,331 words (`wc -w`): agents block 2,208, Claude block
   731, agent descriptions 363, model-invocable skill descriptions 50; the
