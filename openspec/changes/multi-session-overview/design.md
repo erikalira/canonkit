@@ -62,7 +62,7 @@ The panel is a horizontally wrapping grid of cards. With many sessions it scroll
 
 ### 6. One graph, one lane per session
 
-`graphFor(sessions: Session[], view)` builds each session's subgraph exactly as today, runs `arrangeGraph` on each subgraph on its own, and then offsets each subgraph vertically. Each lane starts below the previous lane's lowest node, plus a gap. The order is the selection's recency order, so lanes are stable while the set is unchanged.
+`graphFor(sessions: Session[], view)` builds each session's subgraph exactly as today, runs `arrangeGraph` on each subgraph on its own, and then offsets each subgraph vertically. Initially, each lane starts below the previous lane's lowest node, plus a gap. During polling, existing lane tops stay fixed. If a lane grows toward the next kept lane, its background is capped before that lane and new nodes use additional columns within the available height. A newly added lane starts after the last kept lane and its gap. The order is the selection's stable lane order, so lanes do not move under existing nodes while the selected set changes.
 
 Every node and edge ID is namespaced by session. Node IDs already are. Edge IDs (`session-dispatch-${i}`, `session-gate-${i}`, `session-signal-${i}`) gain the session ID, because without it two sessions' edges collide and React Flow drops or mis-wires them. No edge is ever created between two sessions.
 

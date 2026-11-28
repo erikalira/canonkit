@@ -720,10 +720,11 @@ test("graph model: several sessions get unique IDs, separate lanes and no cross-
 test("graph model: new nodes stay in their lane when an earlier lane grows during polling", async () => {
   const { graphFor, preserveGraphNodes } = await graphModel();
   const initial = executionSnapshot([
-    { ts: 1, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
-    { ts: 2, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 2, session: "sa", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 1, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
   ], undefined, 10);
-  const previous = graphFor(initial.sessions, "observed");
+  const byLane = (sessions) => [...sessions].sort((a, b) => ["sa", "sb"].indexOf(a.sessionId) - ["sa", "sb"].indexOf(b.sessionId));
+  const previous = graphFor(byLane(initial.sessions), "observed");
   const movedPosition = { x: 525, y: previous.nodes.find((n) => n.id === "dispatch:sb:b1").position.y + 40 };
   const keptNodes = previous.nodes.map((n) => n.id === "dispatch:sb:b1"
     ? { ...n, position: movedPosition, selected: true }
@@ -739,11 +740,20 @@ test("graph model: new nodes stay in their lane when an earlier lane grows durin
     { ts: 2, session: "sb", event: "agent_start", id: "b1", agent: "quinn" },
     { ts: 6, session: "sb", event: "agent_start", id: "b2", agent: "quinn" },
   ], undefined, 10);
-  const currentGraph = graphFor(next.sessions, "observed");
+  const currentGraph = graphFor(byLane(next.sessions), "observed");
   const nodes = preserveGraphNodes(currentGraph.nodes, keptNodes);
+  const firstLane = nodes.find((n) => n.id === "lane:sa");
   const secondLane = nodes.find((n) => n.id === "lane:sb");
   const newNode = nodes.find((n) => n.id === "dispatch:sb:b2");
-  assert.ok(secondLane && newNode);
+  assert.ok(firstLane && secondLane && newNode);
+  assert.ok(firstLane.position.y + firstLane.style.height <= secondLane.position.y,
+    "an earlier lane that grows does not overlap the next kept lane");
+  for (const id of ["dispatch:sa:a2", "dispatch:sa:a3", "dispatch:sa:a4"]) {
+    const upperNode = nodes.find((n) => n.id === id);
+    assert.ok(upperNode.position.y >= firstLane.position.y && upperNode.position.y + 130 <= firstLane.position.y + firstLane.style.height,
+      `${id} remains within its own lane`);
+    assert.ok(upperNode.position.x + 280 <= firstLane.position.x + firstLane.style.width, `${id} remains within lane width`);
+  }
   assert.ok(newNode.position.y >= secondLane.position.y, "new node starts below its own lane top");
   assert.ok(newNode.position.y + 130 <= secondLane.position.y + secondLane.style.height,
     "new node remains within its own lane after an earlier lane grows");
@@ -758,6 +768,41 @@ test("graph model: new nodes stay in their lane when an earlier lane grows durin
     "polling keeps the lane position");
   assert.deepEqual(nodes.find((n) => n.id === "dispatch:sb:b1").position, movedPosition, "polling keeps a moved node in place");
   assert.equal(nodes.find((n) => n.id === "dispatch:sb:b1").selected, true, "polling keeps the selected node");
+});
+
+test("graph model: a new lane is placed after kept lanes when the upper lane was removed", async () => {
+  const { graphFor, preserveGraphNodes } = await graphModel();
+  const snapshot = executionSnapshot([
+    { ts: 3, session: "a", event: "agent_start", id: "a1", agent: "bob" },
+    { ts: 2, session: "b", event: "agent_start", id: "b1", agent: "quinn" },
+    { ts: 1, session: "c", event: "agent_start", id: "c1", agent: "pixie" },
+  ], undefined, 10);
+  const byIds = (ids) => ids.map((id) => snapshot.sessions.find((s) => s.sessionId === id));
+  const previous = graphFor(byIds(["a", "b"]), "observed");
+  const afterSelectionChange = graphFor(byIds(["b", "c"]), "observed");
+  const nodes = preserveGraphNodes(afterSelectionChange.nodes, previous.nodes);
+  const keptLane = nodes.find((n) => n.id === "lane:b");
+  const addedLane = nodes.find((n) => n.id === "lane:c");
+  const addedNode = nodes.find((n) => n.id === "dispatch:c:c1");
+  assert.ok(keptLane && addedLane && addedNode);
+  assert.ok(keptLane.position.y + keptLane.style.height + 40 <= addedLane.position.y,
+    "the appended lane starts after the kept lane and its gap");
+  assert.ok(addedNode.position.y >= addedLane.position.y && addedNode.position.y + 130 <= addedLane.position.y + addedLane.style.height,
+    "new lane content remains inside the new background");
+});
+
+test("graph model: placement terminates when a lane has less than one node of vertical room", async () => {
+  const { preserveGraphNodes } = await graphModel();
+  const lane = { id: "lane:s", type: "lane", position: { x: 0, y: 0 }, style: { width: 680, height: 100 }, data: { title: "Session s" } };
+  const session = { id: "session:s", type: "studio", position: { x: 40, y: 32 }, data: { title: "Session s" } };
+  const keptDispatch = { id: "dispatch:s:d1", type: "studio", position: { x: 360, y: 32 }, data: { title: "Dispatch 1" } };
+  const newDispatch = { id: "dispatch:s:d2", type: "studio", position: { x: 360, y: 177 }, data: { title: "Dispatch 2" } };
+  const nodes = preserveGraphNodes([lane, session, keptDispatch, newDispatch], [lane, session, keptDispatch]);
+  const resultLane = nodes.find((n) => n.id === "lane:s");
+  const resultNode = nodes.find((n) => n.id === "dispatch:s:d2");
+  assert.ok(resultNode);
+  assert.ok(resultNode.position.y + 130 <= resultLane.position.y + resultLane.style.height,
+    "the finite fallback expands a too-short lane to contain the new node");
 });
 
 test("graph model: selection transitions", async () => {

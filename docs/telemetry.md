@@ -27,9 +27,10 @@ Then open `http://127.0.0.1:4317`. The Activity overview groups dispatches by
 and duration.
 
 The main page is the **Execution Graph**. It shows observed Claude Code
-dispatches and gate events for a selected session, a detail inspector, and a
-filterable timeline. The separate Activity overview keeps the existing metrics
-and context-contributor views. From a source checkout, run
+dispatches and gate events for the selected sessions, each in its own lane, with
+a detail inspector and a filterable timeline merged across those sessions. The
+separate Activity overview keeps the existing metrics and context-contributor
+views. From a source checkout, run
 `npm run dashboard:build` before starting the server; published packages contain
 the compiled assets. The frontend toolchain is a development dependency and the
 installed dashboard runs with Node alone.

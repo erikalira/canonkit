@@ -19,10 +19,11 @@
 
 - [x] 3.1 Run `npm test`, because `pretest` builds the dashboard. Record the totals in this change, then run `graphify update .`.
   Result: 1287 tests, 1266 pass, 0 fail, 21 skipped (pre-existing skips); `graphify update .` rebuilt 4016 nodes / 6604 edges.
-- [ ] 3.2 Before sync or archive, get Pixie's review of the panel's states and microcopy (MEDIUM, UX domain) and Spencer's drift check of the specs against the code. Record the outcomes here.
+- [x] 3.2 Before sync or archive, get Pixie's review of the panel's states and microcopy (MEDIUM, UX domain) and Spencer's drift check of the specs against the code. Record the outcomes here.
   Pixie (2026-11-26, code review, no browser): approve with conditions, no veto. The user chose the concrete fixes, applied in 2.6. Not applied by user choice: a first-load "Loading sessions…" line, stable card positions while focus is inside the panel, scrolling to the selected card, "just now", and mobile card density.
   Spencer (2026-11-26): no blocking drift. Fixed: wording of 1.3, branch label in design.md, and a stray formatting edit in main.tsx. Open: a final drift pass after 2.2–2.4, because the UI scenarios have no verification yet.
   2026-11-26: the user tested 2.2 and 2.3 in a browser and asked for the sessions in one graph. The scope grew; groups 4 and 5 below supersede the single-session card behaviour of 2.2 and 2.6, and 3.2 closes with group 5.
+  Final review (2026-11-26): Pixie approved the toggle, lane, empty-selection and merged-timeline semantics after Bob fixed overlapping lane backgrounds. Browser conditions remain in 5.4: narrow header/"Show all recent", lane and minimap visibility, fit/drag and polling. Spencer found and fixed the stale singular dashboard overview in `docs/telemetry.md` and recorded poll lane geometry in `design.md`; the final drift pass found no other blocking mismatch. The declared delta specs remain for later sync/archive.
 
 ## 4. Multi-session graph
 
@@ -36,9 +37,10 @@
 
 - [x] 5.1 Run `npm test` and `graphify update .`, and record the totals here.
   Result (2026-11-26): 1291 tests, 1270 pass, 0 fail, 21 skipped (pre-existing); `graphify update .` passed.
-  Open defect against the spec scenario "New event arrives in a selected session": Bob reported that with several sessions, a new node avoids collisions only against kept nodes. It can land outside its own lane when a lane grows past the kept positions of the lane below. This must be fixed or covered by a test before 5.4.
+  Defect resolved (2026-11-26): Bob moved the poll merge to `preserveGraphNodes()` and added `node:test` regressions. The old merge put a new node at y=983 outside its lane (top 226, height 331); a growing upper background also overlapped the kept lower lane, and replacing an upper lane could overlap a newly added lower lane. The merge now keeps existing lane tops, caps growth before the next kept lane, puts new nodes in free columns within their lane, and appends new lanes after kept geometry. Moved and selected nodes stay in place. After the final code edit, the dashboard file passed 37/37; `npm test` passed 1295 tests, 1274 pass, 0 fail, 21 pre-existing skips. `graphify update .` passed (4085 nodes/6712 edges), as did typecheck, build and `git diff --check`.
 - [ ] 5.2 Perry measures render and poll cost from the production build (`dashboard/dist`) at the number of sessions the user runs and at 8 sessions, and checks it against the dashboard's perceived-speed expectations (MEDIUM: node count grows with the number of shown sessions). Record the measurement and the verdict here.
-- [ ] 5.3 Pixie re-reviews the toggle semantics, lanes, empty selection and merged timeline. Spencer runs the final drift check of the specs against the code. Record the outcomes here, then close 3.2.
+  Partial measurement after the final code edit (2026-11-26, Node 26.13.1/Linux WSL2 x86_64): synthetic data with 300 retained observations per session (16 dispatch starts, 14 gates, 270 uncorrelated prompts), 10 warmups and 100 timed runs. At 5 sessions (the user's confirmed usual count), 165 nodes/155 edges: p50/p95 `graphFor` 8.075/12.583 ms, `preserveGraphNodes` 0.150/0.463 ms, graph-signature stringify 0.090/0.141 ms. At 8 sessions, 264 nodes/248 edges: respectively 13.694/33.131 ms, 0.225/0.311 ms and 0.141/0.227 ms. Perry judged model preparation and poll merge modest against the 2 s poll; `graphFor` p95 stayed below the 50 ms long-task heuristic at 8. This is Node-side synthetic evidence, not a browser render result. React Flow first render and poll remain unmeasured: sandbox loopback listen failed with EPERM, and the escalated Chrome/server attempt was interrupted before approval/result. No explicit dashboard performance budget was found. The task stays open pending browser measurement.
+- [x] 5.3 Pixie re-reviews the toggle semantics, lanes, empty selection and merged timeline. Spencer runs the final drift check of the specs against the code. Record the outcomes here, then close 3.2.
 - [ ] 5.4 The user verifies in a browser:
   - toggling cards adds and removes lanes;
   - "Show all recent" works;

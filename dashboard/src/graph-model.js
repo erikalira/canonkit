@@ -179,15 +179,32 @@ export function graphFor(sessions, view) {
   return { nodes, edges };
 }
 
-// Preserve React Flow's user-owned positions across data-only polls. In a
-// multi-session graph, new nodes are translated with their kept lane and only
-// checked against nodes in that same lane. A growing earlier lane must not
-// move new nodes in a later lane away from its kept background.
+// Preserve React Flow's user-owned positions across data-only polls. Existing
+// lanes keep their top edge; if one grows toward the next lane, new nodes use
+// extra columns inside the available height instead of overlapping lanes.
 export function preserveGraphNodes(graphNodes, currentNodes) {
   const kept = new Map(currentNodes.map((node) => [node.id, node]));
-  const graphLanes = new Map(graphNodes.filter((node) => node.type === 'lane').map((node) => [node.id, node]));
+  const laneList = graphNodes.filter((node) => node.type === 'lane');
+  const graphLanes = new Map(laneList.map((node) => [node.id, node]));
+  const laneGeometry = new Map();
+  for (let i = 0; i < laneList.length; i++) {
+    const lane = laneList[i];
+    const prior = kept.get(lane.id);
+    const previous = i ? laneGeometry.get(laneList[i - 1].id) : undefined;
+    const top = prior?.position.y ?? Math.max(lane.position.y, previous ? previous.top + previous.height + LANE_GAP : lane.position.y);
+    const width = Math.max(Number(lane.style?.width ?? 0), Number(prior?.style?.width ?? 0));
+    let height = Math.max(Number(lane.style?.height ?? 0), Number(prior?.style?.height ?? 0));
+    const next = laneList[i + 1];
+    const nextPrior = next && kept.get(next.id);
+    if (nextPrior) {
+      const nextTop = nextPrior.position.y;
+      height = Math.min(height, Math.max(0, nextTop - top - LANE_GAP));
+    }
+    laneGeometry.set(lane.id, { top, height, width });
+  }
   const placed = new Map();
   const laneWidths = new Map();
+  const laneHeights = new Map();
   for (const node of currentNodes) {
     if (node.type === 'lane') continue;
     const sid = sessionIdOfNode(node.id) ?? '';
@@ -198,34 +215,56 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
   return graphNodes.map((node) => {
     const prior = kept.get(node.id);
     if (prior) {
-      if (node.type === 'lane' && prior.style?.width != null)
-        return { ...node, style: { ...node.style, width: Math.max(Number(node.style?.width ?? 0), Number(prior.style.width)) }, position: prior.position, selected: prior.selected };
+      if (node.type === 'lane') {
+        const geometry = laneGeometry.get(node.id);
+        return { ...node, style: { ...node.style, width: geometry?.width, height: geometry?.height }, position: { ...node.position, y: geometry?.top ?? prior.position.y }, selected: prior.selected };
+      }
       return { ...node, position: prior.position, selected: prior.selected };
     }
     const position = { ...node.position };
-    if (node.type === 'lane') return { ...node, position };
+    if (node.type === 'lane') {
+      const geometry = laneGeometry.get(node.id);
+      return { ...node, style: { ...node.style, width: geometry?.width, height: geometry?.height }, position: { ...node.position, y: geometry?.top ?? node.position.y } };
+    }
     const sid = sessionIdOfNode(node.id) ?? '';
     const graphLane = graphLanes.get(`lane:${sid}`);
-    const keptLane = kept.get(`lane:${sid}`);
-    if (graphLane && keptLane) position.y += keptLane.position.y - graphLane.position.y;
+    const geometry = laneGeometry.get(`lane:${sid}`);
+    if (graphLane && geometry) position.y += geometry.top - graphLane.position.y;
     const laneNodes = placed.get(sid) ?? [];
-    if (graphLane) {
-      const laneTop = keptLane?.position.y ?? graphLane.position.y;
-      const laneBottom = laneTop + Number(graphLane.style?.height ?? 0);
+    if (graphLane && geometry) {
+      const laneTop = geometry.top;
+      const laneBottom = laneTop + geometry.height;
       const baseY = position.y;
       const collides = (x, y) => laneNodes.some((p) => Math.abs(p.x - x) < 300 && Math.abs(p.y - y) < 140);
       let found = false;
-      const maxRows = Math.ceil((laneBottom - laneTop) / 145) + 1;
-      for (let column = 0; !found; column++) {
+      const maxRows = Math.ceil(Math.max(Math.abs(baseY - laneTop), Math.abs(baseY - laneBottom)) / 145) + 1;
+      const candidateYs = [];
+      for (let row = 0; row <= maxRows; row++) {
+        const step = Math.ceil(row / 2) * 145 * (row % 2 === 0 ? 1 : -1);
+        const y = baseY + step;
+        if (y >= laneTop && y + LANE_NODE_HEIGHT <= laneBottom) candidateYs.push(y);
+      }
+      if (!candidateYs.length) {
+        // A legacy or inconsistent lane can have less than one node of room.
+        // Give the new node a finite fallback column and enough background;
+        // the loop below must never run without a vertical candidate.
+        candidateYs.push(laneTop);
+        laneHeights.set(sid, Math.max(laneHeights.get(sid) ?? 0, LANE_NODE_HEIGHT));
+      }
+      const maxColumns = Math.max(1, laneNodes.length * 2 + 2);
+      for (let column = 0; column < maxColumns && !found; column++) {
         const x = position.x + column * 320;
-        for (let row = 0; row <= maxRows; row++) {
-          const step = Math.ceil(row / 2) * 145 * (row % 2 === 0 ? 1 : -1);
-          const y = baseY + step;
-          if (y < laneTop || y + LANE_NODE_HEIGHT > laneBottom || collides(x, y)) continue;
+        for (const y of candidateYs) {
+          if (collides(x, y)) continue;
           position.x = x; position.y = y; found = true; break;
         }
-        if (x + LANE_NODE_WIDTH > Number(graphLane.style?.width ?? 0))
+        if (x + LANE_NODE_WIDTH > geometry.width)
           laneWidths.set(sid, Math.max(laneWidths.get(sid) ?? 0, x + LANE_NODE_WIDTH + 40));
+      }
+      if (!found) {
+        position.x = Math.max(geometry.width, ...laneNodes.map((p) => p.x + LANE_NODE_WIDTH)) + 40;
+        position.y = candidateYs[0];
+        laneWidths.set(sid, position.x + LANE_NODE_WIDTH + 40);
       }
     } else {
       while (laneNodes.some((p) => Math.abs(p.x - position.x) < 300 && Math.abs(p.y - position.y) < 140)) position.y += 145;
@@ -237,7 +276,12 @@ export function preserveGraphNodes(graphNodes, currentNodes) {
     if (node.type !== 'lane') return node;
     const sid = sessionIdOfNode(node.id);
     const width = sid ? laneWidths.get(sid) : undefined;
-    return width ? { ...node, style: { ...node.style, width: Math.max(Number(node.style?.width ?? 0), width) } } : node;
+    const height = sid ? laneHeights.get(sid) : undefined;
+    return width || height ? { ...node, style: {
+      ...node.style,
+      ...(width ? { width: Math.max(Number(node.style?.width ?? 0), width) } : {}),
+      ...(height ? { height: Math.max(Number(node.style?.height ?? 0), height) } : {}),
+    } } : node;
   });
 }
 
