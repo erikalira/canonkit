@@ -1205,7 +1205,8 @@ model and effort on every dispatch and the Integration Review procedure. The
 rule does not vanish when the skill is not loaded. The skill is installed in
 `~/.claude/skills/orchestrate/` (Claude Code) and in `~/.agents/skills/orchestrate/`
 (Codex reads skills from `$HOME/.agents/skills`, per OpenAI's official skills
-documentation). A diverged copy is preserved as `<file>.local.bak` before being
+documentation). The `context-tune`, `learning-loop` and `backlog-cycle` skills
+ship and install the same way, in the same folders; they are described below. A diverged copy is preserved as `<file>.local.bak` before being
 overwritten; existing backups stay intact and the next gets `.local-1.bak`,
 `.local-2.bak`, and so on. Core agents, hooks and dashboard files have the same
 protection. Edited OpenCode plugins are backed up under `~/.canonkit/backups/`,

@@ -13,12 +13,14 @@ main). One item per session with the `backlog-cycle` skill.
   occurrence at a path boundary (case-insensitive only for a Windows home); a
   project-local `claude` now reports `project-local-binary-ignored` (doctor
   shows it in the generic line); test renamed. Subitems removed from `todo.md`.
-  Not yet committed.
+  Committed in `7e94e6c`.
+- Doc (LOW, inline, 2026-11-28): one sentence in `docs/install.md` (~L1206)
+  says `context-tune`, `learning-loop` and `backlog-cycle` install like
+  `orchestrate`; item removed from `todo.md`. The misplaced-heading finding
+  went to `todo.md` (P3).
 
 ## Remaining scope, in order (user-approved 2026-11-28)
 
-2. **Doc**: one sentence in `docs/install.md` (~L1153) pointing to
-   `context-tune`, `learning-loop` and `backlog-cycle` (LOW).
 3. **lstat fail-open + empty JSON**: `telemetryReadSymlink` (`bin/security.js`
    ~L507) and `bin/model-discovery.js` / `bin/model-config.js`. Investigate
    first; touches sandbox permissions → Bob implements, Gard reviews.

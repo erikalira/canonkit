@@ -102,12 +102,15 @@ a handoff keep their details there; items without one carry them inline.
   matrix (claude-code-guide or docs), then write it; Spencer reviews only if it
   lands in the install guide's security section.
 
-- [ ] **`docs/install.md` names only `orchestrate` among the shipped skills**
-  (Spencer, 2026-11-15). The paragraph "Alongside the blocks goes the
-  `orchestrate` skill" (~L1153) gives only orchestrate's install paths;
-  `context-tune`, `learning-loop` and `backlog-cycle` are described later
-  (~L1186–1218). Fix: one sentence there pointing to them. Confidence: medium;
-  impact low.
+- [ ] **`docs/install.md`: skill paragraphs sit under the wrong heading**
+  (lead, 2026-11-28). The Laya paragraph (~L1216–1220) runs into
+  `### 2. Sync from the checkout` with no blank line, and the `context-tune`,
+  `learning-loop` and `backlog-cycle` paragraphs (~L1235–1267) plus the
+  following `AGENTS.md` paragraph now fall under "2. Sync from the checkout"
+  instead of "1. Sync global reference blocks and skills". Fix: move the sync
+  command block below them (or the paragraphs above it) and add the blank line;
+  then the "described below" pointer at ~L1206 can become an anchor link.
+  Confidence: high (headings checked with `grep "^#"`); impact low.
 
 - [ ] **Keep the reviewers' `## Reading code and diffs` copies in sync** (Quinn,
   2026-11-15). The section is identical in `agents/quinn.md`, `gard.md`,
